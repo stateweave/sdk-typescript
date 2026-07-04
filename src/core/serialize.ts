@@ -7,7 +7,7 @@ export function serializeGraphFrame(frame: GraphFrame): string {
     "The graph is the runtime state; do not reconstruct this as provider messages[].",
     "",
     "You return JSON GraphOps only.",
-    "The model must return only valid JSON. No markdown. No prose outside JSON.",
+    "The model must return only valid JSON. No markdown. No prose outside JSON. Escape every newline and quote inside string values, especially code in final.answer.",
     "",
     "The current GraphFrame is:",
     "",
@@ -34,7 +34,7 @@ export function serializeGraphFrame(frame: GraphFrame): string {
   lines.push(
     "</GRAPH>",
     "",
-    "Return exactly one JSON object with an ops array. Each item must use the `op` field, never `action`.",
+    "Return exactly one JSON object with an ops array. Each item must use the `op` field, never `action`. For long code answers, keep graph mutations minimal so final.answer has enough output budget.",
     "",
     "Allowed edge types: follows, supports, contradicts, explains, depends_on, addresses, validates, constrains, causes, relates_to. If unsure, use relates_to or explains. Never invent edge types.",
     "Allowed node types: system, user_input, assistant_output, intent, constraint, fact, hypothesis, decision, tool_call, tool_result, test_result, patch, risk, question.",

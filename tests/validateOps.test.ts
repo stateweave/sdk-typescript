@@ -10,3 +10,7 @@ it("parses graph ops with surrounding prose", () => {
   const ops = parseAndValidateOps(`Here is the JSON:\n{"ops":[{"op":"focus","currentFocus":"next"}]}\nThanks.`);
   expect(ops).toEqual([{ op: "focus", currentFocus: "next" }]);
 });
+
+it("explains invalid or incomplete graph ops JSON", () => {
+  expect(() => parseAndValidateOps(`{"ops":[{"op":"final","answer":"unfinished`)).toThrow(/invalid or incomplete GraphOps JSON/i);
+});

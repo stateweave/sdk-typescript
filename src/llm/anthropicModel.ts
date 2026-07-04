@@ -21,7 +21,7 @@ const defaultConfig = {
   baseUrl: "https://api.anthropic.com",
   version: "2023-06-01",
   model: "claude-3-5-sonnet-latest",
-  maxTokens: 1024,
+  maxTokens: 4096,
   temperature: 0
 };
 

@@ -64,8 +64,15 @@ export const graphOpSchema = z.discriminatedUnion("op", [
 export const graphOpsResponseSchema = z.object({ ops: z.array(graphOpSchema).min(1) });
 
 export function parseAndValidateOps(raw: string): GraphOp[] {
-  const parsed = JSON.parse(extractJsonObject(raw)) as unknown;
-  return graphOpsResponseSchema.parse(parsed).ops;
+  try {
+    const parsed = JSON.parse(extractJsonObject(raw)) as unknown;
+    return graphOpsResponseSchema.parse(parsed).ops;
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error(`Model returned invalid or incomplete GraphOps JSON: ${error.message}`);
+    }
+    throw error;
+  }
 }
 
 function extractJsonObject(raw: string): string {
