@@ -16,9 +16,16 @@ it("applies add_node, add_edge, update_node, and focus ops", () => {
   expect(next.frame.currentFocus).toBe("finalize");
 });
 
-it("adds deterministic tool call and result nodes", () => {
+it("auto-connects model-added nodes to the current intent when no edge is provided", () => {
+  const frame = createInitialGraphFrame({ objective: "Fix login", input: "Login fails", availableActions: [] });
+  const next = applyOps(frame, [{ op: "add_node", node: { id: "hypothesis_1", type: "hypothesis", text: "Token is cleared early" } }]);
+  expect(next.graph.edges.some((edge) => edge.from === "intent_1" && edge.to === "hypothesis_1" && edge.type === "relates_to")).toBe(true);
+});
+
+it("adds deterministic tool call and result nodes to the same graph", () => {
   const frame = createInitialGraphFrame({ objective: "Fix login", input: "Login fails", availableActions: [] });
   const graph = addToolResult(frame.graph, { tool: "read_mock_file", result: "auth summary", step: 1 });
   expect(graph.nodes.some((node) => node.type === "tool_call")).toBe(true);
   expect(graph.nodes.some((node) => node.type === "tool_result" && node.text === "auth summary")).toBe(true);
+  expect(graph.edges.some((edge) => edge.from === "intent_1" && edge.to.startsWith("tool_call_") && edge.type === "relates_to")).toBe(true);
 });

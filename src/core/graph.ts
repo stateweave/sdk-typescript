@@ -67,6 +67,7 @@ export function appendInputToGraphFrame(frame: GraphFrame, args: { objective: st
   const createdAt = nowIso();
   const intentId = `intent_${nextIndex(next.graph.nodes, "intent_")}`;
   const factId = `fact_input_${nextIndex(next.graph.nodes, "fact_input")}`;
+  const previousIntent = [...next.graph.nodes].reverse().find((node) => node.type === "intent");
 
   next.frame.objective = args.objective;
   next.frame.currentFocus = "Use existing graph state as short-term memory and respond to the latest input.";
@@ -77,6 +78,9 @@ export function appendInputToGraphFrame(frame: GraphFrame, args: { objective: st
     { id: factId, type: "fact", text: args.input, status: "active", confidence: 1, createdAt }
   );
   next.graph.edges.push({ id: `edge_${factId}_supports_${intentId}`, from: factId, to: intentId, type: "supports", createdAt });
+  if (previousIntent) {
+    next.graph.edges.push({ id: `edge_${previousIntent.id}_relates_to_${intentId}`, from: previousIntent.id, to: intentId, type: "relates_to", createdAt });
+  }
   return next;
 }
 

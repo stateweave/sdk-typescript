@@ -23,4 +23,5 @@ it("appends new input to an existing GraphFrame for short-term memory", () => {
   expect(next.frame.objective).toBe("What is my name?");
   expect(next.graph.nodes.some((node) => node.text === "Hi my name is Radi.")).toBe(true);
   expect(next.graph.nodes.some((node) => node.text === "What is my name?")).toBe(true);
+  expect(next.graph.edges.some((edge) => edge.from === "intent_1" && edge.to === "intent_2")).toBe(true);
 });
