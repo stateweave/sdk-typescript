@@ -9,3 +9,4 @@ StateWeave TypeScript SDK is a low-level SDK primitive, not a wrapper around AI-
 - Never read `.env`; it may contain real third-party LLM API keys. Let commands load it without printing it.
 - Keep code clean, deliberate, and organized; avoid duplicate helpers, orphan files, and abstraction for its own sake.
 - Use minimal comments; prefer clear types and names.
+- StateWeave SDK npm promotion: `development` branch publishes `stateweave@dev`, `uat` branch publishes `stateweave@uat`, and `main` publishes `stateweave@latest`. Use GitHub Environments `development`, `uat`, and `production`; do not skip promotion stages unless explicitly approved.

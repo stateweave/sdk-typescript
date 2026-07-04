@@ -1,16 +1,64 @@
 name: Publish npm
 
 on:
-  release:
-    types: [published]
+  push:
+    branches: [development, uat, main]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: npm channel to publish
+        required: true
+        type: choice
+        options:
+          - dev
+          - uat
+          - latest
 
 permissions:
   contents: read
   id-token: write
 
 jobs:
-  publish:
+  select-channel:
     runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.select.outputs.channel }}
+      environment: ${{ steps.select.outputs.environment }}
+      tag: ${{ steps.select.outputs.tag }}
+    steps:
+      - name: Select npm channel
+        id: select
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            channel="${{ inputs.channel }}"
+          else
+            case "${GITHUB_REF_NAME}" in
+              development) channel="dev" ;;
+              uat) channel="uat" ;;
+              main) channel="latest" ;;
+              *) echo "Unsupported branch ${GITHUB_REF_NAME}" >&2; exit 1 ;;
+            esac
+          fi
+
+          case "$channel" in
+            dev) environment="development"; tag="dev" ;;
+            uat) environment="uat"; tag="uat" ;;
+            latest) environment="production"; tag="latest" ;;
+            *) echo "Unsupported channel $channel" >&2; exit 1 ;;
+          esac
+
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "environment=$environment" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Selected $channel -> GitHub environment $environment -> npm tag $tag"
+
+  publish:
+    needs: select-channel
+    runs-on: ubuntu-latest
+    environment: ${{ needs.select-channel.outputs.environment }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -25,6 +73,53 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-      - run: npm publish --provenance --access public
+      - name: Compute publish version
+        id: version
+        env:
+          CHANNEL: ${{ needs.select-channel.outputs.channel }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_version="$(node -p "require('./package.json').version")"
+
+          if [ "$CHANNEL" = "latest" ]; then
+            publish_version="$base_version"
+          else
+            short_sha="${GITHUB_SHA::7}"
+            publish_version="${base_version}-${CHANNEL}.${GITHUB_RUN_NUMBER}.${short_sha}"
+            node --input-type=module - "$publish_version" <<'NODE'
+          import fs from "node:fs";
+
+          const version = process.argv[2];
+          const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+          pkg.version = version;
+          fs.writeFileSync("package.json", `${JSON.stringify(pkg, null, 2)}\n`);
+          NODE
+          fi
+
+          echo "version=$publish_version" >> "$GITHUB_OUTPUT"
+          echo "Publishing stateweave@$publish_version on npm tag ${CHANNEL}"
+      - name: Publish package
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TAG: ${{ needs.select-channel.outputs.tag }}
+          PUBLISH_VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          current_tag_version="$(npm view "stateweave@${NPM_TAG}" version 2>/dev/null || true)"
+          if [ "$current_tag_version" = "$PUBLISH_VERSION" ]; then
+            echo "npm tag ${NPM_TAG} already points at stateweave@${PUBLISH_VERSION}; nothing to publish."
+            exit 0
+          fi
+
+          if npm view "stateweave@${PUBLISH_VERSION}" version >/dev/null 2>&1; then
+            echo "stateweave@${PUBLISH_VERSION} already exists; moving npm tag ${NPM_TAG}."
+            npm dist-tag add "stateweave@${PUBLISH_VERSION}" "${NPM_TAG}"
+          elif [ -n "${NODE_AUTH_TOKEN:-}" ]; then
+            npm publish --provenance --access public --tag "${NPM_TAG}"
+          else
+            echo "NODE_AUTH_TOKEN is not available; attempting npm trusted publishing through GitHub OIDC."
+            npm publish --access public --tag "${NPM_TAG}"
+          fi

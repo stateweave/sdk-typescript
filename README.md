@@ -42,19 +42,21 @@ StateWeave is experimental. The core primitive is intentionally small and readab
 
 ## Installation
 
-From source today:
+StateWeave uses npm dist-tags that mirror the GitHub promotion flow:
+
+| GitHub branch | GitHub environment | npm install |
+| --- | --- | --- |
+| `development` | development | `pnpm add stateweave@dev` |
+| `uat` | uat | `pnpm add stateweave@uat` |
+| `main` | production | `pnpm add stateweave` |
+
+From source:
 
 ```bash
 git clone https://github.com/stateweave/sdk-typescript.git
 cd sdk-typescript
 pnpm install
 pnpm test
-```
-
-After the first npm release:
-
-```bash
-pnpm add stateweave zod
 ```
 
 ## Quickstart
