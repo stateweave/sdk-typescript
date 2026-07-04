@@ -34,7 +34,7 @@ export function applyOps(frame: GraphFrame, ops: GraphOp[]): GraphFrame {
       case "call_tool":
         break;
       case "final":
-        addAssistantOutput(next.graph, op.answer, anchor);
+        addAssistantOutput(next.graph, op.answer, anchor, addedNodeIds);
         break;
       default:
         assertNever(op);
@@ -75,9 +75,17 @@ export function addToolResult(graph: StateGraph, args: { tool: string; result: u
   return next;
 }
 
-function addAssistantOutput(graph: StateGraph, answer: string, anchor: GraphNode | undefined): void {
+function addAssistantOutput(graph: StateGraph, answer: string, anchor: GraphNode | undefined, addedNodeIds: string[]): void {
+  const existing = addedNodeIds.map((id) => graph.nodes.find((node) => node.id === id)).find((node): node is GraphNode => node?.type === "assistant_output");
+  if (existing) {
+    existing.text = answer;
+    existing.status = "resolved";
+    existing.confidence = existing.confidence ?? 1;
+    if (anchor && !isReferenced(graph, existing.id)) addEdge(graph, anchor.id, existing.id, "follows");
+    return;
+  }
+
   const id = `assistant_output_${nextIndex(graph.nodes, "assistant_output_")}`;
-  if (graph.nodes.some((node) => node.id === id)) return;
   graph.nodes.push({ id, type: "assistant_output", text: answer, status: "resolved", confidence: 1, createdAt: nowIso() });
   if (anchor) addEdge(graph, anchor.id, id, "follows");
 }

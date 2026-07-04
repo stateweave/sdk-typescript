@@ -29,6 +29,16 @@ it("adds assistant output nodes when final ops are applied", () => {
   expect(next.graph.edges.some((edge) => edge.from === "user_input_1" && edge.to === "assistant_output_1" && edge.type === "follows")).toBe(true);
 });
 
+it("reuses a model-added assistant output node when final is also returned", () => {
+  const frame = createInitialGraphFrame({ objective: "Fix login", input: "Login fails", availableActions: [] });
+  const next = applyOps(frame, [
+    { op: "add_node", node: { id: "assistant_output_custom", type: "assistant_output", text: "draft" } },
+    { op: "final", answer: "final answer" }
+  ]);
+  expect(next.graph.nodes.filter((node) => node.type === "assistant_output")).toHaveLength(1);
+  expect(next.graph.nodes.find((node) => node.id === "assistant_output_custom")?.text).toBe("final answer");
+});
+
 it("adds deterministic tool call and result nodes to the same graph", () => {
   const frame = createInitialGraphFrame({ objective: "Fix login", input: "Login fails", availableActions: [] });
   const graph = addToolResult(frame.graph, { tool: "read_mock_file", result: "auth summary", step: 1 });
