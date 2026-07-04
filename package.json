@@ -1,0 +1,67 @@
+{
+  "name": "stateweave",
+  "version": "0.1.0",
+  "description": "StateWeave SDK: GraphFrame -> GraphOps -> StateGraph as the runtime primitive for agent state.",
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "pnpm@11.9.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "stateweave": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "agents",
+    "llm",
+    "sdk",
+    "graph",
+    "state",
+    "tools"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "pnpm clean && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsx src/demo.ts",
+    "cli": "tsx src/cli.ts",
+    "eval": "tsx src/evals/runEval.ts",
+    "test": "vitest run",
+    "prepublishOnly": "pnpm test && pnpm build",
+    "repo:protect": "node scripts/protect-main.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stateweave/sdk-typescript.git"
+  },
+  "bugs": {
+    "url": "https://github.com/stateweave/sdk-typescript/issues"
+  },
+  "homepage": "https://stateweave.dev"
+}

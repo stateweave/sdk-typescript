@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build/test output
+dist/
+coverage/
+*.tsbuildinfo
+
+# environment/secrets
+.env
+.env.*
+!.env.example
+
+# traces/runtime output
+src/traces/*.json
+traces/*.json
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# docs/dev tooling
+.mintlify/
+.next/
+docs/export.zip
