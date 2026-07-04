@@ -1,4 +1,7 @@
 export type NodeType =
+  | "system"
+  | "user_input"
+  | "assistant_output"
   | "intent"
   | "constraint"
   | "fact"
@@ -12,6 +15,7 @@ export type NodeType =
   | "question";
 
 export type EdgeType =
+  | "follows"
   | "supports"
   | "contradicts"
   | "explains"

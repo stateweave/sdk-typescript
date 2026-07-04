@@ -14,17 +14,18 @@ export function createInitialGraphFrame(args: {
   availableActions: string[];
 }): GraphFrame {
   const createdAt = nowIso();
-  const intent: GraphNode = {
-    id: "intent_1",
-    type: "intent",
-    text: args.objective,
+  const system: GraphNode = {
+    id: "system_root",
+    type: "system",
+    text: "StateWeave system root. The graph is the runtime state; compile GraphFrame from the graph instead of provider messages.",
+    data: { activeSystemNodeId: "system_root" },
     status: "active",
     confidence: 1,
     createdAt
   };
-  const fact: GraphNode = {
-    id: "fact_input",
-    type: "fact",
+  const input: GraphNode = {
+    id: "user_input_1",
+    type: "user_input",
     text: args.input,
     status: "active",
     confidence: 1,
@@ -35,24 +36,47 @@ export function createInitialGraphFrame(args: {
   return {
     frame: {
       objective: args.objective,
-      currentFocus: "Understand the task and decide whether a tool is needed.",
-      nextExpectedOutput: "Return GraphOps that add useful facts, call tools, or produce a final answer.",
+      currentFocus: "Use the graph rooted at system_root to respond to the latest user_input node.",
+      nextExpectedOutput: "Return GraphOps that grow the same StateGraph with useful semantic nodes, tool calls, or a final answer.",
       activeConstraints: constraints,
       availableActions: ["add_node", "add_edge", "update_node", "focus", "call_tool", "final", ...args.availableActions]
     },
     graph: {
-      nodes: [intent, fact],
+      nodes: [system, input],
       edges: [
         {
-          id: "edge_fact_input_supports_intent_1",
-          from: "fact_input",
-          to: "intent_1",
-          type: "supports",
+          id: "edge_system_root_follows_user_input_1",
+          from: "system_root",
+          to: "user_input_1",
+          type: "follows",
           createdAt
         }
       ]
     }
   };
+}
+
+export function appendInputToGraphFrame(frame: GraphFrame, args: { objective: string; input: string }): GraphFrame {
+  const next = cloneFrame(frame);
+  const createdAt = nowIso();
+  const inputId = `user_input_${nextIndex(next.graph.nodes, "user_input_")}`;
+  const previous = latestConversationNode(next.graph.nodes) ?? next.graph.nodes.find((node) => node.id === "system_root");
+
+  next.frame.objective = args.objective;
+  next.frame.currentFocus = "Use existing StateGraph as long-running state and respond to the latest user_input node.";
+  next.frame.nextExpectedOutput = "Return GraphOps that continue or branch the graph intelligently, then produce a final answer when ready.";
+  next.frame.activeConstraints = unique([...next.frame.activeConstraints, ...extractConstraints(args.input)]);
+  next.graph.nodes.push({ id: inputId, type: "user_input", text: args.input, status: "active", confidence: 1, createdAt });
+  if (previous) next.graph.edges.push({ id: edgeId(previous.id, "follows", inputId), from: previous.id, to: inputId, type: "follows", createdAt });
+  return next;
+}
+
+export function cloneFrame(frame: GraphFrame): GraphFrame {
+  return structuredClone(frame);
+}
+
+function latestConversationNode(nodes: GraphNode[]): GraphNode | undefined {
+  return [...nodes].reverse().find((node) => node.type === "assistant_output" || node.type === "user_input" || node.type === "system");
 }
 
 function extractConstraints(input: string): string[] {
@@ -62,36 +86,14 @@ function extractConstraints(input: string): string[] {
   return constraints;
 }
 
-export function appendInputToGraphFrame(frame: GraphFrame, args: { objective: string; input: string }): GraphFrame {
-  const next = cloneFrame(frame);
-  const createdAt = nowIso();
-  const intentId = `intent_${nextIndex(next.graph.nodes, "intent_")}`;
-  const factId = `fact_input_${nextIndex(next.graph.nodes, "fact_input")}`;
-  const previousIntent = [...next.graph.nodes].reverse().find((node) => node.type === "intent");
-
-  next.frame.objective = args.objective;
-  next.frame.currentFocus = "Use existing graph state as short-term memory and respond to the latest input.";
-  next.frame.nextExpectedOutput = "Return GraphOps that update memory, call tools, or produce a final answer.";
-  next.frame.activeConstraints = unique([...next.frame.activeConstraints, ...extractConstraints(args.input)]);
-  next.graph.nodes.push(
-    { id: intentId, type: "intent", text: args.objective, status: "active", confidence: 1, createdAt },
-    { id: factId, type: "fact", text: args.input, status: "active", confidence: 1, createdAt }
-  );
-  next.graph.edges.push({ id: `edge_${factId}_supports_${intentId}`, from: factId, to: intentId, type: "supports", createdAt });
-  if (previousIntent) {
-    next.graph.edges.push({ id: `edge_${previousIntent.id}_relates_to_${intentId}`, from: previousIntent.id, to: intentId, type: "relates_to", createdAt });
-  }
-  return next;
-}
-
-export function cloneFrame(frame: GraphFrame): GraphFrame {
-  return structuredClone(frame);
-}
-
 function nextIndex(nodes: GraphNode[], prefix: string): number {
   return nodes.filter((node) => node.id.startsWith(prefix)).length + 1;
 }
 
 function unique(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function edgeId(from: string, type: string, to: string): string {
+  return `edge_${from}_${type}_${to}`.replace(/[^a-zA-Z0-9_]/g, "_");
 }

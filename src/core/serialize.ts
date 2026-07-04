@@ -4,7 +4,7 @@ export function serializeGraphFrame(frame: GraphFrame): string {
   const lines: string[] = [
     "You are operating inside StateWeave.",
     "",
-    "You do not return a normal assistant message.",
+    "The graph is the runtime state; do not reconstruct this as provider messages[].",
     "",
     "You return JSON GraphOps only.",
     "The model must return only valid JSON. No markdown. No prose outside JSON.",
@@ -36,8 +36,8 @@ export function serializeGraphFrame(frame: GraphFrame): string {
     "",
     "Return exactly one JSON object with an ops array. Each item must use the `op` field, never `action`.",
     "",
-    "Allowed edge types: supports, contradicts, explains, depends_on, addresses, validates, constrains, causes, relates_to. If unsure, use supports or explains. Never invent edge types.",
-    "Allowed node types: intent, constraint, fact, hypothesis, decision, tool_call, tool_result, test_result, patch, risk, question.",
+    "Allowed edge types: follows, supports, contradicts, explains, depends_on, addresses, validates, constrains, causes, relates_to. If unsure, use relates_to or explains. Never invent edge types.",
+    "Allowed node types: system, user_input, assistant_output, intent, constraint, fact, hypothesis, decision, tool_call, tool_result, test_result, patch, risk, question.",
     "Allowed node statuses: active, resolved, rejected, stale. Never invent status values.",
     "",
     "Allowed operation shapes:",
@@ -45,7 +45,7 @@ export function serializeGraphFrame(frame: GraphFrame): string {
       {
         ops: [
           { op: "add_node", node: { id: "hypothesis_1", type: "hypothesis", text: "...", confidence: 0.7, status: "active" } },
-          { op: "add_edge", from: "fact_1", to: "intent_1", type: "supports" },
+          { op: "add_edge", from: "user_input_1", to: "hypothesis_1", type: "relates_to" },
           { op: "update_node", id: "fact_1", patch: { status: "resolved" } },
           { op: "focus", currentFocus: "..." },
           { op: "call_tool", tool: "read_mock_file", args: { path: "auth.ts" } },

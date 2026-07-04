@@ -2,6 +2,9 @@ import { z } from "zod";
 import type { GraphOp } from "./types.js";
 
 export const nodeTypeSchema = z.enum([
+  "system",
+  "user_input",
+  "assistant_output",
   "intent",
   "constraint",
   "fact",
@@ -16,6 +19,7 @@ export const nodeTypeSchema = z.enum([
 ]);
 
 export const edgeTypeSchema = z.enum([
+  "follows",
   "supports",
   "contradicts",
   "explains",

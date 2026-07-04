@@ -112,7 +112,7 @@ async function loadHealth(): Promise<void> {
 function resetChat(): void {
   stateFrame = undefined;
   regularHistory = [];
-  chat.innerHTML = `<div class="empty-state"><h2>Ask anything.</h2><p>StateWeave keeps a StateGraph as the conversation grows, then compiles a GraphFrame for the model each turn.</p></div>`;
+  chat.innerHTML = `<div class="empty-state"><h2>Ask anything.</h2><p>StateWeave keeps one growing StateGraph rooted at <code>system_root</code>, then compiles a GraphFrame for the model each turn.</p></div>`;
   regularInput.textContent = "No turn yet.";
   regularOutput.textContent = "No output yet.";
   stateInput.textContent = "No turn yet.";

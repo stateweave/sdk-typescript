@@ -138,6 +138,14 @@ h3 {
   font-size: 1.25rem;
 }
 
+.empty-state code {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  padding: 1px 5px;
+  font-size: 0.86em;
+}
+
 .message {
   display: flex;
   margin-bottom: 12px;
@@ -417,6 +425,19 @@ label {
   stroke: var(--stateweave);
   stroke-width: 2;
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.08));
+}
+
+.graph-node-vis.system circle {
+  stroke: #18181b;
+  stroke-width: 2.5;
+}
+
+.graph-node-vis.user_input circle {
+  stroke: #2563eb;
+}
+
+.graph-node-vis.assistant_output circle {
+  stroke: #7c3aed;
 }
 
 .graph-node-vis.intent circle {

@@ -10,3 +10,4 @@ StateWeave TypeScript SDK is a low-level SDK primitive, not a wrapper around AI-
 - Keep code clean, deliberate, and organized; avoid duplicate helpers, orphan files, and abstraction for its own sake.
 - Use minimal comments; prefer clear types and names.
 - StateWeave SDK npm promotion: `development` branch publishes `stateweave@dev`, `uat` branch publishes `stateweave@uat`, and `main` publishes `stateweave@latest`. Use GitHub Environments `development`, `uat`, and `production`; do not skip promotion stages unless explicitly approved.
+- Architecture thesis: StateGraph replaces provider `messages[]`. The graph starts from a system/root node, can later add system nodes anywhere, and the root can point/follow the active system node. Each model call receives a compiled GraphFrame/subgraph view, not messages; GraphOps grow/traverse the graph intelligently and may eventually run async/parallel over multiple graph regions.
