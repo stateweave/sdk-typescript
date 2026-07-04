@@ -60,6 +60,17 @@ export const graphOpSchema = z.discriminatedUnion("op", [
 export const graphOpsResponseSchema = z.object({ ops: z.array(graphOpSchema).min(1) });
 
 export function parseAndValidateOps(raw: string): GraphOp[] {
-  const parsed = JSON.parse(raw) as unknown;
+  const parsed = JSON.parse(extractJsonObject(raw)) as unknown;
   return graphOpsResponseSchema.parse(parsed).ops;
+}
+
+function extractJsonObject(raw: string): string {
+  const trimmed = raw.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)?.[1]?.trim();
+  if (fenced) return fenced;
+
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start > 0 && end > start) return trimmed.slice(start, end + 1);
+  return trimmed;
 }
