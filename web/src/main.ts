@@ -1,17 +1,10 @@
 import type { GraphFrame, GraphOp, StateGraph, TraceStep } from "../../src/core/types.js";
 import "./styles.css";
 
-type ChatMessage = { role: "user" | "assistant"; content: string };
-type ModelMessage = { role: "system" | "user" | "assistant" | "tool"; content: string };
-type CompareResponse = {
-  traditional: {
-    messages: ModelMessage[];
-    output: string;
-    history: ChatMessage[];
-  };
+type StateWeaveResponse = {
   stateweave: {
-    inputFrame: GraphFrame;
-    frameAfter: GraphFrame;
+    inputFrame?: GraphFrame;
+    frameAfter?: GraphFrame;
     output: string;
     trace: TraceStep[];
     graph: StateGraph;
@@ -19,7 +12,6 @@ type CompareResponse = {
 };
 
 let stateFrame: GraphFrame | undefined;
-let regularHistory: ChatMessage[] = [];
 let running = false;
 
 const apiBase = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -30,8 +22,6 @@ const send = element<HTMLButtonElement>("send");
 const reset = element<HTMLButtonElement>("reset");
 const status = element<HTMLElement>("status");
 const provider = element<HTMLElement>("provider");
-const regularInput = element<HTMLElement>("regular-input");
-const regularOutput = element<HTMLElement>("regular-output");
 const stateInput = element<HTMLElement>("state-input");
 const stateOutput = element<HTMLElement>("state-output");
 const graph = element<HTMLElement>("graph");
@@ -64,12 +54,11 @@ async function sendMessage(): Promise<void> {
   const pending = appendPending();
 
   try {
-    const result = await compare(text);
+    const result = await runStateWeave(text);
     stateFrame = result.stateweave.frameAfter;
-    regularHistory = result.traditional.history;
     pending.remove();
-    appendAssistantPair(result.traditional.output, result.stateweave.output);
-    renderComparison(result);
+    appendAssistant(result.stateweave.output);
+    renderStateWeave(result);
     status.textContent = `Done · StateGraph ${result.stateweave.graph.nodes.length} nodes / ${result.stateweave.graph.edges.length} edges`;
   } catch (error) {
     pending.remove();
@@ -83,22 +72,20 @@ async function sendMessage(): Promise<void> {
   }
 }
 
-async function compare(text: string): Promise<CompareResponse> {
-  const response = await fetch(`${apiBase}/api/stateweave/compare`, {
+async function runStateWeave(text: string): Promise<StateWeaveResponse> {
+  const response = await fetch(`${apiBase}/api/stateweave/chat`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ input: text, frame: stateFrame, messages: regularHistory })
+    body: JSON.stringify({ input: text, frame: stateFrame })
   });
 
-  const body = (await response.json()) as CompareResponse | { error?: string };
+  const body = (await response.json()) as StateWeaveResponse | { error?: string };
   if (!response.ok) throw new Error("error" in body && body.error ? body.error : `Request failed (${response.status})`);
-  return body as CompareResponse;
+  return body as StateWeaveResponse;
 }
 
-function renderComparison(result: CompareResponse): void {
-  regularInput.textContent = formatMessages(result.traditional.messages);
-  regularOutput.textContent = result.traditional.output;
-  stateInput.textContent = compactFrame(result.stateweave.inputFrame);
+function renderStateWeave(result: StateWeaveResponse): void {
+  stateInput.textContent = result.stateweave.inputFrame ? compactFrame(result.stateweave.inputFrame) : "No GraphFrame captured.";
   stateOutput.textContent = formatStateOutput(result.stateweave.trace, result.stateweave.output);
   renderGraph(result.stateweave.graph);
 }
@@ -111,10 +98,7 @@ async function loadHealth(): Promise<void> {
 
 function resetChat(): void {
   stateFrame = undefined;
-  regularHistory = [];
   chat.innerHTML = `<div class="empty-state"><h2>Ask anything.</h2><p>StateWeave keeps one growing StateGraph rooted at <code>system_root</code>, then compiles a GraphFrame for the model each turn.</p></div>`;
-  regularInput.textContent = "No turn yet.";
-  regularOutput.textContent = "No output yet.";
   stateInput.textContent = "No turn yet.";
   stateOutput.textContent = "No output yet.";
   graph.className = "graph-empty";
@@ -128,27 +112,21 @@ function appendUser(text: string): void {
   scrollChat();
 }
 
-function appendAssistantPair(regular: string, stateweave: string): void {
+function appendAssistant(stateweave: string): void {
   chat.insertAdjacentHTML(
     "beforeend",
-    `<div class="assistant-pair">
-      <article class="answer regular-answer">
-        <span>Regular messages</span>
-        <p>${escapeHtml(regular)}</p>
-      </article>
-      <article class="answer state-answer">
-        <span>StateWeave</span>
-        <p>${escapeHtml(stateweave)}</p>
-      </article>
-    </div>`
+    `<article class="answer state-answer assistant-response">
+      <span>StateWeave</span>
+      <p>${escapeHtml(stateweave)}</p>
+    </article>`
   );
   scrollChat();
 }
 
 function appendPending(): HTMLElement {
-  const item = document.createElement("div");
-  item.className = "assistant-pair pending";
-  item.innerHTML = `<article class="answer"><span>Running comparison…</span><p>Calling regular messages and StateWeave.</p></article>`;
+  const item = document.createElement("article");
+  item.className = "answer pending assistant-response";
+  item.innerHTML = `<span>StateWeave</span><p>Compiling GraphFrame and growing the StateGraph…</p>`;
   chat.append(item);
   scrollChat();
   return item;
@@ -161,7 +139,7 @@ function appendError(message: string): void {
 
 function renderGraph(value: StateGraph): void {
   const layout = graphLayout(value);
-  const turnCount = regularHistory.filter((message) => message.role === "user").length;
+  const turnCount = value.nodes.filter((node) => node.type === "user_input").length;
 
   graph.className = "graph-visual";
   graph.innerHTML = `
@@ -255,10 +233,6 @@ function formatStateOutput(trace: TraceStep[], finalAnswer: string): string {
 
 function formatOps(ops: GraphOp[]): string {
   return ops.map((op) => JSON.stringify(op)).join("\n");
-}
-
-function formatMessages(messages: ModelMessage[]): string {
-  return messages.map((message) => `${message.role.toUpperCase()}\n${message.content}`).join("\n\n---\n\n");
 }
 
 function clearEmptyState(): void {

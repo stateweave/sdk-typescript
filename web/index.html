@@ -11,7 +11,7 @@
         <div>
           <p class="eyebrow">Development</p>
           <h1>StateWeave Chat Lab</h1>
-          <p class="topbar-copy">A simple chat that compares normal <code>messages[]</code> with StateWeave's graph-native state: <code>system_root → user_input → assistant_output</code>.</p>
+          <p class="topbar-copy">A simple chat powered only by StateWeave's graph-native state: <code>system_root → user_input → assistant_output</code>.</p>
         </div>
         <div class="topbar-actions">
           <span id="provider" class="badge">Checking provider…</span>
@@ -35,34 +35,23 @@
           <p id="status" class="status">Ready.</p>
         </section>
 
-        <section class="card compare-card" aria-label="Comparison">
+        <section class="card compare-card" aria-label="StateWeave model IO">
           <div class="card-header">
             <div>
               <p class="eyebrow">Latest turn</p>
-              <h2>Model IO comparison</h2>
+              <h2>StateWeave model IO</h2>
             </div>
           </div>
 
-          <div class="comparison">
-            <article class="compare-column">
-              <div class="column-header">
-                <span class="dot regular"></span>
-                <h3>Regular messages</h3>
-              </div>
-              <label>Model input</label>
-              <pre id="regular-input" class="code">No turn yet.</pre>
-              <label>Model output</label>
-              <pre id="regular-output" class="code small">No output yet.</pre>
-            </article>
-
+          <div class="comparison single">
             <article class="compare-column">
               <div class="column-header">
                 <span class="dot stateweave"></span>
-                <h3>StateWeave GraphFrame</h3>
+                <h3>GraphFrame → GraphOps</h3>
               </div>
-              <label>Model input</label>
+              <label>Compiled GraphFrame input</label>
               <pre id="state-input" class="code">No turn yet.</pre>
-              <label>Model output</label>
+              <label>Model GraphOps output</label>
               <pre id="state-output" class="code small">No output yet.</pre>
             </article>
           </div>
