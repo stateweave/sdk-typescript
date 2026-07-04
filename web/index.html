@@ -3,88 +3,75 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>StateWeave Web Lab</title>
+    <title>StateWeave Chat Lab</title>
   </head>
   <body>
     <div id="app">
-      <header class="hero">
+      <header class="topbar">
         <div>
-          <p class="eyebrow">Development lab</p>
-          <h1>StateWeave Web UI</h1>
-          <p class="subtitle">Test GraphFrame → GraphOps → StateGraph in the browser with the deterministic mock model.</p>
+          <p class="eyebrow">Development</p>
+          <h1>StateWeave Chat Lab</h1>
         </div>
-        <div class="hero-card">
-          <span class="status-dot"></span>
-          <span><strong id="provider">Server API checking…</strong> · no API keys in browser</span>
+        <div class="topbar-actions">
+          <span id="provider" class="badge">Checking provider…</span>
+          <button id="reset" class="button secondary" type="button">Reset</button>
         </div>
       </header>
 
-      <main class="layout">
-        <section class="panel composer">
-          <div class="panel-heading">
-            <div>
-              <p class="eyebrow">Input</p>
-              <h2>Run one task</h2>
+      <main class="shell">
+        <section class="card chat-card" aria-label="Chat">
+          <div id="chat" class="chat">
+            <div class="empty-state">
+              <h2>Ask anything.</h2>
+              <p>Each turn compares regular chat messages with StateWeave GraphFrame state.</p>
             </div>
-            <button id="reset" class="button ghost" type="button">Reset memory</button>
           </div>
 
-          <label for="sample" class="label">Sample task</label>
-          <select id="sample" class="select">
-            <option value="Find why login fails after token refresh. Login fails after refresh. Do not rewrite the auth system.">Login refresh failure</option>
-            <option value="Diagnose the API response shape mismatch.">API response mismatch</option>
-            <option value="Explain the failing payment test. Do not rewrite payments.">Payment test failure</option>
-            <option value="Hi my name is Radi.">Remember a name</option>
-            <option value="What's my name?">Ask from memory</option>
-          </select>
-
-          <label for="task" class="label">User task</label>
-          <textarea id="task" rows="7" spellcheck="true"></textarea>
-
-          <div class="controls">
-            <label><input id="show-prompt" type="checkbox" /> Prompt</label>
-            <label><input id="show-full" type="checkbox" /> Full frame</label>
-            <label><input id="show-mermaid" type="checkbox" checked /> Mermaid</label>
-            <label>
-              Max steps
-              <input id="max-steps" class="number" type="number" min="1" max="8" value="5" />
-            </label>
-          </div>
-
-          <button id="run" class="button primary" type="button">Run StateWeave</button>
+          <form id="composer" class="composer">
+            <textarea id="input" rows="3" placeholder="Type a message…"></textarea>
+            <button id="send" class="button primary" type="submit">Send</button>
+          </form>
           <p id="status" class="status">Ready.</p>
         </section>
 
-        <section class="panel output">
-          <div class="panel-heading">
+        <section class="card compare-card" aria-label="Comparison">
+          <div class="card-header">
             <div>
-              <p class="eyebrow">Trace</p>
-              <h2>State transitions</h2>
+              <p class="eyebrow">Latest turn</p>
+              <h2>Model IO comparison</h2>
             </div>
           </div>
-          <div id="trace" class="trace empty">Run a task to inspect model input, streamed output, parsed GraphOps, and state after each step.</div>
+
+          <div class="comparison">
+            <article class="compare-column">
+              <div class="column-header">
+                <span class="dot regular"></span>
+                <h3>Regular messages</h3>
+              </div>
+              <label>Model input</label>
+              <pre id="regular-input" class="code">No turn yet.</pre>
+              <label>Model output</label>
+              <pre id="regular-output" class="code small">No output yet.</pre>
+            </article>
+
+            <article class="compare-column">
+              <div class="column-header">
+                <span class="dot stateweave"></span>
+                <h3>StateWeave GraphFrame</h3>
+              </div>
+              <label>Model input</label>
+              <pre id="state-input" class="code">No turn yet.</pre>
+              <label>Model output</label>
+              <pre id="state-output" class="code small">No output yet.</pre>
+            </article>
+          </div>
+
+          <div class="graph-card">
+            <label>StateGraph after StateWeave</label>
+            <div id="graph" class="graph-empty">No graph yet.</div>
+          </div>
         </section>
       </main>
-
-      <section class="grid">
-        <article class="panel">
-          <p class="eyebrow">GraphFrame</p>
-          <pre id="frame" class="code">No frame yet.</pre>
-        </article>
-        <article class="panel">
-          <p class="eyebrow">Graph visualization</p>
-          <div id="graph" class="graph-empty">No graph yet.</div>
-          <pre id="mermaid" class="code mermaid"></pre>
-        </article>
-        <article class="panel">
-          <p class="eyebrow">GraphOps</p>
-          <pre id="ops" class="code">No ops yet.</pre>
-        </article>
-        <article class="panel">
-          <p class="eyebrow">Exact prompt</p>
-          <pre id="prompt" class="code">Enable “Prompt” and run a task.</pre>
-        </article>
-      </section>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

@@ -1,233 +1,216 @@
-import { serializeGraphFrame } from "../../src/core/serialize.js";
-import type { GraphFrame, GraphOp, StateGraph, StateWeaveStreamEvent } from "../../src/core/types.js";
-import { graphToMermaid } from "../../src/core/visualize.js";
+import type { GraphFrame, GraphOp, StateGraph, TraceStep } from "../../src/core/types.js";
 import "./styles.css";
 
-type ApiEvent = StateWeaveStreamEvent | { type: "error"; message: string };
+type ChatMessage = { role: "user" | "assistant"; content: string };
+type ModelMessage = { role: "system" | "user" | "assistant" | "tool"; content: string };
+type CompareResponse = {
+  traditional: {
+    messages: ModelMessage[];
+    output: string;
+    history: ChatMessage[];
+  };
+  stateweave: {
+    inputFrame: GraphFrame;
+    frameAfter: GraphFrame;
+    output: string;
+    trace: TraceStep[];
+    graph: StateGraph;
+  };
+};
 
-let sessionFrame: GraphFrame | undefined;
+let stateFrame: GraphFrame | undefined;
+let regularHistory: ChatMessage[] = [];
 let running = false;
 
 const apiBase = import.meta.env.BASE_URL.replace(/\/$/, "");
-const task = element<HTMLTextAreaElement>("task");
-const sample = element<HTMLSelectElement>("sample");
-const runButton = element<HTMLButtonElement>("run");
-const resetButton = element<HTMLButtonElement>("reset");
+const chat = element<HTMLElement>("chat");
+const form = element<HTMLFormElement>("composer");
+const input = element<HTMLTextAreaElement>("input");
+const send = element<HTMLButtonElement>("send");
+const reset = element<HTMLButtonElement>("reset");
 const status = element<HTMLElement>("status");
-const trace = element<HTMLElement>("trace");
-const framePanel = element<HTMLElement>("frame");
-const graphPanel = element<HTMLElement>("graph");
-const mermaidPanel = element<HTMLElement>("mermaid");
-const opsPanel = element<HTMLElement>("ops");
-const promptPanel = element<HTMLElement>("prompt");
-const providerPanel = element<HTMLElement>("provider");
-const showPrompt = element<HTMLInputElement>("show-prompt");
-const showFull = element<HTMLInputElement>("show-full");
-const showMermaid = element<HTMLInputElement>("show-mermaid");
-const maxSteps = element<HTMLInputElement>("max-steps");
+const provider = element<HTMLElement>("provider");
+const regularInput = element<HTMLElement>("regular-input");
+const regularOutput = element<HTMLElement>("regular-output");
+const stateInput = element<HTMLElement>("state-input");
+const stateOutput = element<HTMLElement>("state-output");
+const graph = element<HTMLElement>("graph");
 
-task.value = sample.value;
 void loadHealth();
 
-sample.addEventListener("change", () => {
-  task.value = sample.value;
-  task.focus();
+form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void sendMessage();
 });
-runButton.addEventListener("click", () => void runTask());
-resetButton.addEventListener("click", resetMemory);
-task.addEventListener("keydown", (event) => {
-  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") void runTask();
+reset.addEventListener("click", resetChat);
+input.addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    event.preventDefault();
+    void sendMessage();
+  }
 });
 
-async function runTask(): Promise<void> {
-  const input = task.value.trim();
-  if (!input || running) return;
+async function sendMessage(): Promise<void> {
+  const text = input.value.trim();
+  if (!text || running) return;
 
   running = true;
-  runButton.disabled = true;
-  resetButton.disabled = true;
-  status.textContent = "Running…";
-  trace.classList.remove("empty");
-  trace.innerHTML = "";
-  appendTrace("user", "User input", input);
-
-  let streamText = "";
+  send.disabled = true;
+  reset.disabled = true;
+  input.value = "";
+  status.textContent = "Thinking…";
+  clearEmptyState();
+  appendUser(text);
+  const pending = appendPending();
 
   try {
-    for await (const event of streamRun(input)) {
-      if (event.type === "error") throw new Error(event.message);
-
-      if (event.type === "frame" && event.phase === "before") {
-        appendTrace("frame", `Step ${event.step} · model in`, compactFrame(event.frame));
-        promptPanel.textContent = showPrompt.checked ? serializeGraphFrame(event.frame) : "Enable “Prompt” and run again to inspect the exact GraphFrame prompt.";
-      }
-
-      if (event.type === "token") {
-        streamText += event.token;
-        upsertTrace("stream", `Step ${event.step} · model out stream`, streamText);
-      }
-
-      if (event.type === "ops") {
-        streamText = "";
-        opsPanel.textContent = JSON.stringify(event.ops, null, 2);
-        appendTrace("ops", `Step ${event.step} · parsed GraphOps`, formatOps(event.ops));
-      }
-
-      if (event.type === "frame" && event.phase === "after") {
-        sessionFrame = event.frame;
-        framePanel.textContent = showFull.checked ? JSON.stringify(event.frame, null, 2) : compactFrame(event.frame);
-        renderGraph(event.frame.graph);
-        mermaidPanel.textContent = showMermaid.checked ? graphToMermaid(event.frame.graph) : "Mermaid hidden.";
-        appendTrace("frame", `Step ${event.step} · state after`, compactFrame(event.frame));
-      }
-
-      if (event.type === "final") {
-        appendTrace("final", "Final answer", event.result.finalAnswer);
-        status.textContent = `Done · ${event.result.graph.nodes.length} nodes · ${event.result.trace.length} steps`;
-      }
-    }
+    const result = await compare(text);
+    stateFrame = result.stateweave.frameAfter;
+    regularHistory = result.traditional.history;
+    pending.remove();
+    appendAssistantPair(result.traditional.output, result.stateweave.output);
+    renderComparison(result);
+    status.textContent = `Done · StateGraph ${result.stateweave.graph.nodes.length} nodes / ${result.stateweave.graph.edges.length} edges`;
   } catch (error) {
-    status.textContent = "Run failed.";
-    appendTrace("error", "Error", error instanceof Error ? error.message : String(error));
+    pending.remove();
+    appendError(error instanceof Error ? error.message : String(error));
+    status.textContent = "Failed.";
   } finally {
     running = false;
-    runButton.disabled = false;
-    resetButton.disabled = false;
+    send.disabled = false;
+    reset.disabled = false;
+    input.focus();
   }
 }
 
-async function* streamRun(input: string): AsyncIterable<ApiEvent> {
-  const response = await fetch(`${apiBase}/api/stateweave/run`, {
+async function compare(text: string): Promise<CompareResponse> {
+  const response = await fetch(`${apiBase}/api/stateweave/compare`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ input, frame: sessionFrame, maxSteps: numericMaxSteps() })
+    body: JSON.stringify({ input: text, frame: stateFrame, messages: regularHistory })
   });
 
-  if (!response.ok) throw new Error(`StateWeave API failed (${response.status})`);
-  if (!response.body) throw new Error("StateWeave API did not return a stream.");
+  const body = (await response.json()) as CompareResponse | { error?: string };
+  if (!response.ok) throw new Error("error" in body && body.error ? body.error : `Request failed (${response.status})`);
+  return body as CompareResponse;
+}
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      if (line.trim()) yield JSON.parse(line) as ApiEvent;
-    }
-  }
-
-  buffer += decoder.decode();
-  if (buffer.trim()) yield JSON.parse(buffer) as ApiEvent;
+function renderComparison(result: CompareResponse): void {
+  regularInput.textContent = formatMessages(result.traditional.messages);
+  regularOutput.textContent = result.traditional.output;
+  stateInput.textContent = compactFrame(result.stateweave.inputFrame);
+  stateOutput.textContent = formatStateOutput(result.stateweave.trace, result.stateweave.output);
+  renderGraph(result.stateweave.graph);
 }
 
 async function loadHealth(): Promise<void> {
   const response = await fetch(`${apiBase}/api/health`).catch(() => undefined);
   const health = response?.ok ? ((await response.json()) as { provider?: string }) : undefined;
-  providerPanel.textContent = health?.provider ? `Server API ready · ${health.provider}` : "Server API unavailable";
+  provider.textContent = health?.provider ? `Provider: ${health.provider}` : "Provider unavailable";
 }
 
-function resetMemory(): void {
-  sessionFrame = undefined;
-  trace.classList.add("empty");
-  trace.textContent = "Memory reset. Run a task to start a fresh StateGraph.";
-  framePanel.textContent = "No frame yet.";
-  graphPanel.className = "graph-empty";
-  graphPanel.textContent = "No graph yet.";
-  mermaidPanel.textContent = "";
-  opsPanel.textContent = "No ops yet.";
-  promptPanel.textContent = "Enable “Prompt” and run a task.";
-  status.textContent = "Memory reset.";
+function resetChat(): void {
+  stateFrame = undefined;
+  regularHistory = [];
+  chat.innerHTML = `<div class="empty-state"><h2>Ask anything.</h2><p>Each turn compares regular chat messages with StateWeave GraphFrame state.</p></div>`;
+  regularInput.textContent = "No turn yet.";
+  regularOutput.textContent = "No output yet.";
+  stateInput.textContent = "No turn yet.";
+  stateOutput.textContent = "No output yet.";
+  graph.className = "graph-empty";
+  graph.textContent = "No graph yet.";
+  status.textContent = "Reset.";
+  input.focus();
 }
 
-function renderGraph(graph: StateGraph): void {
-  graphPanel.className = "graph-view";
-  graphPanel.innerHTML = `
-    <div class="graph-nodes">
-      ${graph.nodes.map((node) => `
-        <article class="graph-node ${escapeHtml(node.type)}">
-          <div class="node-topline">
-            <strong>${escapeHtml(node.id)}</strong>
-            <span>${escapeHtml(node.type)}</span>
-          </div>
-          <p>${escapeHtml(node.text)}</p>
-          ${node.status ? `<small>${escapeHtml(node.status)}</small>` : ""}
-        </article>
-      `).join("")}
-    </div>
-    <div class="graph-edges">
-      <h3>Edges</h3>
-      ${graph.edges.length ? graph.edges.map((edge) => `
-        <div class="edge"><code>${escapeHtml(edge.from)}</code><span>${escapeHtml(edge.type)}</span><code>${escapeHtml(edge.to)}</code></div>
-      `).join("") : `<p>No edges.</p>`}
-    </div>
+function appendUser(text: string): void {
+  chat.insertAdjacentHTML("beforeend", `<div class="message user"><div>${escapeHtml(text)}</div></div>`);
+  scrollChat();
+}
+
+function appendAssistantPair(regular: string, stateweave: string): void {
+  chat.insertAdjacentHTML(
+    "beforeend",
+    `<div class="assistant-pair">
+      <article class="answer regular-answer">
+        <span>Regular messages</span>
+        <p>${escapeHtml(regular)}</p>
+      </article>
+      <article class="answer state-answer">
+        <span>StateWeave</span>
+        <p>${escapeHtml(stateweave)}</p>
+      </article>
+    </div>`
+  );
+  scrollChat();
+}
+
+function appendPending(): HTMLElement {
+  const item = document.createElement("div");
+  item.className = "assistant-pair pending";
+  item.innerHTML = `<article class="answer"><span>Running comparison…</span><p>Calling regular messages and StateWeave.</p></article>`;
+  chat.append(item);
+  scrollChat();
+  return item;
+}
+
+function appendError(message: string): void {
+  chat.insertAdjacentHTML("beforeend", `<div class="message error"><div>${escapeHtml(message)}</div></div>`);
+  scrollChat();
+}
+
+function renderGraph(value: StateGraph): void {
+  graph.className = "graph-list";
+  graph.innerHTML = `
+    <div class="graph-summary">${value.nodes.length} nodes · ${value.edges.length} edges</div>
+    ${value.nodes.map((node) => `
+      <article class="node">
+        <div><strong>${escapeHtml(node.id)}</strong><span>${escapeHtml(node.type)}</span></div>
+        <p>${escapeHtml(node.text)}</p>
+      </article>`).join("")}
   `;
-}
-
-function appendTrace(kind: string, title: string, body: string): void {
-  const item = document.createElement("article");
-  item.className = `trace-item ${kind}`;
-  item.innerHTML = `<h3>${escapeHtml(title)}</h3><pre>${escapeHtml(body)}</pre>`;
-  trace.append(item);
-  item.scrollIntoView({ block: "nearest" });
-}
-
-function upsertTrace(kind: string, title: string, body: string): void {
-  const id = `stream-${slug(title)}`;
-  let item = document.getElementById(id);
-  if (!item) {
-    item = document.createElement("article");
-    item.id = id;
-    item.className = `trace-item ${kind}`;
-    item.innerHTML = `<h3>${escapeHtml(title)}</h3><pre></pre>`;
-    trace.append(item);
-  }
-  const pre = item.querySelector("pre");
-  if (pre) pre.textContent = body;
 }
 
 function compactFrame(frame: GraphFrame): string {
   const lines = [
     `objective: ${frame.frame.objective}`,
-    `focus: ${frame.frame.currentFocus}`,
-    `next: ${frame.frame.nextExpectedOutput}`,
-    `constraints: ${frame.frame.activeConstraints.length ? frame.frame.activeConstraints.join("; ") : "none"}`,
-    `graph: ${frame.graph.nodes.length} nodes · ${frame.graph.edges.length} edges`,
-    ""
+    `currentFocus: ${frame.frame.currentFocus}`,
+    `nextExpectedOutput: ${frame.frame.nextExpectedOutput}`,
+    `activeConstraints: ${frame.frame.activeConstraints.length ? frame.frame.activeConstraints.join("; ") : "none"}`,
+    "",
+    "graph:",
+    ...frame.graph.nodes.map((node) => `- ${node.id} [${node.type}] ${node.text}`),
+    ...frame.graph.edges.map((edge) => `- ${edge.from} -${edge.type}-> ${edge.to}`)
   ];
-
-  for (const node of frame.graph.nodes) {
-    const status = node.status ? ` ${node.status}` : "";
-    lines.push(`${node.id} [${node.type}]${status} ${node.text}`);
-  }
-
-  if (frame.graph.edges.length) {
-    lines.push("", "edges");
-    for (const edge of frame.graph.edges) lines.push(`${edge.from} -${edge.type}-> ${edge.to}`);
-  }
-
   return lines.join("\n");
 }
 
-function formatOps(ops: GraphOp[]): string {
-  return ops.map((op) => {
-    if (op.op === "add_node") return `add_node ${op.node.id} [${op.node.type}] ${op.node.text}`;
-    if (op.op === "add_edge") return `add_edge ${op.from} -${op.type}-> ${op.to}`;
-    if (op.op === "update_node") return `update_node ${op.id} ${JSON.stringify(op.patch)}`;
-    if (op.op === "focus") return `focus ${op.currentFocus}`;
-    if (op.op === "call_tool") return `call_tool ${op.tool} ${JSON.stringify(op.args)}`;
-    return `final ${op.answer}`;
-  }).join("\n");
+function formatStateOutput(trace: TraceStep[], finalAnswer: string): string {
+  const parts = trace.map((step) => [
+    `step ${step.step} raw model output:`,
+    step.rawModelOutput,
+    "",
+    `step ${step.step} parsed GraphOps:`,
+    formatOps(step.parsedOps)
+  ].join("\n"));
+  return [...parts, "", "final answer:", finalAnswer].join("\n");
 }
 
-function numericMaxSteps(): number {
-  const value = Number(maxSteps.value);
-  if (!Number.isInteger(value) || value < 1) return 5;
-  return Math.min(value, 8);
+function formatOps(ops: GraphOp[]): string {
+  return ops.map((op) => JSON.stringify(op)).join("\n");
+}
+
+function formatMessages(messages: ModelMessage[]): string {
+  return messages.map((message) => `${message.role.toUpperCase()}\n${message.content}`).join("\n\n---\n\n");
+}
+
+function clearEmptyState(): void {
+  const empty = chat.querySelector(".empty-state");
+  if (empty) empty.remove();
+}
+
+function scrollChat(): void {
+  chat.scrollTop = chat.scrollHeight;
 }
 
 function element<T extends HTMLElement>(id: string): T {
@@ -238,8 +221,4 @@ function element<T extends HTMLElement>(id: string): T {
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" })[char] ?? char);
-}
-
-function slug(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 }

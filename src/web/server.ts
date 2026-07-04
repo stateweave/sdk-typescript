@@ -4,16 +4,21 @@ import { stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { streamStateWeave } from "../agent/stateweaveRunner.js";
+import { runStateWeave, streamStateWeave } from "../agent/stateweaveRunner.js";
 import type { GraphFrame } from "../core/types.js";
 import { createModelFromEnv } from "../llm/factory.js";
+import { estimateStateWeaveTokens } from "../llm/tokenizer.js";
 import { mockTools } from "../tools/mockTools.js";
 
 type RunRequest = {
   input?: unknown;
   frame?: unknown;
   maxSteps?: unknown;
+  messages?: unknown;
 };
+
+type ChatMessage = { role: "user" | "assistant"; content: string };
+type ModelMessage = { role: "system" | "user" | "assistant" | "tool"; content: string };
 
 const port = Number(process.env.PORT ?? 3000);
 const basePath = normalizeBasePath(process.env.STATEWEAVE_WEB_BASE_PATH ?? "/");
@@ -38,7 +43,12 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   }
 
   if (request.method === "POST" && url.pathname === "/api/stateweave/run") {
-    await runStateWeave(request, response);
+    await streamStateWeaveRun(request, response);
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/stateweave/compare") {
+    await compareStateWeave(request, response);
     return;
   }
 
@@ -50,7 +60,7 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   await serveStatic(url.pathname, response, request.method === "HEAD");
 }
 
-async function runStateWeave(request: IncomingMessage, response: ServerResponse): Promise<void> {
+async function streamStateWeaveRun(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const body = (await readJson(request)) as RunRequest;
   if (typeof body.input !== "string" || !body.input.trim()) {
     json(response, 400, { error: "input is required" });
@@ -76,6 +86,42 @@ async function runStateWeave(request: IncomingMessage, response: ServerResponse)
   } finally {
     response.end();
   }
+}
+
+async function compareStateWeave(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  const body = (await readJson(request)) as RunRequest;
+  if (typeof body.input !== "string" || !body.input.trim()) {
+    json(response, 400, { error: "input is required" });
+    return;
+  }
+
+  const input = body.input.trim();
+  const history = safeChatMessages(body.messages);
+  const traditionalMessages = regularModelInput(history, input);
+  const regularPrompt = serializeMessages(traditionalMessages);
+  const regular = await model.complete({ prompt: regularPrompt, mode: "text", frame: emptyFrame(input) });
+  const stateweave = await runStateWeave(
+    { model, tools: mockTools, maxSteps: safeMaxSteps(body.maxSteps) },
+    input,
+    { frame: isGraphFrame(body.frame) ? body.frame : undefined }
+  );
+
+  json(response, 200, {
+    traditional: {
+      messages: traditionalMessages,
+      rawModelInput: regularPrompt,
+      output: regular.text,
+      tokenEstimate: { ...estimateStateWeaveTokens(regularPrompt), messageCount: traditionalMessages.length },
+      history: [...history, { role: "user", content: input }, { role: "assistant", content: regular.text }]
+    },
+    stateweave: {
+      inputFrame: stateweave.trace[0]?.frameBefore,
+      frameAfter: stateweave.trace.at(-1)?.frameAfter,
+      output: stateweave.finalAnswer,
+      trace: stateweave.trace,
+      graph: stateweave.graph
+    }
+  });
 }
 
 async function serveStatic(pathname: string, response: ServerResponse, headOnly: boolean): Promise<void> {
@@ -170,4 +216,40 @@ function normalizeBasePath(value: string): string {
 
 function providerName(): string {
   return process.env.STATEWEAVE_MODEL_PROVIDER ?? (process.env.ANTHROPIC_API_KEY ? "anthropic" : "mock");
+}
+
+function safeChatMessages(value: unknown): ChatMessage[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((message): message is ChatMessage => {
+      if (!message || typeof message !== "object") return false;
+      const candidate = message as { role?: unknown; content?: unknown };
+      return (candidate.role === "user" || candidate.role === "assistant") && typeof candidate.content === "string";
+    })
+    .slice(-12);
+}
+
+function regularModelInput(history: ChatMessage[], input: string): ModelMessage[] {
+  return [
+    { role: "system", content: "You are a concise chat assistant." },
+    ...history,
+    { role: "user", content: input }
+  ];
+}
+
+function serializeMessages(messages: ModelMessage[]): string {
+  return messages.map((message) => `${message.role.toUpperCase()}: ${message.content}`).join("\n\n");
+}
+
+function emptyFrame(objective: string): GraphFrame {
+  return {
+    frame: {
+      objective,
+      currentFocus: "traditional messages baseline",
+      nextExpectedOutput: "assistant text",
+      activeConstraints: [],
+      availableActions: []
+    },
+    graph: { nodes: [], edges: [] }
+  };
 }
