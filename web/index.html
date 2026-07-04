@@ -11,7 +11,7 @@
         <div>
           <p class="eyebrow">Development</p>
           <h1>StateWeave Chat Lab</h1>
-          <p class="topbar-copy">A simple chat powered only by StateWeave's graph-native state: <code>system_root → user_input → assistant_output</code>.</p>
+          <p class="topbar-copy">Use graph-native StateWeave chat, or switch to A/B testing against regular <code>messages[]</code>.</p>
         </div>
         <div class="topbar-actions">
           <span id="provider" class="badge">Checking provider…</span>
@@ -19,8 +19,13 @@
         </div>
       </header>
 
-      <main class="shell">
-        <section class="card chat-card" aria-label="Chat">
+      <nav class="tabs" aria-label="Lab pages">
+        <button id="state-tab" class="tab active" type="button" aria-controls="state-page" aria-selected="true">StateWeave</button>
+        <button id="ab-tab" class="tab" type="button" aria-controls="ab-page" aria-selected="false">A/B testing</button>
+      </nav>
+
+      <main id="state-page" class="page active shell">
+        <section class="card chat-card" aria-label="StateWeave chat">
           <div id="chat" class="chat">
             <div class="empty-state">
               <h2>Ask anything.</h2>
@@ -64,6 +69,32 @@
               </div>
             </div>
             <div id="graph" class="graph-empty">No graph yet.</div>
+          </div>
+        </section>
+      </main>
+
+      <main id="ab-page" class="page ab-page" hidden>
+        <section class="card ab-control-card" aria-label="A/B testing input">
+          <div class="card-header">
+            <div>
+              <p class="eyebrow">A/B testing</p>
+              <h2>Regular messages vs StateWeave</h2>
+            </div>
+          </div>
+          <p class="muted-copy">This tab intentionally invokes both paths so you can compare the plain messages response with the graph-native StateWeave response.</p>
+          <form id="ab-composer" class="composer ab-composer">
+            <textarea id="ab-input" rows="3" placeholder="Type a test prompt…"></textarea>
+            <button id="ab-send" class="button primary" type="submit">Run A/B</button>
+          </form>
+          <p id="ab-status" class="status">Ready.</p>
+        </section>
+
+        <section class="card ab-results-card" aria-label="A/B testing results">
+          <div id="ab-results" class="ab-results">
+            <div class="empty-state compact">
+              <h2>No A/B runs yet.</h2>
+              <p>Run a prompt to see regular messages and StateWeave responses side by side.</p>
+            </div>
           </div>
         </section>
       </main>

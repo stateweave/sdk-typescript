@@ -1,20 +1,43 @@
 import type { GraphFrame, GraphOp, StateGraph, TraceStep } from "../../src/core/types.js";
 import "./styles.css";
 
-type StateWeaveResponse = {
-  stateweave: {
-    inputFrame?: GraphFrame;
-    frameAfter?: GraphFrame;
+type ChatMessage = { role: "user" | "assistant"; content: string };
+type ModelMessage = { role: "system" | "user" | "assistant" | "tool"; content: string };
+
+type StateWeavePayload = {
+  inputFrame?: GraphFrame;
+  frameAfter?: GraphFrame;
+  output: string;
+  trace: TraceStep[];
+  graph: StateGraph;
+};
+
+type StateWeaveResponse = { stateweave: StateWeavePayload };
+type CompareResponse = StateWeaveResponse & {
+  traditional: {
+    messages: ModelMessage[];
+    rawModelInput: string;
     output: string;
-    trace: TraceStep[];
-    graph: StateGraph;
+    history: ChatMessage[];
   };
 };
 
-let stateFrame: GraphFrame | undefined;
-let running = false;
+type PageName = "state" | "ab";
 
+let activePage: PageName = location.hash === "#ab" ? "ab" : "state";
+let stateFrame: GraphFrame | undefined;
+let abStateFrame: GraphFrame | undefined;
+let abRegularHistory: ChatMessage[] = [];
+let stateRunning = false;
+let abRunning = false;
+let copyCounter = 0;
+
+const copyPayloads = new Map<string, string>();
 const apiBase = import.meta.env.BASE_URL.replace(/\/$/, "");
+const stateTab = element<HTMLButtonElement>("state-tab");
+const abTab = element<HTMLButtonElement>("ab-tab");
+const statePage = element<HTMLElement>("state-page");
+const abPage = element<HTMLElement>("ab-page");
 const chat = element<HTMLElement>("chat");
 const form = element<HTMLFormElement>("composer");
 const input = element<HTMLTextAreaElement>("input");
@@ -25,58 +48,133 @@ const provider = element<HTMLElement>("provider");
 const stateInput = element<HTMLElement>("state-input");
 const stateOutput = element<HTMLElement>("state-output");
 const graph = element<HTMLElement>("graph");
+const abForm = element<HTMLFormElement>("ab-composer");
+const abInput = element<HTMLTextAreaElement>("ab-input");
+const abSend = element<HTMLButtonElement>("ab-send");
+const abStatus = element<HTMLElement>("ab-status");
+const abResults = element<HTMLElement>("ab-results");
 
+setActivePage(activePage, false);
 void loadHealth();
 
+stateTab.addEventListener("click", () => setActivePage("state"));
+abTab.addEventListener("click", () => setActivePage("ab"));
 form.addEventListener("submit", (event) => {
   event.preventDefault();
-  void sendMessage();
+  void sendStateWeaveMessage();
 });
-reset.addEventListener("click", resetChat);
+abForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void runAbTest();
+});
+reset.addEventListener("click", () => {
+  if (activePage === "state") resetStateWeaveChat();
+  else resetAbTests();
+});
 input.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
     event.preventDefault();
-    void sendMessage();
+    void sendStateWeaveMessage();
   }
 });
+abInput.addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    event.preventDefault();
+    void runAbTest();
+  }
+});
+abResults.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target : undefined;
+  const button = target?.closest<HTMLButtonElement>("button[data-copy-id]");
+  if (!button?.dataset.copyId) return;
+  const value = copyPayloads.get(button.dataset.copyId);
+  if (value) void copyText(value, button);
+});
 
-async function sendMessage(): Promise<void> {
+function setActivePage(page: PageName, updateHash = true): void {
+  activePage = page;
+  const isState = page === "state";
+  stateTab.classList.toggle("active", isState);
+  stateTab.setAttribute("aria-selected", String(isState));
+  abTab.classList.toggle("active", !isState);
+  abTab.setAttribute("aria-selected", String(!isState));
+  statePage.hidden = !isState;
+  statePage.classList.toggle("active", isState);
+  abPage.hidden = isState;
+  abPage.classList.toggle("active", !isState);
+  reset.textContent = isState ? "Reset" : "Reset A/B";
+  if (updateHash) history.replaceState(null, "", isState ? location.pathname : "#ab");
+  (isState ? input : abInput).focus();
+}
+
+async function sendStateWeaveMessage(): Promise<void> {
   const text = input.value.trim();
-  if (!text || running) return;
+  if (!text || stateRunning) return;
 
-  running = true;
+  stateRunning = true;
   send.disabled = true;
   reset.disabled = true;
   input.value = "";
   status.textContent = "Thinking…";
-  clearEmptyState();
+  clearEmptyState(chat);
   appendUser(text);
-  const pending = appendPending();
+  const pending = appendPendingStateWeave();
 
   try {
-    const result = await runStateWeave(text);
+    const result = await runStateWeave(text, stateFrame);
     stateFrame = result.stateweave.frameAfter;
     pending.remove();
     appendAssistant(result.stateweave.output);
-    renderStateWeave(result);
+    renderStateWeave(result.stateweave);
     status.textContent = `Done · StateGraph ${result.stateweave.graph.nodes.length} nodes / ${result.stateweave.graph.edges.length} edges`;
   } catch (error) {
     pending.remove();
-    appendError(error instanceof Error ? error.message : String(error));
+    appendError(chat, error instanceof Error ? error.message : String(error));
     status.textContent = "Failed.";
   } finally {
-    running = false;
+    stateRunning = false;
     send.disabled = false;
     reset.disabled = false;
     input.focus();
   }
 }
 
-async function runStateWeave(text: string): Promise<StateWeaveResponse> {
+async function runAbTest(): Promise<void> {
+  const text = abInput.value.trim();
+  if (!text || abRunning) return;
+
+  abRunning = true;
+  abSend.disabled = true;
+  reset.disabled = true;
+  abInput.value = "";
+  abStatus.textContent = "Running A/B…";
+  clearEmptyState(abResults);
+  const pending = appendAbPending(text);
+
+  try {
+    const result = await compareStateWeave(text, abStateFrame, abRegularHistory);
+    abStateFrame = result.stateweave.frameAfter;
+    abRegularHistory = result.traditional.history;
+    pending.remove();
+    appendAbResult(text, result.traditional.output, result.stateweave.output, result.stateweave.graph);
+    abStatus.textContent = `Done · StateGraph ${result.stateweave.graph.nodes.length} nodes / ${result.stateweave.graph.edges.length} edges`;
+  } catch (error) {
+    pending.remove();
+    appendError(abResults, error instanceof Error ? error.message : String(error));
+    abStatus.textContent = "Failed.";
+  } finally {
+    abRunning = false;
+    abSend.disabled = false;
+    reset.disabled = false;
+    abInput.focus();
+  }
+}
+
+async function runStateWeave(text: string, frame: GraphFrame | undefined): Promise<StateWeaveResponse> {
   const response = await fetch(`${apiBase}/api/stateweave/chat`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ input: text, frame: stateFrame })
+    body: JSON.stringify({ input: text, frame })
   });
 
   const body = (await response.json()) as StateWeaveResponse | { error?: string };
@@ -84,10 +182,22 @@ async function runStateWeave(text: string): Promise<StateWeaveResponse> {
   return body as StateWeaveResponse;
 }
 
-function renderStateWeave(result: StateWeaveResponse): void {
-  stateInput.textContent = result.stateweave.inputFrame ? compactFrame(result.stateweave.inputFrame) : "No GraphFrame captured.";
-  stateOutput.textContent = formatStateOutput(result.stateweave.trace, result.stateweave.output);
-  renderGraph(result.stateweave.graph);
+async function compareStateWeave(text: string, frame: GraphFrame | undefined, messages: ChatMessage[]): Promise<CompareResponse> {
+  const response = await fetch(`${apiBase}/api/stateweave/compare`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ input: text, frame, messages })
+  });
+
+  const body = (await response.json()) as CompareResponse | { error?: string };
+  if (!response.ok) throw new Error("error" in body && body.error ? body.error : `Request failed (${response.status})`);
+  return body as CompareResponse;
+}
+
+function renderStateWeave(result: StateWeavePayload): void {
+  stateInput.textContent = result.inputFrame ? compactFrame(result.inputFrame) : "No GraphFrame captured.";
+  stateOutput.textContent = formatStateOutput(result.trace, result.output);
+  renderGraph(result.graph);
 }
 
 async function loadHealth(): Promise<void> {
@@ -96,7 +206,7 @@ async function loadHealth(): Promise<void> {
   provider.textContent = health?.provider ? `Provider: ${health.provider}` : "Provider unavailable";
 }
 
-function resetChat(): void {
+function resetStateWeaveChat(): void {
   stateFrame = undefined;
   chat.innerHTML = `<div class="empty-state"><h2>Ask anything.</h2><p>StateWeave keeps one growing StateGraph rooted at <code>system_root</code>, then compiles a GraphFrame for the model each turn.</p></div>`;
   stateInput.textContent = "No turn yet.";
@@ -107,9 +217,18 @@ function resetChat(): void {
   input.focus();
 }
 
+function resetAbTests(): void {
+  abStateFrame = undefined;
+  abRegularHistory = [];
+  copyPayloads.clear();
+  abResults.innerHTML = `<div class="empty-state compact"><h2>No A/B runs yet.</h2><p>Run a prompt to see regular messages and StateWeave responses side by side.</p></div>`;
+  abStatus.textContent = "Reset.";
+  abInput.focus();
+}
+
 function appendUser(text: string): void {
   chat.insertAdjacentHTML("beforeend", `<div class="message user"><div>${escapeHtml(text)}</div></div>`);
-  scrollChat();
+  scrollChat(chat);
 }
 
 function appendAssistant(stateweave: string): void {
@@ -120,21 +239,78 @@ function appendAssistant(stateweave: string): void {
       <p>${escapeHtml(stateweave)}</p>
     </article>`
   );
-  scrollChat();
+  scrollChat(chat);
 }
 
-function appendPending(): HTMLElement {
+function appendPendingStateWeave(): HTMLElement {
   const item = document.createElement("article");
   item.className = "answer pending assistant-response";
   item.innerHTML = `<span>StateWeave</span><p>Compiling GraphFrame and growing the StateGraph…</p>`;
   chat.append(item);
-  scrollChat();
+  scrollChat(chat);
   return item;
 }
 
-function appendError(message: string): void {
-  chat.insertAdjacentHTML("beforeend", `<div class="message error"><div>${escapeHtml(message)}</div></div>`);
-  scrollChat();
+function appendAbPending(prompt: string): HTMLElement {
+  const item = document.createElement("article");
+  item.className = "ab-run pending";
+  item.innerHTML = `
+    <div class="ab-run-header">
+      <div>
+        <p class="eyebrow">Prompt</p>
+        <h3>${escapeHtml(shorten(prompt, 96))}</h3>
+      </div>
+      <span class="badge">Running both paths…</span>
+    </div>
+    <div class="ab-answer-grid">
+      <article class="ab-answer regular"><h4>Regular messages</h4><p>Waiting…</p></article>
+      <article class="ab-answer state"><h4>StateWeave</h4><p>Waiting…</p></article>
+    </div>`;
+  abResults.append(item);
+  item.scrollIntoView({ block: "nearest" });
+  return item;
+}
+
+function appendAbResult(prompt: string, regular: string, stateweave: string, value: StateGraph): void {
+  const regularCopy = registerCopy(regular);
+  const stateCopy = registerCopy(stateweave);
+  const bothCopy = registerCopy([`Prompt:\n${prompt}`, `Regular messages:\n${regular}`, `StateWeave:\n${stateweave}`].join("\n\n---\n\n"));
+
+  abResults.insertAdjacentHTML(
+    "beforeend",
+    `<article class="ab-run">
+      <div class="ab-run-header">
+        <div>
+          <p class="eyebrow">Prompt</p>
+          <h3>${escapeHtml(prompt)}</h3>
+          <p class="ab-meta">StateGraph ${value.nodes.length} nodes / ${value.edges.length} edges</p>
+        </div>
+        <button class="button secondary small-button" type="button" data-copy-id="${bothCopy}">Copy both</button>
+      </div>
+      <div class="ab-answer-grid">
+        <article class="ab-answer regular">
+          <div class="ab-answer-header">
+            <h4>Regular messages</h4>
+            <button class="button secondary small-button" type="button" data-copy-id="${regularCopy}">Copy</button>
+          </div>
+          <pre>${escapeHtml(regular)}</pre>
+        </article>
+        <article class="ab-answer state">
+          <div class="ab-answer-header">
+            <h4>StateWeave</h4>
+            <button class="button secondary small-button" type="button" data-copy-id="${stateCopy}">Copy</button>
+          </div>
+          <pre>${escapeHtml(stateweave)}</pre>
+        </article>
+      </div>
+    </article>`
+  );
+  abResults.lastElementChild?.scrollIntoView({ block: "nearest" });
+}
+
+function appendError(container: HTMLElement, message: string): void {
+  container.insertAdjacentHTML("beforeend", `<div class="message error"><div>${escapeHtml(message)}</div></div>`);
+  scrollChat(container);
 }
 
 function renderGraph(value: StateGraph): void {
@@ -235,13 +411,49 @@ function formatOps(ops: GraphOp[]): string {
   return ops.map((op) => JSON.stringify(op)).join("\n");
 }
 
-function clearEmptyState(): void {
-  const empty = chat.querySelector(".empty-state");
+function registerCopy(value: string): string {
+  const id = `copy_${++copyCounter}`;
+  copyPayloads.set(id, value);
+  return id;
+}
+
+async function copyText(value: string, button: HTMLButtonElement): Promise<void> {
+  const original = button.textContent ?? "Copy";
+  try {
+    await writeClipboard(value);
+    button.textContent = "Copied";
+  } catch {
+    button.textContent = "Copy failed";
+  } finally {
+    window.setTimeout(() => {
+      button.textContent = original;
+    }, 1200);
+  }
+}
+
+async function writeClipboard(value: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.append(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
+}
+
+function clearEmptyState(container: HTMLElement): void {
+  const empty = container.querySelector(".empty-state");
   if (empty) empty.remove();
 }
 
-function scrollChat(): void {
-  chat.scrollTop = chat.scrollHeight;
+function scrollChat(container: HTMLElement): void {
+  container.scrollTop = container.scrollHeight;
 }
 
 function element<T extends HTMLElement>(id: string): T {
