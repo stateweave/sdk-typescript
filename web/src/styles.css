@@ -83,6 +83,21 @@ h3 {
   font-size: 0.92rem;
 }
 
+.topbar-copy {
+  max-width: 760px;
+  margin-top: 6px;
+  color: var(--muted-foreground);
+  font-size: 0.92rem;
+}
+
+.topbar-copy code {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  padding: 1px 5px;
+  font-size: 0.86em;
+}
+
 .shell {
   display: grid;
   grid-template-columns: minmax(360px, 0.85fr) minmax(520px, 1.15fr);
@@ -332,28 +347,132 @@ label {
   color: var(--muted);
 }
 
-.graph-list {
-  max-height: 280px;
+.graph-heading {
+  margin-bottom: 8px;
+}
+
+.graph-heading p {
+  max-width: 760px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.graph-visual {
+  max-height: 620px;
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: 10px;
+  background: #fff;
   padding: 10px;
 }
 
 .graph-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 10px;
   color: var(--muted);
   font-size: 0.85rem;
 }
 
-.node {
+.graph-summary strong {
+  color: var(--foreground);
+}
+
+.graph-svg {
+  display: block;
+  width: 100%;
+  min-width: 680px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background:
+    linear-gradient(#f4f4f5 1px, transparent 1px),
+    linear-gradient(90deg, #f4f4f5 1px, transparent 1px),
+    #fafafa;
+  background-size: 32px 32px;
+}
+
+.graph-svg marker path {
+  fill: #a1a1aa;
+}
+
+.edge-line line {
+  stroke: #a1a1aa;
+  stroke-width: 1.4;
+}
+
+.edge-line text {
+  fill: var(--muted-foreground);
+  font-size: 11px;
+  paint-order: stroke;
+  stroke: #fafafa;
+  stroke-width: 4px;
+  text-anchor: middle;
+}
+
+.graph-node-vis circle {
+  fill: #fff;
+  stroke: var(--stateweave);
+  stroke-width: 2;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.08));
+}
+
+.graph-node-vis.intent circle {
+  stroke: #18181b;
+}
+
+.graph-node-vis.fact circle {
+  stroke: #2563eb;
+}
+
+.graph-node-vis.hypothesis circle,
+.graph-node-vis.question circle,
+.graph-node-vis.risk circle {
+  stroke: #d97706;
+}
+
+.graph-node-vis.decision circle,
+.graph-node-vis.tool_result circle {
+  stroke: #16a34a;
+}
+
+.graph-node-vis.tool_call circle {
+  stroke: #0891b2;
+}
+
+.graph-node-vis text {
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
+.node-id {
+  fill: var(--foreground);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.node-type {
+  fill: var(--muted);
+  font-size: 9px;
+}
+
+.node-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.node-detail {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 10px;
-  margin-bottom: 8px;
 }
 
-.node div {
+.node-detail div {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -361,18 +480,18 @@ label {
   margin-bottom: 6px;
 }
 
-.node strong {
+.node-detail strong {
   font-size: 0.82rem;
 }
 
-.node span {
+.node-detail span {
   color: var(--muted);
   font-size: 0.75rem;
 }
 
-.node p {
+.node-detail p {
   color: var(--muted-foreground);
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   line-height: 1.45;
 }
 

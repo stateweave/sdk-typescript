@@ -11,6 +11,7 @@
         <div>
           <p class="eyebrow">Development</p>
           <h1>StateWeave Chat Lab</h1>
+          <p class="topbar-copy">A simple chat that compares normal <code>messages[]</code> with StateWeave's growing graph memory.</p>
         </div>
         <div class="topbar-actions">
           <span id="provider" class="badge">Checking provider…</span>
@@ -23,7 +24,7 @@
           <div id="chat" class="chat">
             <div class="empty-state">
               <h2>Ask anything.</h2>
-              <p>Each turn compares regular chat messages with StateWeave GraphFrame state.</p>
+              <p>StateWeave keeps a StateGraph as the conversation grows, then compiles a GraphFrame for the model each turn.</p>
             </div>
           </div>
 
@@ -67,7 +68,12 @@
           </div>
 
           <div class="graph-card">
-            <label>StateGraph after StateWeave</label>
+            <div class="graph-heading">
+              <div>
+                <label>Growing StateGraph</label>
+                <p>Obsidian-style graph memory: nodes and edges accumulate across turns; GraphFrame is the compiled model context.</p>
+              </div>
+            </div>
             <div id="graph" class="graph-empty">No graph yet.</div>
           </div>
         </section>
