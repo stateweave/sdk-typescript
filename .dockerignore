@@ -1,0 +1,14 @@
+node_modules
+.pnpm-store
+dist
+dist-web
+coverage
+.git
+.github
+.env
+.env.*
+src/traces/*.json
+traces/*.json
+*.log
+.mintlify
+.next

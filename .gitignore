@@ -4,6 +4,7 @@ node_modules/
 
 # build/test output
 dist/
+dist-web/
 coverage/
 *.tsbuildinfo
 

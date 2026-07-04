@@ -5,6 +5,7 @@ export * from "./core/serialize.js";
 export * from "./core/applyOps.js";
 export * from "./core/validateOps.js";
 export * from "./core/visualize.js";
+export * from "./agent/stateweaveRunner.js";
 export * from "./agent/stateweaveAgent.js";
 export * from "./agent/baselineAgent.js";
 export * from "./llm/model.js";

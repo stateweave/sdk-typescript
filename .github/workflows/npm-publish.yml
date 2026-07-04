@@ -56,6 +56,7 @@ jobs:
           echo "Selected $channel -> GitHub environment $environment -> npm tag $tag"
 
   publish:
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip npm]')
     needs: select-channel
     runs-on: ubuntu-latest
     environment: ${{ needs.select-channel.outputs.environment }}

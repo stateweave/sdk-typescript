@@ -40,6 +40,11 @@
     "build": "pnpm clean && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "dev": "tsx src/demo.ts",
+    "web:dev": "vite --config vite.web.config.ts",
+    "web:build": "vite build --config vite.web.config.ts",
+    "web:check": "tsc -p web/tsconfig.json --noEmit",
+    "web:serve": "node dist/web/server.js",
+    "web:preview": "vite preview --config vite.web.config.ts",
     "cli": "tsx src/cli.ts",
     "eval": "tsx src/evals/runEval.ts",
     "test": "vitest run",
@@ -54,6 +59,7 @@
     "@types/node": "^22.10.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
+    "vite": "^8.1.3",
     "vitest": "^2.1.8"
   },
   "repository": {
