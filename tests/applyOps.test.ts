@@ -30,6 +30,16 @@ it("auto-connects model-added semantic nodes to the latest user input when no ed
   expect(next.graph.edges.some((edge) => edge.from === "user_input_1" && edge.to === "hypothesis_1" && edge.type === "relates_to")).toBe(true);
 });
 
+it("applies model-chosen attachment edges for pending user inputs", () => {
+  const frame = createInitialGraphFrame({ objective: "First", input: "Create snake", availableActions: [] });
+  frame.graph.nodes.push({ id: "user_input_2", type: "user_input", text: "Create pacman", status: "active", createdAt: new Date(0).toISOString() });
+  frame.frame.latestInputNodeId = "user_input_2";
+  frame.frame.focusNodeId = "user_input_2";
+  frame.frame.activeUserInputNodeId = "user_input_2";
+  const next = applyOps(frame, [{ op: "add_edge", from: "system_root", to: "user_input_2", type: "follows" }]);
+  expect(next.graph.edges).toContainEqual(expect.objectContaining({ from: "system_root", to: "user_input_2", type: "follows" }));
+});
+
 it("adds assistant output nodes when final ops are applied", () => {
   const frame = createInitialGraphFrame({ objective: "Fix login", input: "Login fails", availableActions: [] });
   const next = applyOps(frame, [{ op: "final", answer: "Move token persistence earlier." }]);

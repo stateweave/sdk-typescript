@@ -1,19 +1,5 @@
-export type NodeType =
-  | "system"
-  | "user_input"
-  | "assistant_output"
-  | "artifact"
-  | "intent"
-  | "constraint"
-  | "fact"
-  | "hypothesis"
-  | "decision"
-  | "tool_call"
-  | "tool_result"
-  | "test_result"
-  | "patch"
-  | "risk"
-  | "question";
+export type StructuralNodeType = "system" | "user_input" | "assistant_output" | "tool_call" | "tool_result";
+export type NodeType = StructuralNodeType | (string & {});
 
 export type EdgeType =
   | "follows"

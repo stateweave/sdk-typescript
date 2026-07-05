@@ -36,12 +36,12 @@ export function createInitialGraphFrame(args: {
   return {
     frame: {
       objective: args.objective,
-      currentFocus: "Cortex focus is user_input_1. User input nodes are the branch/focus roots; answer the latest input and attach semantic state below it.",
+      currentFocus: "Cortex focus is user_input_1. The model should weave this user input into the graph with GraphOps.",
       focusNodeId: "user_input_1",
       latestInputNodeId: "user_input_1",
       activeUserInputNodeId: "user_input_1",
       candidateFocusNodeIds: ["system_root", "user_input_1"],
-      nextExpectedOutput: "Return SWX/1 commands that grow, refocus, or reconnect the same StateGraph with useful semantic nodes, tool calls, artifacts, or a final answer.",
+      nextExpectedOutput: "Return SWX/1 commands that attach the active user input to the right node, create semantic nodes with model-chosen types, and produce a final answer.",
       activeConstraints: constraints,
       availableActions: ["add_node", "add_edge", "update_node", "focus", "call_tool", "final", ...args.availableActions]
     },
@@ -64,22 +64,16 @@ export function appendInputToGraphFrame(frame: GraphFrame, args: { objective: st
   const next = cloneFrame(frame);
   const createdAt = nowIso();
   const inputId = `user_input_${nextIndex(next.graph.nodes, "user_input_")}`;
-  const system = next.graph.nodes.find((node) => node.id === "system_root");
-  const freshContext = isFreshContextRequest(args.input);
-  const anchor = freshContext ? system : inputAnchor(next) ?? system ?? next.graph.nodes[0];
 
   next.graph.nodes.push({ id: inputId, type: "user_input", text: args.input, status: "active", confidence: 1, createdAt });
-  if (anchor) next.graph.edges.push({ id: edgeId(anchor.id, "follows", inputId), from: anchor.id, to: inputId, type: "follows", createdAt });
 
   next.frame.objective = args.objective;
-  next.frame.currentFocus = freshContext
-    ? `Cortex focus is ${inputId}. The user requested fresh context, so this user_input node starts directly from system_root instead of the previous turn.`
-    : `Cortex focus is ${inputId}. This user_input node continues from ${anchor?.id ?? "system_root"}; refocus or reconnect if a different graph region is more relevant.`;
+  next.frame.currentFocus = `Cortex focus is ${inputId}. This user_input is pending attachment: the model must decide whether it starts from system_root, continues a prior user/assistant node, updates an existing artifact/semantic node, or relates to another graph region.`;
   next.frame.focusNodeId = inputId;
   next.frame.latestInputNodeId = inputId;
   next.frame.activeUserInputNodeId = inputId;
   next.frame.candidateFocusNodeIds = candidateFocusNodeIds(next);
-  next.frame.nextExpectedOutput = "Return SWX/1 commands that answer the active user_input node, attach semantic state under the relevant user input, move focus when needed, mark stale facts, and produce a final answer or artifact.";
+  next.frame.nextExpectedOutput = "Return SWX/1 commands that first weave the active user_input into the graph with one or more meaningful edges, then create model-typed semantic/output nodes and produce a final answer.";
   next.frame.activeConstraints = unique([...next.frame.activeConstraints, ...extractConstraints(args.input)]);
   return next;
 }
@@ -88,26 +82,14 @@ export function cloneFrame(frame: GraphFrame): GraphFrame {
   return structuredClone(frame);
 }
 
-function inputAnchor(frame: GraphFrame): GraphNode | undefined {
-  const focus = frame.frame.focusNodeId ? frame.graph.nodes.find((node) => node.id === frame.frame.focusNodeId) : undefined;
-  if (focus) return focus;
-  return [...frame.graph.nodes].reverse().find((node) => node.type === "assistant_output" || node.type === "user_input" || node.type === "system");
-}
-
 function candidateFocusNodeIds(frame: GraphFrame): string[] {
   return unique([
     "system_root",
     frame.frame.activeUserInputNodeId,
     frame.frame.latestInputNodeId,
     frame.frame.focusNodeId,
-    ...frame.graph.nodes.filter((node) => node.type === "user_input").map((node) => node.id)
+    ...frame.graph.nodes.map((node) => node.id)
   ].filter((id): id is string => Boolean(id) && frame.graph.nodes.some((node) => node.id === id)));
-}
-
-function isFreshContextRequest(input: string): boolean {
-  return /\b(new|fresh|separate)\s+(branch|thread|conversation|chat|context|topic|user\s+output)\b/i.test(input)
-    || /\b(start|create|open)\s+(a\s+)?(new|fresh|separate)\s+(branch|thread|conversation|chat|context|topic|user\s+output)\b/i.test(input)
-    || /\b(start over|fresh start|from scratch)\b/i.test(input);
 }
 
 function extractConstraints(input: string): string[] {

@@ -1,23 +1,7 @@
 import { z } from "zod";
 import type { EdgeType, GraphOp, NodeType } from "./types.js";
 
-export const nodeTypeSchema = z.enum([
-  "system",
-  "user_input",
-  "assistant_output",
-  "artifact",
-  "intent",
-  "constraint",
-  "fact",
-  "hypothesis",
-  "decision",
-  "tool_call",
-  "tool_result",
-  "test_result",
-  "patch",
-  "risk",
-  "question"
-]);
+export const nodeTypeSchema = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/);
 
 export const edgeTypeSchema = z.enum([
   "follows",
@@ -194,7 +178,6 @@ function extractBlocks(raw: string): { commands: string; blocks: SwxBlock[] } {
 function mergeArtifactBlock(nodeOps: Extract<GraphOp, { op: "add_node" }>[], block: SwxBlock): void {
   const existing = nodeOps.find((op) => op.node.id === block.id);
   if (existing) {
-    existing.node.type = existing.node.type === "artifact" ? "artifact" : existing.node.type;
     existing.node.data = { ...existing.node.data, mime: block.mime, content: block.content };
     existing.node.status = existing.node.status ?? "resolved";
     return;
@@ -218,8 +201,8 @@ function finalOpFor(target: string, blocks: SwxBlock[], nodeOps: Extract<GraphOp
   if (block) return { op: "final", answer: block.content, artifactId: block.id };
 
   const node = nodeOps.find((op) => op.node.id === cleanTarget)?.node;
-  if (node?.type === "artifact" && typeof node.data?.content === "string") return { op: "final", answer: node.data.content, artifactId: node.id };
-  if (node?.type === "artifact") return { op: "final", answer: node.text, artifactId: node.id };
+  if (node && typeof node.data?.content === "string") return { op: "final", answer: node.data.content, artifactId: node.id };
+  if (node?.data?.mime) return { op: "final", answer: node.text, artifactId: node.id };
   if (node) return { op: "final", answer: node.text };
 
   return { op: "final", answer: cleanTarget };

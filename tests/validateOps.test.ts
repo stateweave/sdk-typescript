@@ -18,6 +18,12 @@ it("tolerates bracketed node type labels", () => {
   expect(ops[0]).toEqual({ op: "add_node", node: { id: "fact_1", type: "fact", text: "User's name is Radi", status: "active", confidence: 1 } });
 });
 
+it("accepts model-created semantic node types", () => {
+  const ops = parseAndValidateOps(`SWX/1\n@node wisdom_1 wisdom "Graphs preserve non-linear context."\n@node humor_1 humor "The graph is acting like a tiny brain."\n@final "Captured."`);
+  expect(ops).toContainEqual({ op: "add_node", node: { id: "wisdom_1", type: "wisdom", text: "Graphs preserve non-linear context." } });
+  expect(ops).toContainEqual({ op: "add_node", node: { id: "humor_1", type: "humor", text: "The graph is acting like a tiny brain." } });
+});
+
 it("resolves @final node references to node text", () => {
   const ops = parseAndValidateOps(`SWX/1
 @node assistant_output_2 [assistant_output]: Tagline: LumaGarden helps teachers cultivate calm learning spaces.
@@ -37,12 +43,12 @@ it("does not mistake equals signs inside quoted labels for attrs", () => {
   expect(ops).toContainEqual({ op: "final", answer: "Last two digits = 49" });
 });
 
-it("parses raw artifact blocks without JSON escaping", () => {
+it("parses raw output blocks without requiring artifact as a structural type", () => {
   const ops = parseAndValidateOps(`SWX/1
-@node artifact_1 artifact "Snake SVG" mime=image/svg+xml
-@edge user_input_1 creates artifact_1
-@final artifact_1
-<<<artifact_1:image/svg+xml
+@node game_1 html_game "Snake SVG" mime=image/svg+xml
+@edge user_input_1 creates game_1
+@final game_1
+<<<game_1:image/svg+xml
 <svg viewBox="0 0 10 10">
   <circle cx="5" cy="5" r="4" />
 </svg>
@@ -51,8 +57,8 @@ it("parses raw artifact blocks without JSON escaping", () => {
   expect(ops).toContainEqual({
     op: "add_node",
     node: {
-      id: "artifact_1",
-      type: "artifact",
+      id: "game_1",
+      type: "html_game",
       text: "Snake SVG",
       status: "resolved",
       data: { mime: "image/svg+xml", content: `<svg viewBox="0 0 10 10">
@@ -60,13 +66,13 @@ it("parses raw artifact blocks without JSON escaping", () => {
 </svg>` }
     }
   });
-  expect(ops).toContainEqual({ op: "add_edge", from: "user_input_1", to: "artifact_1", type: "creates" });
+  expect(ops).toContainEqual({ op: "add_edge", from: "user_input_1", to: "game_1", type: "creates" });
   expect(ops).toContainEqual({
     op: "final",
     answer: `<svg viewBox="0 0 10 10">
   <circle cx="5" cy="5" r="4" />
 </svg>`,
-    artifactId: "artifact_1"
+    artifactId: "game_1"
   });
 });
 
