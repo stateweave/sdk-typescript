@@ -22,22 +22,84 @@ type CompareResponse = StateWeaveResponse & {
   };
 };
 
-type PageName = "state" | "ab";
+type PageName = "state" | "ab" | "multi";
+type Primitive = "regular" | "stateweave";
+type Vote = "a" | "b" | "both" | "neither";
+type MultiCase = { prompt: string; expect: string };
+type MultiRecord = {
+  index: number;
+  prompt: string;
+  expect: string;
+  a: Primitive;
+  b: Primitive;
+  regular: string;
+  stateweave: string;
+  vote?: Vote;
+};
 
-let activePage: PageName = location.hash === "#ab" ? "ab" : "state";
+let activePage: PageName = location.hash === "#ab" ? "ab" : location.hash === "#prompt-one" ? "multi" : "state";
 let stateFrame: GraphFrame | undefined;
 let abStateFrame: GraphFrame | undefined;
 let abRegularHistory: ChatMessage[] = [];
+let multiStateFrame: GraphFrame | undefined;
+let multiRegularHistory: ChatMessage[] = [];
+let multiIndex = 0;
+let multiRunning = false;
+let multiRecords: MultiRecord[] = [];
 let stateRunning = false;
 let abRunning = false;
 let copyCounter = 0;
 
 const copyPayloads = new Map<string, string>();
+const multiCases: MultiCase[] = [
+  {
+    prompt: "For this test, remember: project name is LumaGarden, audience is teachers, tone is calm, visual style is black and white only, no gradients, and the mascot is an owl. Reply ready and do not design yet.",
+    expect: "Should acknowledge readiness and preserve all six facts/constraints for later turns."
+  },
+  {
+    prompt: "Create a one-sentence tagline using the project name and audience.",
+    expect: "Should include LumaGarden, target teachers, and a calm/educational feeling."
+  },
+  {
+    prompt: "Give a three-bullet UI style guide obeying my visual constraints.",
+    expect: "Should retain black-and-white only, no gradients, calm tone, and avoid adding unrelated colors."
+  },
+  {
+    prompt: "Switch topic briefly: explain in one sentence what a graph database is.",
+    expect: "Should answer the new topic directly without losing the brand context for later."
+  },
+  {
+    prompt: "Back to the project: create an SVG logo. It must follow all prior visual constraints.",
+    expect: "Should make an SVG for LumaGarden using black/white, no gradients, and the owl/classroom context."
+  },
+  {
+    prompt: "Revise the logo concept so it feels more classroom-friendly, but keep every visual constraint.",
+    expect: "Should improve classroom fit while preserving black/white only, no gradients, and the existing brand context."
+  },
+  {
+    prompt: "What constraints have I given so far? List only constraints and durable facts, not your outputs.",
+    expect: "Should list name LumaGarden, teachers, calm tone, black/white only, no gradients, and owl mascot."
+  },
+  {
+    prompt: "Create a homepage hero title and subtitle. Do not mention the mascot explicitly.",
+    expect: "Should use the brand/audience/tone but not mention owl or mascot."
+  },
+  {
+    prompt: "I changed one thing: the mascot is now a lantern, not an owl. Confirm and give one logo direction.",
+    expect: "Should update the mascot to lantern, avoid owl, and keep prior visual constraints."
+  },
+  {
+    prompt: "Final task: produce a concise brand card with name, audience, tone, visual rules, mascot, and one CTA.",
+    expect: "Should include LumaGarden, teachers, calm tone, black/white, no gradients, lantern mascot, and a CTA."
+  }
+];
 const apiBase = import.meta.env.BASE_URL.replace(/\/$/, "");
 const stateTab = element<HTMLButtonElement>("state-tab");
 const abTab = element<HTMLButtonElement>("ab-tab");
+const multiTab = element<HTMLButtonElement>("multi-tab");
 const statePage = element<HTMLElement>("state-page");
 const abPage = element<HTMLElement>("ab-page");
+const multiPage = element<HTMLElement>("multi-page");
 const chat = element<HTMLElement>("chat");
 const form = element<HTMLFormElement>("composer");
 const input = element<HTMLTextAreaElement>("input");
@@ -53,12 +115,18 @@ const abInput = element<HTMLTextAreaElement>("ab-input");
 const abSend = element<HTMLButtonElement>("ab-send");
 const abStatus = element<HTMLElement>("ab-status");
 const abResults = element<HTMLElement>("ab-results");
+const multiStart = element<HTMLButtonElement>("multi-start");
+const multiProgress = element<HTMLElement>("multi-progress");
+const multiSteps = element<HTMLElement>("multi-steps");
+const multiStage = element<HTMLElement>("multi-stage");
 
 setActivePage(activePage, false);
+renderMultiProgress();
 void loadHealth();
 
 stateTab.addEventListener("click", () => setActivePage("state"));
 abTab.addEventListener("click", () => setActivePage("ab"));
+multiTab.addEventListener("click", () => setActivePage("multi"));
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   void sendStateWeaveMessage();
@@ -69,7 +137,8 @@ abForm.addEventListener("submit", (event) => {
 });
 reset.addEventListener("click", () => {
   if (activePage === "state") resetStateWeaveChat();
-  else resetAbTests();
+  else if (activePage === "ab") resetAbTests();
+  else resetMultiTest();
 });
 input.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
@@ -83,6 +152,10 @@ abInput.addEventListener("keydown", (event) => {
     void runAbTest();
   }
 });
+multiStart.addEventListener("click", () => {
+  if (!multiRecords.length && multiIndex === 0) resetMultiTest(false);
+  void runNextMultiCase();
+});
 abResults.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target : undefined;
   const button = target?.closest<HTMLButtonElement>("button[data-copy-id]");
@@ -90,21 +163,34 @@ abResults.addEventListener("click", (event) => {
   const value = copyPayloads.get(button.dataset.copyId);
   if (value) void copyText(value, button);
 });
+multiStage.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target : undefined;
+  const voteButton = target?.closest<HTMLButtonElement>("button[data-vote]");
+  if (voteButton?.dataset.vote) voteMulti(voteButton.dataset.vote as Vote);
+});
 
 function setActivePage(page: PageName, updateHash = true): void {
   activePage = page;
   const isState = page === "state";
+  const isAb = page === "ab";
+  const isMulti = page === "multi";
   stateTab.classList.toggle("active", isState);
   stateTab.setAttribute("aria-selected", String(isState));
-  abTab.classList.toggle("active", !isState);
-  abTab.setAttribute("aria-selected", String(!isState));
+  abTab.classList.toggle("active", isAb);
+  abTab.setAttribute("aria-selected", String(isAb));
+  multiTab.classList.toggle("active", isMulti);
+  multiTab.setAttribute("aria-selected", String(isMulti));
   statePage.hidden = !isState;
   statePage.classList.toggle("active", isState);
-  abPage.hidden = isState;
-  abPage.classList.toggle("active", !isState);
-  reset.textContent = isState ? "Reset" : "Reset A/B";
-  if (updateHash) history.replaceState(null, "", isState ? location.pathname : "#ab");
-  (isState ? input : abInput).focus();
+  abPage.hidden = !isAb;
+  abPage.classList.toggle("active", isAb);
+  multiPage.hidden = !isMulti;
+  multiPage.classList.toggle("active", isMulti);
+  reset.textContent = isState ? "Reset" : isAb ? "Reset A/B" : "Reset prompt one";
+  if (updateHash) history.replaceState(null, "", isState ? location.pathname : isAb ? "#ab" : "#prompt-one");
+  if (isState) input.focus();
+  else if (isAb) abInput.focus();
+  else multiStart.focus();
 }
 
 async function sendStateWeaveMessage(): Promise<void> {
@@ -224,6 +310,200 @@ function resetAbTests(): void {
   abResults.innerHTML = `<div class="empty-state compact"><h2>No A/B runs yet.</h2><p>Run a prompt to see regular messages and StateWeave responses side by side.</p></div>`;
   abStatus.textContent = "Reset.";
   abInput.focus();
+}
+
+function resetMultiTest(focus = true): void {
+  multiStateFrame = undefined;
+  multiRegularHistory = [];
+  multiIndex = 0;
+  multiRunning = false;
+  multiRecords = [];
+  multiStart.disabled = false;
+  multiStart.textContent = "Start prompt one";
+  multiStage.innerHTML = `<div class="empty-state compact"><h2>Ready for a harder test.</h2><p>This sequence tests memory, constraint retention, topic switching, and corrections over ten turns.</p></div>`;
+  renderMultiProgress();
+  if (focus) multiStart.focus();
+}
+
+async function runNextMultiCase(): Promise<void> {
+  if (multiRunning || multiIndex >= multiCases.length) return;
+  const testCase = multiCases[multiIndex];
+  multiRunning = true;
+  multiStart.disabled = true;
+  multiStart.textContent = `Running ${multiIndex + 1} / ${multiCases.length}…`;
+  renderMultiCaseLoading(testCase, multiIndex);
+
+  try {
+    const result = await compareStateWeave(testCase.prompt, multiStateFrame, multiRegularHistory);
+    multiStateFrame = result.stateweave.frameAfter;
+    multiRegularHistory = result.traditional.history;
+    const stateIsA = Math.random() < 0.5;
+    const record: MultiRecord = {
+      index: multiIndex,
+      prompt: testCase.prompt,
+      expect: testCase.expect,
+      a: stateIsA ? "stateweave" : "regular",
+      b: stateIsA ? "regular" : "stateweave",
+      regular: result.traditional.output,
+      stateweave: result.stateweave.output
+    };
+    multiRecords.push(record);
+    renderMultiVote(record);
+  } catch (error) {
+    multiStage.innerHTML = `<div class="message error"><div>${escapeHtml(error instanceof Error ? error.message : String(error))}</div></div>`;
+    multiStart.disabled = false;
+    multiStart.textContent = "Retry current prompt";
+  } finally {
+    multiRunning = false;
+  }
+}
+
+function voteMulti(vote: Vote): void {
+  const record = multiRecords[multiRecords.length - 1];
+  if (!record || record.vote) return;
+  record.vote = vote;
+  multiIndex += 1;
+  renderMultiProgress();
+
+  if (multiIndex >= multiCases.length) {
+    renderMultiReveal();
+    multiStart.disabled = true;
+    multiStart.textContent = "Prompt one complete";
+    return;
+  }
+
+  multiStart.disabled = false;
+  multiStart.textContent = `Run prompt ${multiIndex + 1}`;
+  renderMultiReadyNext();
+}
+
+function renderMultiProgress(): void {
+  const voted = multiRecords.filter((record) => record.vote).length;
+  multiProgress.textContent = `${voted} / ${multiCases.length} voted`;
+  multiSteps.innerHTML = multiCases.map((item, index) => {
+    const record = multiRecords[index];
+    const state = record?.vote ? "done" : index === multiIndex ? "current" : index < multiIndex ? "done" : "";
+    return `<div class="multi-step ${state}"><span>${index + 1}</span><p>${escapeHtml(shorten(item.prompt, 54))}</p></div>`;
+  }).join("");
+}
+
+function renderMultiCaseLoading(testCase: MultiCase, index: number): void {
+  renderMultiProgress();
+  multiStage.innerHTML = `
+    <article class="multi-card">
+      <div class="multi-case-header">
+        <p class="eyebrow">Prompt ${index + 1} / ${multiCases.length}</p>
+        <h2>${escapeHtml(testCase.prompt)}</h2>
+        <p class="expectation"><strong>Expected:</strong> ${escapeHtml(testCase.expect)}</p>
+      </div>
+      <div class="multi-loading">Running regular messages and StateWeave…</div>
+    </article>`;
+}
+
+function renderMultiVote(record: MultiRecord): void {
+  const a = record.a === "stateweave" ? record.stateweave : record.regular;
+  const b = record.b === "stateweave" ? record.stateweave : record.regular;
+  multiStage.innerHTML = `
+    <article class="multi-card">
+      <div class="multi-case-header">
+        <p class="eyebrow">Prompt ${record.index + 1} / ${multiCases.length}</p>
+        <h2>${escapeHtml(record.prompt)}</h2>
+        <p class="expectation"><strong>Expected:</strong> ${escapeHtml(record.expect)}</p>
+      </div>
+      <div class="blind-grid">
+        <article class="blind-answer"><h3>Answer A</h3>${responseHtml(a)}</article>
+        <article class="blind-answer"><h3>Answer B</h3>${responseHtml(b)}</article>
+      </div>
+      <div class="vote-bar" aria-label="Vote">
+        <button class="button primary" type="button" data-vote="a">A is correct</button>
+        <button class="button primary" type="button" data-vote="b">B is correct</button>
+        <button class="button secondary" type="button" data-vote="both">Both</button>
+        <button class="button secondary" type="button" data-vote="neither">Neither</button>
+      </div>
+    </article>`;
+}
+
+function renderMultiReadyNext(): void {
+  const next = multiCases[multiIndex];
+  multiStage.innerHTML = `
+    <article class="multi-card ready-next">
+      <p class="eyebrow">Next prompt</p>
+      <h2>${escapeHtml(next.prompt)}</h2>
+      <p class="expectation"><strong>Expected:</strong> ${escapeHtml(next.expect)}</p>
+      <p class="muted-copy">Click “${escapeHtml(multiStart.textContent ?? "Run next prompt")}" when ready. Labels remain hidden until all votes are complete.</p>
+    </article>`;
+}
+
+function renderMultiReveal(): void {
+  const scores = multiScores();
+  multiStage.innerHTML = `
+    <article class="multi-card">
+      <div class="multi-case-header">
+        <p class="eyebrow">Prompt one complete</p>
+        <h2>${winnerText(scores)}</h2>
+        <p class="expectation">StateWeave ${scores.stateweave} · Regular ${scores.regular} · Neither ${scores.neither}</p>
+      </div>
+      <div class="reveal-list">
+        ${multiRecords.map((record) => revealRow(record)).join("")}
+      </div>
+    </article>`;
+}
+
+function revealRow(record: MultiRecord): string {
+  const selected = voteLabel(record.vote);
+  const winner = winnerForRecord(record);
+  return `
+    <article class="reveal-row">
+      <div>
+        <p class="eyebrow">Prompt ${record.index + 1}</p>
+        <h3>${escapeHtml(record.prompt)}</h3>
+        <p class="expectation">${escapeHtml(record.expect)}</p>
+      </div>
+      <div class="reveal-meta">
+        <span>A = ${primitiveLabel(record.a)}</span>
+        <span>B = ${primitiveLabel(record.b)}</span>
+        <strong>Vote: ${selected}</strong>
+        <strong>Credit: ${winner}</strong>
+      </div>
+    </article>`;
+}
+
+function multiScores(): { stateweave: number; regular: number; neither: number } {
+  return multiRecords.reduce((scores, record) => {
+    if (record.vote === "both") {
+      scores.stateweave += 1;
+      scores.regular += 1;
+    } else if (record.vote === "neither" || !record.vote) {
+      scores.neither += 1;
+    } else {
+      const primitive = record[record.vote];
+      scores[primitive] += 1;
+    }
+    return scores;
+  }, { stateweave: 0, regular: 0, neither: 0 });
+}
+
+function winnerForRecord(record: MultiRecord): string {
+  if (record.vote === "both") return "Both";
+  if (record.vote === "neither" || !record.vote) return "Neither";
+  return primitiveLabel(record[record.vote]);
+}
+
+function winnerText(scores: { stateweave: number; regular: number; neither: number }): string {
+  if (scores.stateweave > scores.regular) return "StateWeave won the blind vote";
+  if (scores.regular > scores.stateweave) return "Regular messages won the blind vote";
+  return "Blind vote ended in a tie";
+}
+
+function primitiveLabel(value: Primitive): string {
+  return value === "stateweave" ? "StateWeave" : "Regular";
+}
+
+function voteLabel(value: Vote | undefined): string {
+  if (value === "a") return "A";
+  if (value === "b") return "B";
+  if (value === "both") return "Both";
+  return "Neither";
 }
 
 function appendUser(text: string): void {

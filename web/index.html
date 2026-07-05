@@ -22,6 +22,7 @@
       <nav class="tabs" aria-label="Lab pages">
         <button id="state-tab" class="tab active" type="button" aria-controls="state-page" aria-selected="true">StateWeave</button>
         <button id="ab-tab" class="tab" type="button" aria-controls="ab-page" aria-selected="false">A/B testing</button>
+        <button id="multi-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt one</button>
       </nav>
 
       <main id="state-page" class="page active shell">
@@ -94,6 +95,28 @@
             <div class="empty-state compact">
               <h2>No A/B runs yet.</h2>
               <p>Run a prompt to see regular messages and StateWeave responses side by side.</p>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <main id="multi-page" class="page multi-page" hidden>
+        <section class="card multi-shell" aria-label="Prompt one blind multi-turn test">
+          <div class="multi-sidebar">
+            <p class="eyebrow">Blind multi-turn A/B</p>
+            <h2>Prompt one</h2>
+            <p class="muted-copy">Ten connected prompts run through regular messages and StateWeave. Vote A, B, both, or neither against the expected behavior. Labels stay hidden until all votes are done.</p>
+            <div id="multi-progress" class="multi-progress">0 / 10 voted</div>
+            <div id="multi-steps" class="multi-steps"></div>
+            <button id="multi-start" class="button primary" type="button">Start prompt one</button>
+          </div>
+
+          <div class="multi-main">
+            <div id="multi-stage" class="multi-stage">
+              <div class="empty-state compact">
+                <h2>Ready for a harder test.</h2>
+                <p>This sequence tests memory, constraint retention, topic switching, and corrections over ten turns.</p>
+              </div>
             </div>
           </div>
         </section>
