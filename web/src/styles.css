@@ -357,18 +357,209 @@ h3 {
   color: var(--muted);
 }
 
-.stream-preview {
-  max-height: 220px;
+.state-stream-card,
+.assistant-final-card {
+  width: min(100%, 760px);
+  border-left: 3px solid var(--stateweave);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+}
+
+.stream-card-header,
+.assistant-final-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.stream-card-header strong {
+  display: block;
+  color: var(--foreground);
+  font-size: 0.94rem;
+  letter-spacing: -0.01em;
+}
+
+.answer .stream-card-header .eyebrow,
+.answer .assistant-final-header span {
+  display: block;
+  margin: 0 0 3px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.stream-orb {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--stateweave);
+  box-shadow: 0 0 0 7px rgba(124, 58, 237, 0.08);
+}
+
+.stream-steps {
+  display: grid;
+  gap: 8px;
+}
+
+.stream-empty,
+.stream-note {
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+}
+
+.stream-step {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fafafa;
+}
+
+.stream-step[open] {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.08);
+}
+
+.stream-step summary {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.stream-step summary::-webkit-details-marker {
+  display: none;
+}
+
+.answer .stream-step-title,
+.answer .stream-chip,
+.stream-step summary small {
+  display: inline-flex;
+  margin: 0;
+}
+
+.stream-step-title {
+  color: var(--foreground);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.stream-step summary small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stream-chip {
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: #f4f4f5;
+  color: var(--muted-foreground);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.stream-chip.is-streaming {
+  background: rgba(124, 58, 237, 0.1);
+  color: var(--stateweave);
+}
+
+.stream-chip.is-committed,
+.stream-chip.is-parsed {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.stream-chip.is-retrying {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.stream-chip.is-rejected {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.stream-step-body {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding: 10px;
+}
+
+.stream-step-body label {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stream-code {
+  max-height: 260px;
   overflow: auto;
-  margin: 8px 0 0;
+  margin: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: #f8fafc;
+  background: #0f172a;
   padding: 10px;
+  color: #e5e7eb;
   white-space: pre-wrap;
   word-break: break-word;
-  color: #27272a;
-  font: 0.74rem/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font: 0.72rem/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.stream-raw {
+  border-top: 1px dashed var(--border);
+  padding-top: 7px;
+}
+
+.stream-raw summary,
+.stream-run-trace summary {
+  cursor: pointer;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.stream-error-text,
+.error-copy {
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fef2f2;
+  padding: 9px 10px;
+  color: #b91c1c;
+  font-size: 0.82rem;
+}
+
+.assistant-final-body {
+  margin-top: 2px;
+}
+
+.stream-run-trace {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.stream-run-trace > .stream-steps {
+  margin-top: 8px;
+}
+
+.state-stream-error {
+  border-left-color: var(--danger);
 }
 
 .composer {
@@ -1846,5 +2037,13 @@ label {
     align-items: stretch;
     flex-direction: column;
     grid-template-columns: 1fr;
+  }
+
+  .stream-step summary {
+    grid-template-columns: 1fr auto;
+  }
+
+  .stream-step summary small {
+    grid-column: 1 / -1;
   }
 }

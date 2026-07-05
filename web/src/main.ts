@@ -71,7 +71,20 @@ type WorkspaceFileContent = WorkspaceFile & { content: string };
 type TransferMode = "export" | "import";
 type WorkspaceViewName = "graph" | "tools" | "files";
 type AgentSettings = { systemPrompt: string; nodeTypes: string[]; maxIterations: number };
-type LiveStreamLog = { metadata?: StateWeaveRunMetadata; tokens: Map<number, string>; events: string[]; prompt?: string; modelMetadata: Map<number, Record<string, unknown>[]> };
+type LiveStepStatus = "streaming" | "parsed" | "retrying" | "rejected" | "committed";
+type LiveStreamStep = {
+  step: number;
+  status: LiveStepStatus;
+  rawModelOutput: string;
+  tokenEstimate?: number;
+  parsedOps?: GraphOp[];
+  error?: string;
+  retryable?: boolean;
+  modelMetadata: Record<string, unknown>[];
+  nodeCount?: number;
+  edgeCount?: number;
+};
+type LiveStreamLog = { metadata?: StateWeaveRunMetadata; steps: Map<number, LiveStreamStep>; events: string[]; prompt?: string; latestStep?: number; finalAnswer?: string };
 
 let activePage: PageName = pageFromHash();
 let multiSuiteId: SuiteId = suiteIdForPage(activePage) ?? "prompt-one";
@@ -589,6 +602,7 @@ fileViewer.addEventListener("click", (event) => {
 chat.addEventListener("click", (event) => {
   if (handleArtifactPreviewClick(event)) return;
 });
+chat.addEventListener("toggle", handleStreamAccordionToggle, true);
 abResults.addEventListener("click", (event) => {
   if (handleArtifactPreviewClick(event)) return;
   const target = event.target instanceof Element ? event.target : undefined;
@@ -780,18 +794,18 @@ async function sendStateWeaveMessage(): Promise<void> {
       if (event.type === "frame" && event.phase === "before") stateInput.textContent = event.prompt ?? compactFrame(event.frame);
       if (event.type === "frame") renderGraph(event.frame.graph);
       if (event.type === "error") status.textContent = event.retryable ? `GraphOps rejected at step ${event.step}; retrying…` : "GraphOps rejected.";
-      if (event.type === "token") status.textContent = `Streaming step ${event.step} GraphOps…`;
+      if (event.type === "ops") status.textContent = `Parsed step ${event.step} GraphOps…`;
+      if (event.type === "frame" && event.phase === "after") status.textContent = `Committed step ${event.step} to StateGraph.`;
+      if (event.type === "token") status.textContent = `Streaming uncommitted GraphOps · step ${event.step}…`;
     });
     stateFrame = result.stateweave.frameAfter;
-    pending.remove();
-    const assistantMessage = appendAssistant(result.stateweave.output);
+    const assistantMessage = finalizePendingStateWeave(pending, result.stateweave.output, live);
     linkLatestConversationNodes(result.stateweave.graph, userMessage, assistantMessage);
     renderStateWeave(result.stateweave);
     void loadWorkspaceFiles();
     status.textContent = `Done · StateGraph ${result.stateweave.graph.nodes.length} nodes / ${result.stateweave.graph.edges.length} edges`;
   } catch (error) {
-    pending.remove();
-    appendError(chat, error instanceof Error ? error.message : String(error));
+    failPendingStateWeave(pending, error instanceof Error ? error.message : String(error), live);
     status.textContent = "Failed.";
   } finally {
     stateRunning = false;
@@ -1776,18 +1790,6 @@ function appendUser(text: string): HTMLElement {
   return chat.lastElementChild as HTMLElement;
 }
 
-function appendAssistant(stateweave: string): HTMLElement {
-  chat.insertAdjacentHTML(
-    "beforeend",
-    `<article class="answer state-answer assistant-response">
-      <span>StateWeave</span>
-      ${responseHtml(stateweave)}
-    </article>`
-  );
-  scrollChat(chat);
-  return chat.lastElementChild as HTMLElement;
-}
-
 function linkLatestConversationNodes(graphValue: StateGraph, userMessage: HTMLElement, assistantMessage: HTMLElement): void {
   const userNode = latestNodeOfType(graphValue, "user_input");
   const assistantNode = latestNodeOfType(graphValue, "assistant_output");
@@ -1800,7 +1802,15 @@ function latestNodeOfType(graphValue: StateGraph, type: StateGraph["nodes"][numb
 }
 
 function createLiveStreamLog(): LiveStreamLog {
-  return { tokens: new Map(), events: [], modelMetadata: new Map() };
+  return { steps: new Map(), events: [] };
+}
+
+function ensureLiveStep(live: LiveStreamLog, stepNumber: number): LiveStreamStep {
+  const existing = live.steps.get(stepNumber);
+  if (existing) return existing;
+  const step: LiveStreamStep = { step: stepNumber, status: "streaming", rawModelOutput: "", modelMetadata: [] };
+  live.steps.set(stepNumber, step);
+  return step;
 }
 
 function updateLiveStreamLog(live: LiveStreamLog, event: StateWeaveStreamEvent): void {
@@ -1810,36 +1820,54 @@ function updateLiveStreamLog(live: LiveStreamLog, event: StateWeaveStreamEvent):
     return;
   }
   if (event.type === "frame" && event.phase === "before") {
+    const step = ensureLiveStep(live, event.step);
+    live.latestStep = event.step;
     live.prompt = event.prompt;
+    step.status = "streaming";
+    step.tokenEstimate = event.tokenEstimate?.estimatedTokens;
     live.events.push(`step ${event.step} model call · promptTokens≈${event.tokenEstimate?.estimatedTokens ?? "unknown"}`);
     return;
   }
   if (event.type === "token") {
-    live.tokens.set(event.step, `${live.tokens.get(event.step) ?? ""}${event.token}`);
+    const step = ensureLiveStep(live, event.step);
+    live.latestStep = event.step;
+    step.status = "streaming";
+    step.rawModelOutput += event.token;
     return;
   }
   if (event.type === "model_metadata") {
-    const current = live.modelMetadata.get(event.step) ?? [];
-    current.push(event.metadata);
-    live.modelMetadata.set(event.step, current);
+    const step = ensureLiveStep(live, event.step);
+    step.modelMetadata.push(event.metadata);
     const stopReason = typeof event.metadata.stopReason === "string" ? ` · stop=${event.metadata.stopReason}` : "";
     live.events.push(`step ${event.step} model metadata${stopReason}`);
     return;
   }
   if (event.type === "ops") {
+    const step = ensureLiveStep(live, event.step);
+    step.status = "parsed";
+    step.parsedOps = event.ops;
     live.events.push(`step ${event.step} parsed GraphOps\n${formatOps(event.ops)}`);
     return;
   }
   if (event.type === "error") {
+    const step = ensureLiveStep(live, event.step);
+    step.status = event.retryable ? "retrying" : "rejected";
+    step.error = event.message;
+    step.retryable = event.retryable;
     live.events.push(`step ${event.step} GraphOps rejected${event.retryable ? " · retrying" : ""}\n${event.message}`);
     return;
   }
   if (event.type === "frame" && event.phase === "after") {
+    const step = ensureLiveStep(live, event.step);
+    step.status = "committed";
+    step.nodeCount = event.frame.graph.nodes.length;
+    step.edgeCount = event.frame.graph.edges.length;
     live.events.push(`step ${event.step} committed · ${event.frame.graph.nodes.length} nodes / ${event.frame.graph.edges.length} edges`);
     return;
   }
   if (event.type === "final") {
     live.metadata = event.result.metadata;
+    live.finalAnswer = event.result.finalAnswer;
     live.events.push(`final · steps=${event.result.metadata.stepCount} retries=${event.result.metadata.retryCount} duration=${event.result.metadata.durationMs ?? 0}ms`);
   }
 }
@@ -1847,28 +1875,174 @@ function updateLiveStreamLog(live: LiveStreamLog, event: StateWeaveStreamEvent):
 function formatLiveStreamLog(live: LiveStreamLog): string {
   const metadata = live.metadata ? [`metadata:`, JSON.stringify(live.metadata, null, 2), ""] : [];
   const prompt = live.prompt ? [`current model prompt:`, live.prompt, ""] : [];
-  const modelMetadata = [...live.modelMetadata.entries()].map(([step, items]) => `step ${step} provider metadata:\n${JSON.stringify(items, null, 2)}`);
-  const tokenSections = [...live.tokens.entries()].map(([step, text]) => `step ${step} streaming model output:\n${text}`);
-  return [...metadata, ...prompt, ...live.events, ...modelMetadata, ...tokenSections].join("\n\n").trim() || "Waiting for StateWeave stream…";
+  const stepSections = [...live.steps.values()].map((step) => {
+    const modelMetadata = step.modelMetadata.length ? [`step ${step.step} provider metadata:`, JSON.stringify(step.modelMetadata, null, 2)] : [];
+    return [
+      `step ${step.step} status: ${step.status}`,
+      ...(step.tokenEstimate ? [`step ${step.step} promptTokens≈${step.tokenEstimate}`] : []),
+      ...modelMetadata,
+      `step ${step.step} raw model output:`,
+      step.rawModelOutput,
+      ...(step.parsedOps ? [`step ${step.step} parsed GraphOps:`, formatOps(step.parsedOps)] : []),
+      ...(step.error ? [`step ${step.step} GraphOps error:`, step.error] : []),
+      ...(typeof step.nodeCount === "number" ? [`step ${step.step} graph: ${step.nodeCount} nodes / ${step.edgeCount ?? 0} edges`] : [])
+    ].join("\n");
+  });
+  return [...metadata, ...prompt, ...live.events, ...stepSections].join("\n\n").trim() || "Waiting for StateWeave stream…";
 }
 
 function updatePendingStateWeave(item: HTMLElement, live: LiveStreamLog): void {
   const statusEl = item.querySelector<HTMLElement>("[data-stream-status]");
-  const previewEl = item.querySelector<HTMLElement>("[data-stream-preview]");
-  const latestStep = [...live.tokens.keys()].at(-1);
-  const latestTokens = latestStep ? live.tokens.get(latestStep) ?? "" : "";
-  if (statusEl) statusEl.textContent = latestStep ? `Streaming step ${latestStep} GraphOps…` : "Opening StateWeave stream…";
-  if (previewEl) previewEl.textContent = latestTokens || live.events.at(-1) || "Waiting for tokens…";
+  const stepsEl = item.querySelector<HTMLElement>("[data-stream-steps]");
+  const latestStep = live.latestStep;
+  const maxSteps = live.metadata?.maxSteps;
+  if (statusEl) {
+    statusEl.textContent = live.finalAnswer
+      ? `Done · ${live.metadata?.stepCount ?? live.steps.size} step${(live.metadata?.stepCount ?? live.steps.size) === 1 ? "" : "s"}`
+      : latestStep
+        ? `Weaving GraphOps · step ${latestStep}${maxSteps ? ` / ${maxSteps}` : ""}`
+        : "Opening StateWeave stream…";
+  }
+  if (stepsEl) {
+    const openSteps = new Set([...stepsEl.querySelectorAll<HTMLDetailsElement>("details.stream-step[open]")].map((detail) => Number(detail.dataset.step)));
+    if (!openSteps.size && latestStep) openSteps.add(latestStep);
+    stepsEl.innerHTML = renderLiveSteps(live, openSteps);
+  }
   scrollChat(chat);
 }
 
 function appendPendingStateWeave(): HTMLElement {
   const item = document.createElement("article");
-  item.className = "answer pending assistant-response";
-  item.innerHTML = `<span>StateWeave</span><p data-stream-status>Opening StateWeave stream…</p><pre class="stream-preview" data-stream-preview>Waiting for tokens…</pre>`;
+  item.className = "answer pending assistant-response state-stream-card";
+  item.innerHTML = `
+    <div class="stream-card-header">
+      <div>
+        <span class="eyebrow">StateWeave</span>
+        <strong data-stream-status>Opening StateWeave stream…</strong>
+      </div>
+      <span class="stream-orb" aria-hidden="true"></span>
+    </div>
+    <div class="stream-steps" data-stream-steps>
+      <p class="stream-empty">Waiting for the first GraphOps step…</p>
+    </div>`;
   chat.append(item);
   scrollChat(chat);
   return item;
+}
+
+function finalizePendingStateWeave(item: HTMLElement, stateweave: string, live: LiveStreamLog): HTMLElement {
+  item.classList.remove("pending", "state-stream-card");
+  item.classList.add("state-answer", "assistant-final-card");
+  item.innerHTML = `
+    <div class="assistant-final-header">
+      <span>StateWeave</span>
+    </div>
+    <div class="assistant-final-body">${responseHtml(stateweave)}</div>
+    ${renderRunTrace(live)}`;
+  scrollChat(chat);
+  return item;
+}
+
+function failPendingStateWeave(item: HTMLElement, message: string, live: LiveStreamLog): HTMLElement {
+  item.classList.remove("pending");
+  item.classList.add("state-stream-error");
+  item.innerHTML = `
+    <div class="stream-card-header">
+      <div>
+        <span class="eyebrow">StateWeave</span>
+        <strong>Run failed</strong>
+      </div>
+    </div>
+    <p class="message-copy error-copy">${escapeHtml(message)}</p>
+    ${renderRunTrace(live)}`;
+  scrollChat(chat);
+  return item;
+}
+
+function renderRunTrace(live: LiveStreamLog): string {
+  if (!live.steps.size) return "";
+  const stepCount = live.metadata?.stepCount ?? live.steps.size;
+  const retryCount = live.metadata?.retryCount ?? [...live.steps.values()].filter((step) => step.retryable).length;
+  const duration = typeof live.metadata?.durationMs === "number" ? ` · ${live.metadata.durationMs}ms` : "";
+  const retryText = retryCount ? ` · ${retryCount} ${retryCount === 1 ? "retry" : "retries"}` : "";
+  return `<details class="stream-run-trace"><summary>Run trace · ${stepCount} step${stepCount === 1 ? "" : "s"}${retryText}${duration}</summary><div class="stream-steps">${renderLiveSteps(live, new Set())}</div></details>`;
+}
+
+function renderLiveSteps(live: LiveStreamLog, openSteps: Set<number>): string {
+  const steps = [...live.steps.values()].sort((a, b) => a.step - b.step);
+  if (!steps.length) return `<p class="stream-empty">Waiting for the first GraphOps step…</p>`;
+  return steps.map((step) => renderLiveStep(step, openSteps.has(step.step))).join("");
+}
+
+function renderLiveStep(step: LiveStreamStep, open: boolean): string {
+  const opsSummary = step.parsedOps ? summarizeOps(step.parsedOps) : undefined;
+  const rawSummary = step.rawModelOutput ? `${step.rawModelOutput.length.toLocaleString()} chars` : "waiting";
+  const graphSummary = typeof step.nodeCount === "number" ? `${step.nodeCount} nodes · ${step.edgeCount ?? 0} edges` : "graph updates after commit";
+  const detail = step.parsedOps
+    ? streamCodeSection("Parsed GraphOps", formatOps(step.parsedOps))
+    : step.rawModelOutput
+      ? streamCodeSection("Streaming raw SWX", compactStreamText(step.rawModelOutput))
+      : `<p class="stream-note">Waiting for model tokens…</p>`;
+  const raw = step.parsedOps && step.rawModelOutput ? `<details class="stream-raw"><summary>Raw model output</summary>${streamCodeSection("", compactStreamText(step.rawModelOutput))}</details>` : "";
+  const metadata = step.modelMetadata.length ? streamCodeSection("Provider metadata", JSON.stringify(step.modelMetadata, null, 2)) : "";
+  const error = step.error ? `<p class="stream-error-text">${escapeHtml(step.error)}</p>` : "";
+  return `
+    <details class="stream-step ${streamStatusClass(step.status)}" data-step="${step.step}"${open ? " open" : ""}>
+      <summary>
+        <span class="stream-step-title">Step ${step.step}</span>
+        <span class="stream-chip ${streamStatusClass(step.status)}">${streamStatusLabel(step.status)}</span>
+        <small>${escapeHtml(opsSummary ?? rawSummary)} · ${escapeHtml(graphSummary)}</small>
+      </summary>
+      <div class="stream-step-body">
+        ${step.status === "streaming" ? `<p class="stream-note">Streaming transactional GraphOps. The graph panel updates after this step validates and commits.</p>` : ""}
+        ${detail}
+        ${error}
+        ${metadata}
+        ${raw}
+      </div>
+    </details>`;
+}
+
+function streamCodeSection(label: string, value: string): string {
+  return `${label ? `<label>${escapeHtml(label)}</label>` : ""}<pre class="stream-code">${escapeHtml(value)}</pre>`;
+}
+
+function summarizeOps(ops: GraphOp[]): string {
+  const counts = new Map<string, number>();
+  for (const op of ops) counts.set(op.op, (counts.get(op.op) ?? 0) + 1);
+  const parts = [
+    countLabel(counts.get("add_node") ?? 0, "node"),
+    countLabel(counts.get("add_edge") ?? 0, "edge"),
+    countLabel(counts.get("update_node") ?? 0, "update"),
+    countLabel(counts.get("call_tool") ?? 0, "tool"),
+    counts.get("focus") ? "focus" : "",
+    counts.get("final") ? "final" : ""
+  ].filter(Boolean);
+  return parts.join(" · ") || `${ops.length} op${ops.length === 1 ? "" : "s"}`;
+}
+
+function countLabel(count: number, label: string): string {
+  if (!count) return "";
+  return `${count} ${label}${count === 1 ? "" : "s"}`;
+}
+
+function streamStatusLabel(statusValue: LiveStepStatus): string {
+  if (statusValue === "committed") return "Committed";
+  if (statusValue === "parsed") return "Parsed";
+  if (statusValue === "retrying") return "Retrying";
+  if (statusValue === "rejected") return "Rejected";
+  return "Streaming";
+}
+
+function streamStatusClass(statusValue: LiveStepStatus): string {
+  return `is-${statusValue}`;
+}
+
+function compactStreamText(value: string, maxLength = 2400): string {
+  if (value.length <= maxLength) return value;
+  const headLength = Math.floor(maxLength * 0.62);
+  const tailLength = maxLength - headLength;
+  return `${value.slice(0, headLength)}\n\n… ${value.length - maxLength} characters hidden in chat preview …\n\n${value.slice(-tailLength)}`;
 }
 
 function appendAbPending(prompt: string): HTMLElement {
@@ -2439,6 +2613,15 @@ function handleArtifactPreviewClick(event: Event): boolean {
   const artifact = artifactPreviews.get(id);
   if (artifact) openArtifactModal(artifact);
   return true;
+}
+
+function handleStreamAccordionToggle(event: Event): void {
+  const target = event.target instanceof HTMLDetailsElement ? event.target : undefined;
+  if (!target?.open || !target.classList.contains("stream-step")) return;
+  const group = target.closest(".stream-steps");
+  group?.querySelectorAll<HTMLDetailsElement>("details.stream-step[open]").forEach((detail) => {
+    if (detail !== target) detail.open = false;
+  });
 }
 
 function openArtifactModal(artifact: string): void {
