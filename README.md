@@ -42,6 +42,7 @@ StateWeave is experimental. The core primitive is intentionally small and readab
 - No hidden message-history abstraction.
 - In-memory JSON graph for the MVP.
 - Cortex-style graph focus/branching over transcript replay.
+- Web lab trace JSON is persisted under `STATEWEAVE_TRACE_DIR` (Docker default `/data/traces`).
 
 ## Installation
 

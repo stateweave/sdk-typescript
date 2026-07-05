@@ -17,6 +17,7 @@ services:
       ANTHROPIC_MAX_TOKENS: ${ANTHROPIC_MAX_TOKENS:-1024}
       ANTHROPIC_TEMPERATURE: ${ANTHROPIC_TEMPERATURE:-0}
       STATEWEAVE_RUN_STORE: ${STATEWEAVE_RUN_STORE:-/data/eval-runs.json}
+      STATEWEAVE_TRACE_DIR: ${STATEWEAVE_TRACE_DIR:-/data/traces}
     volumes:
       - stateweave-web-data:/data
     ports:

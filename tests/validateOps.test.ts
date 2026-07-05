@@ -76,6 +76,27 @@ it("parses raw output blocks without requiring artifact as a structural type", (
   });
 });
 
+it("tolerates a final SWX block missing its closing sentinel", () => {
+  const ops = parseAndValidateOps(`SWX/1
+@node output_3 html_game "Fixed Pac-Man" mime=text/html
+@edge user_input_3 creates output_3
+@final output_3
+<<<output_3:text/html
+<html><body>Pac-Man</body></html>`);
+
+  expect(ops).toContainEqual({
+    op: "add_node",
+    node: {
+      id: "output_3",
+      type: "html_game",
+      text: "Fixed Pac-Man",
+      status: "resolved",
+      data: { mime: "text/html", content: "<html><body>Pac-Man</body></html>", swxTerminated: false }
+    }
+  });
+  expect(ops).toContainEqual({ op: "final", answer: "<html><body>Pac-Man</body></html>", artifactId: "output_3" });
+});
+
 it("parses graph ops wrapped in a markdown swx fence", () => {
   const ops = parseAndValidateOps(`\n\`\`\`swx\nSWX/1\n@focus "next"\n\`\`\`\n`);
   expect(ops).toEqual([{ op: "focus", currentFocus: "next" }]);

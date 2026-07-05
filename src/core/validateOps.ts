@@ -49,7 +49,7 @@ export const graphOpSchema = z.discriminatedUnion("op", [
 
 export const graphOpsResponseSchema = z.object({ ops: z.array(graphOpSchema).min(1) });
 
-type SwxBlock = { id: string; mime: string; content: string };
+type SwxBlock = { id: string; mime: string; content: string; terminated: boolean };
 
 export function parseAndValidateOps(raw: string): GraphOp[] {
   const text = stripFence(raw.trim());
@@ -168,8 +168,7 @@ function extractBlocks(raw: string): { commands: string; blocks: SwxBlock[] } {
       content.push(lines[index]);
       index++;
     }
-    if (index >= lines.length) throw new Error(`Unterminated SWX block: ${id}`);
-    blocks.push({ id, mime, content: content.join("\n") });
+    blocks.push({ id, mime, content: content.join("\n"), terminated: index < lines.length });
   }
 
   return { commands: commandLines.join("\n"), blocks };
@@ -178,7 +177,7 @@ function extractBlocks(raw: string): { commands: string; blocks: SwxBlock[] } {
 function mergeArtifactBlock(nodeOps: Extract<GraphOp, { op: "add_node" }>[], block: SwxBlock): void {
   const existing = nodeOps.find((op) => op.node.id === block.id);
   if (existing) {
-    existing.node.data = { ...existing.node.data, mime: block.mime, content: block.content };
+    existing.node.data = { ...existing.node.data, mime: block.mime, content: block.content, ...(block.terminated ? {} : { swxTerminated: false }) };
     existing.node.status = existing.node.status ?? "resolved";
     return;
   }
@@ -190,7 +189,7 @@ function mergeArtifactBlock(nodeOps: Extract<GraphOp, { op: "add_node" }>[], blo
       type: "artifact",
       text: `Artifact ${block.id}`,
       status: "resolved",
-      data: { mime: block.mime, content: block.content }
+      data: { mime: block.mime, content: block.content, ...(block.terminated ? {} : { swxTerminated: false }) }
     }
   });
 }
@@ -209,7 +208,7 @@ function finalOpFor(target: string, blocks: SwxBlock[], nodeOps: Extract<GraphOp
 }
 
 function finalFromImplicitBlock(blocks: SwxBlock[]): Extract<GraphOp, { op: "final" }>[] {
-  const block = blocks.find((item) => item.id === "final" || item.id === "answer");
+  const block = blocks.find((item) => item.id === "final" || item.id === "answer") ?? (blocks.length === 1 ? blocks[0] : undefined);
   return block ? [{ op: "final", answer: block.content, artifactId: block.id }] : [];
 }
 
