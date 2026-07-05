@@ -1444,70 +1444,177 @@ function appendError(container: HTMLElement, message: string): void {
 function renderGraph(value: StateGraph): void {
   const layout = graphLayout(value);
   const turnCount = value.nodes.filter((node) => node.type === "user_input").length;
+  const latestNodeId = value.nodes.at(-1)?.id;
 
-  graph.className = "graph-visual";
+  graph.className = "graph-visual obsidian-graph";
   graph.innerHTML = `
-    <div class="graph-summary">
+    <div class="graph-summary floating">
       <strong>Turn ${turnCount}</strong>
       <span>${value.nodes.length} nodes · ${value.edges.length} edges</span>
     </div>
-    <svg class="graph-svg" viewBox="0 0 ${layout.width} ${layout.height}" role="img" aria-label="StateGraph visualization">
+    <svg class="graph-svg obsidian-map" viewBox="0 0 ${layout.width} ${layout.height}" role="img" aria-label="StateGraph knowledge map">
       <defs>
-        <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M 0 0 L 10 5 L 0 10 z"></path>
-        </marker>
+        <radialGradient id="graph-glow" cx="50%" cy="50%" r="70%">
+          <stop offset="0%" stop-color="#ffffff"></stop>
+          <stop offset="56%" stop-color="#fafafa"></stop>
+          <stop offset="100%" stop-color="#eef2ff"></stop>
+        </radialGradient>
       </defs>
+      <rect x="0" y="0" width="${layout.width}" height="${layout.height}" rx="18" fill="url(#graph-glow)"></rect>
       <g class="edges">
         ${layout.edges.map((edge) => edge.fromNode && edge.toNode ? `
-          <g class="edge-line">
-            <line x1="${edge.fromNode.x}" y1="${edge.fromNode.y}" x2="${edge.toNode.x}" y2="${edge.toNode.y}" marker-end="url(#arrow)"></line>
-            <text x="${(edge.fromNode.x + edge.toNode.x) / 2}" y="${(edge.fromNode.y + edge.toNode.y) / 2 - 8}">${escapeHtml(edge.type)}</text>
+          <g class="obsidian-edge ${escapeHtml(edge.type)}">
+            <line x1="${edge.fromNode.x}" y1="${edge.fromNode.y}" x2="${edge.toNode.x}" y2="${edge.toNode.y}"></line>
+            <title>${escapeHtml(edge.from)} ${escapeHtml(edge.type)} ${escapeHtml(edge.to)}</title>
           </g>` : "").join("")}
       </g>
       <g class="nodes">
         ${layout.nodes.map((node) => `
-          <g class="graph-node-vis ${escapeHtml(node.type)}" transform="translate(${node.x} ${node.y})">
-            <circle r="28"></circle>
-            <text class="node-id" y="-2">${escapeHtml(shorten(node.id, 18))}</text>
-            <text class="node-type" y="15">${escapeHtml(node.type)}</text>
+          <g class="obsidian-node ${escapeHtml(node.type)} ${node.id === "system_root" ? "root" : ""} ${node.id === latestNodeId ? "latest" : ""}" transform="translate(${node.x} ${node.y})">
+            <circle r="${node.radius}"></circle>
+            <text class="node-id" y="${node.radius + 15}">${escapeHtml(shorten(node.id, node.id === "system_root" ? 18 : 16))}</text>
+            <title>${escapeHtml(`${node.id} [${node.type}]\n${node.text}`)}</title>
           </g>`).join("")}
       </g>
     </svg>
-    <div class="node-details">
-      ${value.nodes.map((node) => `
-        <article class="node-detail">
+    <div class="graph-focus-strip">
+      ${layout.featuredNodes.map((node) => `
+        <article class="node-detail compact ${escapeHtml(node.type)}">
           <div><strong>${escapeHtml(node.id)}</strong><span>${escapeHtml(node.type)}</span></div>
-          <p>${escapeHtml(node.text)}</p>
+          <p>${escapeHtml(shorten(node.text, 180))}</p>
         </article>`).join("")}
     </div>
   `;
 }
 
+type GraphLayoutNode = StateGraph["nodes"][number] & { x: number; y: number; vx: number; vy: number; radius: number; degree: number };
+
 function graphLayout(value: StateGraph): {
   width: number;
   height: number;
-  nodes: Array<StateGraph["nodes"][number] & { x: number; y: number }>;
-  edges: Array<StateGraph["edges"][number] & { fromNode?: StateGraph["nodes"][number] & { x: number; y: number }; toNode?: StateGraph["nodes"][number] & { x: number; y: number } }>;
+  nodes: GraphLayoutNode[];
+  edges: Array<StateGraph["edges"][number] & { fromNode?: GraphLayoutNode; toNode?: GraphLayoutNode }>;
+  featuredNodes: GraphLayoutNode[];
 } {
-  const width = 920;
-  const columns = Math.min(4, Math.max(1, Math.ceil(Math.sqrt(value.nodes.length || 1))));
-  const columnWidth = width / columns;
-  const rowHeight = 140;
-  const rows = Math.max(1, Math.ceil(value.nodes.length / columns));
-  const height = Math.max(360, rows * rowHeight + 80);
+  const width = 1080;
+  const height = 760;
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const degree = new Map<string, number>();
+  for (const edge of value.edges) {
+    degree.set(edge.from, (degree.get(edge.from) ?? 0) + 1);
+    degree.set(edge.to, (degree.get(edge.to) ?? 0) + 1);
+  }
 
-  const nodes = value.nodes.map((node, index) => {
-    const column = index % columns;
-    const row = Math.floor(index / columns);
+  const nodes: GraphLayoutNode[] = value.nodes.map((node, index) => {
+    const root = node.id === "system_root";
+    const ring = root ? 0 : 110 + Math.sqrt(index + 1) * 28;
+    const angle = root ? 0 : seededAngle(node.id, index);
     return {
       ...node,
-      x: Math.round(columnWidth / 2 + column * columnWidth),
-      y: 80 + row * rowHeight
+      x: root ? centerX : centerX + Math.cos(angle) * ring,
+      y: root ? centerY : centerY + Math.sin(angle) * ring,
+      vx: 0,
+      vy: 0,
+      radius: nodeRadius(node.type, degree.get(node.id) ?? 0, root),
+      degree: degree.get(node.id) ?? 0
     };
   });
   const nodeMap = new Map(nodes.map((node) => [node.id, node]));
   const edges = value.edges.map((edge) => ({ ...edge, fromNode: nodeMap.get(edge.from), toNode: nodeMap.get(edge.to) }));
-  return { width, height, nodes, edges };
+
+  for (let iteration = 0; iteration < 170; iteration++) {
+    const cooling = 1 - iteration / 170;
+    for (let i = 0; i < nodes.length; i++) {
+      const a = nodes[i];
+      for (let j = i + 1; j < nodes.length; j++) {
+        const b = nodes[j];
+        const dx = b.x - a.x || 0.01;
+        const dy = b.y - a.y || 0.01;
+        const distanceSquared = Math.max(90, dx * dx + dy * dy);
+        const distance = Math.sqrt(distanceSquared);
+        const force = ((a.radius + b.radius + 42) * 18) / distanceSquared;
+        const fx = (dx / distance) * force;
+        const fy = (dy / distance) * force;
+        if (a.id !== "system_root") {
+          a.vx -= fx;
+          a.vy -= fy;
+        }
+        if (b.id !== "system_root") {
+          b.vx += fx;
+          b.vy += fy;
+        }
+      }
+    }
+
+    for (const edge of edges) {
+      const from = edge.fromNode;
+      const to = edge.toNode;
+      if (!from || !to) continue;
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const distance = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+      const ideal = edge.from === "system_root" || edge.to === "system_root" ? 128 : 112;
+      const force = (distance - ideal) * 0.0065;
+      const fx = (dx / distance) * force;
+      const fy = (dy / distance) * force;
+      if (from.id !== "system_root") {
+        from.vx += fx;
+        from.vy += fy;
+      }
+      if (to.id !== "system_root") {
+        to.vx -= fx;
+        to.vy -= fy;
+      }
+    }
+
+    for (const node of nodes) {
+      if (node.id === "system_root") {
+        node.x = centerX;
+        node.y = centerY;
+        node.vx = 0;
+        node.vy = 0;
+        continue;
+      }
+      node.vx += (centerX - node.x) * 0.0009;
+      node.vy += (centerY - node.y) * 0.0009;
+      node.x = clamp(node.x + node.vx * cooling, 54, width - 54);
+      node.y = clamp(node.y + node.vy * cooling, 54, height - 64);
+      node.vx *= 0.82;
+      node.vy *= 0.82;
+    }
+  }
+
+  const featuredNodes = [...nodes]
+    .sort((a, b) => Number(b.id === value.nodes.at(-1)?.id) - Number(a.id === value.nodes.at(-1)?.id) || b.degree - a.degree)
+    .slice(0, 8);
+
+  return { width, height, nodes, edges, featuredNodes };
+}
+
+function nodeRadius(type: string, degree: number, root: boolean): number {
+  if (root) return 34;
+  const base = type === "user_input" || type === "assistant_output" ? 20 : type === "artifact" ? 24 : 17;
+  return Math.min(30, base + Math.sqrt(degree) * 2.6);
+}
+
+function seededAngle(id: string, index: number): number {
+  const hash = hashString(id);
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  return (hash % 6283) / 1000 + index * golden;
+}
+
+function hashString(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return Math.abs(hash >>> 0);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function compactFrame(frame: GraphFrame): string {

@@ -46,36 +46,29 @@
           <p id="status" class="status">Ready.</p>
         </section>
 
-        <section class="card compare-card" aria-label="StateWeave model IO">
-          <div class="card-header">
-            <div>
-              <p class="eyebrow">Latest turn</p>
-              <h2>StateWeave model IO</h2>
-            </div>
-          </div>
-
-          <div class="comparison single">
-            <article class="compare-column">
-              <div class="column-header">
-                <span class="dot stateweave"></span>
-                <h3>GraphFrame → GraphOps</h3>
-              </div>
-              <label>Compiled GraphFrame input</label>
-              <pre id="state-input" class="code">No turn yet.</pre>
-              <label>Model GraphOps output</label>
-              <pre id="state-output" class="code small">No output yet.</pre>
-            </article>
-          </div>
-
+        <section class="card compare-card graph-workspace" aria-label="StateWeave graph workspace">
           <div class="graph-card">
             <div class="graph-heading">
               <div>
-                <label>Growing StateGraph</label>
-                <p>Obsidian-style graph state: one connected tree grows across turns; GraphFrame is the compiled model context.</p>
+                <p class="eyebrow">Growing StateGraph</p>
+                <h2>Obsidian-style graph memory</h2>
+                <p>The system root stays centered while facts, turns, decisions, and artifacts orbit by graph relation.</p>
               </div>
             </div>
             <div id="graph" class="graph-empty">No graph yet.</div>
           </div>
+
+          <details class="model-io-panel">
+            <summary>Latest GraphFrame → GraphOps</summary>
+            <div class="comparison single">
+              <article class="compare-column">
+                <label>Compiled GraphFrame input</label>
+                <pre id="state-input" class="code">No turn yet.</pre>
+                <label>Model GraphOps output</label>
+                <pre id="state-output" class="code small">No output yet.</pre>
+              </article>
+            </div>
+          </details>
         </section>
       </main>
 

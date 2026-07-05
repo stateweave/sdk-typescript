@@ -131,9 +131,9 @@ h3 {
 
 .shell {
   display: grid;
-  grid-template-columns: minmax(360px, 0.85fr) minmax(520px, 1.15fr);
+  grid-template-columns: minmax(380px, 0.86fr) minmax(560px, 1.14fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .card {
@@ -315,6 +315,12 @@ textarea:focus {
   padding: 16px;
 }
 
+.graph-workspace {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 96px);
+}
+
 .card-header {
   display: flex;
   justify-content: space-between;
@@ -385,23 +391,32 @@ label {
 }
 
 .graph-card {
-  margin-top: 14px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .graph-empty {
   display: grid;
+  flex: 1;
   place-items: center;
-  min-height: 120px;
+  min-height: 420px;
   border: 1px dashed var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   color: var(--muted);
 }
 
 .graph-heading {
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
-.graph-heading p {
+.graph-heading h2 {
+  margin-bottom: 4px;
+  font-size: 1.05rem;
+}
+
+.graph-heading p:not(.eyebrow) {
   max-width: 760px;
   color: var(--muted);
   font-size: 0.85rem;
@@ -409,22 +424,30 @@ label {
 }
 
 .graph-visual {
-  max-height: 620px;
-  overflow: auto;
+  position: relative;
+  flex: 1;
+  min-height: 560px;
+  overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 14px;
   background: #fff;
-  padding: 10px;
 }
 
-.graph-summary {
+.graph-summary.floating {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  right: 12px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
+  gap: 10px;
+  border: 1px solid rgba(229, 229, 229, 0.9);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 7px 10px;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
+  backdrop-filter: blur(10px);
 }
 
 .graph-summary strong {
@@ -434,85 +457,106 @@ label {
 .graph-svg {
   display: block;
   width: 100%;
-  min-width: 680px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  height: min(70vh, 760px);
+  min-height: 560px;
+}
+
+.obsidian-map {
   background:
-    linear-gradient(#f4f4f5 1px, transparent 1px),
-    linear-gradient(90deg, #f4f4f5 1px, transparent 1px),
-    #fafafa;
-  background-size: 32px 32px;
+    radial-gradient(circle at 50% 50%, rgba(124, 58, 237, 0.13), transparent 28%),
+    radial-gradient(circle at 70% 28%, rgba(37, 99, 235, 0.11), transparent 22%),
+    #fbfbff;
 }
 
-.graph-svg marker path {
-  fill: #a1a1aa;
+.obsidian-edge line {
+  stroke: rgba(82, 82, 91, 0.32);
+  stroke-linecap: round;
+  stroke-width: 1.35;
+  transition: stroke 180ms ease, stroke-width 180ms ease;
 }
 
-.edge-line line {
-  stroke: #a1a1aa;
-  stroke-width: 1.4;
+.obsidian-edge.follows line {
+  stroke: rgba(37, 99, 235, 0.28);
 }
 
-.edge-line text {
-  fill: var(--muted-foreground);
-  font-size: 11px;
-  paint-order: stroke;
-  stroke: #fafafa;
-  stroke-width: 4px;
-  text-anchor: middle;
+.obsidian-edge.supports line,
+.obsidian-edge.validates line,
+.obsidian-edge.creates line {
+  stroke: rgba(124, 58, 237, 0.36);
 }
 
-.graph-node-vis circle {
-  fill: #fff;
+.obsidian-node {
+  animation: graph-node-in 260ms ease both;
+}
+
+.obsidian-node circle {
+  fill: rgba(255, 255, 255, 0.96);
   stroke: var(--stateweave);
   stroke-width: 2;
-  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.08));
+  filter: drop-shadow(0 8px 14px rgba(24, 24, 27, 0.12));
+  transition: r 180ms ease, stroke-width 180ms ease, filter 180ms ease;
 }
 
-.graph-node-vis.system circle {
+.obsidian-node.root circle {
+  fill: #18181b;
   stroke: #18181b;
-  stroke-width: 2.5;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 22px rgba(24, 24, 27, 0.24));
 }
 
-.graph-node-vis.user_input circle {
+.obsidian-node.latest circle {
+  stroke-width: 3.5;
+  filter: drop-shadow(0 0 18px rgba(124, 58, 237, 0.36));
+}
+
+.obsidian-node.user_input circle {
   stroke: #2563eb;
 }
 
-.graph-node-vis.assistant_output circle {
+.obsidian-node.assistant_output circle {
   stroke: #7c3aed;
 }
 
-.graph-node-vis.artifact circle {
+.obsidian-node.artifact circle {
   stroke: #db2777;
 }
 
-.graph-node-vis.intent circle {
+.obsidian-node.intent circle,
+.obsidian-node.constraint circle {
   stroke: #18181b;
 }
 
-.graph-node-vis.fact circle {
+.obsidian-node.fact circle {
   stroke: #2563eb;
 }
 
-.graph-node-vis.hypothesis circle,
-.graph-node-vis.question circle,
-.graph-node-vis.risk circle {
+.obsidian-node.hypothesis circle,
+.obsidian-node.question circle,
+.obsidian-node.risk circle {
   stroke: #d97706;
 }
 
-.graph-node-vis.decision circle,
-.graph-node-vis.tool_result circle {
+.obsidian-node.decision circle,
+.obsidian-node.tool_result circle,
+.obsidian-node.test_result circle {
   stroke: #16a34a;
 }
 
-.graph-node-vis.tool_call circle {
+.obsidian-node.tool_call circle {
   stroke: #0891b2;
 }
 
-.graph-node-vis text {
+.obsidian-node text {
   text-anchor: middle;
-  dominant-baseline: middle;
   pointer-events: none;
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 4px;
+}
+
+.obsidian-node.root text {
+  fill: #18181b;
+  font-weight: 800;
 }
 
 .node-id {
@@ -521,22 +565,29 @@ label {
   font-weight: 700;
 }
 
-.node-type {
-  fill: var(--muted);
-  font-size: 9px;
-}
-
-.node-details {
+.graph-focus-strip {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 8px;
-  margin-top: 10px;
+  max-height: 170px;
+  overflow: auto;
+  padding: 2px;
 }
 
 .node-detail {
-  border: 1px solid var(--border);
+  border: 1px solid rgba(229, 229, 229, 0.9);
   border-radius: 10px;
+  background: rgba(255, 255, 255, 0.88);
   padding: 10px;
+  backdrop-filter: blur(10px);
+}
+
+.node-detail.compact {
+  padding: 8px;
 }
 
 .node-detail div {
@@ -544,22 +595,48 @@ label {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 
 .node-detail strong {
-  font-size: 0.82rem;
+  font-size: 0.78rem;
 }
 
 .node-detail span {
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
 }
 
 .node-detail p {
   color: var(--muted-foreground);
-  font-size: 0.88rem;
-  line-height: 1.45;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.model-io-panel {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.model-io-panel summary {
+  cursor: pointer;
+  color: var(--muted-foreground);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.model-io-panel[open] summary {
+  margin-bottom: 10px;
+}
+
+@keyframes graph-node-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .ab-page,
