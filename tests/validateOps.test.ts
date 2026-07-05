@@ -18,6 +18,16 @@ it("tolerates bracketed node type labels", () => {
   expect(ops[0]).toEqual({ op: "add_node", node: { id: "fact_1", type: "fact", text: "User's name is Radi", status: "active", confidence: 1 } });
 });
 
+it("resolves @final node references to node text", () => {
+  const ops = parseAndValidateOps(`SWX/1
+@node assistant_output_2 [assistant_output]: Tagline: LumaGarden helps teachers cultivate calm learning spaces.
+@final assistant_output_2`);
+  expect(ops).toContainEqual({
+    op: "final",
+    answer: "Tagline: LumaGarden helps teachers cultivate calm learning spaces."
+  });
+});
+
 it("parses raw artifact blocks without JSON escaping", () => {
   const ops = parseAndValidateOps(`SWX/1
 @node artifact_1 artifact "Snake SVG" mime=image/svg+xml

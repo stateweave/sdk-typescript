@@ -158,7 +158,7 @@ function parseSwx(raw: string): GraphOp[] {
   }
 
   for (const block of blocks) mergeArtifactBlock(nodeOps, block);
-  const finalOps = finalTargets.length ? finalTargets.map((target) => finalOpFor(target, blocks)) : finalFromImplicitBlock(blocks);
+  const finalOps = finalTargets.length ? finalTargets.map((target) => finalOpFor(target, blocks, nodeOps)) : finalFromImplicitBlock(blocks);
   const parsed = graphOpsResponseSchema.parse({ ops: [...nodeOps, ...otherOps, ...finalOps] }).ops;
   if (!parsed.length) throw new Error("Model returned SWX/1 but no graph operations were found.");
   return parsed;
@@ -212,10 +212,16 @@ function mergeArtifactBlock(nodeOps: Extract<GraphOp, { op: "add_node" }>[], blo
   });
 }
 
-function finalOpFor(target: string, blocks: SwxBlock[]): Extract<GraphOp, { op: "final" }> {
+function finalOpFor(target: string, blocks: SwxBlock[], nodeOps: Extract<GraphOp, { op: "add_node" }>[]): Extract<GraphOp, { op: "final" }> {
   const cleanTarget = unquote(target);
   const block = blocks.find((item) => item.id === cleanTarget);
   if (block) return { op: "final", answer: block.content, artifactId: block.id };
+
+  const node = nodeOps.find((op) => op.node.id === cleanTarget)?.node;
+  if (node?.type === "artifact" && typeof node.data?.content === "string") return { op: "final", answer: node.data.content, artifactId: node.id };
+  if (node?.type === "artifact") return { op: "final", answer: node.text, artifactId: node.id };
+  if (node) return { op: "final", answer: node.text };
+
   return { op: "final", answer: cleanTarget };
 }
 
