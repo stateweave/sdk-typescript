@@ -1,6 +1,7 @@
 import type { GraphFrame, GraphOp, StateGraph, TraceStep } from "../../src/core/types.js";
 import { scoreEvalRecords, type EvalPrimitive as Primitive, type EvalVote as Vote, type ScoreBreakdown } from "./evalScores.js";
 import { promptFiveCases, promptFiveCategoryOrder, type PromptFiveCategory } from "./promptFive.js";
+import { promptSixCases, promptSixCategoryOrder, promptSixHypothesis, type PromptSixCategory, type PromptSixHypothesis } from "./promptSix.js";
 import "./styles.css";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -24,11 +25,11 @@ type CompareResponse = StateWeaveResponse & {
   };
 };
 
-type PageName = "state" | "ab" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five";
-type SuiteId = "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five";
-type EvalCategory = "memory" | "logical" | "holistic" | PromptFiveCategory;
+type PageName = "state" | "ab" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
+type SuiteId = "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
+type EvalCategory = "memory" | "logical" | "holistic" | PromptFiveCategory | PromptSixCategory;
 type MultiCase = { prompt: string; expect: string; categories?: EvalCategory[] };
-type PromptSuite = { id: SuiteId; title: string; description: string; readyTitle: string; readyCopy: string; expectLabel: string; mode?: "manual" | "judge"; cases: MultiCase[] };
+type PromptSuite = { id: SuiteId; title: string; description: string; readyTitle: string; readyCopy: string; expectLabel: string; mode?: "manual" | "judge"; cases: MultiCase[]; hypothesis?: PromptSixHypothesis };
 type JudgeDecision = { id: string; vote: Vote; reason: string; raw: string };
 type JudgeResponse = { judges: JudgeDecision[]; agreement?: Vote };
 type MultiRecord = {
@@ -79,7 +80,7 @@ let abRunning = false;
 let copyCounter = 0;
 
 const copyPayloads = new Map<string, string>();
-const categoryOrder: EvalCategory[] = ["memory", "logical", "holistic", ...promptFiveCategoryOrder];
+const categoryOrder: EvalCategory[] = ["memory", "logical", "holistic", ...promptFiveCategoryOrder, ...promptSixCategoryOrder];
 const autoJudgePreviewMs = 2000;
 const promptSuites: Record<SuiteId, PromptSuite> = {
   "prompt-one": {
@@ -226,6 +227,17 @@ const promptSuites: Record<SuiteId, PromptSuite> = {
     expectLabel: "Gold answer",
     mode: "judge",
     cases: promptFiveCases()
+  },
+  "prompt-six": {
+    id: "prompt-six",
+    title: "Prompt six",
+    description: "Two hundred long-context regression cases testing whether memory accuracy degrades as conversational state grows: old anchors, latest-over-stale updates, revocations, chronology, and cross-reference joins.",
+    readyTitle: "Ready for long-context regression.",
+    readyCopy: "This is a paper-style hypothesis test. It runs in background and buckets results over time to show whether either variant regresses as context grows.",
+    expectLabel: "Gold answer",
+    mode: "judge",
+    cases: promptSixCases(),
+    hypothesis: promptSixHypothesis
   }
 };
 
@@ -409,6 +421,7 @@ const multiTwoTab = element<HTMLButtonElement>("multi-two-tab");
 const multiThreeTab = element<HTMLButtonElement>("multi-three-tab");
 const multiFourTab = element<HTMLButtonElement>("multi-four-tab");
 const multiFiveTab = element<HTMLButtonElement>("multi-five-tab");
+const multiSixTab = element<HTMLButtonElement>("multi-six-tab");
 const statePage = element<HTMLElement>("state-page");
 const abPage = element<HTMLElement>("ab-page");
 const multiPage = element<HTMLElement>("multi-page");
@@ -448,6 +461,7 @@ multiTwoTab.addEventListener("click", () => setActivePage("prompt-two"));
 multiThreeTab.addEventListener("click", () => setActivePage("prompt-three"));
 multiFourTab.addEventListener("click", () => setActivePage("prompt-four"));
 multiFiveTab.addEventListener("click", () => setActivePage("prompt-five"));
+multiSixTab.addEventListener("click", () => setActivePage("prompt-six"));
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   void sendStateWeaveMessage();
@@ -506,11 +520,12 @@ function pageFromHash(): PageName {
   if (location.hash === "#prompt-three") return "prompt-three";
   if (location.hash === "#prompt-four") return "prompt-four";
   if (location.hash === "#prompt-five") return "prompt-five";
+  if (location.hash === "#prompt-six") return "prompt-six";
   return "state";
 }
 
 function suiteIdForPage(page: PageName): SuiteId | undefined {
-  if (page === "prompt-one" || page === "prompt-two" || page === "prompt-three" || page === "prompt-four" || page === "prompt-five") return page;
+  if (page === "prompt-one" || page === "prompt-two" || page === "prompt-three" || page === "prompt-four" || page === "prompt-five" || page === "prompt-six") return page;
   return undefined;
 }
 
@@ -524,7 +539,7 @@ function setActivePage(page: PageName, updateHash = true): void {
   const isAb = page === "ab";
   const nextSuiteId = suiteIdForPage(page);
   const isMulti = Boolean(nextSuiteId);
-  if (nextSuiteId && nextSuiteId !== multiSuiteId) {
+  if (nextSuiteId && (nextSuiteId !== multiSuiteId || (!multiRun && !multiRecords.length && multiIndex === 0))) {
     multiSuiteId = nextSuiteId;
     resetMultiTest(false);
   }
@@ -544,6 +559,8 @@ function setActivePage(page: PageName, updateHash = true): void {
   multiFourTab.setAttribute("aria-selected", String(page === "prompt-four"));
   multiFiveTab.classList.toggle("active", page === "prompt-five");
   multiFiveTab.setAttribute("aria-selected", String(page === "prompt-five"));
+  multiSixTab.classList.toggle("active", page === "prompt-six");
+  multiSixTab.setAttribute("aria-selected", String(page === "prompt-six"));
   statePage.hidden = !isState;
   statePage.classList.toggle("active", isState);
   abPage.hidden = !isAb;
@@ -712,7 +729,7 @@ function resetMultiTest(focus = true): void {
   multiStart.textContent = `Start ${suite.title.toLowerCase()}`;
   multiTitle.textContent = suite.title;
   multiDescription.textContent = suite.description;
-  multiStage.innerHTML = `<div class="empty-state compact"><h2>${escapeHtml(suite.readyTitle)}</h2><p>${escapeHtml(suite.readyCopy)}</p></div>`;
+  multiStage.innerHTML = `<div class="empty-state compact"><h2>${escapeHtml(suite.readyTitle)}</h2><p>${escapeHtml(suite.readyCopy)}</p></div>${hypothesisPanel(suite)}`;
   syncMultiModeControls();
   renderMultiProgress();
   if (focus) multiStart.focus();
@@ -731,6 +748,19 @@ function syncMultiModeControls(): void {
   multiConfirmWrap.hidden = !isJudge;
   if (!isJudge) return;
   multiConfirmJudges.checked = multiRun?.confirmJudges ?? multiConfirmJudges.checked;
+}
+
+function hypothesisPanel(suite: PromptSuite): string {
+  if (!suite.hypothesis) return "";
+  return `
+    <article class="hypothesis-card">
+      <p class="eyebrow">Hypothesis</p>
+      <h3>Long-context regression thesis</h3>
+      <p><strong>Thesis:</strong> ${escapeHtml(suite.hypothesis.thesis)}</p>
+      <p><strong>Method:</strong> ${escapeHtml(suite.hypothesis.method)}</p>
+      <p><strong>Prediction:</strong> ${escapeHtml(suite.hypothesis.prediction)}</p>
+      <p><strong>Success signal:</strong> ${escapeHtml(suite.hypothesis.successSignal)}</p>
+    </article>`;
 }
 
 function backgroundRunStorageKey(): string {
@@ -1154,6 +1184,8 @@ function renderMultiReveal(): void {
         <h2>${winnerText(scores)}</h2>
         <p class="expectation">StateWeave ${scores.stateweave} · Regular ${scores.regular} · Both ${scores.both} · Neither ${scores.neither}</p>
       </div>
+      ${hypothesisPanel(suite)}
+      ${regressionSummaryHtml()}
       ${categorySummaryTable()}
       <div class="reveal-list">
         ${multiRecords.map((record) => revealRow(record)).join("")}
@@ -1193,7 +1225,73 @@ function liveScoreHtml(): string {
       <div><span>Both</span><strong>${scores.both}</strong></div>
       <div><span>Neither</span><strong>${scores.neither}</strong></div>
     </div>
+    ${regressionSummaryHtml()}
+    ${trendChartHtml()}
     ${liveCategoryScoreHtml()}`;
+}
+
+function trendBucketSize(): number {
+  return currentSuite().id === "prompt-six" ? 20 : 10;
+}
+
+function trendChartHtml(): string {
+  const total = currentSuite().cases.length;
+  const size = trendBucketSize();
+  const rows: string[] = [];
+  for (let start = 0; start < total; start += size) {
+    const end = Math.min(total, start + size);
+    const records = multiRecords.filter((record) => record.index >= start && record.index < end && record.vote);
+    const scores = scoreRecords(records);
+    if (!scores.completed && start > multiIndex + size) continue;
+    const pct = (value: number) => scores.completed ? Math.round((value / scores.completed) * 100) : 0;
+    rows.push(`
+      <div class="trend-row">
+        <span>${start + 1}-${end}</span>
+        <div class="trend-bar" title="SW ${scores.stateweave}, Reg ${scores.regular}, Both ${scores.both}, Neither ${scores.neither}">
+          <i class="sw" style="width:${pct(scores.stateweave)}%"></i>
+          <i class="reg" style="width:${pct(scores.regular)}%"></i>
+          <i class="both" style="width:${pct(scores.both)}%"></i>
+          <i class="neither" style="width:${pct(scores.neither)}%"></i>
+        </div>
+        <strong>${scores.completed}/${end - start}</strong>
+      </div>`);
+  }
+  if (!rows.length) return "";
+  return `<div class="trend-chart"><div class="trend-legend"><span class="sw">SW</span><span class="reg">Regular</span><span class="both">Both</span><span class="neither">Neither</span></div>${rows.join("")}</div>`;
+}
+
+function regressionSummaryHtml(): string {
+  if (!currentSuite().hypothesis) return "";
+  const size = trendBucketSize();
+  const first = scoreRecords(multiRecords.filter((record) => record.index < size && record.vote));
+  const completedBuckets = [] as ScoreBreakdown[];
+  for (let start = 0; start < currentSuite().cases.length; start += size) {
+    const scores = scoreRecords(multiRecords.filter((record) => record.index >= start && record.index < start + size && record.vote));
+    if (scores.completed) completedBuckets.push(scores);
+  }
+  const latest = completedBuckets.at(-1);
+  if (!latest || !first.completed) return `<div class="regression-summary">Collecting bucketed regression stats…</div>`;
+  const fmt = (value: number) => `${Math.round(value * 100)}%`;
+  const swFirst = creditRate(first, "stateweave");
+  const swLatest = creditRate(latest, "stateweave");
+  const regFirst = creditRate(first, "regular");
+  const regLatest = creditRate(latest, "regular");
+  return `
+    <div class="regression-summary">
+      <strong>Regression snapshot</strong>
+      <span>SW credit ${fmt(swFirst)} → ${fmt(swLatest)} (${signedPct(swLatest - swFirst)})</span>
+      <span>Regular credit ${fmt(regFirst)} → ${fmt(regLatest)} (${signedPct(regLatest - regFirst)})</span>
+      <span>Neither latest bucket: ${fmt(latest.neither / latest.completed)}</span>
+    </div>`;
+}
+
+function creditRate(scores: ScoreBreakdown, primitive: Primitive): number {
+  return scores.completed ? (scores[primitive] + scores.both) / scores.completed : 0;
+}
+
+function signedPct(value: number): string {
+  const rounded = Math.round(value * 100);
+  return `${rounded >= 0 ? "+" : ""}${rounded}%`;
 }
 
 function liveCategoryScoreHtml(): string {

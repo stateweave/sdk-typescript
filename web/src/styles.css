@@ -763,6 +763,86 @@ label {
   font-size: 1.05rem;
 }
 
+.regression-summary {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fafafa;
+  padding: 8px;
+  color: var(--muted-foreground);
+  font-size: 0.74rem;
+}
+
+.regression-summary strong {
+  color: var(--foreground);
+}
+
+.trend-chart {
+  display: grid;
+  gap: 5px;
+}
+
+.trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.trend-legend span::before {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 999px;
+  content: "";
+}
+
+.trend-row {
+  display: grid;
+  grid-template-columns: 46px 1fr 44px;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+}
+
+.trend-bar {
+  display: flex;
+  overflow: hidden;
+  height: 10px;
+  border-radius: 999px;
+  background: #e5e5e5;
+}
+
+.trend-bar i {
+  display: block;
+  height: 100%;
+}
+
+.trend-legend .sw::before,
+.trend-bar .sw {
+  background: var(--stateweave);
+}
+
+.trend-legend .reg::before,
+.trend-bar .reg {
+  background: var(--regular);
+}
+
+.trend-legend .both::before,
+.trend-bar .both {
+  background: #16a34a;
+}
+
+.trend-legend .neither::before,
+.trend-bar .neither {
+  background: #a3a3a3;
+}
+
 .live-category-summary {
   width: 100%;
   border-collapse: collapse;
@@ -861,6 +941,28 @@ label {
   border-radius: 14px;
   background: #fff;
   padding: 16px;
+}
+
+.hypothesis-card {
+  margin-top: 12px;
+  border: 1px solid #ddd6fe;
+  border-radius: 14px;
+  background: #f5f3ff;
+  padding: 14px;
+}
+
+.hypothesis-card h3 {
+  margin-bottom: 8px;
+}
+
+.hypothesis-card p + p {
+  margin-top: 8px;
+}
+
+.hypothesis-card p {
+  color: var(--muted-foreground);
+  font-size: 0.88rem;
+  line-height: 1.5;
 }
 
 .multi-case-header {
