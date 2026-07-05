@@ -22,8 +22,8 @@ type CompareResponse = StateWeaveResponse & {
   };
 };
 
-type PageName = "state" | "ab" | "prompt-one" | "prompt-two";
-type SuiteId = "prompt-one" | "prompt-two";
+type PageName = "state" | "ab" | "prompt-one" | "prompt-two" | "prompt-three";
+type SuiteId = "prompt-one" | "prompt-two" | "prompt-three";
 type Primitive = "regular" | "stateweave";
 type Vote = "a" | "b" | "both" | "neither";
 type MultiCase = { prompt: string; expect: string };
@@ -139,6 +139,46 @@ const promptSuites: Record<SuiteId, PromptSuite> = {
       { prompt: "If f(x) = 2x² − 3x + 1, compute f(−2).", expect: "15" },
       { prompt: "What is the units digit of 13^57?", expect: "3" }
     ]
+  },
+  "prompt-three": {
+    id: "prompt-three",
+    title: "Prompt three",
+    description: "Thirty harder gold-answer questions: modular arithmetic, combinatorics, exact physics, geometry, and algebra. Gold answers are shown only in the UI and never sent to either variant.",
+    readyTitle: "Ready for the stress test.",
+    readyCopy: "This sequence is intentionally more confusing. Vote against the gold answer, not style. Both variants see only the prompt, not the gold.",
+    expectLabel: "Gold answer",
+    cases: [
+      { prompt: "Compute the least nonnegative residue of 17^2025 modulo 1000. Return the final answer and one short justification.", expect: "57" },
+      { prompt: "Find the least nonnegative x such that 37x ≡ 1 (mod 1000). Return the final answer and one short justification.", expect: "973" },
+      { prompt: "How many integer triples (x,y,z) satisfy x+y+z=50 with 0≤x≤20, 5≤y≤25, and z≥10? Return the count and one short justification.", expect: "426" },
+      { prompt: "What are the last three digits of 13^137? Return the final answer and one short justification.", expect: "333" },
+      { prompt: "What is the coefficient of x^7 in (1+x+x²)^10? Return the final answer and one short justification.", expect: "4740" },
+      { prompt: "How many binary strings of length 12 contain exactly five 1s and no two 1s adjacent? Return the final answer and one short justification.", expect: "56" },
+      { prompt: "What is the sum of the positive divisors of 720? Return the final answer and one short justification.", expect: "2418" },
+      { prompt: "Find the smallest positive n such that n≡1 (mod 4), n≡2 (mod 9), and n≡3 (mod 11). Return the final answer and one short justification.", expect: "245" },
+      { prompt: "Compute S = sum from k=1 to 50 of floor(k²/7). Return the final answer and one short justification.", expect: "6118" },
+      { prompt: "Solve 12x ≡ 8 (mod 35). Give the least nonnegative residue and one short justification.", expect: "24" },
+      { prompt: "Let F_0=0 and F_1=1. Find F_100 modulo 1000. Return the final answer and one short justification.", expect: "75" },
+      { prompt: "Sum all three-digit positive integers divisible by 7 but not by 5. Return the final answer and one short justification.", expect: "56231" },
+      { prompt: "How many lattice paths from (0,0) to (6,6), using only right and up steps, never go above the diagonal y=x? Return the final answer and one short justification.", expect: "132" },
+      { prompt: "Three fair six-sided dice are rolled. What is the probability that the sum is 10 and at least one die is 4? Return the final probability and one short justification.", expect: "1/18" },
+      { prompt: "A right triangle has legs 9 and 12. What is the inradius? Return the final answer and one short justification.", expect: "3" },
+      { prompt: "A regular hexagon has area 54√3. What is its side length? Return the final answer and one short justification.", expect: "6" },
+      { prompt: "A 4Ω resistor and a 6Ω resistor are connected in parallel; that combination is then connected in series with 3Ω. What is the equivalent resistance? Return the final answer and one short justification.", expect: "27/5 Ω" },
+      { prompt: "An object starts at 10 m/s and has constant acceleration −2 m/s² until it stops. How far does it travel? Return the final answer and one short justification.", expect: "25 m" },
+      { prompt: "For an ideal gas with fixed amount n, pressure is doubled and volume is tripled. By what factor does absolute temperature change? Return the final answer and one short justification.", expect: "6" },
+      { prompt: "Compute the determinant of the matrix [[2,1,3],[0,-1,4],[5,2,0]]. Return the final answer and one short justification.", expect: "19" },
+      { prompt: "Find the remainder when x^100 + x^50 + 1 is divided by x² − 1. Return the polynomial remainder and one short justification.", expect: "3" },
+      { prompt: "Find the coefficient of x^4 in (2x − x^{-1})^8. Return the final answer and one short justification.", expect: "1792" },
+      { prompt: "How many positive divisors does 75600 have? Return the final answer and one short justification.", expect: "120" },
+      { prompt: "How many distinct arrangements are there of the letters in STATEWEAVE? Return the final answer and one short justification.", expect: "151200" },
+      { prompt: "How many ordered integer pairs (a,b) with 1≤a≤20 and 1≤b≤20 have a+b divisible by 6? Return the final answer and one short justification.", expect: "66" },
+      { prompt: "Solve log_3(x) + log_9(x) = 9 for positive x. Return the final answer and one short justification.", expect: "729" },
+      { prompt: "Find the smallest positive x satisfying x≡2 (mod 6) and x≡5 (mod 9). Return the final answer and one short justification.", expect: "14" },
+      { prompt: "How many integers from 1 to 1000 inclusive are divisible by exactly one of 6, 10, and 15? Return the final answer and one short justification.", expect: "233" },
+      { prompt: "Let a_0=1 and a_n=3a_{n-1}+2. Find a_5. Return the final answer and one short justification.", expect: "485" },
+      { prompt: "If sin(θ)=3/5 and θ is in quadrant II, compute cos(2θ). Return the final answer and one short justification.", expect: "7/25" }
+    ]
   }
 };
 const apiBase = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -146,6 +186,7 @@ const stateTab = element<HTMLButtonElement>("state-tab");
 const abTab = element<HTMLButtonElement>("ab-tab");
 const multiTab = element<HTMLButtonElement>("multi-tab");
 const multiTwoTab = element<HTMLButtonElement>("multi-two-tab");
+const multiThreeTab = element<HTMLButtonElement>("multi-three-tab");
 const statePage = element<HTMLElement>("state-page");
 const abPage = element<HTMLElement>("ab-page");
 const multiPage = element<HTMLElement>("multi-page");
@@ -179,6 +220,7 @@ stateTab.addEventListener("click", () => setActivePage("state"));
 abTab.addEventListener("click", () => setActivePage("ab"));
 multiTab.addEventListener("click", () => setActivePage("prompt-one"));
 multiTwoTab.addEventListener("click", () => setActivePage("prompt-two"));
+multiThreeTab.addEventListener("click", () => setActivePage("prompt-three"));
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   void sendStateWeaveMessage();
@@ -225,11 +267,12 @@ function pageFromHash(): PageName {
   if (location.hash === "#ab") return "ab";
   if (location.hash === "#prompt-one") return "prompt-one";
   if (location.hash === "#prompt-two") return "prompt-two";
+  if (location.hash === "#prompt-three") return "prompt-three";
   return "state";
 }
 
 function suiteIdForPage(page: PageName): SuiteId | undefined {
-  if (page === "prompt-one" || page === "prompt-two") return page;
+  if (page === "prompt-one" || page === "prompt-two" || page === "prompt-three") return page;
   return undefined;
 }
 
@@ -257,6 +300,8 @@ function setActivePage(page: PageName, updateHash = true): void {
   multiTab.setAttribute("aria-selected", String(page === "prompt-one"));
   multiTwoTab.classList.toggle("active", page === "prompt-two");
   multiTwoTab.setAttribute("aria-selected", String(page === "prompt-two"));
+  multiThreeTab.classList.toggle("active", page === "prompt-three");
+  multiThreeTab.setAttribute("aria-selected", String(page === "prompt-three"));
   statePage.hidden = !isState;
   statePage.classList.toggle("active", isState);
   abPage.hidden = !isAb;
