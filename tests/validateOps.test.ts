@@ -76,6 +76,34 @@ it("parses raw output blocks without requiring artifact as a structural type", (
   });
 });
 
+it("parses multiline @tool args through block refs without creating artifact ops", () => {
+  const ops = parseAndValidateOps(`SWX/1
+@edge system_root follows user_input_1
+@tool edit_file file_path=README.md old_string_ref=old_1 new_string_ref=new_1 replace_all=true
+<<<old_1:text/plain
+old line
+with detail
+>>>
+<<<new_1:text/plain
+new line
+with detail
+>>>`);
+
+  expect(ops).toEqual([
+    { op: "add_edge", from: "system_root", to: "user_input_1", type: "follows" },
+    {
+      op: "call_tool",
+      tool: "edit_file",
+      args: {
+        file_path: "README.md",
+        old_string: "old line\nwith detail",
+        new_string: "new line\nwith detail",
+        replace_all: true
+      }
+    }
+  ]);
+});
+
 it("tolerates a final SWX block missing its closing sentinel", () => {
   const ops = parseAndValidateOps(`SWX/1
 @node output_3 html_game "Fixed Pac-Man" mime=text/html

@@ -72,6 +72,7 @@ function parseSwx(raw: string): GraphOp[] {
   const nodeOps: Extract<GraphOp, { op: "add_node" }>[] = [];
   const otherOps: GraphOp[] = [];
   const finalTargets: string[] = [];
+  const toolArgBlockIds = new Set<string>();
 
   for (const line of commands.split(/\r?\n/)) {
     const trimmed = line.trim();
@@ -131,7 +132,9 @@ function parseSwx(raw: string): GraphOp[] {
     if (command === "@tool") {
       const tool = tokens[1];
       if (!tool) throw new Error(`Invalid SWX @tool command: ${trimmed}`);
-      otherOps.push({ op: "call_tool", tool, args: parseAttrs(tokens.slice(2)) });
+      const { args, blockIds } = parseToolArgs(tokens.slice(2), blocks);
+      for (const id of blockIds) toolArgBlockIds.add(id);
+      otherOps.push({ op: "call_tool", tool, args });
       continue;
     }
 
@@ -141,8 +144,9 @@ function parseSwx(raw: string): GraphOp[] {
     }
   }
 
-  for (const block of blocks) mergeArtifactBlock(nodeOps, block);
-  const finalOps = finalTargets.length ? finalTargets.map((target) => finalOpFor(target, blocks, nodeOps)) : finalFromImplicitBlock(blocks);
+  const artifactBlocks = blocks.filter((block) => !toolArgBlockIds.has(block.id));
+  for (const block of artifactBlocks) mergeArtifactBlock(nodeOps, block);
+  const finalOps = finalTargets.length ? finalTargets.map((target) => finalOpFor(target, artifactBlocks, nodeOps)) : finalFromImplicitBlock(artifactBlocks);
   const parsed = graphOpsResponseSchema.parse({ ops: [...nodeOps, ...otherOps, ...finalOps] }).ops;
   if (!parsed.length) throw new Error("Model returned SWX/1 but no graph operations were found.");
   return parsed;
@@ -228,6 +232,26 @@ function parseFocus(tokens: string[]): Extract<GraphOp, { op: "focus" }> {
   const nodeId = explicitNode ?? (firstLooksLikeNodeId ? first : undefined);
   const currentFocus = stringAttr(attrs.text) ?? (nodeId && tokens.length > 1 ? tokens.slice(1).join(" ").trim() : label) ?? nodeId ?? "focus";
   return withoutUndefined({ op: "focus", currentFocus, nodeId });
+}
+
+function parseToolArgs(tokens: string[], blocks: SwxBlock[]): { args: Record<string, unknown>; blockIds: Set<string> } {
+  const attrs = parseAttrs(tokens);
+  const blocksById = new Map(blocks.map((block) => [block.id, block]));
+  const blockIds = new Set<string>();
+
+  for (const [key, value] of Object.entries(attrs)) {
+    if (!key.endsWith("_ref")) continue;
+    const targetKey = key.slice(0, -4);
+    if (!targetKey) throw new Error(`Invalid SWX @tool block ref arg: ${key}`);
+    if (typeof value !== "string") throw new Error(`SWX @tool ${key} must reference a block id.`);
+    const block = blocksById.get(value);
+    if (!block) throw new Error(`SWX @tool ${key} references missing block: ${value}`);
+    attrs[targetKey] = block.content;
+    delete attrs[key];
+    blockIds.add(block.id);
+  }
+
+  return { args: attrs, blockIds };
 }
 
 function parseAttrs(tokens: string[]): Record<string, unknown> {

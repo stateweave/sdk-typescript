@@ -73,37 +73,23 @@ import { StateWeaveAgent, createModelFromEnv } from "stateweave";
 
 const agent = new StateWeaveAgent({ model: createModelFromEnv() });
 
-for await (const event of agent.stream("Create a small todo app in ./todo")) {
-  if (event.type === "token") process.stdout.write(event.token);
-  if (event.type === "model_metadata") console.log(event.metadata);
-  if (event.type === "final") console.log(event.result.metadata);
-}
+const result = await agent.run("Create a tiny HTML todo app in ./todo");
+
+console.log(result.finalAnswer);
+console.log(result.graph.nodes);
 ```
 
-`StateWeaveAgent` includes workspace file-system tools by default. Use `createDefaultTools()` plus your custom tools when you want to extend that default toolset.
+`StateWeaveAgent` includes workspace file-system tools by default, so the agent can read, write, edit, and run shell commands in its workspace without extra setup.
 
 ## Quickstart
 
+For streaming, use the same agent:
+
 ```ts
-import { StateWeaveAgent, createInitialGraphFrame, createModelFromEnv } from "stateweave";
-
-const agent = new StateWeaveAgent({
-  model: createModelFromEnv(),
-  maxSteps: 5
-});
-
-const frame = createInitialGraphFrame({
-  objective: "Build a todo app",
-  systemPrompt: "Prefer small files and clear UI.",
-  input: "Create a small todo app in ./todo", // optional initial user input
-  availableActions: []
-});
-
-const result = await agent.run({ objective: "Continue the todo app", input: "Add keyboard shortcuts." }, { frame });
-
-console.log(result.finalAnswer);
-console.log(result.metadata);
-console.log(result.graph.nodes);
+for await (const event of agent.stream("Add keyboard shortcuts to the todo app")) {
+  if (event.type === "token") process.stdout.write(event.token);
+  if (event.type === "final") console.log(event.result.metadata);
+}
 ```
 
 The default toolset is workspace-scoped file-system access. For deterministic local tests, import and pass `mockTools` explicitly. To extend the default toolset, pass `tools: [...createDefaultTools(), yourTool]`.
@@ -185,42 +171,41 @@ ANTHROPIC_MAX_TOKENS=8192
 ANTHROPIC_TEMPERATURE=0
 ```
 
-## Add tools
+## Built-in workspace tools
 
-Tools are Zod-validated functions. Tool results are inserted back into the graph as `tool_result` nodes. `StateWeaveAgent` includes workspace file-system tools by default; pass `tools` when you want to replace them.
+Tools are Zod-validated functions. Tool calls become `tool_call` / `tool_result` nodes in the graph, then the next model step receives the updated `GraphFrame`.
 
-```ts
-import { z } from "zod";
-import type { Tool } from "stateweave";
+`StateWeaveAgent` includes these workspace-scoped tools by default:
 
-const readFile: Tool = {
-  name: "read_file",
-  description: "Read a source file by path.",
-  schema: z.object({ path: z.string() }),
-  async execute(args) {
-    const { path } = z.object({ path: z.string() }).parse(args);
-    return `fake contents for ${path}`;
-  }
-};
+| Tool | Args |
+| --- | --- |
+| `read_file` | `file_path`, optional `offset`, `limit` |
+| `write_file` | `file_path`, `content` |
+| `edit_file` | `file_path`, `old_string`, `new_string`, optional `replace_all` |
+| `bash_command` | `command`, optional `timeout_ms` |
 
-const agent = new StateWeaveAgent({
-  model,
-  tools: [readFile],
-  maxSteps: 5
-});
+The file tool argument names match the common LangChain filesystem convention. `path`, `oldText`, `newText`, `replaceAll`, `startLine`, and `maxLines` are accepted as compatibility aliases, but new code should use the table above.
+
+For multiline HTML/SVG/code or exact edit strings, SWX uses raw block references instead of escaping giant JSON strings:
+
+```txt
+@tool write_file file_path=logo.svg content_ref=svg_1
+<<<svg_1:image/svg+xml
+<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" /></svg>
+>>>
 ```
 
-The model can emit:
-
-```json
-{
-  "op": "call_tool",
-  "tool": "read_file",
-  "args": { "path": "auth.ts" }
-}
+```txt
+@tool edit_file file_path=README.md old_string_ref=old_1 new_string_ref=new_1
+<<<old_1:text/plain
+old exact text
+>>>
+<<<new_1:text/plain
+new exact text
+>>>
 ```
 
-StateWeave validates the args, executes the tool, and carries the result into the next `GraphFrame`.
+To add custom tools without losing the defaults, pass `tools: [...createDefaultTools(), yourTool]`. To replace the defaults entirely, pass your own `tools` array.
 
 ## Visualize graph state
 

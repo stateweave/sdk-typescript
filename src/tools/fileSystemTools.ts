@@ -16,6 +16,49 @@ export type FileSystemToolsOptions = {
 
 const defaultTimeoutMs = 10_000;
 const defaultMaxOutputBytes = 64_000;
+const defaultReadLimit = 500;
+
+const readFileSchema = z.object({
+  file_path: z.string().min(1).optional(),
+  path: z.string().min(1).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+  limit: z.coerce.number().int().min(1).max(2000).optional(),
+  startLine: z.coerce.number().int().min(1).optional(),
+  maxLines: z.coerce.number().int().min(1).max(2000).optional()
+}).superRefine(requireFilePath);
+
+const writeFileSchema = z.object({
+  file_path: z.string().min(1).optional(),
+  path: z.string().min(1).optional(),
+  content: z.string()
+}).superRefine(requireFilePath);
+
+const booleanArgSchema = z.preprocess((value) => {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return value;
+}, z.boolean()).optional();
+
+const editFileSchema = z.object({
+  file_path: z.string().min(1).optional(),
+  path: z.string().min(1).optional(),
+  old_string: z.string().optional(),
+  oldText: z.string().optional(),
+  new_string: z.string().optional(),
+  newText: z.string().optional(),
+  replace_all: booleanArgSchema,
+  replaceAll: booleanArgSchema
+}).superRefine((args, context) => {
+  requireFilePath(args, context);
+  if (args.old_string === undefined && args.oldText === undefined) context.addIssue({ code: z.ZodIssueCode.custom, message: "old_string is required" });
+  if (args.new_string === undefined && args.newText === undefined) context.addIssue({ code: z.ZodIssueCode.custom, message: "new_string is required" });
+});
+
+const bashCommandSchema = z.object({
+  command: z.string().min(1),
+  timeoutMs: z.coerce.number().int().min(100).max(60_000).optional(),
+  timeout_ms: z.coerce.number().int().min(100).max(60_000).optional()
+});
 
 export function createDefaultTools(options: FileSystemToolsOptions = {}): Tool[] {
   return createFileSystemTools(options);
@@ -29,53 +72,49 @@ export function createFileSystemTools(options: FileSystemToolsOptions = {}): Too
   return [
     {
       name: "read_file",
-      description: `Read a UTF-8 text file from the agent workspace (${rootDir}). Args: path, optional startLine, maxLines.`,
-      schema: z.object({ path: z.string().min(1), startLine: z.number().int().min(1).optional(), maxLines: z.number().int().min(1).max(2000).optional() }),
+      description: `Read a UTF-8 text file from the agent workspace (${rootDir}). Args: file_path, optional offset (0-indexed line), limit. Alias: path/startLine/maxLines.`,
+      schema: readFileSchema,
       async execute(args: unknown) {
-        const parsed = z.object({ path: z.string().min(1), startLine: z.number().int().min(1).optional(), maxLines: z.number().int().min(1).max(2000).optional() }).parse(args);
-        const filePath = resolveWorkspacePath(rootDir, parsed.path);
+        const parsed = normalizeReadFileArgs(args);
+        const filePath = resolveWorkspacePath(rootDir, parsed.filePath);
         const content = await readFile(filePath, "utf8");
-        if (!parsed.startLine && !parsed.maxLines) return { path: parsed.path, content };
         const lines = content.split(/\r?\n/);
-        const start = parsed.startLine ?? 1;
-        const max = parsed.maxLines ?? 200;
-        return { path: parsed.path, startLine: start, content: lines.slice(start - 1, start - 1 + max).join("\n") };
+        const limited = lines.slice(parsed.offset, parsed.offset + parsed.limit).join("\n");
+        return { path: parsed.filePath, file_path: parsed.filePath, offset: parsed.offset, limit: parsed.limit, content: limited };
       }
     },
     {
       name: "write_file",
-      description: `Create or overwrite a UTF-8 text file inside the agent workspace (${rootDir}). Args: path, content.`,
-      schema: z.object({ path: z.string().min(1), content: z.string() }),
+      description: `Create or overwrite a UTF-8 text file inside the agent workspace (${rootDir}). Args: file_path, content. For multiline/SVG/HTML/code content in SWX, use content_ref=<block_id>. Alias: path.`,
+      schema: writeFileSchema,
       async execute(args: unknown) {
-        const parsed = z.object({ path: z.string().min(1), content: z.string() }).parse(args);
-        const filePath = resolveWorkspacePath(rootDir, parsed.path);
+        const parsed = normalizeWriteFileArgs(args);
+        const filePath = resolveWorkspacePath(rootDir, parsed.filePath);
         await mkdir(path.dirname(filePath), { recursive: true });
         await writeFile(filePath, parsed.content, "utf8");
-        return { path: parsed.path, bytes: Buffer.byteLength(parsed.content), ok: true };
+        return { path: parsed.filePath, file_path: parsed.filePath, bytes: Buffer.byteLength(parsed.content), ok: true };
       }
     },
     {
       name: "edit_file",
-      description: `Edit one UTF-8 text file inside the agent workspace (${rootDir}) by exact replacement. Args: path, oldText, newText.`,
-      schema: z.object({ path: z.string().min(1), oldText: z.string().min(1), newText: z.string() }),
+      description: `Edit one UTF-8 text file inside the agent workspace (${rootDir}) by exact replacement. Args: file_path, old_string, new_string, optional replace_all. old_string must match exactly and be unique unless replace_all=true. For multiline edits in SWX, use old_string_ref/new_string_ref blocks. Aliases: path/oldText/newText/replaceAll.`,
+      schema: editFileSchema,
       async execute(args: unknown) {
-        const parsed = z.object({ path: z.string().min(1), oldText: z.string().min(1), newText: z.string() }).parse(args);
-        const filePath = resolveWorkspacePath(rootDir, parsed.path);
+        const parsed = normalizeEditFileArgs(args);
+        const filePath = resolveWorkspacePath(rootDir, parsed.filePath);
         const content = await readFile(filePath, "utf8");
-        const first = content.indexOf(parsed.oldText);
-        if (first === -1) throw new Error(`edit_file could not find oldText in ${parsed.path}`);
-        if (content.indexOf(parsed.oldText, first + parsed.oldText.length) !== -1) throw new Error(`edit_file oldText is not unique in ${parsed.path}`);
-        const next = content.slice(0, first) + parsed.newText + content.slice(first + parsed.oldText.length);
-        await writeFile(filePath, next, "utf8");
-        return { path: parsed.path, replacements: 1, ok: true };
+        const replacement = replaceExact(content, parsed.oldString, parsed.newString, parsed.replaceAll);
+        if (typeof replacement === "string") throw new Error(replacement);
+        await writeFile(filePath, replacement.content, "utf8");
+        return { path: parsed.filePath, file_path: parsed.filePath, replacements: replacement.occurrences, occurrences: replacement.occurrences, ok: true };
       }
     },
     {
       name: "bash_command",
-      description: `Run a bash command in the agent workspace (${rootDir}) with a timeout and restricted environment. Args: command, optional timeoutMs.`,
-      schema: z.object({ command: z.string().min(1), timeoutMs: z.number().int().min(100).max(60_000).optional() }),
+      description: `Run a bash command in the agent workspace (${rootDir}) with a timeout and restricted environment. Args: command, optional timeout_ms. Alias: timeoutMs.`,
+      schema: bashCommandSchema,
       async execute(args: unknown) {
-        const parsed = z.object({ command: z.string().min(1), timeoutMs: z.number().int().min(100).max(60_000).optional() }).parse(args);
+        const parsed = normalizeBashCommandArgs(args);
         await mkdir(rootDir, { recursive: true });
         try {
           const result = await execFileAsync("bash", ["-lc", parsed.command], {
@@ -101,6 +140,51 @@ export function createFileSystemTools(options: FileSystemToolsOptions = {}): Too
 
 export function describeTools(tools: Tool[]): BuiltInToolInfo[] {
   return tools.map((tool) => ({ name: tool.name, description: tool.description }));
+}
+
+function requireFilePath(args: { file_path?: string; path?: string }, context: z.RefinementCtx): void {
+  if (!args.file_path && !args.path) context.addIssue({ code: z.ZodIssueCode.custom, message: "file_path is required" });
+}
+
+function normalizeReadFileArgs(args: unknown): { filePath: string; offset: number; limit: number } {
+  const parsed = readFileSchema.parse(args);
+  const offset = parsed.offset ?? (parsed.startLine ? parsed.startLine - 1 : 0);
+  return { filePath: filePathFrom(parsed), offset, limit: parsed.limit ?? parsed.maxLines ?? defaultReadLimit };
+}
+
+function normalizeWriteFileArgs(args: unknown): { filePath: string; content: string } {
+  const parsed = writeFileSchema.parse(args);
+  return { filePath: filePathFrom(parsed), content: parsed.content };
+}
+
+function normalizeEditFileArgs(args: unknown): { filePath: string; oldString: string; newString: string; replaceAll: boolean } {
+  const parsed = editFileSchema.parse(args);
+  return {
+    filePath: filePathFrom(parsed),
+    oldString: parsed.old_string ?? parsed.oldText ?? "",
+    newString: parsed.new_string ?? parsed.newText ?? "",
+    replaceAll: parsed.replace_all ?? parsed.replaceAll ?? false
+  };
+}
+
+function normalizeBashCommandArgs(args: unknown): { command: string; timeoutMs?: number } {
+  const parsed = bashCommandSchema.parse(args);
+  return { command: parsed.command, timeoutMs: parsed.timeout_ms ?? parsed.timeoutMs };
+}
+
+function filePathFrom(args: { file_path?: string; path?: string }): string {
+  const filePath = args.file_path ?? args.path;
+  if (!filePath) throw new Error("file_path is required.");
+  return filePath;
+}
+
+function replaceExact(content: string, oldString: string, newString: string, replaceAll: boolean): { content: string; occurrences: number } | string {
+  if (content === "" && oldString === "") return { content: newString, occurrences: 0 };
+  if (oldString === "") return "old_string cannot be empty when file has content";
+  const occurrences = content.split(oldString).length - 1;
+  if (occurrences === 0) return `old_string was not found in file: ${oldString}`;
+  if (occurrences > 1 && !replaceAll) return `old_string appears ${occurrences} times. Use replace_all=true or provide a more specific old_string with surrounding context.`;
+  return { content: replaceAll ? content.split(oldString).join(newString) : content.replace(oldString, newString), occurrences: replaceAll ? occurrences : 1 };
 }
 
 function resolveWorkspacePath(rootDir: string, requestedPath: string): string {
