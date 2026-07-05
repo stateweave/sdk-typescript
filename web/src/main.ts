@@ -1811,23 +1811,15 @@ function updateGraphDom(
 }
 
 function graphInspectorHtml(value: StateGraph, node: GraphLayoutNode): string {
-  const adjacent = value.edges.filter((edge) => edge.from === node.id || edge.to === node.id).slice(0, 8);
-  const connectionHtml = adjacent.length
-    ? adjacent.map((edge) => `<li><code>${escapeHtml(edge.from === node.id ? `${edge.type} → ${edge.to}` : `${edge.from} → ${edge.type} → ${node.id}`)}</code></li>`).join("")
-    : `<li><code>no edges yet</code></li>`;
-  const chatHint = node.type === "user_input" || node.type === "assistant_output" ? "Conversation node: the matching chat bubble is highlighted when available." : "Graph node: click related nodes or drag this node to reshape the map.";
+  const adjacentCount = value.edges.filter((edge) => edge.from === node.id || edge.to === node.id).length;
+  const conversationHint = node.type === "user_input" || node.type === "assistant_output" ? " · chat bubble highlighted" : "";
 
   return `
-    <div class="graph-inspector-header">
-      <div>
-        <p class="eyebrow">Selected node</p>
-        <h3>${escapeHtml(node.id)}</h3>
-      </div>
-      <span>${escapeHtml(node.type)}</span>
-    </div>
-    <p class="graph-inspector-text">${escapeHtml(node.text)}</p>
-    <ul class="graph-inspector-edges">${connectionHtml}</ul>
-    <p class="graph-inspector-hint">${escapeHtml(chatHint)}</p>
+    <span>Selected</span>
+    <strong>${escapeHtml(node.id)}</strong>
+    <em>${escapeHtml(node.type)}</em>
+    <p title="${escapeAttribute(node.text)}">${escapeHtml(shorten(node.text, 180))}</p>
+    <small>${adjacentCount} edges${conversationHint}</small>
   `;
 }
 
