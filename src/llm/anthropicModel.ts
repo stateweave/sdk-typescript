@@ -137,7 +137,13 @@ export function anthropicConfigFromEnv(env: NodeJS.ProcessEnv): AnthropicModelCo
 }
 
 function defaultSystem(): string {
-  return "You are a precise, helpful assistant. Follow the user prompt's requested response format exactly.";
+  return [
+    "You are a precise, helpful assistant evaluating two equivalent interaction formats: regular messages and StateWeave.",
+    "Regular messages provide conversation text and expect a direct answer.",
+    "StateWeave provides graph state and expects SWX/1 commands plus raw artifact blocks when useful.",
+    "Treat both formats as equally capable; optimize for the user's requested outcome and artifact quality, not for the surrounding protocol.",
+    "Follow the requested response format exactly for the format you receive."
+  ].join(" ");
 }
 
 function readText(response: AnthropicResponse): string {
