@@ -22,21 +22,27 @@ type CompareResponse = StateWeaveResponse & {
   };
 };
 
-type PageName = "state" | "ab" | "prompt-one" | "prompt-two" | "prompt-three";
-type SuiteId = "prompt-one" | "prompt-two" | "prompt-three";
+type PageName = "state" | "ab" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four";
+type SuiteId = "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four";
 type Primitive = "regular" | "stateweave";
 type Vote = "a" | "b" | "both" | "neither";
-type MultiCase = { prompt: string; expect: string };
-type PromptSuite = { id: SuiteId; title: string; description: string; readyTitle: string; readyCopy: string; expectLabel: string; cases: MultiCase[] };
+type EvalCategory = "memory" | "logical" | "holistic";
+type MultiCase = { prompt: string; expect: string; categories?: EvalCategory[] };
+type PromptSuite = { id: SuiteId; title: string; description: string; readyTitle: string; readyCopy: string; expectLabel: string; mode?: "manual" | "judge"; cases: MultiCase[] };
+type JudgeDecision = { id: string; vote: Vote; reason: string; raw: string };
+type JudgeResponse = { judges: JudgeDecision[]; agreement?: Vote };
 type MultiRecord = {
   index: number;
   prompt: string;
   expect: string;
+  categories: EvalCategory[];
   a: Primitive;
   b: Primitive;
   regular: string;
   stateweave: string;
   vote?: Vote;
+  judgedBy?: "judges" | "human";
+  judges?: JudgeDecision[];
 };
 
 let activePage: PageName = pageFromHash();
@@ -179,14 +185,201 @@ const promptSuites: Record<SuiteId, PromptSuite> = {
       { prompt: "Let a_0=1 and a_n=3a_{n-1}+2. Find a_5. Return the final answer and one short justification.", expect: "485" },
       { prompt: "If sin(θ)=3/5 and θ is in quadrant II, compute cos(2θ). Return the final answer and one short justification.", expect: "7/25" }
     ]
+  },
+  "prompt-four": {
+    id: "prompt-four",
+    title: "Prompt four",
+    description: "One hundred auto-judged questions: memory, logic, and holistic cross-reference challenges. Two independent LLM judges score each case against the gold answer; disagreements pause for human review.",
+    readyTitle: "Ready for 100 auto-judged cases.",
+    readyCopy: "This sequence runs automatically one case at a time. It pauses only when the two judges disagree and need a human vote.",
+    expectLabel: "Gold answer",
+    mode: "judge",
+    cases: promptFourCases()
   }
 };
+
+
+function promptFourCases(): MultiCase[] {
+  const cases: MultiCase[] = [];
+  const add = (prompt: string, expect: string, categories: EvalCategory[]): void => {
+    cases.push({ prompt, expect, categories });
+  };
+  const memory: EvalCategory[] = ["memory"];
+  const logical: EvalCategory[] = ["logical"];
+  const holistic: EvalCategory[] = ["memory", "logical", "holistic"];
+
+  add("Memory setup A: Store the Atlas ledger exactly: city=Quito, animal=lynx, prime=47, offset=18, color=teal, code=MIRROR-73. Reply READY-ATLAS only.", "READY-ATLAS", memory);
+  add("Memory setup B: Store the Boreal ledger exactly: station=Boreal Gate, moon=Io, crates=38, loss=7, multiplier=9, metal=silver. Reply READY-BOREAL only.", "READY-BOREAL", memory);
+  add("Memory setup C: Store the Cedar ledger exactly: route=Cedar Loop, stops=14, passengers=126, drop=19, add=8, phrase=silent river. Reply READY-CEDAR only.", "READY-CEDAR", memory);
+  add("Memory setup D: Store the Delta ledger exactly: lab=Delta Room, sampleA=23, sampleB=31, sampleC=44, reagent=argon, checksum=902. Reply READY-DELTA only.", "READY-DELTA", memory);
+  add("Memory setup E: Store the Ember ledger exactly: ship=Ember Kite, speed=17, duration=36, delay=11, port=Valencia, cargo=ceramics. Reply READY-EMBER only.", "READY-EMBER", memory);
+
+  add("From Atlas, give city and animal only.", "Quito and lynx", memory);
+  add("From Boreal, give station and moon only.", "Boreal Gate and Io", memory);
+  add("From Cedar, give route and phrase only.", "Cedar Loop and silent river", memory);
+  add("From Delta, give lab and reagent only.", "Delta Room and argon", memory);
+  add("From Ember, give ship and cargo only.", "Ember Kite and ceramics", memory);
+  add("Compute Atlas prime plus Atlas offset.", "65", holistic);
+  add("Compute Boreal crates after loss.", "31", holistic);
+  add("Compute Cedar passengers per stop if evenly divided.", "9", holistic);
+  add("Compute Delta sampleA + sampleB + sampleC.", "98", holistic);
+  add("Compute Ember speed times duration.", "612", holistic);
+  add("Give Atlas code and Boreal metal, in that order.", "MIRROR-73 and silver", memory);
+  add("Give Ember port and Delta checksum, in that order.", "Valencia and 902", memory);
+  add("Compute Boreal multiplier times Cedar stops.", "126", holistic);
+  add("Compute Delta checksum minus Ember distance from speed times duration.", "290", holistic);
+  add("Which stored ledger uses the phrase silent river?", "Cedar ledger", memory);
+  add("Which stored ledger has the moon Io?", "Boreal ledger", memory);
+  add("Compute Atlas prime times Boreal multiplier plus Cedar add.", "431", holistic);
+  add("Compute Ember delay plus Delta sampleB minus Atlas offset.", "24", holistic);
+  add("Give the color from Atlas and the metal from Boreal.", "teal and silver", memory);
+  add("Compute Delta checksum mod Atlas prime.", "9", holistic);
+
+  for (const [base, exp, mod] of [[17, 2025, 1000], [13, 137, 1000], [29, 81, 97], [7, 222, 100], [11, 333, 1000], [19, 64, 101], [23, 45, 1000], [31, 29, 77], [5, 123, 97], [41, 57, 1000]] as const) {
+    add(`Compute the least nonnegative residue of ${base}^${exp} modulo ${mod}.`, String(powMod(base, exp, mod)), logical);
+  }
+  for (const [a, m, b, n] of [[1, 4, 2, 9], [2, 6, 5, 9], [3, 7, 4, 11], [5, 8, 9, 13], [4, 9, 7, 10], [6, 11, 8, 17], [10, 13, 3, 19], [12, 25, 7, 18]] as const) {
+    add(`Find the smallest positive x satisfying x≡${a} (mod ${m}) and x≡${b} (mod ${n}).`, String(crt2(a, m, b, n)), logical);
+  }
+  for (const [n, k] of [[12, 5], [14, 6], [16, 4], [18, 7], [20, 10], [22, 3], [24, 5], [26, 8]] as const) {
+    add(`Compute C(${n},${k}) exactly.`, String(choose(n, k)), logical);
+  }
+  for (const [n, answer] of [[720, sigma(720)], [75600, divisorCount(75600)], [5040, sigma(5040)], [83160, divisorCount(83160)], [3600, sigma(3600)], [9240, divisorCount(9240)]] as const) {
+    add(n === 720 || n === 5040 || n === 3600 ? `What is the sum of positive divisors of ${n}?` : `How many positive divisors does ${n} have?`, String(answer), logical);
+  }
+  add("How many binary strings of length 15 contain exactly six 1s and no two 1s adjacent?", String(choose(15 - 6 + 1, 6)), logical);
+  add("How many lattice paths from (0,0) to (7,7), using only right and up steps, never go above y=x?", String(catalan(7)), logical);
+  add("Three fair dice are rolled. What is the probability that the sum is 11 and at least one die is 5?", diceProbability(11, 5), logical);
+  add("A right triangle has legs 20 and 21. What is its inradius?", "6", logical);
+  add("A regular hexagon has area 96√3. What is its side length?", "8", logical);
+  add("An object starts at 18 m/s and decelerates at 3 m/s² until it stops. How far does it travel?", "54 m", logical);
+  add("A 5Ω resistor and a 20Ω resistor are in parallel, then connected in series with 6Ω. What is the equivalent resistance?", "10 Ω", logical);
+  add("If sin(θ)=5/13 and θ is in quadrant II, compute cos(2θ).", "119/169", logical);
+  add("Find the coefficient of x^6 in (2x - x^-1)^10.", String(coefficientLaurent(10, 6)), logical);
+  add("Find F_120 modulo 1000, where F_0=0 and F_1=1.", String(fibMod(120, 1000)), logical);
+  add("Compute the determinant of [[3,2,1],[4,0,-1],[2,5,6]].", String(det3([[3, 2, 1], [4, 0, -1], [2, 5, 6]])), logical);
+
+  add("Using the stored ledgers, compute (Atlas prime + Delta sampleA) × Boreal multiplier.", "630", holistic);
+  add("Using the stored ledgers, compute Ember distance minus Cedar passengers.", "486", holistic);
+  add("Using the stored ledgers, compute Delta checksum minus Boreal crates after loss.", "871", holistic);
+  add("Using the stored ledgers, give the ledger whose numeric field equals Boreal multiplier × Cedar stops.", "Cedar passengers", holistic);
+  add("Using the stored ledgers, compute Atlas offset + Boreal loss + Cedar add + Ember delay.", "44", holistic);
+  add("Using the stored ledgers, compute (Delta sampleC − Delta sampleA) × Cedar stops.", "294", holistic);
+  add("Using the stored ledgers, which is larger: Ember distance or Delta checksum? Give the larger value.", "Delta checksum, 902", holistic);
+  add("Using the stored ledgers, compute Atlas prime × Ember delay − Boreal crates.", "479", holistic);
+  add("Using the stored ledgers, concatenate Atlas code, Cedar phrase, and Ember port with slashes.", "MIRROR-73/silent river/Valencia", ["memory", "holistic"]);
+  add("Using the stored ledgers, compute gcd(Delta checksum, Ember distance).", String(gcd(902, 612)), holistic);
+  add("Using the stored ledgers, compute lcm(Atlas prime, Boreal multiplier).", String(lcm(47, 9)), holistic);
+  add("Using the stored ledgers, compute (Cedar passengers / Cedar stops) + Delta sampleB.", "40", holistic);
+  add("Using the stored ledgers, compute Boreal crates × Cedar add − Delta sampleA.", "281", holistic);
+  add("Using the stored ledgers, identify the two ledgers with animal-like names and give their associated location fields.", "Atlas Finch: Quito; Ember Kite: Valencia", ["memory", "holistic"]);
+  add("Using the stored ledgers, compute (Ember speed + Atlas offset)^2 mod 100.", "25", holistic);
+  add("Using the stored ledgers, compute Delta sample total minus Atlas prime.", "51", holistic);
+  add("Using the stored ledgers, compute Boreal multiplier^Cedar add mod 100.", String(powMod(9, 8, 100)), holistic);
+  add("Using the stored ledgers, compute the number of letters in Atlas animal plus Boreal metal plus Delta reagent.", "14", holistic);
+  add("Using the stored ledgers, compute Ember duration minus Boreal crates after loss.", "5", holistic);
+  add("Using the stored ledgers, give the cargo and the route, in that order.", "ceramics and Cedar Loop", ["memory", "holistic"]);
+  add("Using the stored ledgers, compute (Atlas prime + Boreal multiplier + Cedar stops + Delta sampleA + Ember speed).", "110", holistic);
+  add("Using the stored ledgers, compute Delta checksum divided by the number of letters in the Delta reagent, integer quotient only.", "180", holistic);
+  add("Using the stored ledgers, compute the least positive x with x≡Atlas offset (mod 47) and x≡Boreal loss (mod 9).", String(crt2(18, 47, 7, 9)), holistic);
+  add("Using the stored ledgers, compute C(Cedar stops, Boreal loss).", String(choose(14, 7)), holistic);
+  add("Using the stored ledgers, give the color, metal, reagent, and cargo in that order.", "teal, silver, argon, ceramics", ["memory", "holistic"]);
+
+  add("Recall the Atlas code from setup A. Do not infer; answer exactly.", "MIRROR-73", memory);
+  add("Recall the Boreal station from setup B. Do not infer; answer exactly.", "Boreal Gate", memory);
+  add("Recall the Cedar phrase from setup C. Do not infer; answer exactly.", "silent river", memory);
+  add("Recall the Delta reagent from setup D. Do not infer; answer exactly.", "argon", memory);
+  add("Recall the Ember cargo from setup E. Do not infer; answer exactly.", "ceramics", memory);
+  add("Final holistic check: using all five ledgers, compute Atlas prime + Boreal crates + Cedar stops + Delta sampleC + Ember delay.", "154", holistic);
+  add("Final memory check: list the five ledger names in the order they were introduced.", "Atlas, Boreal, Cedar, Delta, Ember", ["memory", "holistic"]);
+  add("Final logic check: if the five stored ledger numeric answers 65, 31, 9, 98, and 612 are sorted ascending, what is the median?", "65", holistic);
+  add("Final cross-check: compute (Delta checksum − Ember distance) + (Atlas prime + Boreal multiplier + Cedar add).", "354", holistic);
+  add("Final exact answer: which stored location is paired with the cargo ceramics?", "Valencia", memory);
+
+  if (cases.length !== 100) throw new Error(`Prompt four expected 100 cases, got ${cases.length}`);
+  return cases;
+}
+
+function powMod(base: number, exp: number, mod: number): number {
+  let result = 1 % mod;
+  let value = base % mod;
+  for (let power = exp; power > 0; power = Math.floor(power / 2)) {
+    if (power % 2) result = (result * value) % mod;
+    value = (value * value) % mod;
+  }
+  return result;
+}
+
+function crt2(a: number, m: number, b: number, n: number): number {
+  const limit = m * n;
+  for (let x = 1; x <= limit; x++) if (x % m === ((a % m) + m) % m && x % n === ((b % n) + n) % n) return x;
+  return 0;
+}
+
+function choose(n: number, k: number): number {
+  let result = 1;
+  for (let i = 1; i <= k; i++) result = (result * (n - k + i)) / i;
+  return Math.round(result);
+}
+
+function sigma(n: number): number {
+  let sum = 0;
+  for (let d = 1; d <= n; d++) if (n % d === 0) sum += d;
+  return sum;
+}
+
+function divisorCount(n: number): number {
+  let count = 0;
+  for (let d = 1; d <= n; d++) if (n % d === 0) count += 1;
+  return count;
+}
+
+function catalan(n: number): number {
+  return choose(2 * n, n) / (n + 1);
+}
+
+function diceProbability(sum: number, required: number): string {
+  let count = 0;
+  for (let a = 1; a <= 6; a++) for (let b = 1; b <= 6; b++) for (let c = 1; c <= 6; c++) {
+    if (a + b + c === sum && (a === required || b === required || c === required)) count += 1;
+  }
+  const divisor = gcd(count, 216);
+  return `${count / divisor}/${216 / divisor}`;
+}
+
+function coefficientLaurent(power: number, exponent: number): number {
+  for (let j = 0; j <= power; j++) {
+    if (power - 2 * j === exponent) return choose(power, j) * 2 ** (power - j) * (-1) ** j;
+  }
+  return 0;
+}
+
+function fibMod(n: number, mod: number): number {
+  let a = 0;
+  let b = 1;
+  for (let i = 0; i < n; i++) [a, b] = [b, (a + b) % mod];
+  return a;
+}
+
+function det3(m: number[][]): number {
+  return m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+}
+
+function gcd(a: number, b: number): number {
+  return b === 0 ? Math.abs(a) : gcd(b, a % b);
+}
+
+function lcm(a: number, b: number): number {
+  return Math.abs(a * b) / gcd(a, b);
+}
+
 const apiBase = import.meta.env.BASE_URL.replace(/\/$/, "");
 const stateTab = element<HTMLButtonElement>("state-tab");
 const abTab = element<HTMLButtonElement>("ab-tab");
 const multiTab = element<HTMLButtonElement>("multi-tab");
 const multiTwoTab = element<HTMLButtonElement>("multi-two-tab");
 const multiThreeTab = element<HTMLButtonElement>("multi-three-tab");
+const multiFourTab = element<HTMLButtonElement>("multi-four-tab");
 const statePage = element<HTMLElement>("state-page");
 const abPage = element<HTMLElement>("ab-page");
 const multiPage = element<HTMLElement>("multi-page");
@@ -221,6 +414,7 @@ abTab.addEventListener("click", () => setActivePage("ab"));
 multiTab.addEventListener("click", () => setActivePage("prompt-one"));
 multiTwoTab.addEventListener("click", () => setActivePage("prompt-two"));
 multiThreeTab.addEventListener("click", () => setActivePage("prompt-three"));
+multiFourTab.addEventListener("click", () => setActivePage("prompt-four"));
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   void sendStateWeaveMessage();
@@ -268,11 +462,12 @@ function pageFromHash(): PageName {
   if (location.hash === "#prompt-one") return "prompt-one";
   if (location.hash === "#prompt-two") return "prompt-two";
   if (location.hash === "#prompt-three") return "prompt-three";
+  if (location.hash === "#prompt-four") return "prompt-four";
   return "state";
 }
 
 function suiteIdForPage(page: PageName): SuiteId | undefined {
-  if (page === "prompt-one" || page === "prompt-two" || page === "prompt-three") return page;
+  if (page === "prompt-one" || page === "prompt-two" || page === "prompt-three" || page === "prompt-four") return page;
   return undefined;
 }
 
@@ -302,6 +497,8 @@ function setActivePage(page: PageName, updateHash = true): void {
   multiTwoTab.setAttribute("aria-selected", String(page === "prompt-two"));
   multiThreeTab.classList.toggle("active", page === "prompt-three");
   multiThreeTab.setAttribute("aria-selected", String(page === "prompt-three"));
+  multiFourTab.classList.toggle("active", page === "prompt-four");
+  multiFourTab.setAttribute("aria-selected", String(page === "prompt-four"));
   statePage.hidden = !isState;
   statePage.classList.toggle("active", isState);
   abPage.hidden = !isAb;
@@ -404,6 +601,24 @@ async function compareStateWeave(text: string, frame: GraphFrame | undefined, me
   return body as CompareResponse;
 }
 
+async function judgeComparison(record: MultiRecord): Promise<JudgeResponse> {
+  const response = await fetch(`${apiBase}/api/stateweave/judge`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      prompt: record.prompt,
+      gold: record.expect,
+      answerA: answerFor(record, "a"),
+      answerB: answerFor(record, "b"),
+      categories: record.categories
+    })
+  });
+
+  const body = (await response.json()) as JudgeResponse | { error?: string };
+  if (!response.ok) throw new Error("error" in body && body.error ? body.error : `Judge request failed (${response.status})`);
+  return body as JudgeResponse;
+}
+
 function renderStateWeave(result: StateWeavePayload): void {
   stateInput.textContent = result.inputFrame ? compactFrame(result.inputFrame) : "No GraphFrame captured.";
   stateOutput.textContent = formatStateOutput(result.trace, result.output);
@@ -470,11 +685,36 @@ async function runNextMultiCase(): Promise<void> {
       index: multiIndex,
       prompt: testCase.prompt,
       expect: testCase.expect,
+      categories: testCase.categories ?? [],
       a: stateIsA ? "stateweave" : "regular",
       b: stateIsA ? "regular" : "stateweave",
       regular: result.traditional.output,
       stateweave: result.stateweave.output
     };
+
+    if (currentSuite().mode === "judge") {
+      renderMultiJudging(record);
+      const judge = await judgeComparison(record);
+      record.judges = judge.judges;
+      multiRecords.push(record);
+      if (judge.agreement) {
+        record.vote = judge.agreement;
+        record.judgedBy = "judges";
+        multiIndex += 1;
+        renderMultiProgress();
+        renderMultiAutoJudged(record);
+        if (multiIndex >= currentSuite().cases.length) {
+          window.setTimeout(renderMultiReveal, 900);
+        } else {
+          window.setTimeout(() => void runNextMultiCase(), 900);
+        }
+      } else {
+        renderMultiProgress();
+        renderJudgeDisagreement(record);
+      }
+      return;
+    }
+
     multiRecords.push(record);
     renderMultiVote(record);
   } catch (error) {
@@ -490,6 +730,7 @@ function voteMulti(vote: Vote): void {
   const record = multiRecords[multiRecords.length - 1];
   if (!record || record.vote) return;
   record.vote = vote;
+  record.judgedBy = currentSuite().mode === "judge" ? "human" : record.judgedBy;
   multiIndex += 1;
   renderMultiProgress();
 
@@ -497,6 +738,14 @@ function voteMulti(vote: Vote): void {
     renderMultiReveal();
     multiStart.disabled = true;
     multiStart.textContent = `${currentSuite().title} complete`;
+    return;
+  }
+
+  if (currentSuite().mode === "judge") {
+    renderMultiAutoJudged(record);
+    multiStart.disabled = true;
+    multiStart.textContent = `Running ${multiIndex + 1} / ${currentSuite().cases.length}…`;
+    window.setTimeout(() => void runNextMultiCase(), 900);
     return;
   }
 
@@ -525,21 +774,28 @@ function renderMultiCaseLoading(testCase: MultiCase, index: number): void {
         <p class="eyebrow">Prompt ${index + 1} / ${suite.cases.length}</p>
         <h2>${escapeHtml(testCase.prompt)}</h2>
         <p class="expectation"><strong>${escapeHtml(suite.expectLabel)}:</strong> ${escapeHtml(testCase.expect)}</p>
+        ${categoryPills(testCase.categories ?? [])}
       </div>
       <div class="multi-loading">Running regular messages and StateWeave…</div>
     </article>`;
 }
 
+function answerFor(record: MultiRecord, slot: "a" | "b"): string {
+  const primitive = record[slot];
+  return primitive === "stateweave" ? record.stateweave : record.regular;
+}
+
 function renderMultiVote(record: MultiRecord): void {
   const suite = currentSuite();
-  const a = record.a === "stateweave" ? record.stateweave : record.regular;
-  const b = record.b === "stateweave" ? record.stateweave : record.regular;
+  const a = answerFor(record, "a");
+  const b = answerFor(record, "b");
   multiStage.innerHTML = `
     <article class="multi-card">
       <div class="multi-case-header">
         <p class="eyebrow">Prompt ${record.index + 1} / ${suite.cases.length}</p>
         <h2>${escapeHtml(record.prompt)}</h2>
         <p class="expectation"><strong>${escapeHtml(suite.expectLabel)}:</strong> ${escapeHtml(record.expect)}</p>
+        ${categoryPills(record.categories)}
       </div>
       <div class="blind-grid">
         <article class="blind-answer"><h3>Answer A</h3>${responseHtml(a)}</article>
@@ -554,6 +810,70 @@ function renderMultiVote(record: MultiRecord): void {
     </article>`;
 }
 
+function renderMultiJudging(record: MultiRecord): void {
+  multiStage.innerHTML = `
+    <article class="multi-card">
+      <div class="multi-case-header">
+        <p class="eyebrow">Prompt ${record.index + 1} / ${currentSuite().cases.length}</p>
+        <h2>${escapeHtml(record.prompt)}</h2>
+        <p class="expectation"><strong>${escapeHtml(currentSuite().expectLabel)}:</strong> ${escapeHtml(record.expect)}</p>
+        ${categoryPills(record.categories)}
+      </div>
+      <div class="blind-grid compact-blind">
+        <article class="blind-answer"><h3>Answer A</h3>${responseHtml(answerFor(record, "a"))}</article>
+        <article class="blind-answer"><h3>Answer B</h3>${responseHtml(answerFor(record, "b"))}</article>
+      </div>
+      <div class="multi-loading">Running two independent judges…</div>
+    </article>`;
+}
+
+function renderMultiAutoJudged(record: MultiRecord): void {
+  multiStage.innerHTML = `
+    <article class="multi-card">
+      <div class="multi-case-header">
+        <p class="eyebrow">Prompt ${record.index + 1} judged</p>
+        <h2>${escapeHtml(record.prompt)}</h2>
+        <p class="expectation"><strong>${escapeHtml(currentSuite().expectLabel)}:</strong> ${escapeHtml(record.expect)}</p>
+        ${categoryPills(record.categories)}
+      </div>
+      <div class="judge-result ${record.judgedBy === "human" ? "human" : "agreed"}">
+        <strong>${record.judgedBy === "human" ? "Human vote" : "Judges agreed"}: ${voteLabel(record.vote)}</strong>
+        ${record.judges ? record.judges.map((judge) => `<p>${escapeHtml(judge.id)}: ${voteLabel(judge.vote)} — ${escapeHtml(judge.reason)}</p>`).join("") : ""}
+      </div>
+    </article>`;
+}
+
+function renderJudgeDisagreement(record: MultiRecord): void {
+  multiStart.disabled = true;
+  multiStart.textContent = "Waiting for human vote";
+  multiStage.innerHTML = `
+    <article class="multi-card">
+      <div class="multi-case-header">
+        <p class="eyebrow">Judge disagreement · Prompt ${record.index + 1} / ${currentSuite().cases.length}</p>
+        <h2>${escapeHtml(record.prompt)}</h2>
+        <p class="expectation"><strong>${escapeHtml(currentSuite().expectLabel)}:</strong> ${escapeHtml(record.expect)}</p>
+        ${categoryPills(record.categories)}
+      </div>
+      <div class="judge-result disagreement">
+        ${record.judges?.map((judge) => `<p><strong>${escapeHtml(judge.id)}:</strong> ${voteLabel(judge.vote)} — ${escapeHtml(judge.reason)}</p>`).join("") ?? ""}
+      </div>
+      <div class="blind-grid">
+        <article class="blind-answer"><h3>Answer A</h3>${responseHtml(answerFor(record, "a"))}</article>
+        <article class="blind-answer"><h3>Answer B</h3>${responseHtml(answerFor(record, "b"))}</article>
+      </div>
+      <div class="vote-bar" aria-label="Human tie-break vote">
+        <button class="button primary" type="button" data-vote="a">A is correct</button>
+        <button class="button primary" type="button" data-vote="b">B is correct</button>
+        <button class="button secondary" type="button" data-vote="both">Both</button>
+        <button class="button secondary" type="button" data-vote="neither">Neither</button>
+      </div>
+    </article>`;
+}
+
+function categoryPills(categories: EvalCategory[]): string {
+  return categories.length ? `<div class="category-pills">${categories.map((category) => `<span>${escapeHtml(category)}</span>`).join("")}</div>` : "";
+}
+
 function renderMultiReadyNext(): void {
   const suite = currentSuite();
   const next = suite.cases[multiIndex];
@@ -562,6 +882,7 @@ function renderMultiReadyNext(): void {
       <p class="eyebrow">Next prompt</p>
       <h2>${escapeHtml(next.prompt)}</h2>
       <p class="expectation"><strong>${escapeHtml(suite.expectLabel)}:</strong> ${escapeHtml(next.expect)}</p>
+      ${categoryPills(next.categories ?? [])}
       <p class="muted-copy">Click “${escapeHtml(multiStart.textContent ?? "Run next prompt")}" when ready. Labels remain hidden until all votes are complete.</p>
     </article>`;
 }
@@ -576,6 +897,7 @@ function renderMultiReveal(): void {
         <h2>${winnerText(scores)}</h2>
         <p class="expectation">StateWeave ${scores.stateweave} · Regular ${scores.regular} · Neither ${scores.neither}</p>
       </div>
+      ${categorySummaryTable()}
       <div class="reveal-list">
         ${multiRecords.map((record) => revealRow(record)).join("")}
       </div>
@@ -591,18 +913,34 @@ function revealRow(record: MultiRecord): string {
         <p class="eyebrow">Prompt ${record.index + 1}</p>
         <h3>${escapeHtml(record.prompt)}</h3>
         <p class="expectation">${escapeHtml(record.expect)}</p>
+        ${categoryPills(record.categories)}
       </div>
       <div class="reveal-meta">
         <span>A = ${primitiveLabel(record.a)}</span>
         <span>B = ${primitiveLabel(record.b)}</span>
         <strong>Vote: ${selected}</strong>
         <strong>Credit: ${winner}</strong>
+        ${record.judgedBy ? `<span>By: ${record.judgedBy}</span>` : ""}
       </div>
     </article>`;
 }
 
+function categorySummaryTable(): string {
+  const categories: EvalCategory[] = ["memory", "logical", "holistic"];
+  const rows = categories.map((category) => {
+    const records = multiRecords.filter((record) => record.categories.includes(category));
+    const scores = scoreRecords(records);
+    return `<tr><td>${category}</td><td>${scores.stateweave}</td><td>${scores.regular}</td><td>${scores.neither}</td><td>${records.length}</td></tr>`;
+  }).join("");
+  return `<table class="category-summary"><thead><tr><th>Category</th><th>StateWeave</th><th>Regular</th><th>Neither</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 function multiScores(): { stateweave: number; regular: number; neither: number } {
-  return multiRecords.reduce((scores, record) => {
+  return scoreRecords(multiRecords);
+}
+
+function scoreRecords(records: MultiRecord[]): { stateweave: number; regular: number; neither: number } {
+  return records.reduce((scores, record) => {
     if (record.vote === "both") {
       scores.stateweave += 1;
       scores.regular += 1;

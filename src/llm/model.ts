@@ -16,6 +16,7 @@ export type ModelInput = {
   frame?: GraphFrame;
   mode?: ModelMode;
   parameters?: ModelParameters;
+  system?: string;
   signal?: AbortSignal;
 };
 
@@ -53,6 +54,7 @@ export class MockModel implements Model {
   private output(input: ModelInput): string {
     const source = input.frame ? frameText(input.frame) : input.prompt;
     const lower = source.toLowerCase();
+    if (lower.includes("evaluate a blind a/b answer comparison")) return mockJudge(source);
     const identity = identityOutput(source);
     if (identity && input.mode === "text") return identity.answer;
     if (identity && input.mode !== "text") return identity.swx;
@@ -75,6 +77,16 @@ export class MockModel implements Model {
       `@final "${finalFor(task)}"`
     ].join("\n");
   }
+}
+
+function mockJudge(source: string): string {
+  const gold = source.match(/GOLD ANSWER:\n([\s\S]*?)\n\nANSWER A:/)?.[1]?.trim().toLowerCase() ?? "";
+  const answerA = source.match(/ANSWER A:\n([\s\S]*?)\n\nANSWER B:/)?.[1]?.trim().toLowerCase() ?? "";
+  const answerB = source.match(/ANSWER B:\n([\s\S]*?)\n\nReturn exactly:/)?.[1]?.trim().toLowerCase() ?? "";
+  const a = Boolean(gold && answerA.includes(gold));
+  const b = Boolean(gold && answerB.includes(gold));
+  const winner = a && b ? "BOTH" : a ? "A" : b ? "B" : "NEITHER";
+  return `WINNER: ${winner}\nREASON: Mock judge compared answers to the gold string.`;
 }
 
 function identityOutput(source: string): { answer: string; swx: string } | undefined {

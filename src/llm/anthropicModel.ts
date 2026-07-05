@@ -106,7 +106,7 @@ export class AnthropicModel implements Model {
       top_k: parameters.topK,
       stop_sequences: parameters.stopSequences,
       stream,
-      system: this.config.system ?? defaultSystem(),
+      system: input.system ?? this.config.system ?? defaultSystem(),
       messages: [{ role: "user", content: input.prompt }]
     });
   }

@@ -17,6 +17,16 @@ type RunRequest = {
   messages?: unknown;
 };
 
+type JudgeRequest = {
+  prompt?: unknown;
+  gold?: unknown;
+  answerA?: unknown;
+  answerB?: unknown;
+  categories?: unknown;
+};
+
+type JudgeVote = "a" | "b" | "both" | "neither";
+
 type ChatMessage = { role: "user" | "assistant"; content: string };
 type ModelMessage = { role: "user" | "assistant"; content: string };
 
@@ -54,6 +64,11 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
 
   if (request.method === "POST" && url.pathname === "/api/stateweave/compare") {
     await compareStateWeave(request, response);
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/stateweave/judge") {
+    await judgeStateWeaveComparison(request, response);
     return;
   }
 
@@ -151,6 +166,40 @@ async function compareStateWeave(request: IncomingMessage, response: ServerRespo
       graph: stateweave.graph
     }
   });
+}
+
+async function judgeStateWeaveComparison(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  const body = (await readJson(request)) as JudgeRequest;
+  if (typeof body.prompt !== "string" || typeof body.gold !== "string" || typeof body.answerA !== "string" || typeof body.answerB !== "string") {
+    json(response, 400, { error: "prompt, gold, answerA, and answerB are required" });
+    return;
+  }
+
+  const judgePrompts = shuffle([
+    {
+      id: "judge-alpha",
+      system: "You are Judge Alpha, a strict answer verifier. Use the gold answer as truth. Grade semantic correctness only, not style or verbosity. Return exactly WINNER: A, WINNER: B, WINNER: BOTH, or WINNER: NEITHER, then REASON: one short sentence."
+    },
+    {
+      id: "judge-beta",
+      system: "You are Judge Beta, a skeptical evaluator. Compare each answer against the gold answer and reject answers with wrong final values, contradictions, or missing required facts. Return exactly WINNER: A, WINNER: B, WINNER: BOTH, or WINNER: NEITHER, then REASON: one short sentence."
+    }
+  ]);
+  const judgePrompt = buildJudgePrompt({
+    prompt: body.prompt,
+    gold: body.gold,
+    answerA: body.answerA,
+    answerB: body.answerB,
+    categories: Array.isArray(body.categories) ? body.categories.filter((item): item is string => typeof item === "string") : []
+  });
+
+  const judges = await Promise.all(judgePrompts.map(async (judge) => {
+    const result = await model.complete({ prompt: judgePrompt, mode: "text", system: judge.system });
+    const parsed = parseJudgeVote(result.text);
+    return { id: judge.id, vote: parsed.vote, reason: parsed.reason, raw: result.text };
+  }));
+  const agreement = judges.every((judge) => judge.vote === judges[0].vote) ? judges[0].vote : undefined;
+  json(response, 200, { judges, agreement });
 }
 
 async function serveStatic(pathname: string, response: ServerResponse, headOnly: boolean): Promise<void> {
@@ -277,5 +326,41 @@ function emptyFrame(objective: string): GraphFrame {
     },
     graph: { nodes: [], edges: [] }
   };
+}
+
+function buildJudgePrompt(args: { prompt: string; gold: string; answerA: string; answerB: string; categories: string[] }): string {
+  return [
+    "Evaluate a blind A/B answer comparison.",
+    "Use the gold answer as the source of truth. The tested models did not see the gold answer.",
+    "If both answers are correct enough, choose BOTH. If neither is correct enough, choose NEITHER.",
+    `Categories: ${args.categories.length ? args.categories.join(", ") : "none"}`,
+    "",
+    "PROMPT:",
+    args.prompt,
+    "",
+    "GOLD ANSWER:",
+    args.gold,
+    "",
+    "ANSWER A:",
+    args.answerA,
+    "",
+    "ANSWER B:",
+    args.answerB,
+    "",
+    "Return exactly:",
+    "WINNER: A|B|BOTH|NEITHER",
+    "REASON: <one short sentence>"
+  ].join("\n");
+}
+
+function parseJudgeVote(raw: string): { vote: JudgeVote; reason: string } {
+  const winner = raw.match(/WINNER\s*:\s*(A|B|BOTH|NEITHER)/i)?.[1]?.toLowerCase();
+  const reason = raw.match(/REASON\s*:\s*([^\n]+)/i)?.[1]?.trim() ?? raw.trim().slice(0, 240);
+  if (winner === "a" || winner === "b" || winner === "both" || winner === "neither") return { vote: winner, reason };
+  return { vote: "neither", reason: reason || "Judge response did not contain a valid WINNER line." };
+}
+
+function shuffle<T>(values: T[]): T[] {
+  return [...values].sort(() => Math.random() - 0.5);
 }
 

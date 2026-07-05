@@ -829,6 +829,73 @@ label {
   margin-top: 14px;
 }
 
+.category-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.category-pills span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  padding: 3px 8px;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.judge-result {
+  margin: 12px 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fafafa;
+  padding: 12px;
+  color: var(--muted-foreground);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.judge-result strong {
+  color: var(--foreground);
+}
+
+.judge-result.agreed {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.judge-result.disagreement {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.judge-result.human {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.category-summary {
+  width: 100%;
+  margin: 12px 0 14px;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.category-summary th,
+.category-summary td {
+  border: 1px solid var(--border);
+  padding: 8px;
+  text-align: left;
+}
+
+.category-summary th {
+  background: #fafafa;
+  color: var(--muted-foreground);
+  font-weight: 700;
+}
+
 .reveal-list {
   display: grid;
   gap: 10px;
