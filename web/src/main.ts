@@ -231,7 +231,7 @@ const promptSuites: Record<SuiteId, PromptSuite> = {
   "prompt-six": {
     id: "prompt-six",
     title: "Prompt six",
-    description: "Two hundred long-context regression cases testing whether memory accuracy degrades as conversational state grows: old anchors, latest-over-stale updates, revocations, chronology, and cross-reference joins.",
+    description: "Three hundred long-context regression cases testing whether memory accuracy degrades as conversational state grows: ancient anchors, latest-over-stale updates, revocations/restores, chronology edits, and cross-reference joins.",
     readyTitle: "Ready for long-context regression.",
     readyCopy: "This is a paper-style hypothesis test. It runs in background and buckets results over time to show whether either variant regresses as context grows.",
     expectLabel: "Gold answer",
@@ -1231,7 +1231,7 @@ function liveScoreHtml(): string {
 }
 
 function trendBucketSize(): number {
-  return currentSuite().id === "prompt-six" ? 20 : 10;
+  return currentSuite().id === "prompt-six" ? 30 : 10;
 }
 
 function trendChartHtml(): string {

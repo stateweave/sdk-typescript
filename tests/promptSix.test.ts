@@ -4,8 +4,8 @@ import { promptSixCases, promptSixCategoryCounts, promptSixCategoryOrder, prompt
 describe("prompt six long-context regression eval data", () => {
   const cases = promptSixCases();
 
-  it("has 200 cases balanced across five primary categories", () => {
-    expect(cases).toHaveLength(200);
+  it("has 300 cases balanced across five primary categories", () => {
+    expect(cases).toHaveLength(300);
     expect(promptSixCategoryOrder).toHaveLength(5);
     for (const category of promptSixCategoryOrder) {
       expect(cases.filter((item) => item.categories.includes(category))).toHaveLength(promptSixCategoryCounts[category]);
@@ -23,11 +23,13 @@ describe("prompt six long-context regression eval data", () => {
 
   it("locks representative deterministic oracle answers", () => {
     expect(cases[0].categories).toEqual(["anchor-recall"]);
-    expect(cases[0].expect).toMatch(/^[A-Z]{3}-\d+\|[A-Za-z]+\|[a-z]+\|\d+$/);
+    expect(cases[0].expect).toBe("Deltan-HAR-01~Cairo~egret~527");
     expect(cases[4].categories).toEqual(["cross-reference"]);
-    expect(cases[4].expect.split("|")).toHaveLength(4);
-    expect(cases[199].categories).toEqual(["cross-reference"]);
-    expect(cases[199].expect.split("|")).toHaveLength(4);
+    expect(cases[4].expect).toBe("Deltan-HAR-01|Yara|1|1|2798");
+    expect(cases[149].categories).toEqual(["cross-reference"]);
+    expect(cases[149].expect).toBe("Yara-ORI-07|Juno|25|21|95");
+    expect(cases[299].categories).toEqual(["cross-reference"]);
+    expect(cases[299].expect).toBe("Junia-JUN-25|Yara|27|40|2599");
   });
 
   it("states a falsifiable regression hypothesis", () => {
