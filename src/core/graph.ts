@@ -49,7 +49,7 @@ export function createInitialGraphFrame(args: {
       activeUserInputNodeId: input ? "user_input_1" : undefined,
       candidateFocusNodeIds: input ? ["system_root", "user_input_1"] : ["system_root"],
       nextExpectedOutput: input
-        ? "Return SWX/1 commands that attach the active user input to the right node, create semantic nodes with model-chosen types, and produce a final answer."
+        ? "Return SWX/1 commands that attach the active user input to the right node, create semantic nodes with model-chosen types, and produce a human-readable final answer with @final or @final_ref."
         : "Return SWX/1 commands that create or update graph nodes, or wait for the next user input.",
       activeConstraints: constraints,
       availableActions: ["add_node", "add_edge", "update_node", "focus", "call_tool", "final", ...args.availableActions],
@@ -85,7 +85,7 @@ export function appendInputToGraphFrame(frame: GraphFrame, args: { objective: st
   next.frame.latestInputNodeId = inputId;
   next.frame.activeUserInputNodeId = inputId;
   next.frame.candidateFocusNodeIds = candidateFocusNodeIds(next);
-  next.frame.nextExpectedOutput = "Return SWX/1 commands that first weave the active user_input into the graph with one or more meaningful edges, then create model-typed semantic/output nodes and produce a final answer.";
+  next.frame.nextExpectedOutput = "Return SWX/1 commands that first weave the active user_input into the graph with one or more meaningful edges, then create model-typed semantic/output nodes and produce a human-readable final answer with @final or @final_ref.";
   next.frame.activeConstraints = unique([...next.frame.activeConstraints, ...extractConstraints(args.input)]);
   return next;
 }

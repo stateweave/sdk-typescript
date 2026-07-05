@@ -44,7 +44,7 @@ export const graphOpSchema = z.discriminatedUnion("op", [
   }),
   z.object({ op: z.literal("focus"), currentFocus: z.string().min(1), nodeId: z.string().min(1).optional() }),
   z.object({ op: z.literal("call_tool"), tool: z.string().min(1), args: z.record(z.unknown()) }),
-  z.object({ op: z.literal("final"), answer: z.string().min(1), artifactId: z.string().min(1).optional() })
+  z.object({ op: z.literal("final"), answer: z.string().min(1), artifactId: z.string().min(1).optional(), artifactIds: z.array(z.string().min(1)).optional() })
 ]);
 
 export const graphOpsResponseSchema = z.object({ ops: z.array(graphOpSchema).min(1) });
@@ -71,7 +71,7 @@ function parseSwx(raw: string): GraphOp[] {
   const { commands, blocks } = extractBlocks(raw);
   const nodeOps: Extract<GraphOp, { op: "add_node" }>[] = [];
   const otherOps: GraphOp[] = [];
-  const finalTargets: string[] = [];
+  const finalTargets: { command: "@final" | "@final_ref"; tokens: string[]; argText: string }[] = [];
   const toolArgBlockIds = new Set<string>();
 
   for (const line of commands.split(/\r?\n/)) {
@@ -138,15 +138,16 @@ function parseSwx(raw: string): GraphOp[] {
       continue;
     }
 
-    if (command === "@final") {
-      finalTargets.push(tokens.slice(1).join(" ").trim() || "final");
+    if (command === "@final" || command === "@final_ref") {
+      finalTargets.push({ command, tokens: tokens.slice(1), argText: trimmed.slice(command.length).trim() });
       continue;
     }
   }
 
-  const artifactBlocks = blocks.filter((block) => !toolArgBlockIds.has(block.id));
+  const finalAnswerBlockIds = new Set(finalTargets.flatMap((target) => target.command === "@final_ref" && target.tokens[0] ? [target.tokens[0]] : []));
+  const artifactBlocks = blocks.filter((block) => !toolArgBlockIds.has(block.id) && !finalAnswerBlockIds.has(block.id));
   for (const block of artifactBlocks) mergeArtifactBlock(nodeOps, block);
-  const finalOps = finalTargets.length ? finalTargets.map((target) => finalOpFor(target, artifactBlocks, nodeOps)) : finalFromImplicitBlock(artifactBlocks);
+  const finalOps = finalTargets.length ? finalTargets.map((target) => finalOpFor(target, blocks, artifactBlocks, nodeOps)) : finalFromImplicitBlock(artifactBlocks);
   const parsed = graphOpsResponseSchema.parse({ ops: [...nodeOps, ...otherOps, ...finalOps] }).ops;
   if (!parsed.length) throw new Error("Model returned SWX/1 but no graph operations were found.");
   return parsed;
@@ -198,22 +199,54 @@ function mergeArtifactBlock(nodeOps: Extract<GraphOp, { op: "add_node" }>[], blo
   });
 }
 
-function finalOpFor(target: string, blocks: SwxBlock[], nodeOps: Extract<GraphOp, { op: "add_node" }>[]): Extract<GraphOp, { op: "final" }> {
-  const cleanTarget = unquote(target);
-  const block = blocks.find((item) => item.id === cleanTarget);
-  if (block) return { op: "final", answer: block.content, artifactId: block.id };
+function finalOpFor(
+  target: { command: "@final" | "@final_ref"; tokens: string[]; argText: string },
+  allBlocks: SwxBlock[],
+  artifactBlocks: SwxBlock[],
+  nodeOps: Extract<GraphOp, { op: "add_node" }>[]
+): Extract<GraphOp, { op: "final" }> {
+  if (target.command === "@final_ref") return finalRefOpFor(target, allBlocks);
 
+  const { label, attrs } = parseLabelAndAttrs(target.tokens);
+  const artifactIds = artifactIdsFromAttrs(attrs);
+  const humanAnswer = stringAttr(attrs.text) ?? label;
+  const finalIsQuotedText = /^['"]/.test(target.argText);
+
+  if (humanAnswer && (finalIsQuotedText || artifactIds.length || /\s/.test(humanAnswer))) return finalOp(humanAnswer, artifactIds);
+
+  const cleanTarget = unquote(humanAnswer ?? (target.argText.trim() || "final"));
+  const block = artifactBlocks.find((item) => item.id === cleanTarget);
   const node = nodeOps.find((op) => op.node.id === cleanTarget)?.node;
-  if (node && typeof node.data?.content === "string") return { op: "final", answer: node.data.content, artifactId: node.id };
-  if (node?.data?.mime) return { op: "final", answer: node.text, artifactId: node.id };
-  if (node) return { op: "final", answer: node.text };
+  if (node && (node.type === "assistant_output" || !node.data?.mime)) return finalOp(node.text);
+  const legacyArtifactId = block?.id ?? node?.id;
+  if (legacyArtifactId) return finalOp(`Completed. See ${legacyArtifactId}.`, [legacyArtifactId]);
 
-  return { op: "final", answer: cleanTarget };
+  if (/^[A-Za-z][A-Za-z0-9_-]*$/.test(cleanTarget)) return finalOp(`Completed. See ${cleanTarget}.`, [cleanTarget]);
+  return finalOp(cleanTarget, artifactIds);
+}
+
+function finalRefOpFor(target: { tokens: string[] }, blocks: SwxBlock[]): Extract<GraphOp, { op: "final" }> {
+  const blockId = target.tokens[0];
+  if (!blockId) throw new Error("Invalid SWX @final_ref command: missing final answer block id");
+  const { attrs } = parseLabelAndAttrs(target.tokens.slice(1));
+  const block = blocks.find((item) => item.id === blockId);
+  if (!block) throw new Error(`SWX @final_ref references missing block: ${blockId}`);
+  return finalOp(block.content, artifactIdsFromAttrs(attrs));
+}
+
+function finalOp(answer: string, artifactIds: string[] = []): Extract<GraphOp, { op: "final" }> {
+  const ids = unique(artifactIds.filter(Boolean));
+  return withoutUndefined({ op: "final", answer, artifactId: ids[0], artifactIds: ids.length ? ids : undefined });
+}
+
+function artifactIdsFromAttrs(attrs: Record<string, unknown>): string[] {
+  const raw = stringAttr(attrs.artifacts) ?? stringAttr(attrs.artifactIds) ?? stringAttr(attrs.artifact);
+  return raw ? raw.split(",").map((item) => item.trim()).filter(Boolean) : [];
 }
 
 function finalFromImplicitBlock(blocks: SwxBlock[]): Extract<GraphOp, { op: "final" }>[] {
   const block = blocks.find((item) => item.id === "final" || item.id === "answer") ?? (blocks.length === 1 ? blocks[0] : undefined);
-  return block ? [{ op: "final", answer: block.content, artifactId: block.id }] : [];
+  return block ? [finalOp(block.content)] : [];
 }
 
 function parseLabelAndAttrs(tokens: string[]): { label?: string; attrs: Record<string, unknown> } {
@@ -228,7 +261,7 @@ function parseFocus(tokens: string[]): Extract<GraphOp, { op: "focus" }> {
   const { label, attrs } = parseLabelAndAttrs(tokens);
   const explicitNode = stringAttr(attrs.node) ?? stringAttr(attrs.nodeId) ?? stringAttr(attrs.focusNodeId);
   const first = tokens[0];
-  const firstLooksLikeNodeId = first && !isAttrToken(first) && /^(?:[A-Za-z][A-Za-z0-9_-]*_\d+|system_root)$/.test(first);
+  const firstLooksLikeNodeId = first && tokens.length > 1 && !isAttrToken(first) && /^[A-Za-z][A-Za-z0-9_-]*$/.test(first);
   const nodeId = explicitNode ?? (firstLooksLikeNodeId ? first : undefined);
   const currentFocus = stringAttr(attrs.text) ?? (nodeId && tokens.length > 1 ? tokens.slice(1).join(" ").trim() : label) ?? nodeId ?? "focus";
   return withoutUndefined({ op: "focus", currentFocus, nodeId });
@@ -329,6 +362,10 @@ function dataAttrs(attrs: Record<string, unknown>, exclude: string[]): Record<st
 
 function withoutUndefined<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function stringAttr(value: unknown): string | undefined {

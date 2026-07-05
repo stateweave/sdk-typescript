@@ -76,14 +76,28 @@ it("reuses a model-added assistant output node when final is also returned", () 
   expect(next.graph.nodes.find((node) => node.id === "assistant_output_custom")?.text).toBe("final answer");
 });
 
-it("keeps large artifact final answers out of assistant output node text", () => {
+it("keeps artifact refs separate from assistant output text", () => {
   const frame = createInitialGraphFrame({ objective: "Draw SVG", input: "Make an SVG", availableActions: [] });
   const next = applyOps(frame, [
     { op: "add_node", node: { id: "artifact_1", type: "artifact", text: "SVG", data: { mime: "image/svg+xml", content: "<svg></svg>" } } },
-    { op: "final", answer: "<svg></svg>", artifactId: "artifact_1" }
+    { op: "final", answer: "Created the SVG.", artifactId: "artifact_1", artifactIds: ["artifact_1"] }
   ]);
-  expect(next.graph.nodes).toContainEqual(expect.objectContaining({ id: "assistant_output_1", text: "Returned artifact artifact_1", data: { artifactId: "artifact_1" } }));
+  expect(next.graph.nodes).toContainEqual(expect.objectContaining({ id: "assistant_output_1", text: "Created the SVG.", data: { artifactId: "artifact_1", artifactIds: ["artifact_1"] } }));
   expect(next.graph.edges.some((edge) => edge.from === "assistant_output_1" && edge.to === "artifact_1" && edge.type === "creates")).toBe(true);
+});
+
+it("links multiple final artifact refs from the assistant output", () => {
+  const frame = createInitialGraphFrame({ objective: "Create games", input: "Make two games", availableActions: [] });
+  const next = applyOps(frame, [
+    { op: "add_node", node: { id: "snake", type: "artifact", text: "Snake", data: { mime: "text/html", content: "<html>Snake</html>" } } },
+    { op: "add_node", node: { id: "tetris", type: "artifact", text: "Tetris", data: { mime: "text/html", content: "<html>Tetris</html>" } } },
+    { op: "add_edge", from: "user_input_1", to: "snake", type: "creates" },
+    { op: "add_edge", from: "user_input_1", to: "tetris", type: "creates" },
+    { op: "final", answer: "Created Snake and Tetris.", artifactIds: ["snake", "tetris"] }
+  ]);
+  expect(next.graph.nodes).toContainEqual(expect.objectContaining({ id: "assistant_output_1", text: "Created Snake and Tetris.", data: { artifactId: "snake", artifactIds: ["snake", "tetris"] } }));
+  expect(next.graph.edges).toContainEqual(expect.objectContaining({ from: "assistant_output_1", to: "snake", type: "creates" }));
+  expect(next.graph.edges).toContainEqual(expect.objectContaining({ from: "assistant_output_1", to: "tetris", type: "creates" }));
 });
 
 it("adds deterministic tool call and result nodes to the same graph", () => {

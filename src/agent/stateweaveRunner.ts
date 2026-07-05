@@ -173,7 +173,7 @@ function retryFrameAfterGraphOpsError(frame: GraphFrame, message: string): Graph
   const latest = next.frame.latestInputNodeId ?? next.frame.activeUserInputNodeId ?? "the latest user_input";
   next.frame.lastGraphOpsError = message;
   next.frame.currentFocus = `Previous GraphOps transaction was rejected: ${message}`;
-  next.frame.nextExpectedOutput = `Retry the complete SWX/1 transaction. First attach ${latest} to system_root for a fresh request or to the relevant existing node, then attach every new semantic/output node with @edge before returning @final.`;
+  next.frame.nextExpectedOutput = `Retry the complete SWX/1 transaction. First attach ${latest} to system_root for a fresh request or to the relevant existing node, then attach every new semantic/output node with @edge before returning @final "human-readable answer" or @final_ref final_answer.`;
   return next;
 }
 

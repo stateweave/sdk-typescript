@@ -85,6 +85,44 @@ it("runs workspace write/edit tools end to end with SWX block-ref args", async (
   }
 });
 
+it("returns long final_ref answers with multiple artifact refs end to end", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-final-ref-"));
+  try {
+    const model = new SequenceModel([
+      [
+        "SWX/1",
+        "@edge system_root follows user_input_1",
+        "@node snake artifact \"Snake HTML\" mime=text/html",
+        "@node index_page artifact \"Game index\" mime=text/html",
+        "@edge user_input_1 creates snake",
+        "@edge user_input_1 creates index_page",
+        "@tool write_file file_path=snake.html content_ref=snake_html",
+        "@tool write_file file_path=index.html content_ref=index_html",
+        "@final_ref final_answer artifacts=snake,index_page",
+        "<<<snake_html:text/html",
+        "<html>Snake</html>",
+        ">>>",
+        "<<<index_html:text/html",
+        "<html><a href=\"snake.html\">Snake</a></html>",
+        ">>>",
+        "<<<final_answer:text/markdown",
+        "Created the game files:\n- snake.html\n- index.html",
+        ">>>"
+      ].join("\n")
+    ]);
+
+    const result = await runStateWeave({ model, tools: createFileSystemTools({ rootDir: root }), maxSteps: 1 }, "Create one game and index");
+
+    expect(result.finalAnswer).toBe("Created the game files:\n- snake.html\n- index.html");
+    expect(result.graph.nodes).not.toContainEqual(expect.objectContaining({ id: "final_answer" }));
+    expect(result.graph.nodes).toContainEqual(expect.objectContaining({ type: "assistant_output", text: result.finalAnswer, data: { artifactId: "snake", artifactIds: ["snake", "index_page"] } }));
+    expect(await readFile(path.join(root, "snake.html"), "utf8")).toBe("<html>Snake</html>");
+    expect(await readFile(path.join(root, "index.html"), "utf8")).toContain("snake.html");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it("throws a clear recursion-limit error when maxIterations is exhausted", async () => {
   const output = "SWX/1\n@edge system_root follows user_input_1\n@node note_1 note \"Still working\"\n@edge user_input_1 creates note_1";
 

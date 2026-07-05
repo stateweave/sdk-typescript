@@ -213,6 +213,21 @@ new exact text
 >>>
 ```
 
+Final answers are always human-readable text. Use inline `@final` for short responses and `@final_ref` for long responses, with optional artifact references:
+
+```txt
+@final "Created the SVG and wrote it to logo.svg." artifact=logo_svg
+```
+
+```txt
+@final_ref final_answer artifacts=snake,index_page
+<<<final_answer:text/markdown
+Created the game files:
+- snake.html
+- index.html
+>>>
+```
+
 To add custom tools without losing the defaults, pass `tools: [...createDefaultTools(), yourTool]`. To replace the defaults entirely, pass your own `tools` array.
 
 ## Visualize graph state

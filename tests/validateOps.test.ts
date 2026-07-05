@@ -67,13 +67,7 @@ it("parses raw output blocks without requiring artifact as a structural type", (
     }
   });
   expect(ops).toContainEqual({ op: "add_edge", from: "user_input_1", to: "game_1", type: "creates" });
-  expect(ops).toContainEqual({
-    op: "final",
-    answer: `<svg viewBox="0 0 10 10">
-  <circle cx="5" cy="5" r="4" />
-</svg>`,
-    artifactId: "game_1"
-  });
+  expect(ops).toContainEqual({ op: "final", answer: "Completed. See game_1.", artifactId: "game_1", artifactIds: ["game_1"] });
 });
 
 it("parses multiline @tool args through block refs without creating artifact ops", () => {
@@ -104,6 +98,47 @@ with detail
   ]);
 });
 
+it("parses long final answer blocks with optional multiple artifact refs", () => {
+  const ops = parseAndValidateOps(`SWX/1
+@node game_1 artifact "Snake" mime=text/html
+@node game_2 artifact "Tetris" mime=text/html
+@edge user_input_1 creates game_1
+@edge user_input_1 creates game_2
+@final_ref final_answer artifacts=game_1,game_2
+<<<final_answer:text/markdown
+Created two games:
+- Snake
+- Tetris
+>>>
+<<<game_1:text/html
+<html>Snake</html>
+>>>
+<<<game_2:text/html
+<html>Tetris</html>
+>>>`);
+
+  expect(ops).toContainEqual({
+    op: "final",
+    answer: "Created two games:\n- Snake\n- Tetris",
+    artifactId: "game_1",
+    artifactIds: ["game_1", "game_2"]
+  });
+  expect(ops).not.toContainEqual(expect.objectContaining({ op: "add_node", node: expect.objectContaining({ id: "final_answer" }) }));
+});
+
+it("parses long final answer blocks without artifacts", () => {
+  const ops = parseAndValidateOps(`SWX/1
+@edge system_root follows user_input_1
+@final_ref final_answer
+<<<final_answer:text/markdown
+Here is a longer answer.
+
+It has multiple paragraphs.
+>>>`);
+
+  expect(ops).toContainEqual({ op: "final", answer: "Here is a longer answer.\n\nIt has multiple paragraphs." });
+});
+
 it("tolerates a final SWX block missing its closing sentinel", () => {
   const ops = parseAndValidateOps(`SWX/1
 @node output_3 html_game "Fixed Pac-Man" mime=text/html
@@ -122,7 +157,7 @@ it("tolerates a final SWX block missing its closing sentinel", () => {
       data: { mime: "text/html", content: "<html><body>Pac-Man</body></html>", swxTerminated: false }
     }
   });
-  expect(ops).toContainEqual({ op: "final", answer: "<html><body>Pac-Man</body></html>", artifactId: "output_3" });
+  expect(ops).toContainEqual({ op: "final", answer: "Completed. See output_3.", artifactId: "output_3", artifactIds: ["output_3"] });
 });
 
 it("parses graph ops wrapped in a markdown swx fence", () => {
@@ -135,6 +170,13 @@ it("parses node-targeted focus", () => {
 @focus user_input_2 "Work from the fresh user input"
 @final "Ready."`);
   expect(ops).toContainEqual({ op: "focus", nodeId: "user_input_2", currentFocus: "Work from the fresh user input" });
+});
+
+it("parses slug node-targeted focus", () => {
+  const ops = parseAndValidateOps(`SWX/1
+@focus index_page "All files complete"
+@final "Ready."`);
+  expect(ops).toContainEqual({ op: "focus", nodeId: "index_page", currentFocus: "All files complete" });
 });
 
 it("keeps legacy JSON parsing as a compatibility fallback", () => {

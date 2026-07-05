@@ -58,11 +58,12 @@ export function applyOps(frame: GraphFrame, ops: GraphOp[]): GraphFrame {
       case "call_tool":
         break;
       case "final": {
-        if (op.artifactId && !declaredNodeIds.has(op.artifactId)) {
-          referenceErrors.push(`final artifact ${op.artifactId} references a missing node`);
-          break;
+        const artifactIds = finalArtifactIds(op);
+        for (const artifactId of artifactIds) {
+          if (!declaredNodeIds.has(artifactId)) referenceErrors.push(`final artifact ${artifactId} references a missing node`);
         }
-        const assistant = addAssistantOutput(next.graph, op.answer, anchor, preNodeIds, op.artifactId);
+        if (artifactIds.some((artifactId) => !declaredNodeIds.has(artifactId))) break;
+        const assistant = addAssistantOutput(next.graph, op.answer, anchor, preNodeIds, artifactIds);
         next.frame.focusNodeId = assistant.id;
         next.frame.activeUserInputNodeId = userInputIdForNode(next.graph, assistant) ?? next.frame.latestInputNodeId ?? next.frame.activeUserInputNodeId;
         next.frame.currentFocus = `Cortex focus is ${assistant.id}; continue from this answer unless the next user input asks for a fresh context or another focus.`;
@@ -109,27 +110,31 @@ export function addToolResult(graph: StateGraph, args: { tool: string; result: u
   return next;
 }
 
-function addAssistantOutput(graph: StateGraph, answer: string, anchor: GraphNode | undefined, preNodeIds: Set<string>, artifactId?: string): GraphNode {
+function addAssistantOutput(graph: StateGraph, answer: string, anchor: GraphNode | undefined, preNodeIds: Set<string>, artifactIds: string[] = []): GraphNode {
   const existing = graph.nodes.find((node): node is GraphNode => node.type === "assistant_output" && !preNodeIds.has(node.id));
-  const text = artifactId ? `Returned artifact ${artifactId}` : answer;
-  const data = artifactId ? { artifactId } : undefined;
+  const ids = unique(artifactIds);
+  const data = ids.length ? { artifactId: ids[0], artifactIds: ids } : undefined;
 
   if (existing) {
-    existing.text = text;
+    existing.text = answer;
     existing.data = data ? { ...existing.data, ...data } : existing.data;
     existing.status = "resolved";
     existing.confidence = existing.confidence ?? 1;
     if (anchor && !isReferenced(graph, existing.id)) addEdge(graph, anchor.id, existing.id, "follows");
-    if (artifactId && graph.nodes.some((node) => node.id === artifactId)) addEdge(graph, existing.id, artifactId, "creates");
+    for (const artifactId of ids) if (graph.nodes.some((node) => node.id === artifactId)) addEdge(graph, existing.id, artifactId, "creates");
     return existing;
   }
 
   const id = `assistant_output_${nextIndex(graph.nodes, "assistant_output_")}`;
-  const node: GraphNode = { id, type: "assistant_output", text, data, status: "resolved", confidence: 1, createdAt: nowIso() };
+  const node: GraphNode = { id, type: "assistant_output", text: answer, data, status: "resolved", confidence: 1, createdAt: nowIso() };
   graph.nodes.push(node);
   if (anchor) addEdge(graph, anchor.id, id, "follows");
-  if (artifactId && graph.nodes.some((item) => item.id === artifactId)) addEdge(graph, id, artifactId, "creates");
+  for (const artifactId of ids) if (graph.nodes.some((item) => item.id === artifactId)) addEdge(graph, id, artifactId, "creates");
   return node;
+}
+
+function finalArtifactIds(op: Extract<GraphOp, { op: "final" }>): string[] {
+  return unique([...(op.artifactIds ?? []), ...(op.artifactId ? [op.artifactId] : [])]);
 }
 
 function validateGraphTransaction(frameBefore: GraphFrame, frameAfter: GraphFrame, referenceErrors: string[]): void {

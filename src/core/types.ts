@@ -60,7 +60,7 @@ export type GraphOp =
   | { op: "update_node"; id: string; patch: Partial<GraphNode> }
   | { op: "focus"; currentFocus: string; nodeId?: string }
   | { op: "call_tool"; tool: string; args: Record<string, unknown> }
-  | { op: "final"; answer: string; artifactId?: string };
+  | { op: "final"; answer: string; artifactId?: string; artifactIds?: string[] };
 
 export type StateWeaveRunMetadata = {
   runId: string;

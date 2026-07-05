@@ -2389,7 +2389,11 @@ function formatOp(op: GraphOp): string {
   if (op.op === "update_node") return `@update ${op.id}`;
   if (op.op === "focus") return op.nodeId ? `@focus ${op.nodeId} "${op.currentFocus}"` : `@focus "${op.currentFocus}"`;
   if (op.op === "call_tool") return `@tool ${op.tool}`;
-  if (op.op === "final") return op.artifactId ? `@final ${op.artifactId}` : `@final "${shorten(op.answer, 120)}"`;
+  if (op.op === "final") {
+    const ids = op.artifactIds?.length ? op.artifactIds : op.artifactId ? [op.artifactId] : [];
+    const suffix = ids.length ? ` artifacts=${ids.join(",")}` : "";
+    return `@final "${shorten(op.answer, 120)}"${suffix}`;
+  }
   return "@unknown";
 }
 
