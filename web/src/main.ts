@@ -22,10 +22,12 @@ type CompareResponse = StateWeaveResponse & {
   };
 };
 
-type PageName = "state" | "ab" | "multi";
+type PageName = "state" | "ab" | "prompt-one" | "prompt-two";
+type SuiteId = "prompt-one" | "prompt-two";
 type Primitive = "regular" | "stateweave";
 type Vote = "a" | "b" | "both" | "neither";
 type MultiCase = { prompt: string; expect: string };
+type PromptSuite = { id: SuiteId; title: string; description: string; readyTitle: string; readyCopy: string; expectLabel: string; cases: MultiCase[] };
 type MultiRecord = {
   index: number;
   prompt: string;
@@ -37,7 +39,8 @@ type MultiRecord = {
   vote?: Vote;
 };
 
-let activePage: PageName = location.hash === "#ab" ? "ab" : location.hash === "#prompt-one" ? "multi" : "state";
+let activePage: PageName = pageFromHash();
+let multiSuiteId: SuiteId = suiteIdForPage(activePage) ?? "prompt-one";
 let stateFrame: GraphFrame | undefined;
 let abStateFrame: GraphFrame | undefined;
 let abRegularHistory: ChatMessage[] = [];
@@ -51,52 +54,98 @@ let abRunning = false;
 let copyCounter = 0;
 
 const copyPayloads = new Map<string, string>();
-const multiCases: MultiCase[] = [
-  {
-    prompt: "For this test, remember: project name is LumaGarden, audience is teachers, tone is calm, visual style is black and white only, no gradients, and the mascot is an owl. Reply ready and do not design yet.",
-    expect: "Should acknowledge readiness and preserve all six facts/constraints for later turns."
+const promptSuites: Record<SuiteId, PromptSuite> = {
+  "prompt-one": {
+    id: "prompt-one",
+    title: "Prompt one",
+    description: "Ten connected prompts test memory, constraint retention, topic switching, and correction handling.",
+    readyTitle: "Ready for a harder test.",
+    readyCopy: "This sequence tests memory, constraint retention, topic switching, and corrections over ten turns.",
+    expectLabel: "Expected",
+    cases: [
+      {
+        prompt: "For this test, remember: project name is LumaGarden, audience is teachers, tone is calm, visual style is black and white only, no gradients, and the mascot is an owl. Reply ready and do not design yet.",
+        expect: "Should acknowledge readiness and preserve all six facts/constraints for later turns."
+      },
+      {
+        prompt: "Create a one-sentence tagline using the project name and audience.",
+        expect: "Should include LumaGarden, target teachers, and a calm/educational feeling."
+      },
+      {
+        prompt: "Give a three-bullet UI style guide obeying my visual constraints.",
+        expect: "Should retain black-and-white only, no gradients, calm tone, and avoid adding unrelated colors."
+      },
+      {
+        prompt: "Switch topic briefly: explain in one sentence what a graph database is.",
+        expect: "Should answer the new topic directly without losing the brand context for later."
+      },
+      {
+        prompt: "Back to the project: create an SVG logo. It must follow all prior visual constraints.",
+        expect: "Should make an SVG for LumaGarden using black/white, no gradients, and the owl/classroom context."
+      },
+      {
+        prompt: "Revise the logo concept so it feels more classroom-friendly, but keep every visual constraint.",
+        expect: "Should improve classroom fit while preserving black/white only, no gradients, and the existing brand context."
+      },
+      {
+        prompt: "What constraints have I given so far? List only constraints and durable facts, not your outputs.",
+        expect: "Should list name LumaGarden, teachers, calm tone, black/white only, no gradients, and owl mascot."
+      },
+      {
+        prompt: "Create a homepage hero title and subtitle. Do not mention the mascot explicitly.",
+        expect: "Should use the brand/audience/tone but not mention owl or mascot."
+      },
+      {
+        prompt: "I changed one thing: the mascot is now a lantern, not an owl. Confirm and give one logo direction.",
+        expect: "Should update the mascot to lantern, avoid owl, and keep prior visual constraints."
+      },
+      {
+        prompt: "Final task: produce a concise brand card with name, audience, tone, visual rules, mascot, and one CTA.",
+        expect: "Should include LumaGarden, teachers, calm tone, black/white, no gradients, lantern mascot, and a CTA."
+      }
+    ]
   },
-  {
-    prompt: "Create a one-sentence tagline using the project name and audience.",
-    expect: "Should include LumaGarden, target teachers, and a calm/educational feeling."
-  },
-  {
-    prompt: "Give a three-bullet UI style guide obeying my visual constraints.",
-    expect: "Should retain black-and-white only, no gradients, calm tone, and avoid adding unrelated colors."
-  },
-  {
-    prompt: "Switch topic briefly: explain in one sentence what a graph database is.",
-    expect: "Should answer the new topic directly without losing the brand context for later."
-  },
-  {
-    prompt: "Back to the project: create an SVG logo. It must follow all prior visual constraints.",
-    expect: "Should make an SVG for LumaGarden using black/white, no gradients, and the owl/classroom context."
-  },
-  {
-    prompt: "Revise the logo concept so it feels more classroom-friendly, but keep every visual constraint.",
-    expect: "Should improve classroom fit while preserving black/white only, no gradients, and the existing brand context."
-  },
-  {
-    prompt: "What constraints have I given so far? List only constraints and durable facts, not your outputs.",
-    expect: "Should list name LumaGarden, teachers, calm tone, black/white only, no gradients, and owl mascot."
-  },
-  {
-    prompt: "Create a homepage hero title and subtitle. Do not mention the mascot explicitly.",
-    expect: "Should use the brand/audience/tone but not mention owl or mascot."
-  },
-  {
-    prompt: "I changed one thing: the mascot is now a lantern, not an owl. Confirm and give one logo direction.",
-    expect: "Should update the mascot to lantern, avoid owl, and keep prior visual constraints."
-  },
-  {
-    prompt: "Final task: produce a concise brand card with name, audience, tone, visual rules, mascot, and one CTA.",
-    expect: "Should include LumaGarden, teachers, calm tone, black/white, no gradients, lantern mascot, and a CTA."
+  "prompt-two": {
+    id: "prompt-two",
+    title: "Prompt two",
+    description: "Twenty-five blind math/physics questions with hidden gold answers. The gold answer is shown only in the UI, never sent to either variant.",
+    readyTitle: "Ready for gold-answer math.",
+    readyCopy: "This sequence tests exactness under growing context: arithmetic, modular arithmetic, probability, geometry, and basic physics.",
+    expectLabel: "Gold answer",
+    cases: [
+      { prompt: "Compute 37 × 43 − 41². Return the final value and one short justification.", expect: "-90" },
+      { prompt: "Find the smallest positive integer n such that n leaves remainders 2, 3, and 4 when divided by 3, 5, and 7 respectively.", expect: "104" },
+      { prompt: "What are the last two digits of 7^222?", expect: "49" },
+      { prompt: "Add all integers from 1 to 100 that are divisible by 3 or 5, but exclude numbers divisible by both 3 and 5.", expect: "2103" },
+      { prompt: "If x + 1/x = 5, what is x² + 1/x²?", expect: "23" },
+      { prompt: "Find the remainder when 2^1000 is divided by 17.", expect: "1" },
+      { prompt: "How many trailing zeros are in 100! ?", expect: "24" },
+      { prompt: "A standard deck has 52 cards. What is the probability of drawing two aces in a row without replacement?", expect: "1/221" },
+      { prompt: "A fair coin is flipped 5 times. What is the probability of getting exactly 3 heads?", expect: "5/16" },
+      { prompt: "A car starts from rest and accelerates at 3 m/s² for 8 seconds. How far does it travel?", expect: "96 m" },
+      { prompt: "A projectile is launched straight up at 20 m/s. Use g = 10 m/s². What maximum height does it reach?", expect: "20 m" },
+      { prompt: "What is the equivalent resistance of 6Ω and 3Ω resistors connected in parallel?", expect: "2 Ω" },
+      { prompt: "How much work is required to lift a 2 kg mass by 5 m? Use g = 10 m/s².", expect: "100 J" },
+      { prompt: "A 0.5 kg object moves at 12 m/s. What is its kinetic energy?", expect: "36 J" },
+      { prompt: "Solve 9x ≡ 6 (mod 21). Give all residue classes modulo 21.", expect: "x ≡ 3, 10, or 17 (mod 21)" },
+      { prompt: "Find gcd(252, 198) and lcm(252, 198).", expect: "gcd = 18, lcm = 2772" },
+      { prompt: "What is the sum of the first 20 positive odd integers?", expect: "400" },
+      { prompt: "Solve for positive x: log₂(x) + log₂(x/4) = 6.", expect: "x = 16" },
+      { prompt: "For the arithmetic sequence 7, 11, 15, ..., what is the 30th term?", expect: "123" },
+      { prompt: "How many subsets of {1,2,3,4,5,6,7,8} contain 1 but do not contain 2?", expect: "64" },
+      { prompt: "Simplify 3^12 / 9^5.", expect: "9" },
+      { prompt: "If today is Tuesday, what day of the week is it 100 days from now?", expect: "Thursday" },
+      { prompt: "A right triangle has hypotenuse 13 and one leg 5. What is its area?", expect: "30" },
+      { prompt: "If f(x) = 2x² − 3x + 1, compute f(−2).", expect: "15" },
+      { prompt: "What is the units digit of 13^57?", expect: "3" }
+    ]
   }
-];
+};
 const apiBase = import.meta.env.BASE_URL.replace(/\/$/, "");
 const stateTab = element<HTMLButtonElement>("state-tab");
 const abTab = element<HTMLButtonElement>("ab-tab");
 const multiTab = element<HTMLButtonElement>("multi-tab");
+const multiTwoTab = element<HTMLButtonElement>("multi-two-tab");
 const statePage = element<HTMLElement>("state-page");
 const abPage = element<HTMLElement>("ab-page");
 const multiPage = element<HTMLElement>("multi-page");
@@ -116,6 +165,8 @@ const abSend = element<HTMLButtonElement>("ab-send");
 const abStatus = element<HTMLElement>("ab-status");
 const abResults = element<HTMLElement>("ab-results");
 const multiStart = element<HTMLButtonElement>("multi-start");
+const multiTitle = element<HTMLElement>("multi-title");
+const multiDescription = element<HTMLElement>("multi-description");
 const multiProgress = element<HTMLElement>("multi-progress");
 const multiSteps = element<HTMLElement>("multi-steps");
 const multiStage = element<HTMLElement>("multi-stage");
@@ -126,7 +177,8 @@ void loadHealth();
 
 stateTab.addEventListener("click", () => setActivePage("state"));
 abTab.addEventListener("click", () => setActivePage("ab"));
-multiTab.addEventListener("click", () => setActivePage("multi"));
+multiTab.addEventListener("click", () => setActivePage("prompt-one"));
+multiTwoTab.addEventListener("click", () => setActivePage("prompt-two"));
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   void sendStateWeaveMessage();
@@ -169,25 +221,52 @@ multiStage.addEventListener("click", (event) => {
   if (voteButton?.dataset.vote) voteMulti(voteButton.dataset.vote as Vote);
 });
 
+function pageFromHash(): PageName {
+  if (location.hash === "#ab") return "ab";
+  if (location.hash === "#prompt-one") return "prompt-one";
+  if (location.hash === "#prompt-two") return "prompt-two";
+  return "state";
+}
+
+function suiteIdForPage(page: PageName): SuiteId | undefined {
+  if (page === "prompt-one" || page === "prompt-two") return page;
+  return undefined;
+}
+
+function currentSuite(): PromptSuite {
+  return promptSuites[multiSuiteId];
+}
+
 function setActivePage(page: PageName, updateHash = true): void {
   activePage = page;
   const isState = page === "state";
   const isAb = page === "ab";
-  const isMulti = page === "multi";
+  const nextSuiteId = suiteIdForPage(page);
+  const isMulti = Boolean(nextSuiteId);
+  if (nextSuiteId && nextSuiteId !== multiSuiteId) {
+    multiSuiteId = nextSuiteId;
+    resetMultiTest(false);
+  }
+
+  const suite = currentSuite();
   stateTab.classList.toggle("active", isState);
   stateTab.setAttribute("aria-selected", String(isState));
   abTab.classList.toggle("active", isAb);
   abTab.setAttribute("aria-selected", String(isAb));
-  multiTab.classList.toggle("active", isMulti);
-  multiTab.setAttribute("aria-selected", String(isMulti));
+  multiTab.classList.toggle("active", page === "prompt-one");
+  multiTab.setAttribute("aria-selected", String(page === "prompt-one"));
+  multiTwoTab.classList.toggle("active", page === "prompt-two");
+  multiTwoTab.setAttribute("aria-selected", String(page === "prompt-two"));
   statePage.hidden = !isState;
   statePage.classList.toggle("active", isState);
   abPage.hidden = !isAb;
   abPage.classList.toggle("active", isAb);
   multiPage.hidden = !isMulti;
   multiPage.classList.toggle("active", isMulti);
-  reset.textContent = isState ? "Reset" : isAb ? "Reset A/B" : "Reset prompt one";
-  if (updateHash) history.replaceState(null, "", isState ? location.pathname : isAb ? "#ab" : "#prompt-one");
+  multiTitle.textContent = suite.title;
+  multiDescription.textContent = suite.description;
+  reset.textContent = isState ? "Reset" : isAb ? "Reset A/B" : `Reset ${suite.title.toLowerCase()}`;
+  if (updateHash) history.replaceState(null, "", isState ? location.pathname : isAb ? "#ab" : `#${suite.id}`);
   if (isState) input.focus();
   else if (isAb) abInput.focus();
   else multiStart.focus();
@@ -313,24 +392,28 @@ function resetAbTests(): void {
 }
 
 function resetMultiTest(focus = true): void {
+  const suite = currentSuite();
   multiStateFrame = undefined;
   multiRegularHistory = [];
   multiIndex = 0;
   multiRunning = false;
   multiRecords = [];
   multiStart.disabled = false;
-  multiStart.textContent = "Start prompt one";
-  multiStage.innerHTML = `<div class="empty-state compact"><h2>Ready for a harder test.</h2><p>This sequence tests memory, constraint retention, topic switching, and corrections over ten turns.</p></div>`;
+  multiStart.textContent = `Start ${suite.title.toLowerCase()}`;
+  multiTitle.textContent = suite.title;
+  multiDescription.textContent = suite.description;
+  multiStage.innerHTML = `<div class="empty-state compact"><h2>${escapeHtml(suite.readyTitle)}</h2><p>${escapeHtml(suite.readyCopy)}</p></div>`;
   renderMultiProgress();
   if (focus) multiStart.focus();
 }
 
 async function runNextMultiCase(): Promise<void> {
-  if (multiRunning || multiIndex >= multiCases.length) return;
-  const testCase = multiCases[multiIndex];
+  const cases = currentSuite().cases;
+  if (multiRunning || multiIndex >= cases.length) return;
+  const testCase = cases[multiIndex];
   multiRunning = true;
   multiStart.disabled = true;
-  multiStart.textContent = `Running ${multiIndex + 1} / ${multiCases.length}…`;
+  multiStart.textContent = `Running ${multiIndex + 1} / ${cases.length}…`;
   renderMultiCaseLoading(testCase, multiIndex);
 
   try {
@@ -365,10 +448,10 @@ function voteMulti(vote: Vote): void {
   multiIndex += 1;
   renderMultiProgress();
 
-  if (multiIndex >= multiCases.length) {
+  if (multiIndex >= currentSuite().cases.length) {
     renderMultiReveal();
     multiStart.disabled = true;
-    multiStart.textContent = "Prompt one complete";
+    multiStart.textContent = `${currentSuite().title} complete`;
     return;
   }
 
@@ -378,9 +461,10 @@ function voteMulti(vote: Vote): void {
 }
 
 function renderMultiProgress(): void {
+  const cases = currentSuite().cases;
   const voted = multiRecords.filter((record) => record.vote).length;
-  multiProgress.textContent = `${voted} / ${multiCases.length} voted`;
-  multiSteps.innerHTML = multiCases.map((item, index) => {
+  multiProgress.textContent = `${voted} / ${cases.length} voted`;
+  multiSteps.innerHTML = cases.map((item, index) => {
     const record = multiRecords[index];
     const state = record?.vote ? "done" : index === multiIndex ? "current" : index < multiIndex ? "done" : "";
     return `<div class="multi-step ${state}"><span>${index + 1}</span><p>${escapeHtml(shorten(item.prompt, 54))}</p></div>`;
@@ -388,27 +472,29 @@ function renderMultiProgress(): void {
 }
 
 function renderMultiCaseLoading(testCase: MultiCase, index: number): void {
+  const suite = currentSuite();
   renderMultiProgress();
   multiStage.innerHTML = `
     <article class="multi-card">
       <div class="multi-case-header">
-        <p class="eyebrow">Prompt ${index + 1} / ${multiCases.length}</p>
+        <p class="eyebrow">Prompt ${index + 1} / ${suite.cases.length}</p>
         <h2>${escapeHtml(testCase.prompt)}</h2>
-        <p class="expectation"><strong>Expected:</strong> ${escapeHtml(testCase.expect)}</p>
+        <p class="expectation"><strong>${escapeHtml(suite.expectLabel)}:</strong> ${escapeHtml(testCase.expect)}</p>
       </div>
       <div class="multi-loading">Running regular messages and StateWeave…</div>
     </article>`;
 }
 
 function renderMultiVote(record: MultiRecord): void {
+  const suite = currentSuite();
   const a = record.a === "stateweave" ? record.stateweave : record.regular;
   const b = record.b === "stateweave" ? record.stateweave : record.regular;
   multiStage.innerHTML = `
     <article class="multi-card">
       <div class="multi-case-header">
-        <p class="eyebrow">Prompt ${record.index + 1} / ${multiCases.length}</p>
+        <p class="eyebrow">Prompt ${record.index + 1} / ${suite.cases.length}</p>
         <h2>${escapeHtml(record.prompt)}</h2>
-        <p class="expectation"><strong>Expected:</strong> ${escapeHtml(record.expect)}</p>
+        <p class="expectation"><strong>${escapeHtml(suite.expectLabel)}:</strong> ${escapeHtml(record.expect)}</p>
       </div>
       <div class="blind-grid">
         <article class="blind-answer"><h3>Answer A</h3>${responseHtml(a)}</article>
@@ -424,22 +510,24 @@ function renderMultiVote(record: MultiRecord): void {
 }
 
 function renderMultiReadyNext(): void {
-  const next = multiCases[multiIndex];
+  const suite = currentSuite();
+  const next = suite.cases[multiIndex];
   multiStage.innerHTML = `
     <article class="multi-card ready-next">
       <p class="eyebrow">Next prompt</p>
       <h2>${escapeHtml(next.prompt)}</h2>
-      <p class="expectation"><strong>Expected:</strong> ${escapeHtml(next.expect)}</p>
+      <p class="expectation"><strong>${escapeHtml(suite.expectLabel)}:</strong> ${escapeHtml(next.expect)}</p>
       <p class="muted-copy">Click “${escapeHtml(multiStart.textContent ?? "Run next prompt")}" when ready. Labels remain hidden until all votes are complete.</p>
     </article>`;
 }
 
 function renderMultiReveal(): void {
+  const suite = currentSuite();
   const scores = multiScores();
   multiStage.innerHTML = `
     <article class="multi-card">
       <div class="multi-case-header">
-        <p class="eyebrow">Prompt one complete</p>
+        <p class="eyebrow">${escapeHtml(suite.title)} complete</p>
         <h2>${winnerText(scores)}</h2>
         <p class="expectation">StateWeave ${scores.stateweave} · Regular ${scores.regular} · Neither ${scores.neither}</p>
       </div>

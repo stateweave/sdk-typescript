@@ -23,6 +23,7 @@
         <button id="state-tab" class="tab active" type="button" aria-controls="state-page" aria-selected="true">StateWeave</button>
         <button id="ab-tab" class="tab" type="button" aria-controls="ab-page" aria-selected="false">A/B testing</button>
         <button id="multi-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt one</button>
+        <button id="multi-two-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt two</button>
       </nav>
 
       <main id="state-page" class="page active shell">
@@ -104,8 +105,8 @@
         <section class="card multi-shell" aria-label="Prompt one blind multi-turn test">
           <div class="multi-sidebar">
             <p class="eyebrow">Blind multi-turn A/B</p>
-            <h2>Prompt one</h2>
-            <p class="muted-copy">Ten connected prompts run through regular messages and StateWeave. Vote A, B, both, or neither against the expected behavior. Labels stay hidden until all votes are done.</p>
+            <h2 id="multi-title">Prompt one</h2>
+            <p id="multi-description" class="muted-copy">Ten connected prompts run through regular messages and StateWeave. Vote A, B, both, or neither against the expected behavior. Labels stay hidden until all votes are done.</p>
             <div id="multi-progress" class="multi-progress">0 / 10 voted</div>
             <div id="multi-steps" class="multi-steps"></div>
             <button id="multi-start" class="button primary" type="button">Start prompt one</button>
