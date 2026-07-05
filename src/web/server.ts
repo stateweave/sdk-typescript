@@ -8,7 +8,6 @@ import { runStateWeave, StateWeaveRunError, streamStateWeave } from "../agent/st
 import type { GraphFrame, StateWeaveRunMetadata, TraceStep } from "../core/types.js";
 import { createModelFromEnv } from "../llm/factory.js";
 import { createDefaultTools, describeTools } from "../tools/fileSystemTools.js";
-import { mockTools } from "../tools/mockTools.js";
 
 type RunRequest = {
   input?: unknown;
@@ -93,7 +92,7 @@ const runStorePath = path.resolve(process.env.STATEWEAVE_RUN_STORE ?? ".statewea
 const traceDir = path.resolve(process.env.STATEWEAVE_TRACE_DIR ?? ".stateweave/traces");
 const model = createModelFromEnv();
 const workspaceDir = path.resolve(process.env.STATEWEAVE_WORKSPACE_DIR ?? "/data/workspace");
-const agentTools = [...createDefaultTools({ rootDir: workspaceDir }), ...mockTools];
+const agentTools = createDefaultTools({ rootDir: workspaceDir });
 const evalRuns = new Map<string, EvalRun>();
 const activeEvalRuns = new Set<string>();
 const evalRunsReady = loadEvalRuns().catch((error: unknown) => {

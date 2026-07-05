@@ -841,16 +841,43 @@ label {
   outline-offset: 3px;
 }
 
-.side-panels {
-  display: grid;
-  grid-template-columns: minmax(0, 0.95fr) minmax(260px, 1.05fr);
-  gap: 10px;
-  margin-top: 10px;
+.workspace-switcher {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  gap: 4px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f4f4f5;
+  padding: 4px;
+}
+
+.workspace-views {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.workspace-view {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.workspace-view.active {
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-view[hidden] {
+  display: none !important;
 }
 
 .tools-panel,
 .files-panel {
   min-width: 0;
+  overflow: auto;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: #fff;
@@ -867,9 +894,8 @@ label {
 
 .tool-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 8px;
-  max-height: 190px;
   overflow: auto;
 }
 
@@ -901,7 +927,7 @@ label {
 .file-list {
   display: grid;
   gap: 6px;
-  max-height: 170px;
+  max-height: 260px;
   overflow: auto;
 }
 

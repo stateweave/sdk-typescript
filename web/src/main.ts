@@ -69,6 +69,7 @@ type ToolInfo = { name: string; description: string };
 type WorkspaceFile = { path: string; size: number; updatedAt: string; mime: string; renderable: boolean };
 type WorkspaceFileContent = WorkspaceFile & { content: string };
 type TransferMode = "export" | "import";
+type WorkspaceViewName = "graph" | "tools" | "files";
 type LiveStreamLog = { metadata?: StateWeaveRunMetadata; tokens: Map<number, string>; events: string[]; prompt?: string; modelMetadata: Map<number, Record<string, unknown>[]> };
 
 let activePage: PageName = pageFromHash();
@@ -451,6 +452,12 @@ const status = element<HTMLElement>("status");
 const provider = element<HTMLElement>("provider");
 const stateInput = element<HTMLElement>("state-input");
 const stateOutput = element<HTMLElement>("state-output");
+const graphViewTab = element<HTMLButtonElement>("graph-view-tab");
+const toolsViewTab = element<HTMLButtonElement>("tools-view-tab");
+const filesViewTab = element<HTMLButtonElement>("files-view-tab");
+const graphView = element<HTMLElement>("graph-view");
+const toolsView = element<HTMLElement>("tools-view");
+const filesView = element<HTMLElement>("files-view");
 const graph = element<HTMLElement>("graph");
 const toolList = element<HTMLElement>("tool-list");
 const toolCount = element<HTMLElement>("tool-count");
@@ -535,6 +542,9 @@ multiStart.addEventListener("click", () => {
 multiConfirmJudges.addEventListener("change", () => {
   void updateBackgroundEvalOptions(multiConfirmJudges.checked);
 });
+graphViewTab.addEventListener("click", () => setWorkspaceView("graph"));
+toolsViewTab.addEventListener("click", () => setWorkspaceView("tools"));
+filesViewTab.addEventListener("click", () => setWorkspaceView("files"));
 refreshFiles.addEventListener("click", () => void loadWorkspaceFiles());
 rebootFiles.addEventListener("click", () => void rebootWorkspaceFiles());
 exportGraph.addEventListener("click", () => openGraphTransfer("export"));
@@ -587,6 +597,22 @@ function pageFromHash(): PageName {
 function suiteIdForPage(page: PageName): SuiteId | undefined {
   if (page === "prompt-one" || page === "prompt-two" || page === "prompt-three" || page === "prompt-four" || page === "prompt-five" || page === "prompt-six") return page;
   return undefined;
+}
+
+function setWorkspaceView(view: WorkspaceViewName): void {
+  const items = [
+    { name: "graph", tab: graphViewTab, panel: graphView },
+    { name: "tools", tab: toolsViewTab, panel: toolsView },
+    { name: "files", tab: filesViewTab, panel: filesView }
+  ] as const;
+  for (const item of items) {
+    const active = item.name === view;
+    item.tab.classList.toggle("active", active);
+    item.tab.setAttribute("aria-selected", String(active));
+    item.panel.classList.toggle("active", active);
+    item.panel.hidden = !active;
+  }
+  if (view === "files") void loadWorkspaceFiles();
 }
 
 function currentSuite(): PromptSuite {
