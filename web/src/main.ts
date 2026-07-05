@@ -114,7 +114,7 @@ const promptSuites: Record<SuiteId, PromptSuite> = {
     expectLabel: "Gold answer",
     cases: [
       { prompt: "Compute 37 × 43 − 41². Return the final value and one short justification.", expect: "-90" },
-      { prompt: "Find the smallest positive integer n such that n leaves remainders 2, 3, and 4 when divided by 3, 5, and 7 respectively.", expect: "104" },
+      { prompt: "Find the smallest positive integer n such that n leaves remainders 2, 3, and 4 when divided by 3, 5, and 7 respectively.", expect: "53" },
       { prompt: "What are the last two digits of 7^222?", expect: "49" },
       { prompt: "Add all integers from 1 to 100 that are divisible by 3 or 5, but exclude numbers divisible by both 3 and 5.", expect: "2103" },
       { prompt: "If x + 1/x = 5, what is x² + 1/x²?", expect: "23" },

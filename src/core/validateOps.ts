@@ -231,7 +231,7 @@ function finalFromImplicitBlock(blocks: SwxBlock[]): Extract<GraphOp, { op: "fin
 }
 
 function parseLabelAndAttrs(tokens: string[]): { label?: string; attrs: Record<string, unknown> } {
-  const firstAttr = tokens.findIndex((token) => token.includes("="));
+  const firstAttr = tokens.findIndex(isAttrToken);
   const labelTokens = firstAttr === -1 ? tokens : tokens.slice(0, firstAttr);
   const attrTokens = firstAttr === -1 ? [] : tokens.slice(firstAttr);
   const label = labelTokens.join(" ").trim() || undefined;
@@ -241,11 +241,15 @@ function parseLabelAndAttrs(tokens: string[]): { label?: string; attrs: Record<s
 function parseAttrs(tokens: string[]): Record<string, unknown> {
   const attrs: Record<string, unknown> = {};
   for (const token of tokens) {
+    if (!isAttrToken(token)) continue;
     const index = token.indexOf("=");
-    if (index <= 0) continue;
     attrs[token.slice(0, index)] = parseScalar(token.slice(index + 1));
   }
   return attrs;
+}
+
+function isAttrToken(token: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_-]*=/.test(token);
 }
 
 function tokenize(line: string): string[] {

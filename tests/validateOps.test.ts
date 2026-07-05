@@ -28,6 +28,15 @@ it("resolves @final node references to node text", () => {
   });
 });
 
+it("does not mistake equals signs inside quoted labels for attrs", () => {
+  const ops = parseAndValidateOps(`SWX/1
+@node fact_1 [fact]: "37 × 43 = 1591" status=resolved confidence=1.0
+@node assistant_output_3 [assistant_output]: "Last two digits = 49" status=resolved
+@final assistant_output_3`);
+  expect(ops).toContainEqual({ op: "add_node", node: { id: "fact_1", type: "fact", text: "37 × 43 = 1591", status: "resolved", confidence: 1 } });
+  expect(ops).toContainEqual({ op: "final", answer: "Last two digits = 49" });
+});
+
 it("parses raw artifact blocks without JSON escaping", () => {
   const ops = parseAndValidateOps(`SWX/1
 @node artifact_1 artifact "Snake SVG" mime=image/svg+xml
