@@ -99,8 +99,8 @@ function parseSwx(raw: string): GraphOp[] {
 
     if (command === "@node") {
       const id = tokens[1];
-      const type = tokens[2] as NodeType | undefined;
-      if (!id || !isNodeType(type)) throw new Error(`Invalid SWX @node command: ${trimmed}`);
+      const type = nodeTypeToken(tokens[2]);
+      if (!id || !type) throw new Error(`Invalid SWX @node command: ${trimmed}`);
       const { label, attrs } = parseLabelAndAttrs(tokens.slice(3));
       const node = {
         id,
@@ -116,9 +116,9 @@ function parseSwx(raw: string): GraphOp[] {
 
     if (command === "@edge") {
       const from = tokens[1];
-      const type = tokens[2] as EdgeType | undefined;
+      const type = edgeTypeToken(tokens[2]);
       const to = tokens[3];
-      if (!from || !to || !isEdgeType(type)) throw new Error(`Invalid SWX @edge command: ${trimmed}`);
+      if (!from || !to || !type) throw new Error(`Invalid SWX @edge command: ${trimmed}`);
       otherOps.push({ op: "add_edge", from, to, type });
       continue;
     }
@@ -286,7 +286,7 @@ function parseScalar(value: string): unknown {
   if (unquoted === "true") return true;
   if (unquoted === "false") return false;
   const numeric = Number(unquoted);
-  if (unquoted && Number.isFinite(numeric) && String(numeric) === unquoted) return numeric;
+  if (/^-?\d+(?:\.\d+)?$/.test(unquoted) && Number.isFinite(numeric)) return numeric;
   return unquoted;
 }
 
@@ -319,6 +319,21 @@ function statusAttr(value: unknown): "active" | "resolved" | "rejected" | "stale
 
 function nodeTypeAttr(value: unknown): NodeType | undefined {
   return isNodeType(value) ? value : undefined;
+}
+
+function nodeTypeToken(value: unknown): NodeType | undefined {
+  const cleaned = cleanTypeToken(value);
+  return isNodeType(cleaned) ? cleaned : undefined;
+}
+
+function edgeTypeToken(value: unknown): EdgeType | undefined {
+  const cleaned = cleanTypeToken(value);
+  return isEdgeType(cleaned) ? cleaned : undefined;
+}
+
+function cleanTypeToken(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return value.replace(/^\[/, "").replace(/\]:?$/, "").replace(/:$/, "");
 }
 
 function isNodeType(value: unknown): value is NodeType {
