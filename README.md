@@ -92,13 +92,15 @@ A single `Agent` owns a session `GraphFrame`. Every `run` or `stream` appends a 
 
 `maxIterations` is the recursion limit for the internal model/tool loop for one user input. It defaults to `30`; if the loop is exhausted, StateWeave raises a recursion-limit error suggesting a higher `maxIterations`. The SDK/web lab do not impose an artificial upper cap. It is not a max-turn setting; user turns are just more graph nodes.
 
-Use `streamEvents()` when you want the full trace stream:
+Use `streamEvents()` when you want the full trace stream, including GraphOps and built-in graph worker scheduler events:
 
 ```ts
 for await (const event of agent.streamEvents("Inspect the graph")) {
   console.log(event);
 }
 ```
+
+Models can spawn focused graph workers with SWX `@worker` operations. Workers run StateWeave on focused graph regions, merge validated graph branches back into the shared StateGraph, then the parent loop synthesizes one final answer from `worker_result` nodes.
 
 The default toolset is workspace-scoped file-system access. For deterministic local tests, import and pass `mockTools` explicitly. To extend the default toolset, pass `tools: [...createDefaultTools(), yourTool]`.
 

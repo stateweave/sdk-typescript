@@ -60,7 +60,19 @@ export type GraphOp =
   | { op: "update_node"; id: string; patch: Partial<GraphNode> }
   | { op: "focus"; currentFocus: string; nodeId?: string }
   | { op: "call_tool"; tool: string; args: Record<string, unknown> }
+  | { op: "spawn_worker"; id: string; objective: string; focusNodeId?: string; input?: string; maxIterations?: number }
   | { op: "final"; answer: string; artifactId?: string; artifactIds?: string[] };
+
+export type WorkerRunSummary = {
+  id: string;
+  objective: string;
+  focusNodeId?: string;
+  status: "queued" | "running" | "retrying" | "done" | "error" | "merged";
+  finalAnswer?: string;
+  error?: string;
+  nodeCount?: number;
+  edgeCount?: number;
+};
 
 export type StateWeaveRunMetadata = {
   runId: string;
@@ -104,5 +116,6 @@ export type StateWeaveStreamEvent =
   | { type: "token"; step: number; token: string }
   | { type: "model_metadata"; step: number; metadata: Record<string, unknown> }
   | { type: "ops"; step: number; ops: GraphOp[] }
+  | { type: "worker"; step: number; phase: "queued" | "started" | "token" | "ops" | "retrying" | "done" | "error" | "merged"; worker: WorkerRunSummary; token?: string; ops?: GraphOp[]; frame?: GraphFrame }
   | { type: "error"; step: number; message: string; retryable: boolean }
   | { type: "final"; result: AgentResult };

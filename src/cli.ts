@@ -166,6 +166,15 @@ async function runOnce(agent: StateWeaveAgent, traditional: TraditionalMessagesA
       if (event.retryable) console.log(color.dim("retrying with the same graph state and structured error feedback"));
     }
 
+    if (event.type === "worker") {
+      if (event.phase === "token") stdout.write(color.cyan(event.token ?? ""));
+      else {
+        stdout.write(color.reset("\n"));
+        section(`STEP ${event.step} · WORKER ${event.worker.id} · ${event.phase.toUpperCase()}`, "cyan");
+        console.log(color.cyan(event.worker.finalAnswer ?? event.worker.error ?? event.worker.objective));
+      }
+    }
+
     if (event.type === "frame" && event.phase === "after") {
       latestFrame = event.frame;
       section(`STEP ${event.step} · STATE AFTER`, "cyan");
@@ -225,6 +234,7 @@ function printOps(ops: GraphOp[]): void {
     else if (op.op === "update_node") console.log(`${opLabel(op.op)} ${op.id} ${JSON.stringify(op.patch)}`);
     else if (op.op === "focus") console.log(`${opLabel(op.op)} ${op.nodeId ? `${op.nodeId} ` : ""}${op.currentFocus}`);
     else if (op.op === "call_tool") console.log(`${opLabel(op.op)} ${op.tool} ${JSON.stringify(op.args)}`);
+    else if (op.op === "spawn_worker") console.log(`${opLabel(op.op)} ${op.id} focus=${op.focusNodeId ?? "auto"} ${op.objective}`);
     else console.log(`${opLabel(op.op)} ${op.answer}`);
   }
 }

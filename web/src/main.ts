@@ -1,4 +1,4 @@
-import type { GraphFrame, GraphOp, StateGraph, StateWeaveRunMetadata, StateWeaveStreamEvent, TraceStep } from "../../src/core/types.js";
+import type { GraphFrame, GraphOp, StateGraph, StateWeaveRunMetadata, StateWeaveStreamEvent, TraceStep, WorkerRunSummary } from "../../src/core/types.js";
 import { scoreEvalRecords, type EvalPrimitive as Primitive, type EvalVote as Vote, type ScoreBreakdown } from "./evalScores.js";
 import { promptFiveCases, promptFiveCategoryOrder, type PromptFiveCategory } from "./promptFive.js";
 import { promptSixCases, promptSixCategoryOrder, promptSixHypothesis, type PromptSixCategory, type PromptSixHypothesis } from "./promptSix.js";
@@ -72,6 +72,7 @@ type TransferMode = "export" | "import";
 type WorkspaceViewName = "graph" | "tools" | "files";
 type AgentSettings = { systemPrompt: string; nodeTypes: string[]; maxIterations: number };
 type LiveStepStatus = "streaming" | "parsed" | "retrying" | "rejected" | "committed";
+type LiveWorker = WorkerRunSummary & { tokens: string; ops?: GraphOp[] };
 type LiveStreamStep = {
   step: number;
   status: LiveStepStatus;
@@ -81,6 +82,7 @@ type LiveStreamStep = {
   error?: string;
   retryable?: boolean;
   modelMetadata: Record<string, unknown>[];
+  workers: Map<string, LiveWorker>;
   nodeCount?: number;
   edgeCount?: number;
 };
@@ -807,6 +809,7 @@ async function sendStateWeaveMessage(): Promise<void> {
       if (event.type === "frame") renderGraph(event.frame.graph);
       if (event.type === "error") status.textContent = event.retryable ? `GraphOps rejected at step ${event.step}; retrying…` : "GraphOps rejected.";
       if (event.type === "ops") status.textContent = `Parsed step ${event.step} GraphOps…`;
+      if (event.type === "worker") status.textContent = `Scheduler ${event.phase} · worker ${event.worker.id}`;
       if (event.type === "frame" && event.phase === "after") status.textContent = `Committed step ${event.step} to StateGraph.`;
       if (event.type === "token") status.textContent = `Streaming uncommitted GraphOps · step ${event.step}…`;
     });
@@ -1949,7 +1952,7 @@ function createLiveStreamLog(): LiveStreamLog {
 function ensureLiveStep(live: LiveStreamLog, stepNumber: number): LiveStreamStep {
   const existing = live.steps.get(stepNumber);
   if (existing) return existing;
-  const step: LiveStreamStep = { step: stepNumber, status: "streaming", rawModelOutput: "", modelMetadata: [] };
+  const step: LiveStreamStep = { step: stepNumber, status: "streaming", rawModelOutput: "", modelMetadata: [], workers: new Map() };
   live.steps.set(stepNumber, step);
   return step;
 }
@@ -1990,6 +1993,16 @@ function updateLiveStreamLog(live: LiveStreamLog, event: StateWeaveStreamEvent):
     live.events.push(`step ${event.step} parsed GraphOps\n${formatOps(event.ops)}`);
     return;
   }
+  if (event.type === "worker") {
+    const step = ensureLiveStep(live, event.step);
+    const existing = step.workers.get(event.worker.id) ?? { ...event.worker, tokens: "" };
+    const nextWorker: LiveWorker = { ...existing, ...event.worker, tokens: existing.tokens };
+    if (event.token) nextWorker.tokens += event.token;
+    if (event.ops) nextWorker.ops = event.ops;
+    step.workers.set(event.worker.id, nextWorker);
+    live.events.push(`step ${event.step} worker ${event.worker.id} ${event.phase}${event.worker.finalAnswer ? ` · ${event.worker.finalAnswer}` : event.worker.error ? ` · ${event.worker.error}` : ""}`);
+    return;
+  }
   if (event.type === "error") {
     const step = ensureLiveStep(live, event.step);
     step.status = event.retryable ? "retrying" : "rejected";
@@ -2018,11 +2031,13 @@ function formatLiveStreamLog(live: LiveStreamLog): string {
   const prompt = live.prompt ? [`current model prompt:`, live.prompt, ""] : [];
   const stepSections = [...live.steps.values()].map((step) => {
     const modelMetadata = step.modelMetadata.length ? [`step ${step.step} provider metadata:`, JSON.stringify(step.modelMetadata, null, 2)] : [];
+    const workers = step.workers.size ? [`step ${step.step} workers:`, [...step.workers.values()].map((worker) => `${worker.id} ${worker.status}: ${worker.finalAnswer ?? worker.error ?? worker.objective}`).join("\n")] : [];
     return [
       `step ${step.step} status: ${step.status}`,
       ...(step.tokenEstimate ? [`step ${step.step} promptTokens≈${step.tokenEstimate}`] : []),
+      ...workers,
       ...modelMetadata,
-      `step ${step.step} raw model output:`,
+      `step ${step.step} raw model output:`, 
       step.rawModelOutput,
       ...(step.parsedOps ? [`step ${step.step} parsed GraphOps:`, formatOps(step.parsedOps)] : []),
       ...(step.error ? [`step ${step.step} GraphOps error:`, step.error] : []),
@@ -2126,6 +2141,7 @@ function renderLiveStep(step: LiveStreamStep, open: boolean): string {
       : `<p class="stream-note">Waiting for model tokens…</p>`;
   const raw = step.parsedOps && step.rawModelOutput ? `<details class="stream-raw"><summary>Raw model output</summary>${streamCodeSection("", compactStreamText(step.rawModelOutput))}</details>` : "";
   const metadata = step.modelMetadata.length ? streamCodeSection("Provider metadata", JSON.stringify(step.modelMetadata, null, 2)) : "";
+  const workers = step.workers.size ? renderWorkerScheduler(step.workers) : "";
   const error = step.error ? `<p class="stream-error-text">${escapeHtml(step.error)}</p>` : "";
   return `
     <details class="stream-step ${streamStatusClass(step.status)}" data-step="${step.step}"${open ? " open" : ""}>
@@ -2137,11 +2153,26 @@ function renderLiveStep(step: LiveStreamStep, open: boolean): string {
       <div class="stream-step-body">
         ${step.status === "streaming" ? `<p class="stream-note">Streaming transactional GraphOps. The graph panel updates after this step validates and commits.</p>` : ""}
         ${detail}
+        ${workers}
         ${error}
         ${metadata}
         ${raw}
       </div>
     </details>`;
+}
+
+function renderWorkerScheduler(workers: Map<string, LiveWorker>): string {
+  return `<section class="worker-scheduler"><div class="worker-scheduler-header"><span>Graph workers</span><small>${workers.size} running region${workers.size === 1 ? "" : "s"}</small></div><div class="worker-grid">${[...workers.values()].map(renderWorkerCard).join("")}</div></section>`;
+}
+
+function renderWorkerCard(worker: LiveWorker): string {
+  const summary = worker.finalAnswer ?? worker.error ?? (worker.tokens ? shorten(oneLine(worker.tokens), 160) : worker.objective);
+  const ops = worker.ops?.length ? `<small>${escapeHtml(summarizeOps(worker.ops))}</small>` : "";
+  return `<article class="worker-card ${workerStatusClass(worker.status)}"><div><strong>${escapeHtml(worker.id)}</strong><span>${escapeHtml(worker.status)}</span></div><p>${escapeHtml(summary)}</p>${ops}</article>`;
+}
+
+function workerStatusClass(statusValue: WorkerRunSummary["status"]): string {
+  return `worker-${statusValue}`;
 }
 
 function streamCodeSection(label: string, value: string): string {
@@ -2156,6 +2187,7 @@ function summarizeOps(ops: GraphOp[]): string {
     countLabel(counts.get("add_edge") ?? 0, "edge"),
     countLabel(counts.get("update_node") ?? 0, "update"),
     countLabel(counts.get("call_tool") ?? 0, "tool"),
+    countLabel(counts.get("spawn_worker") ?? 0, "worker"),
     counts.get("focus") ? "focus" : "",
     counts.get("final") ? "final" : ""
   ].filter(Boolean);
@@ -2704,6 +2736,7 @@ function formatOp(op: GraphOp): string {
   if (op.op === "update_node") return `@update ${op.id}`;
   if (op.op === "focus") return op.nodeId ? `@focus ${op.nodeId} "${op.currentFocus}"` : `@focus "${op.currentFocus}"`;
   if (op.op === "call_tool") return `@tool ${op.tool}`;
+  if (op.op === "spawn_worker") return `@worker ${op.id} objective="${shorten(op.objective, 96)}"${op.focusNodeId ? ` focus=${op.focusNodeId}` : ""}`;
   if (op.op === "final") {
     const ids = op.artifactIds?.length ? op.artifactIds : op.artifactId ? [op.artifactId] : [];
     const suffix = ids.length ? ` artifacts=${ids.join(",")}` : "";
@@ -2867,6 +2900,10 @@ function element<T extends HTMLElement>(id: string): T {
 
 function shorten(value: string, length: number): string {
   return value.length > length ? `${value.slice(0, length - 1)}…` : value;
+}
+
+function oneLine(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
 }
 
 function escapeHtml(value: string): string {

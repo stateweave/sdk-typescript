@@ -3,9 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
 import { Agent } from "../src/agent/stateweaveAgent.js";
-import { runStateWeave, StateWeaveRunError } from "../src/agent/stateweaveRunner.js";
+import { runStateWeave, StateWeaveRunError, streamStateWeave } from "../src/agent/stateweaveRunner.js";
 import { applyOps } from "../src/core/applyOps.js";
 import { createInitialGraphFrame } from "../src/core/graph.js";
+import type { StateWeaveStreamEvent } from "../src/core/types.js";
 import type { Model, ModelInput, ModelOutput, ModelToken } from "../src/llm/model.js";
 import { createFileSystemTools } from "../src/tools/fileSystemTools.js";
 
@@ -123,6 +124,26 @@ it("returns long final_ref answers with multiple artifact refs end to end", asyn
   }
 });
 
+it("spawns graph workers, streams scheduler events, merges results, and synthesizes final output", async () => {
+  const events: StateWeaveStreamEvent[] = [];
+  for await (const event of streamStateWeave({ model: new WorkerSchedulerModel(), tools: [], maxIterations: 4 }, "Build a game with independent UI and logic")) events.push(event);
+
+  const final = events.find((event) => event.type === "final");
+  expect(final?.type).toBe("final");
+  if (final?.type !== "final") throw new Error("missing final event");
+
+  expect(events).toContainEqual(expect.objectContaining({ type: "worker", phase: "started", worker: expect.objectContaining({ id: "ui" }) }));
+  expect(events).toContainEqual(expect.objectContaining({ type: "worker", phase: "started", worker: expect.objectContaining({ id: "logic" }) }));
+  expect(events).toContainEqual(expect.objectContaining({ type: "worker", phase: "merged" }));
+  expect(final.result.finalAnswer).toBe("Built the UI and logic workers.");
+  expect(final.result.graph.nodes).toContainEqual(expect.objectContaining({ id: "worker_task_ui", type: "worker_task", status: "resolved" }));
+  expect(final.result.graph.nodes).toContainEqual(expect.objectContaining({ id: "worker_result_ui", type: "worker_result", text: "UI worker ready." }));
+  expect(final.result.graph.nodes).toContainEqual(expect.objectContaining({ id: "ui_panel", type: "artifact" }));
+  expect(final.result.graph.nodes).toContainEqual(expect.objectContaining({ id: "logic_rules", type: "decision" }));
+  expect(final.result.trace).toHaveLength(2);
+  expect(final.result.trace[1].prompt).toContain("worker_result_ui");
+});
+
 it("throws a clear recursion-limit error when maxIterations is exhausted", async () => {
   const output = "SWX/1\n@edge system_root follows user_input_1\n@node note_1 note \"Still working\"\n@edge user_input_1 creates note_1";
 
@@ -165,6 +186,45 @@ it("Agent runs same-graph turns concurrently and merges branch results", async (
   expect(frame?.graph.nodes.filter((node) => node.type === "assistant_output")).toHaveLength(2);
   expect(new Set(frame?.graph.nodes.filter((node) => node.type === "assistant_output").map((node) => node.id)).size).toBe(2);
 });
+
+class WorkerSchedulerModel implements Model {
+  async complete(input: ModelInput): Promise<ModelOutput> {
+    return { text: this.output(input) };
+  }
+
+  async *stream(input: ModelInput): AsyncIterable<ModelToken> {
+    yield { type: "token", token: this.output(input) };
+  }
+
+  private output(input: ModelInput): string {
+    const objective = input.frame?.frame.objective ?? "";
+    if (objective.includes("Build the UI shell")) {
+      return [
+        "SWX/1",
+        "@node ui_panel artifact \"HTML UI panel\" mime=text/html",
+        "@edge worker_task_ui creates ui_panel",
+        "@final \"UI worker ready.\" artifact=ui_panel"
+      ].join("\n");
+    }
+    if (objective.includes("Build game logic")) {
+      return [
+        "SWX/1",
+        "@node logic_rules decision \"Game loop and scoring rules\"",
+        "@edge worker_task_logic creates logic_rules",
+        "@final \"Logic worker ready.\""
+      ].join("\n");
+    }
+    if (input.frame?.graph.nodes.some((node) => node.id === "worker_result_ui")) {
+      return "SWX/1\n@final \"Built the UI and logic workers.\" artifacts=ui_panel";
+    }
+    return [
+      "SWX/1",
+      "@edge system_root follows user_input_1",
+      "@worker ui objective=\"Build the UI shell\" focus=user_input_1",
+      "@worker logic objective=\"Build game logic\" focus=user_input_1"
+    ].join("\n");
+  }
+}
 
 class ConcurrentModel implements Model {
   async complete(input: ModelInput): Promise<ModelOutput> {

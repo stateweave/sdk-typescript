@@ -534,6 +534,94 @@ h3 {
   font-weight: 700;
 }
 
+.worker-scheduler {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(124, 58, 237, 0.18);
+  border-radius: 12px;
+  background: #fbfaff;
+  padding: 10px;
+}
+
+.worker-scheduler-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.worker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.worker-card {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  padding: 9px;
+}
+
+.worker-card > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.worker-card strong {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worker-card span {
+  display: inline-flex;
+  margin: 0;
+  border-radius: 999px;
+  background: #f4f4f5;
+  padding: 2px 7px;
+  color: var(--muted-foreground);
+  font-size: 0.62rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.worker-card p,
+.worker-card small {
+  color: var(--muted-foreground);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.worker-card.worker-running span,
+.worker-card.worker-queued span,
+.worker-card.worker-retrying span {
+  background: rgba(124, 58, 237, 0.1);
+  color: var(--stateweave);
+}
+
+.worker-card.worker-done span,
+.worker-card.worker-merged span {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.worker-card.worker-error span {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
 .stream-error-text,
 .error-copy {
   border: 1px solid #fecaca;

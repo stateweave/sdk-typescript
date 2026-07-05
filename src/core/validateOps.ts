@@ -44,6 +44,7 @@ export const graphOpSchema = z.discriminatedUnion("op", [
   }),
   z.object({ op: z.literal("focus"), currentFocus: z.string().min(1), nodeId: z.string().min(1).optional() }),
   z.object({ op: z.literal("call_tool"), tool: z.string().min(1), args: z.record(z.unknown()) }),
+  z.object({ op: z.literal("spawn_worker"), id: z.string().min(1), objective: z.string().min(1), focusNodeId: z.string().min(1).optional(), input: z.string().min(1).optional(), maxIterations: z.number().int().min(1).optional() }),
   z.object({ op: z.literal("final"), answer: z.string().min(1), artifactId: z.string().min(1).optional(), artifactIds: z.array(z.string().min(1)).optional() })
 ]);
 
@@ -135,6 +136,11 @@ function parseSwx(raw: string): GraphOp[] {
       const { args, blockIds } = parseToolArgs(tokens.slice(2), blocks);
       for (const id of blockIds) toolArgBlockIds.add(id);
       otherOps.push({ op: "call_tool", tool, args });
+      continue;
+    }
+
+    if (command === "@worker") {
+      otherOps.push(parseWorker(tokens.slice(1), trimmed));
       continue;
     }
 
@@ -265,6 +271,18 @@ function parseFocus(tokens: string[]): Extract<GraphOp, { op: "focus" }> {
   const nodeId = explicitNode ?? (firstLooksLikeNodeId ? first : undefined);
   const currentFocus = stringAttr(attrs.text) ?? (nodeId && tokens.length > 1 ? tokens.slice(1).join(" ").trim() : label) ?? nodeId ?? "focus";
   return withoutUndefined({ op: "focus", currentFocus, nodeId });
+}
+
+function parseWorker(tokens: string[], raw: string): Extract<GraphOp, { op: "spawn_worker" }> {
+  const id = tokens[0];
+  if (!id) throw new Error(`Invalid SWX @worker command: ${raw}`);
+  const { label, attrs } = parseLabelAndAttrs(tokens.slice(1));
+  const objective = stringAttr(attrs.objective) ?? label;
+  if (!objective) throw new Error(`Invalid SWX @worker command: missing objective in ${raw}`);
+  const focusNodeId = stringAttr(attrs.focusNodeId) ?? stringAttr(attrs.focus) ?? stringAttr(attrs.node) ?? stringAttr(attrs.nodeId);
+  const input = stringAttr(attrs.input) ?? stringAttr(attrs.task);
+  const maxIterations = numberAttr(attrs.maxIterations);
+  return withoutUndefined({ op: "spawn_worker", id, objective, focusNodeId, input, maxIterations });
 }
 
 function parseToolArgs(tokens: string[], blocks: SwxBlock[]): { args: Record<string, unknown>; blockIds: Set<string> } {

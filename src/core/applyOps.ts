@@ -21,7 +21,7 @@ export function applyOps(frame: GraphFrame, ops: GraphOp[]): GraphFrame {
     if (op.op === "add_node") declaredNodeIds.add(op.node.id);
   }
 
-  const anchor = latestUserInput(next.graph.nodes) ?? focusedNode(next) ?? next.graph.nodes.find((node) => node.id === "system_root") ?? next.graph.nodes[0];
+  const anchor = activeUserInput(next) ?? focusedNode(next) ?? latestUserInput(next.graph.nodes) ?? next.graph.nodes.find((node) => node.id === "system_root") ?? next.graph.nodes[0];
 
   for (const op of ops) {
     switch (op.op) {
@@ -56,6 +56,9 @@ export function applyOps(frame: GraphFrame, ops: GraphOp[]): GraphFrame {
         break;
       }
       case "call_tool":
+        break;
+      case "spawn_worker":
+        if (op.focusNodeId && !declaredNodeIds.has(op.focusNodeId)) referenceErrors.push(`worker ${op.id} focus ${op.focusNodeId} references a missing node`);
         break;
       case "final": {
         const artifactIds = finalArtifactIds(op);
@@ -108,6 +111,11 @@ export function addToolResult(graph: StateGraph, args: { tool: string; result: u
   if (anchor) addEdge(next, anchor.id, callId, "relates_to");
   addEdge(next, resultId, callId, "explains");
   return next;
+}
+
+function activeUserInput(frame: GraphFrame): GraphNode | undefined {
+  const id = frame.frame.activeUserInputNodeId;
+  return id ? frame.graph.nodes.find((node) => node.id === id && node.type === "user_input") : undefined;
 }
 
 function addAssistantOutput(graph: StateGraph, answer: string, anchor: GraphNode | undefined, preNodeIds: Set<string>, artifactIds: string[] = []): GraphNode {

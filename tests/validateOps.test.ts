@@ -70,6 +70,16 @@ it("parses raw output blocks without requiring artifact as a structural type", (
   expect(ops).toContainEqual({ op: "final", answer: "Completed. See game_1.", artifactId: "game_1", artifactIds: ["game_1"] });
 });
 
+it("parses graph worker scheduler ops", () => {
+  const ops = parseAndValidateOps(`SWX/1
+@edge system_root follows user_input_1
+@worker ui objective="Build the UI shell" focus=user_input_1 input="Use HTML" maxIterations=3
+@worker logic "Build game logic" focus=user_input_1`);
+
+  expect(ops).toContainEqual({ op: "spawn_worker", id: "ui", objective: "Build the UI shell", focusNodeId: "user_input_1", input: "Use HTML", maxIterations: 3 });
+  expect(ops).toContainEqual({ op: "spawn_worker", id: "logic", objective: "Build game logic", focusNodeId: "user_input_1" });
+});
+
 it("parses multiline @tool args through block refs without creating artifact ops", () => {
   const ops = parseAndValidateOps(`SWX/1
 @edge system_root follows user_input_1

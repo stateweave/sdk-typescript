@@ -29,6 +29,11 @@ it("rejects model-added semantic nodes that are disconnected from the graph", ()
   expect(() => applyOps(frame, [{ op: "add_node", node: { id: "hypothesis_1", type: "hypothesis", text: "Token is cleared early" } }])).toThrow(GraphOpsValidationError);
 });
 
+it("rejects workers focused on missing nodes", () => {
+  const frame = createInitialGraphFrame({ objective: "Work", input: "Plan", availableActions: [] });
+  expect(() => applyOps(frame, [{ op: "spawn_worker", id: "missing", objective: "Do work", focusNodeId: "missing_node" }])).toThrow(GraphOpsValidationError);
+});
+
 it("rejects a second-turn answer when the pending user input was not woven into the existing graph", () => {
   const first = createInitialGraphFrame({ objective: "Draw SVG", input: "Create a butterfly", availableActions: [] });
   const frame = appendInputToGraphFrame(first, { objective: "Draw SVG", input: "Create a house" });
