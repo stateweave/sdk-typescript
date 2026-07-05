@@ -137,8 +137,15 @@
           <pre class="code quickstart-code"><code>import { Agent, createModelFromEnv } from "stateweave";
 
 const agent = new Agent({
-  model: createModelFromEnv(),
-  nodeTypes: ["intent", "constraint", "artifact", "decision"]
+  model: createModelFromEnv(), // required
+
+  // tools: myTools, // default: workspace read/write/edit/bash tools
+  // maxIterations: 30, // default: model/tool loop limit per user turn
+  // maxSteps: 30, // legacy alias for maxIterations
+  // systemPrompt: "You are a careful product engineer.",
+  // nodeTypes: ["intent", "constraint", "artifact", "decision"],
+  // traceDir: ".stateweave/traces",
+  // frame: existingFrame // continue from an existing GraphFrame
 });
 
 for await (const chunk of agent.stream("Create a tiny HTML todo app in ./todo")) {
