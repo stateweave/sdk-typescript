@@ -6,7 +6,8 @@ StateWeave TypeScript SDK is a low-level SDK primitive, not a wrapper around AI-
 - Do not expose `messages[]` as a StateWeave primitive. The primary web lab chat is StateWeave-only; a separate A/B testing tab may invoke a regular messages baseline for comparison only.
 - CLI/manual inspection should accept one user task input, then show GraphFrame/GraphOps/state transitions clearly; optional graph visualization should stay dependency-free and low-level.
 - Provider adapters should be thin HTTP/model primitives.
-- `StateWeaveAgent` includes default workspace tools (`read_file`, `write_file`, `edit_file`, `bash_command`); keep them scoped to the configured workspace and visible in run metadata/tool listings.
+- Public SDK examples should use `Agent` instead of `StateWeaveAgent`. Keep Quick Start minimal: `Agent`, `createModelFromEnv`, built-in workspace tools, optional `nodeTypes`; use `streamEvents()` only for GraphFrame/GraphOps diagnostics.
+- `Agent`/`StateWeaveAgent` includes default workspace tools (`read_file`, `write_file`, `edit_file`, `bash_command`); keep them scoped to the configured workspace and visible in run metadata/tool listings.
 - Never read `.env`; it may contain real third-party LLM API keys. Let commands load it without printing it.
 - Keep code clean, deliberate, and organized; avoid duplicate helpers, orphan files, and abstraction for its own sake.
 - Use minimal comments; prefer clear types and names.
