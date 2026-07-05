@@ -80,11 +80,13 @@ let multiRunPollTimer: number | undefined;
 let stateRunning = false;
 let abRunning = false;
 let copyCounter = 0;
+let artifactPreviewCounter = 0;
 let selectedGraphNodeId: string | undefined;
 let graphAnimationFrame: number | undefined;
 
 const graphPositions = new Map<string, GraphPosition>();
 const copyPayloads = new Map<string, string>();
+const artifactPreviews = new Map<string, string>();
 const categoryOrder: EvalCategory[] = ["memory", "logical", "holistic", ...promptFiveCategoryOrder, ...promptSixCategoryOrder];
 const autoJudgePreviewMs = 2000;
 const promptSuites: Record<SuiteId, PromptSuite> = {
@@ -503,7 +505,11 @@ multiStart.addEventListener("click", () => {
 multiConfirmJudges.addEventListener("change", () => {
   void updateBackgroundEvalOptions(multiConfirmJudges.checked);
 });
+chat.addEventListener("click", (event) => {
+  if (handleArtifactPreviewClick(event)) return;
+});
 abResults.addEventListener("click", (event) => {
+  if (handleArtifactPreviewClick(event)) return;
   const target = event.target instanceof Element ? event.target : undefined;
   const button = target?.closest<HTMLButtonElement>("button[data-copy-id]");
   if (!button?.dataset.copyId) return;
@@ -511,6 +517,7 @@ abResults.addEventListener("click", (event) => {
   if (value) void copyText(value, button);
 });
 multiStage.addEventListener("click", (event) => {
+  if (handleArtifactPreviewClick(event)) return;
   const target = event.target instanceof Element ? event.target : undefined;
   const voteButton = target?.closest<HTMLButtonElement>("button[data-vote]");
   if (!voteButton?.dataset.vote) return;
@@ -1924,8 +1931,13 @@ function formatOp(op: GraphOp): string {
 function responseHtml(value: string): string {
   const artifact = extractPreviewArtifact(value);
   if (!artifact) return `<p>${escapeHtml(value)}</p>`;
+  const previewId = registerArtifactPreview(artifact);
   return `
     <div class="artifact-preview">
+      <div class="artifact-preview-toolbar">
+        <span>Rendered artifact</span>
+        <button class="button secondary small-button" type="button" data-artifact-preview-id="${previewId}">Open full screen</button>
+      </div>
       <iframe sandbox="" srcdoc="${escapeAttribute(artifact)}" title="Generated artifact preview"></iframe>
     </div>
     <pre class="artifact-source">${escapeHtml(value)}</pre>`;
@@ -1942,6 +1954,48 @@ function registerCopy(value: string): string {
   const id = `copy_${++copyCounter}`;
   copyPayloads.set(id, value);
   return id;
+}
+
+function registerArtifactPreview(value: string): string {
+  const id = `artifact_preview_${++artifactPreviewCounter}`;
+  artifactPreviews.set(id, value);
+  return id;
+}
+
+function handleArtifactPreviewClick(event: Event): boolean {
+  const target = event.target instanceof Element ? event.target : undefined;
+  const button = target?.closest<HTMLButtonElement>("button[data-artifact-preview-id]");
+  const id = button?.dataset.artifactPreviewId;
+  if (!id) return false;
+  const artifact = artifactPreviews.get(id);
+  if (artifact) openArtifactModal(artifact);
+  return true;
+}
+
+function openArtifactModal(artifact: string): void {
+  const existing = document.getElementById("artifact-modal");
+  existing?.remove();
+
+  const modal = document.createElement("div");
+  modal.id = "artifact-modal";
+  modal.className = "artifact-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-label", "Full screen artifact preview");
+  modal.innerHTML = `
+    <div class="artifact-modal-panel">
+      <div class="artifact-modal-toolbar">
+        <strong>Artifact preview</strong>
+        <button class="button secondary small-button" type="button" data-artifact-modal-close>Close</button>
+      </div>
+      <iframe sandbox="" srcdoc="${escapeAttribute(artifact)}" title="Full screen artifact preview"></iframe>
+    </div>`;
+  modal.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : undefined;
+    if (target === modal || target?.closest("[data-artifact-modal-close]")) modal.remove();
+  });
+  document.body.append(modal);
+  modal.querySelector<HTMLButtonElement>("[data-artifact-modal-close]")?.focus();
 }
 
 function setupCopyableLog(element: HTMLElement, label: string): void {
