@@ -90,7 +90,7 @@ console.log(agent.getFrame()?.graph.nodes);
 
 A single `Agent` owns a session `GraphFrame`. Every `run` or `stream` appends a new `user_input_N` to that same graph unless you pass an explicit frame. Concurrent turns reserve graph inputs immediately, run asynchronously, and merge their resulting branches back into the shared graph.
 
-`maxIterations` caps the internal model/tool loop for one user input. It defaults to `30`; if the loop is exhausted, StateWeave raises a recursion-limit error suggesting a higher `maxIterations`. It is not a max-turn setting; user turns are just more graph nodes.
+`maxIterations` is the recursion limit for the internal model/tool loop for one user input. It defaults to `30`; if the loop is exhausted, StateWeave raises a recursion-limit error suggesting a higher `maxIterations`. The SDK/web lab do not impose an artificial upper cap. It is not a max-turn setting; user turns are just more graph nodes.
 
 Use `streamEvents()` when you want the full trace stream:
 

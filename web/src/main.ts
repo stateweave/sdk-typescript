@@ -683,7 +683,7 @@ function normalizeNodeTypes(values: unknown[]): string[] {
 function normalizeMaxIterations(value: unknown): number {
   const numeric = Number(value);
   if (!Number.isInteger(numeric) || numeric < 1) return defaultAgentSettings.maxIterations;
-  return Math.min(numeric, 100);
+  return numeric;
 }
 
 function setWorkspaceView(view: WorkspaceViewName): void {

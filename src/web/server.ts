@@ -735,7 +735,7 @@ function isGraphFrame(value: unknown): value is GraphFrame {
 function safeMaxSteps(value: unknown): number {
   const numeric = Number(value);
   if (!Number.isInteger(numeric) || numeric < 1) return 30;
-  return Math.min(numeric, 100);
+  return numeric;
 }
 
 function safeSystemPrompt(value: unknown): string | undefined {
