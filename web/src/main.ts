@@ -63,6 +63,8 @@ type EvalRun = {
   updatedAt: string;
 };
 
+type GraphPosition = { x: number; y: number; vx: number; vy: number; pinned: boolean };
+
 let activePage: PageName = pageFromHash();
 let multiSuiteId: SuiteId = suiteIdForPage(activePage) ?? "prompt-one";
 let stateFrame: GraphFrame | undefined;
@@ -78,7 +80,10 @@ let multiRunPollTimer: number | undefined;
 let stateRunning = false;
 let abRunning = false;
 let copyCounter = 0;
+let selectedGraphNodeId: string | undefined;
+let graphAnimationFrame: number | undefined;
 
+const graphPositions = new Map<string, GraphPosition>();
 const copyPayloads = new Map<string, string>();
 const categoryOrder: EvalCategory[] = ["memory", "logical", "holistic", ...promptFiveCategoryOrder, ...promptSixCategoryOrder];
 const autoJudgePreviewMs = 2000;
@@ -589,14 +594,15 @@ async function sendStateWeaveMessage(): Promise<void> {
   input.value = "";
   status.textContent = "Thinking…";
   clearEmptyState(chat);
-  appendUser(text);
+  const userMessage = appendUser(text);
   const pending = appendPendingStateWeave();
 
   try {
     const result = await runStateWeave(text, stateFrame);
     stateFrame = result.stateweave.frameAfter;
     pending.remove();
-    appendAssistant(result.stateweave.output);
+    const assistantMessage = appendAssistant(result.stateweave.output);
+    linkLatestConversationNodes(result.stateweave.graph, userMessage, assistantMessage);
     renderStateWeave(result.stateweave);
     status.textContent = `Done · StateGraph ${result.stateweave.graph.nodes.length} nodes / ${result.stateweave.graph.edges.length} edges`;
   } catch (error) {
@@ -698,6 +704,9 @@ async function loadHealth(): Promise<void> {
 
 function resetStateWeaveChat(): void {
   stateFrame = undefined;
+  selectedGraphNodeId = undefined;
+  graphPositions.clear();
+  stopGraphAnimation();
   chat.innerHTML = `<div class="empty-state"><h2>Ask anything.</h2><p>StateWeave keeps one growing StateGraph rooted at <code>system_root</code>, then compiles a GraphFrame for the model each turn.</p></div>`;
   stateInput.textContent = "No turn yet.";
   stateOutput.textContent = "No output yet.";
@@ -1354,12 +1363,13 @@ function voteLabel(value: Vote | undefined): string {
   return "Neither";
 }
 
-function appendUser(text: string): void {
+function appendUser(text: string): HTMLElement {
   chat.insertAdjacentHTML("beforeend", `<div class="message user"><div>${escapeHtml(text)}</div></div>`);
   scrollChat(chat);
+  return chat.lastElementChild as HTMLElement;
 }
 
-function appendAssistant(stateweave: string): void {
+function appendAssistant(stateweave: string): HTMLElement {
   chat.insertAdjacentHTML(
     "beforeend",
     `<article class="answer state-answer assistant-response">
@@ -1368,6 +1378,18 @@ function appendAssistant(stateweave: string): void {
     </article>`
   );
   scrollChat(chat);
+  return chat.lastElementChild as HTMLElement;
+}
+
+function linkLatestConversationNodes(graphValue: StateGraph, userMessage: HTMLElement, assistantMessage: HTMLElement): void {
+  const userNode = latestNodeOfType(graphValue, "user_input");
+  const assistantNode = latestNodeOfType(graphValue, "assistant_output");
+  if (userNode) userMessage.dataset.nodeId = userNode.id;
+  if (assistantNode) assistantMessage.dataset.nodeId = assistantNode.id;
+}
+
+function latestNodeOfType(graphValue: StateGraph, type: StateGraph["nodes"][number]["type"]): StateGraph["nodes"][number] | undefined {
+  return graphValue.nodes.filter((node) => node.type === type).at(-1);
 }
 
 function appendPendingStateWeave(): HTMLElement {
@@ -1442,9 +1464,12 @@ function appendError(container: HTMLElement, message: string): void {
 }
 
 function renderGraph(value: StateGraph): void {
+  stopGraphAnimation();
   const layout = graphLayout(value);
   const turnCount = value.nodes.filter((node) => node.type === "user_input").length;
   const latestNodeId = value.nodes.at(-1)?.id;
+  const selectedNode = layout.nodeMap.get(selectedGraphNodeId ?? "") ?? layout.nodeMap.get(latestNodeId ?? "") ?? layout.nodeMap.get("system_root") ?? layout.nodes[0];
+  selectedGraphNodeId = selectedNode?.id;
 
   graph.className = "graph-visual obsidian-graph";
   graph.innerHTML = `
@@ -1452,6 +1477,7 @@ function renderGraph(value: StateGraph): void {
       <strong>Turn ${turnCount}</strong>
       <span>${value.nodes.length} nodes · ${value.edges.length} edges</span>
     </div>
+    <div class="graph-help">Hover to stir · drag to pin · double-click to release · click to inspect</div>
     <svg class="graph-svg obsidian-map" viewBox="0 0 ${layout.width} ${layout.height}" role="img" aria-label="StateGraph knowledge map">
       <defs>
         <radialGradient id="graph-glow" cx="50%" cy="50%" r="70%">
@@ -1462,39 +1488,46 @@ function renderGraph(value: StateGraph): void {
       </defs>
       <rect x="0" y="0" width="${layout.width}" height="${layout.height}" rx="18" fill="url(#graph-glow)"></rect>
       <g class="edges">
-        ${layout.edges.map((edge) => edge.fromNode && edge.toNode ? `
-          <g class="obsidian-edge ${escapeHtml(edge.type)}">
-            <line x1="${edge.fromNode.x}" y1="${edge.fromNode.y}" x2="${edge.toNode.x}" y2="${edge.toNode.y}"></line>
+        ${layout.edges.map((edge, index) => edge.fromNode && edge.toNode ? `
+          <g class="obsidian-edge ${escapeHtml(edge.type)} ${edge.from === selectedGraphNodeId || edge.to === selectedGraphNodeId ? "selected" : ""}">
+            <line data-edge-index="${index}" x1="${edge.fromNode.x}" y1="${edge.fromNode.y}" x2="${edge.toNode.x}" y2="${edge.toNode.y}"></line>
             <title>${escapeHtml(edge.from)} ${escapeHtml(edge.type)} ${escapeHtml(edge.to)}</title>
           </g>` : "").join("")}
       </g>
       <g class="nodes">
         ${layout.nodes.map((node) => `
-          <g class="obsidian-node ${escapeHtml(node.type)} ${node.id === "system_root" ? "root" : ""} ${node.id === latestNodeId ? "latest" : ""}" transform="translate(${node.x} ${node.y})">
+          <g class="obsidian-node ${escapeHtml(node.type)} ${node.id === "system_root" ? "root" : ""} ${node.id === latestNodeId ? "latest" : ""} ${node.id === selectedGraphNodeId ? "selected" : ""} ${node.pinned ? "pinned" : ""}" data-node-id="${escapeAttribute(node.id)}" transform="translate(${node.x} ${node.y})">
             <circle r="${node.radius}"></circle>
             <text class="node-id" y="${node.radius + 15}">${escapeHtml(shorten(node.id, node.id === "system_root" ? 18 : 16))}</text>
             <title>${escapeHtml(`${node.id} [${node.type}]\n${node.text}`)}</title>
           </g>`).join("")}
       </g>
     </svg>
+    <aside id="graph-inspector" class="graph-inspector">
+      ${selectedNode ? graphInspectorHtml(value, selectedNode) : ""}
+    </aside>
     <div class="graph-focus-strip">
       ${layout.featuredNodes.map((node) => `
-        <article class="node-detail compact ${escapeHtml(node.type)}">
+        <article class="node-detail compact ${escapeHtml(node.type)} ${node.id === selectedGraphNodeId ? "selected" : ""}" data-node-card-id="${escapeAttribute(node.id)}">
           <div><strong>${escapeHtml(node.id)}</strong><span>${escapeHtml(node.type)}</span></div>
-          <p>${escapeHtml(shorten(node.text, 180))}</p>
+          <p>${escapeHtml(shorten(node.text, 160))}</p>
         </article>`).join("")}
     </div>
   `;
+  mountGraphInteractions(value, layout);
 }
 
-type GraphLayoutNode = StateGraph["nodes"][number] & { x: number; y: number; vx: number; vy: number; radius: number; degree: number };
+type GraphLayoutNode = StateGraph["nodes"][number] & { x: number; y: number; vx: number; vy: number; radius: number; degree: number; pinned: boolean };
+type GraphLayoutEdge = StateGraph["edges"][number] & { fromNode?: GraphLayoutNode; toNode?: GraphLayoutNode };
+type GraphPointer = { x: number; y: number };
 
 function graphLayout(value: StateGraph): {
   width: number;
   height: number;
   nodes: GraphLayoutNode[];
-  edges: Array<StateGraph["edges"][number] & { fromNode?: GraphLayoutNode; toNode?: GraphLayoutNode }>;
+  edges: GraphLayoutEdge[];
   featuredNodes: GraphLayoutNode[];
+  nodeMap: Map<string, GraphLayoutNode>;
 } {
   const width = 1080;
   const height = 760;
@@ -1508,88 +1541,327 @@ function graphLayout(value: StateGraph): {
 
   const nodes: GraphLayoutNode[] = value.nodes.map((node, index) => {
     const root = node.id === "system_root";
-    const ring = root ? 0 : 110 + Math.sqrt(index + 1) * 28;
+    const existing = graphPositions.get(node.id);
+    const ring = root ? 0 : 112 + Math.sqrt(index + 1) * 28;
     const angle = root ? 0 : seededAngle(node.id, index);
+    const x = existing?.x ?? (root ? centerX : centerX + Math.cos(angle) * ring);
+    const y = existing?.y ?? (root ? centerY : centerY + Math.sin(angle) * ring);
     return {
       ...node,
-      x: root ? centerX : centerX + Math.cos(angle) * ring,
-      y: root ? centerY : centerY + Math.sin(angle) * ring,
-      vx: 0,
-      vy: 0,
+      x: root ? centerX : x,
+      y: root ? centerY : y,
+      vx: existing?.vx ?? 0,
+      vy: existing?.vy ?? 0,
       radius: nodeRadius(node.type, degree.get(node.id) ?? 0, root),
-      degree: degree.get(node.id) ?? 0
+      degree: degree.get(node.id) ?? 0,
+      pinned: root || Boolean(existing?.pinned)
     };
   });
   const nodeMap = new Map(nodes.map((node) => [node.id, node]));
   const edges = value.edges.map((edge) => ({ ...edge, fromNode: nodeMap.get(edge.from), toNode: nodeMap.get(edge.to) }));
 
-  for (let iteration = 0; iteration < 170; iteration++) {
-    const cooling = 1 - iteration / 170;
-    for (let i = 0; i < nodes.length; i++) {
-      const a = nodes[i];
-      for (let j = i + 1; j < nodes.length; j++) {
-        const b = nodes[j];
-        const dx = b.x - a.x || 0.01;
-        const dy = b.y - a.y || 0.01;
-        const distanceSquared = Math.max(90, dx * dx + dy * dy);
-        const distance = Math.sqrt(distanceSquared);
-        const force = ((a.radius + b.radius + 42) * 18) / distanceSquared;
-        const fx = (dx / distance) * force;
-        const fy = (dy / distance) * force;
-        if (a.id !== "system_root") {
-          a.vx -= fx;
-          a.vy -= fy;
-        }
-        if (b.id !== "system_root") {
-          b.vx += fx;
-          b.vy += fy;
-        }
-      }
-    }
-
-    for (const edge of edges) {
-      const from = edge.fromNode;
-      const to = edge.toNode;
-      if (!from || !to) continue;
-      const dx = to.x - from.x;
-      const dy = to.y - from.y;
-      const distance = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-      const ideal = edge.from === "system_root" || edge.to === "system_root" ? 128 : 112;
-      const force = (distance - ideal) * 0.0065;
-      const fx = (dx / distance) * force;
-      const fy = (dy / distance) * force;
-      if (from.id !== "system_root") {
-        from.vx += fx;
-        from.vy += fy;
-      }
-      if (to.id !== "system_root") {
-        to.vx -= fx;
-        to.vy -= fy;
-      }
-    }
-
-    for (const node of nodes) {
-      if (node.id === "system_root") {
-        node.x = centerX;
-        node.y = centerY;
-        node.vx = 0;
-        node.vy = 0;
-        continue;
-      }
-      node.vx += (centerX - node.x) * 0.0009;
-      node.vy += (centerY - node.y) * 0.0009;
-      node.x = clamp(node.x + node.vx * cooling, 54, width - 54);
-      node.y = clamp(node.y + node.vy * cooling, 54, height - 64);
-      node.vx *= 0.82;
-      node.vy *= 0.82;
-    }
+  for (let iteration = 0; iteration < 90; iteration++) {
+    applyGraphForces(nodes, edges, width, height, { cooling: 1 - iteration / 90 });
   }
 
   const featuredNodes = [...nodes]
     .sort((a, b) => Number(b.id === value.nodes.at(-1)?.id) - Number(a.id === value.nodes.at(-1)?.id) || b.degree - a.degree)
     .slice(0, 8);
 
-  return { width, height, nodes, edges, featuredNodes };
+  for (const node of nodes) rememberGraphNodePosition(node);
+
+  return { width, height, nodes, edges, featuredNodes, nodeMap };
+}
+
+function mountGraphInteractions(value: StateGraph, layout: ReturnType<typeof graphLayout>): void {
+  const svg = graph.querySelector<SVGSVGElement>("svg.obsidian-map");
+  if (!svg) return;
+
+  const nodeElements = new Map<string, SVGGElement>();
+  for (const nodeElement of svg.querySelectorAll<SVGGElement>(".obsidian-node[data-node-id]")) {
+    const nodeId = nodeElement.dataset.nodeId;
+    if (nodeId) nodeElements.set(nodeId, nodeElement);
+  }
+  const edgeElements = layout.edges.map((_, index) => svg.querySelector<SVGLineElement>(`line[data-edge-index="${index}"]`));
+  const inspector = graph.querySelector<HTMLElement>("#graph-inspector");
+  const cards = [...graph.querySelectorAll<HTMLElement>("[data-node-card-id]")];
+  let hoveredNodeId: string | undefined;
+  let hoverPoint: GraphPointer | undefined;
+  let dragging: { node: GraphLayoutNode; element: SVGGElement; pointerId: number; moved: boolean; start: GraphPointer } | undefined;
+
+  const selectNode = (nodeId: string) => {
+    const node = layout.nodeMap.get(nodeId);
+    if (!node) return;
+    selectedGraphNodeId = node.id;
+    for (const [id, element] of nodeElements) element.classList.toggle("selected", id === node.id);
+    for (const card of cards) card.classList.toggle("selected", card.dataset.nodeCardId === node.id);
+    layout.edges.forEach((edge, index) => {
+      edgeElements[index]?.parentElement?.classList.toggle("selected", edge.from === node.id || edge.to === node.id);
+    });
+    if (inspector) inspector.innerHTML = graphInspectorHtml(value, node);
+    focusConversationNode(node.id);
+  };
+
+  svg.addEventListener("pointermove", (event) => {
+    hoverPoint = svgPoint(svg, event);
+  });
+  svg.addEventListener("pointerleave", () => {
+    hoverPoint = undefined;
+    hoveredNodeId = undefined;
+    for (const element of nodeElements.values()) element.classList.remove("hovered");
+  });
+
+  for (const [nodeId, nodeElement] of nodeElements) {
+    const node = layout.nodeMap.get(nodeId);
+    if (!node) continue;
+
+    nodeElement.addEventListener("pointerenter", () => {
+      hoveredNodeId = node.id;
+      nodeElement.classList.add("hovered");
+    });
+    nodeElement.addEventListener("pointerleave", () => {
+      if (hoveredNodeId === node.id) hoveredNodeId = undefined;
+      nodeElement.classList.remove("hovered");
+    });
+    nodeElement.addEventListener("pointerdown", (event) => {
+      selectNode(node.id);
+      if (event.button !== 0 || node.id === "system_root") return;
+      event.preventDefault();
+      const point = svgPoint(svg, event);
+      node.pinned = true;
+      node.vx = 0;
+      node.vy = 0;
+      node.x = point.x;
+      node.y = point.y;
+      dragging = { node, element: nodeElement, pointerId: event.pointerId, moved: false, start: point };
+      nodeElement.setPointerCapture(event.pointerId);
+      nodeElement.classList.add("dragging", "pinned");
+      rememberGraphNodePosition(node);
+      updateGraphDom(layout, nodeElements, edgeElements);
+    });
+    nodeElement.addEventListener("pointermove", (event) => {
+      if (!dragging || dragging.pointerId !== event.pointerId || dragging.node.id !== node.id) return;
+      event.preventDefault();
+      const point = svgPoint(svg, event);
+      dragging.moved = dragging.moved || Math.hypot(point.x - dragging.start.x, point.y - dragging.start.y) > 4;
+      node.x = clamp(point.x, 54, layout.width - 54);
+      node.y = clamp(point.y, 54, layout.height - 64);
+      node.vx = 0;
+      node.vy = 0;
+      rememberGraphNodePosition(node);
+      updateGraphDom(layout, nodeElements, edgeElements);
+    });
+    const releaseDrag = (event: PointerEvent) => {
+      if (!dragging || dragging.pointerId !== event.pointerId || dragging.node.id !== node.id) return;
+      if (nodeElement.hasPointerCapture(event.pointerId)) nodeElement.releasePointerCapture(event.pointerId);
+      nodeElement.classList.remove("dragging");
+      rememberGraphNodePosition(node);
+      dragging = undefined;
+    };
+    nodeElement.addEventListener("pointerup", releaseDrag);
+    nodeElement.addEventListener("pointercancel", releaseDrag);
+    nodeElement.addEventListener("click", () => selectNode(node.id));
+    nodeElement.addEventListener("dblclick", () => {
+      if (node.id === "system_root") return;
+      node.pinned = false;
+      nodeElement.classList.remove("pinned");
+      rememberGraphNodePosition(node);
+      selectNode(node.id);
+    });
+  }
+
+  for (const card of cards) {
+    card.addEventListener("click", () => {
+      if (card.dataset.nodeCardId) selectNode(card.dataset.nodeCardId);
+    });
+  }
+
+  const animate = () => {
+    applyGraphForces(layout.nodes, layout.edges, layout.width, layout.height, {
+      hoveredNodeId,
+      hoverPoint,
+      draggingNodeId: dragging?.node.id,
+      cooling: dragging ? 0.95 : 0.72
+    });
+    updateGraphDom(layout, nodeElements, edgeElements);
+    graphAnimationFrame = window.requestAnimationFrame(animate);
+  };
+  graphAnimationFrame = window.requestAnimationFrame(animate);
+}
+
+function applyGraphForces(
+  nodes: GraphLayoutNode[],
+  edges: GraphLayoutEdge[],
+  width: number,
+  height: number,
+  options: { hoveredNodeId?: string; hoverPoint?: GraphPointer; draggingNodeId?: string; cooling: number }
+): void {
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const movable = (node: GraphLayoutNode) => node.id !== "system_root" && !node.pinned && node.id !== options.draggingNodeId;
+
+  for (let i = 0; i < nodes.length; i++) {
+    const a = nodes[i];
+    for (let j = i + 1; j < nodes.length; j++) {
+      const b = nodes[j];
+      const dx = b.x - a.x || 0.01;
+      const dy = b.y - a.y || 0.01;
+      const distanceSquared = Math.max(140, dx * dx + dy * dy);
+      const distance = Math.sqrt(distanceSquared);
+      const force = ((a.radius + b.radius + 48) * 20) / distanceSquared;
+      const fx = (dx / distance) * force;
+      const fy = (dy / distance) * force;
+      if (movable(a)) {
+        a.vx -= fx;
+        a.vy -= fy;
+      }
+      if (movable(b)) {
+        b.vx += fx;
+        b.vy += fy;
+      }
+    }
+  }
+
+  for (const edge of edges) {
+    const from = edge.fromNode;
+    const to = edge.toNode;
+    if (!from || !to) continue;
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const distance = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+    const ideal = edge.from === "system_root" || edge.to === "system_root" ? 132 : 116;
+    const force = (distance - ideal) * 0.0075;
+    const fx = (dx / distance) * force;
+    const fy = (dy / distance) * force;
+    if (movable(from)) {
+      from.vx += fx;
+      from.vy += fy;
+    }
+    if (movable(to)) {
+      to.vx -= fx;
+      to.vy -= fy;
+    }
+  }
+
+  const hovered = options.hoveredNodeId ? nodes.find((node) => node.id === options.hoveredNodeId) : undefined;
+  for (const node of nodes) {
+    if (node.id === "system_root") {
+      node.x = centerX;
+      node.y = centerY;
+      node.vx = 0;
+      node.vy = 0;
+      rememberGraphNodePosition(node);
+      continue;
+    }
+    if (node.id === options.draggingNodeId || node.pinned) {
+      node.vx = 0;
+      node.vy = 0;
+      rememberGraphNodePosition(node);
+      continue;
+    }
+
+    const hash = hashString(node.id);
+    const time = performance.now() / 1000;
+    node.vx += Math.sin(time * 0.7 + hash) * 0.004;
+    node.vy += Math.cos(time * 0.6 + hash) * 0.004;
+    node.vx += (centerX - node.x) * 0.00075;
+    node.vy += (centerY - node.y) * 0.00075;
+
+    if (options.hoverPoint) {
+      repelFromPoint(node, options.hoverPoint, 120, 0.026);
+    }
+    if (hovered && hovered.id !== node.id) {
+      repelFromPoint(node, hovered, 170, 0.035);
+    }
+
+    node.x = clamp(node.x + node.vx * options.cooling, 54, width - 54);
+    node.y = clamp(node.y + node.vy * options.cooling, 54, height - 64);
+    node.vx *= 0.84;
+    node.vy *= 0.84;
+    rememberGraphNodePosition(node);
+  }
+}
+
+function repelFromPoint(node: GraphLayoutNode, point: GraphPointer, radius: number, strength: number): void {
+  const dx = node.x - point.x || 0.01;
+  const dy = node.y - point.y || 0.01;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  if (distance > radius) return;
+  const force = ((radius - distance) / radius) * strength;
+  node.vx += (dx / distance) * force;
+  node.vy += (dy / distance) * force;
+}
+
+function updateGraphDom(
+  layout: ReturnType<typeof graphLayout>,
+  nodeElements: Map<string, SVGGElement>,
+  edgeElements: Array<SVGLineElement | null>
+): void {
+  for (const node of layout.nodes) {
+    const element = nodeElements.get(node.id);
+    if (!element) continue;
+    element.setAttribute("transform", `translate(${node.x.toFixed(1)} ${node.y.toFixed(1)})`);
+    element.classList.toggle("pinned", node.pinned && node.id !== "system_root");
+  }
+  layout.edges.forEach((edge, index) => {
+    const line = edgeElements[index];
+    if (!line || !edge.fromNode || !edge.toNode) return;
+    line.setAttribute("x1", edge.fromNode.x.toFixed(1));
+    line.setAttribute("y1", edge.fromNode.y.toFixed(1));
+    line.setAttribute("x2", edge.toNode.x.toFixed(1));
+    line.setAttribute("y2", edge.toNode.y.toFixed(1));
+  });
+}
+
+function graphInspectorHtml(value: StateGraph, node: GraphLayoutNode): string {
+  const adjacent = value.edges.filter((edge) => edge.from === node.id || edge.to === node.id).slice(0, 8);
+  const connectionHtml = adjacent.length
+    ? adjacent.map((edge) => `<li><code>${escapeHtml(edge.from === node.id ? `${edge.type} → ${edge.to}` : `${edge.from} → ${edge.type} → ${node.id}`)}</code></li>`).join("")
+    : `<li><code>no edges yet</code></li>`;
+  const chatHint = node.type === "user_input" || node.type === "assistant_output" ? "Conversation node: the matching chat bubble is highlighted when available." : "Graph node: click related nodes or drag this node to reshape the map.";
+
+  return `
+    <div class="graph-inspector-header">
+      <div>
+        <p class="eyebrow">Selected node</p>
+        <h3>${escapeHtml(node.id)}</h3>
+      </div>
+      <span>${escapeHtml(node.type)}</span>
+    </div>
+    <p class="graph-inspector-text">${escapeHtml(node.text)}</p>
+    <ul class="graph-inspector-edges">${connectionHtml}</ul>
+    <p class="graph-inspector-hint">${escapeHtml(chatHint)}</p>
+  `;
+}
+
+function focusConversationNode(nodeId: string): void {
+  const conversationNodes = [...chat.querySelectorAll<HTMLElement>("[data-node-id]")];
+  let target: HTMLElement | undefined;
+  for (const element of conversationNodes) {
+    const active = element.dataset.nodeId === nodeId;
+    element.classList.toggle("conversation-focus", active);
+    if (active) target = element;
+  }
+  target?.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+function svgPoint(svg: SVGSVGElement, event: PointerEvent): GraphPointer {
+  const rect = svg.getBoundingClientRect();
+  const viewBox = svg.viewBox.baseVal;
+  return {
+    x: viewBox.x + ((event.clientX - rect.left) / Math.max(1, rect.width)) * viewBox.width,
+    y: viewBox.y + ((event.clientY - rect.top) / Math.max(1, rect.height)) * viewBox.height
+  };
+}
+
+function rememberGraphNodePosition(node: GraphLayoutNode): void {
+  graphPositions.set(node.id, { x: node.x, y: node.y, vx: node.vx, vy: node.vy, pinned: node.pinned && node.id !== "system_root" });
+}
+
+function stopGraphAnimation(): void {
+  if (graphAnimationFrame === undefined) return;
+  window.cancelAnimationFrame(graphAnimationFrame);
+  graphAnimationFrame = undefined;
 }
 
 function nodeRadius(type: string, degree: number, root: boolean): number {

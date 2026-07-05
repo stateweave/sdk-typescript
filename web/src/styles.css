@@ -454,6 +454,20 @@ label {
   color: var(--foreground);
 }
 
+.graph-help {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  left: 12px;
+  border: 1px solid rgba(229, 229, 229, 0.9);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  padding: 7px 10px;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  backdrop-filter: blur(10px);
+}
+
 .graph-svg {
   display: block;
   width: 100%;
@@ -475,6 +489,11 @@ label {
   transition: stroke 180ms ease, stroke-width 180ms ease;
 }
 
+.obsidian-edge.selected line {
+  stroke: rgba(124, 58, 237, 0.72);
+  stroke-width: 2.15;
+}
+
 .obsidian-edge.follows line {
   stroke: rgba(37, 99, 235, 0.28);
 }
@@ -486,7 +505,16 @@ label {
 }
 
 .obsidian-node {
+  cursor: grab;
   animation: graph-node-in 260ms ease both;
+}
+
+.obsidian-node.root {
+  cursor: pointer;
+}
+
+.obsidian-node.dragging {
+  cursor: grabbing;
 }
 
 .obsidian-node circle {
@@ -507,6 +535,17 @@ label {
 .obsidian-node.latest circle {
   stroke-width: 3.5;
   filter: drop-shadow(0 0 18px rgba(124, 58, 237, 0.36));
+}
+
+.obsidian-node.hovered circle,
+.obsidian-node.selected circle {
+  fill: #f5f3ff;
+  stroke-width: 4;
+  filter: drop-shadow(0 0 22px rgba(124, 58, 237, 0.42));
+}
+
+.obsidian-node.pinned circle {
+  stroke-dasharray: 5 4;
 }
 
 .obsidian-node.user_input circle {
@@ -565,6 +604,69 @@ label {
   font-weight: 700;
 }
 
+.graph-inspector {
+  position: absolute;
+  z-index: 2;
+  top: 58px;
+  left: 12px;
+  width: min(340px, calc(100% - 24px));
+  max-height: 42%;
+  overflow: auto;
+  border: 1px solid rgba(229, 229, 229, 0.92);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 12px;
+  box-shadow: 0 10px 26px rgba(24, 24, 27, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.graph-inspector-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.graph-inspector-header h3 {
+  font-size: 0.95rem;
+}
+
+.graph-inspector-header span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+}
+
+.graph-inspector-text {
+  max-height: 150px;
+  overflow: auto;
+  color: var(--foreground);
+  font-size: 0.86rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.graph-inspector-edges {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0;
+  padding-left: 16px;
+}
+
+.graph-inspector-edges code {
+  color: var(--muted-foreground);
+  font-size: 0.74rem;
+}
+
+.graph-inspector-hint {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
 .graph-focus-strip {
   position: absolute;
   right: 12px;
@@ -573,7 +675,7 @@ label {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 8px;
-  max-height: 170px;
+  max-height: 142px;
   overflow: auto;
   padding: 2px;
 }
@@ -588,6 +690,12 @@ label {
 
 .node-detail.compact {
   padding: 8px;
+  cursor: pointer;
+}
+
+.node-detail.selected {
+  border-color: rgba(124, 58, 237, 0.6);
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.12);
 }
 
 .node-detail div {
@@ -611,6 +719,11 @@ label {
   color: var(--muted-foreground);
   font-size: 0.78rem;
   line-height: 1.4;
+}
+
+.conversation-focus {
+  outline: 3px solid rgba(124, 58, 237, 0.28);
+  outline-offset: 3px;
 }
 
 .model-io-panel {
