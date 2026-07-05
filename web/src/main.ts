@@ -1938,7 +1938,7 @@ function responseHtml(value: string): string {
         <span>Rendered artifact</span>
         <button class="button secondary small-button" type="button" data-artifact-preview-id="${previewId}">Open full screen</button>
       </div>
-      <iframe sandbox="" srcdoc="${escapeAttribute(artifact)}" title="Generated artifact preview"></iframe>
+      <iframe sandbox="allow-scripts" tabindex="0" srcdoc="${escapeAttribute(artifact)}" title="Generated artifact preview"></iframe>
     </div>
     <pre class="artifact-source">${escapeHtml(value)}</pre>`;
 }
@@ -1988,14 +1988,16 @@ function openArtifactModal(artifact: string): void {
         <strong>Artifact preview</strong>
         <button class="button secondary small-button" type="button" data-artifact-modal-close>Close</button>
       </div>
-      <iframe sandbox="" srcdoc="${escapeAttribute(artifact)}" title="Full screen artifact preview"></iframe>
+      <iframe sandbox="allow-scripts" tabindex="0" srcdoc="${escapeAttribute(artifact)}" title="Full screen artifact preview"></iframe>
     </div>`;
   modal.addEventListener("click", (event) => {
     const target = event.target instanceof Element ? event.target : undefined;
     if (target === modal || target?.closest("[data-artifact-modal-close]")) modal.remove();
   });
   document.body.append(modal);
-  modal.querySelector<HTMLButtonElement>("[data-artifact-modal-close]")?.focus();
+  const iframe = modal.querySelector<HTMLIFrameElement>("iframe");
+  iframe?.addEventListener("load", () => iframe.focus(), { once: true });
+  iframe?.focus();
 }
 
 function setupCopyableLog(element: HTMLElement, label: string): void {
