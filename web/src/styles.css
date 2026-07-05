@@ -713,7 +713,7 @@ label {
 .multi-live-score {
   display: grid;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: #fff;
@@ -779,6 +779,25 @@ label {
 .live-category-summary th {
   background: #fafafa;
   color: var(--muted-foreground);
+}
+
+.multi-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  color: var(--muted-foreground);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.multi-option[hidden] {
+  display: none !important;
+}
+
+.multi-option input {
+  width: 16px;
+  height: 16px;
 }
 
 .multi-steps {

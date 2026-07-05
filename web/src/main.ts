@@ -41,8 +41,25 @@ type MultiRecord = {
   regular: string;
   stateweave: string;
   vote?: Vote;
+  proposedVote?: Vote;
+  pauseReason?: "confirm" | "disagreement";
   judgedBy?: "judges" | "human";
   judges?: JudgeDecision[];
+  error?: string;
+};
+
+type EvalRun = {
+  id: string;
+  suiteId: SuiteId;
+  suiteTitle: string;
+  status: "queued" | "running" | "paused" | "done" | "error" | "stopped";
+  confirmJudges: boolean;
+  currentIndex: number;
+  cases: MultiCase[];
+  records: MultiRecord[];
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 let activePage: PageName = pageFromHash();
@@ -55,6 +72,8 @@ let multiRegularHistory: ChatMessage[] = [];
 let multiIndex = 0;
 let multiRunning = false;
 let multiRecords: MultiRecord[] = [];
+let multiRun: EvalRun | undefined;
+let multiRunPollTimer: number | undefined;
 let stateRunning = false;
 let abRunning = false;
 let copyCounter = 0;
@@ -413,6 +432,8 @@ const multiTitle = element<HTMLElement>("multi-title");
 const multiDescription = element<HTMLElement>("multi-description");
 const multiProgress = element<HTMLElement>("multi-progress");
 const multiLiveScore = element<HTMLElement>("multi-live-score");
+const multiConfirmWrap = element<HTMLElement>("multi-confirm-wrap");
+const multiConfirmJudges = element<HTMLInputElement>("multi-confirm-judges");
 const multiSteps = element<HTMLElement>("multi-steps");
 const multiStage = element<HTMLElement>("multi-stage");
 
@@ -438,7 +459,7 @@ abForm.addEventListener("submit", (event) => {
 reset.addEventListener("click", () => {
   if (activePage === "state") resetStateWeaveChat();
   else if (activePage === "ab") resetAbTests();
-  else resetMultiTest();
+  else void resetCurrentMultiTest();
 });
 input.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
@@ -453,8 +474,15 @@ abInput.addEventListener("keydown", (event) => {
   }
 });
 multiStart.addEventListener("click", () => {
+  if (currentSuite().mode === "judge") {
+    void startBackgroundEvalRun();
+    return;
+  }
   if (!multiRecords.length && multiIndex === 0) resetMultiTest(false);
   void runNextMultiCase();
+});
+multiConfirmJudges.addEventListener("change", () => {
+  void updateBackgroundEvalOptions(multiConfirmJudges.checked);
 });
 abResults.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target : undefined;
@@ -466,7 +494,9 @@ abResults.addEventListener("click", (event) => {
 multiStage.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target : undefined;
   const voteButton = target?.closest<HTMLButtonElement>("button[data-vote]");
-  if (voteButton?.dataset.vote) voteMulti(voteButton.dataset.vote as Vote);
+  if (!voteButton?.dataset.vote) return;
+  if (currentSuite().mode === "judge" && multiRun) void voteBackgroundEvalRun(voteButton.dataset.vote as Vote);
+  else voteMulti(voteButton.dataset.vote as Vote);
 });
 
 function pageFromHash(): PageName {
@@ -523,7 +553,10 @@ function setActivePage(page: PageName, updateHash = true): void {
   multiTitle.textContent = suite.title;
   multiDescription.textContent = suite.description;
   reset.textContent = isState ? "Reset" : isAb ? "Reset A/B" : `Reset ${suite.title.toLowerCase()}`;
+  syncMultiModeControls();
   if (updateHash) history.replaceState(null, "", isState ? location.pathname : isAb ? "#ab" : `#${suite.id}`);
+  if (isMulti) void resumeStoredEvalRun();
+  else stopBackgroundPoll();
   if (isState) input.focus();
   else if (isAb) abInput.focus();
   else multiStart.focus();
@@ -668,6 +701,8 @@ function resetAbTests(): void {
 
 function resetMultiTest(focus = true): void {
   const suite = currentSuite();
+  stopBackgroundPoll();
+  multiRun = undefined;
   multiStateFrame = undefined;
   multiRegularHistory = [];
   multiIndex = 0;
@@ -678,8 +713,195 @@ function resetMultiTest(focus = true): void {
   multiTitle.textContent = suite.title;
   multiDescription.textContent = suite.description;
   multiStage.innerHTML = `<div class="empty-state compact"><h2>${escapeHtml(suite.readyTitle)}</h2><p>${escapeHtml(suite.readyCopy)}</p></div>`;
+  syncMultiModeControls();
   renderMultiProgress();
   if (focus) multiStart.focus();
+}
+
+async function resetCurrentMultiTest(): Promise<void> {
+  if (multiRun && (multiRun.status === "queued" || multiRun.status === "running" || multiRun.status === "paused")) {
+    await stopBackgroundEvalRun(multiRun.id).catch(() => undefined);
+  }
+  localStorage.removeItem(backgroundRunStorageKey());
+  resetMultiTest();
+}
+
+function syncMultiModeControls(): void {
+  const isJudge = currentSuite().mode === "judge";
+  multiConfirmWrap.hidden = !isJudge;
+  if (!isJudge) return;
+  multiConfirmJudges.checked = multiRun?.confirmJudges ?? multiConfirmJudges.checked;
+}
+
+function backgroundRunStorageKey(): string {
+  return `stateweave.evalRun.${currentSuite().id}`;
+}
+
+async function resumeStoredEvalRun(): Promise<void> {
+  if (currentSuite().mode !== "judge") return;
+  const runId = localStorage.getItem(backgroundRunStorageKey());
+  try {
+    const run = runId ? await fetchBackgroundEvalRun(runId) : await fetchLatestBackgroundEvalRun(currentSuite().id);
+    if (!run) {
+      syncMultiModeControls();
+      return;
+    }
+    if (run.suiteId !== currentSuite().id || run.status === "stopped") {
+      localStorage.removeItem(backgroundRunStorageKey());
+      return;
+    }
+    localStorage.setItem(backgroundRunStorageKey(), run.id);
+    renderBackgroundEvalRun(run);
+    scheduleBackgroundPoll(run);
+  } catch {
+    localStorage.removeItem(backgroundRunStorageKey());
+  }
+}
+
+async function startBackgroundEvalRun(): Promise<void> {
+  const suite = currentSuite();
+  if (suite.mode !== "judge") return;
+  const active = multiRun && (multiRun.status === "queued" || multiRun.status === "running" || multiRun.status === "paused");
+  if (active) return;
+
+  multiStart.disabled = true;
+  multiStart.textContent = "Starting background run…";
+  multiStage.innerHTML = `<div class="multi-loading">Starting server-side eval run…</div>`;
+  const response = await fetch(`${apiBase}/api/stateweave/eval-runs`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      suiteId: suite.id,
+      suiteTitle: suite.title,
+      cases: suite.cases,
+      confirmJudges: multiConfirmJudges.checked
+    })
+  });
+  const body = (await response.json()) as { run?: EvalRun; error?: string };
+  if (!response.ok || !body.run) {
+    multiStage.innerHTML = `<div class="message error"><div>${escapeHtml(body.error ?? `Request failed (${response.status})`)}</div></div>`;
+    multiStart.disabled = false;
+    multiStart.textContent = `Start ${suite.title.toLowerCase()}`;
+    return;
+  }
+  localStorage.setItem(backgroundRunStorageKey(), body.run.id);
+  renderBackgroundEvalRun(body.run);
+  scheduleBackgroundPoll(body.run);
+}
+
+async function fetchBackgroundEvalRun(id: string): Promise<EvalRun> {
+  const response = await fetch(`${apiBase}/api/stateweave/eval-runs/${encodeURIComponent(id)}`);
+  const body = (await response.json()) as { run?: EvalRun; error?: string };
+  if (!response.ok || !body.run) throw new Error(body.error ?? `Request failed (${response.status})`);
+  return body.run;
+}
+
+async function fetchLatestBackgroundEvalRun(suiteId: SuiteId): Promise<EvalRun | undefined> {
+  const response = await fetch(`${apiBase}/api/stateweave/eval-runs`);
+  const body = (await response.json()) as { runs?: EvalRun[]; error?: string };
+  if (!response.ok) throw new Error(body.error ?? `Request failed (${response.status})`);
+  return body.runs?.find((run) => run.suiteId === suiteId && run.status !== "stopped");
+}
+
+async function voteBackgroundEvalRun(vote: Vote): Promise<void> {
+  if (!multiRun) return;
+  const response = await fetch(`${apiBase}/api/stateweave/eval-runs/${encodeURIComponent(multiRun.id)}/vote`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ vote })
+  });
+  const body = (await response.json()) as { run?: EvalRun; error?: string };
+  if (!response.ok || !body.run) {
+    multiStage.insertAdjacentHTML("afterbegin", `<div class="message error"><div>${escapeHtml(body.error ?? `Request failed (${response.status})`)}</div></div>`);
+    return;
+  }
+  renderBackgroundEvalRun(body.run);
+  scheduleBackgroundPoll(body.run);
+}
+
+async function updateBackgroundEvalOptions(confirmJudges: boolean): Promise<void> {
+  if (!multiRun || currentSuite().mode !== "judge") return;
+  const response = await fetch(`${apiBase}/api/stateweave/eval-runs/${encodeURIComponent(multiRun.id)}/options`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ confirmJudges })
+  });
+  const body = (await response.json()) as { run?: EvalRun; error?: string };
+  if (response.ok && body.run) {
+    renderBackgroundEvalRun(body.run);
+    scheduleBackgroundPoll(body.run);
+  }
+}
+
+async function stopBackgroundEvalRun(id: string): Promise<void> {
+  await fetch(`${apiBase}/api/stateweave/eval-runs/${encodeURIComponent(id)}/stop`, { method: "POST" });
+}
+
+function scheduleBackgroundPoll(run: EvalRun): void {
+  stopBackgroundPoll();
+  if (run.status === "queued" || run.status === "running") {
+    multiRunPollTimer = window.setTimeout(() => void pollBackgroundEvalRun(run.id), 1500);
+  }
+}
+
+async function pollBackgroundEvalRun(id: string): Promise<void> {
+  try {
+    const run = await fetchBackgroundEvalRun(id);
+    renderBackgroundEvalRun(run);
+    scheduleBackgroundPoll(run);
+  } catch (error) {
+    multiStage.insertAdjacentHTML("afterbegin", `<div class="message error"><div>${escapeHtml(error instanceof Error ? error.message : String(error))}</div></div>`);
+  }
+}
+
+function stopBackgroundPoll(): void {
+  if (multiRunPollTimer !== undefined) window.clearTimeout(multiRunPollTimer);
+  multiRunPollTimer = undefined;
+}
+
+function renderBackgroundEvalRun(run: EvalRun): void {
+  multiRun = run;
+  multiRecords = run.records;
+  multiIndex = run.currentIndex;
+  multiConfirmJudges.checked = run.confirmJudges;
+  syncMultiModeControls();
+  renderMultiProgress();
+
+  if (run.status === "done") {
+    renderMultiReveal();
+    multiStart.disabled = true;
+    multiStart.textContent = `${currentSuite().title} complete`;
+    return;
+  }
+
+  if (run.status === "error") {
+    multiStage.innerHTML = `<div class="message error"><div>${escapeHtml(run.error ?? "Background eval failed.")}</div></div>`;
+    multiStart.disabled = false;
+    multiStart.textContent = "Start new run";
+    return;
+  }
+
+  if (run.status === "stopped") {
+    multiStage.innerHTML = `<div class="empty-state compact"><h2>Run stopped.</h2><p>Reset or start a new eval run.</p></div>`;
+    multiStart.disabled = false;
+    multiStart.textContent = `Start ${currentSuite().title.toLowerCase()}`;
+    return;
+  }
+
+  const latest = run.records.at(-1);
+  if (run.status === "paused" && latest && !latest.vote) {
+    renderJudgeDisagreement(latest);
+    return;
+  }
+
+  if (latest?.vote || latest?.proposedVote) {
+    renderMultiAutoJudged(latest);
+  } else {
+    const next = run.cases[run.currentIndex];
+    if (next) renderMultiCaseLoading(next, run.currentIndex);
+  }
+  multiStart.disabled = true;
+  multiStart.textContent = `Running ${Math.min(run.currentIndex + 1, run.cases.length)} / ${run.cases.length} in background…`;
 }
 
 async function runNextMultiCase(): Promise<void> {
@@ -866,17 +1088,19 @@ function renderMultiAutoJudged(record: MultiRecord): void {
 
 function renderJudgeDisagreement(record: MultiRecord): void {
   renderMultiProgress();
+  const confirming = record.pauseReason === "confirm" && record.proposedVote;
   multiStart.disabled = true;
-  multiStart.textContent = "Waiting for human vote";
+  multiStart.textContent = confirming ? "Waiting for judge confirmation" : "Waiting for human vote";
   multiStage.innerHTML = `
     <article class="multi-card">
       <div class="multi-case-header">
-        <p class="eyebrow">Judge disagreement · Prompt ${record.index + 1} / ${currentSuite().cases.length}</p>
+        <p class="eyebrow">${confirming ? "Confirm judge decision" : "Judge disagreement"} · Prompt ${record.index + 1} / ${currentSuite().cases.length}</p>
         <h2>${escapeHtml(record.prompt)}</h2>
         <p class="expectation"><strong>${escapeHtml(currentSuite().expectLabel)}:</strong> ${escapeHtml(record.expect)}</p>
         ${categoryPills(record.categories)}
       </div>
-      <div class="judge-result disagreement">
+      <div class="judge-result ${confirming ? "agreed" : "disagreement"}">
+        ${confirming ? `<p><strong>Proposed vote:</strong> ${voteLabel(record.proposedVote)}</p>` : ""}
         ${record.judges?.map((judge) => `<p><strong>${escapeHtml(judge.id)}:</strong> ${voteLabel(judge.vote)} — ${escapeHtml(judge.reason)}</p>`).join("") ?? ""}
         ${judgeRawDetails(record.judges)}
       </div>
@@ -888,8 +1112,9 @@ function renderJudgeDisagreement(record: MultiRecord): void {
         <article class="blind-answer"><h3>Answer B</h3>${responseHtml(answerFor(record, "b"))}</article>
       </div>
       <div class="vote-bar" aria-label="Human tie-break vote">
-        <button class="button primary" type="button" data-vote="a">A is correct</button>
-        <button class="button primary" type="button" data-vote="b">B is correct</button>
+        ${confirming ? `<button class="button primary" type="button" data-vote="${record.proposedVote}">Accept judges: ${voteLabel(record.proposedVote)}</button>` : ""}
+        <button class="button ${confirming ? "secondary" : "primary"}" type="button" data-vote="a">A is correct</button>
+        <button class="button ${confirming ? "secondary" : "primary"}" type="button" data-vote="b">B is correct</button>
         <button class="button secondary" type="button" data-vote="both">Both</button>
         <button class="button secondary" type="button" data-vote="neither">Neither</button>
       </div>
