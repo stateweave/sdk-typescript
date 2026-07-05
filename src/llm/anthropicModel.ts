@@ -106,7 +106,7 @@ export class AnthropicModel implements Model {
       top_k: parameters.topK,
       stop_sequences: parameters.stopSequences,
       stream,
-      system: this.config.system ?? defaultSystem(input.mode),
+      system: this.config.system ?? defaultSystem(),
       messages: [{ role: "user", content: input.prompt }]
     });
   }
@@ -136,9 +136,8 @@ export function anthropicConfigFromEnv(env: NodeJS.ProcessEnv): AnthropicModelCo
   };
 }
 
-function defaultSystem(mode?: string): string {
-  if (mode === "graph_ops") return "Return only the SWX/1 StateWeave Exchange requested by the prompt. Do not return JSON, YAML, markdown fences, or prose.";
-  return "Return plain text only.";
+function defaultSystem(): string {
+  return "You are a precise, helpful assistant. Follow the user prompt's requested response format exactly.";
 }
 
 function readText(response: AnthropicResponse): string {

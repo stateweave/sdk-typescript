@@ -18,7 +18,7 @@ type RunRequest = {
 };
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
-type ModelMessage = { role: "system" | "user" | "assistant" | "tool"; content: string };
+type ModelMessage = { role: "user" | "assistant"; content: string };
 
 const port = Number(process.env.PORT ?? 3000);
 const basePath = normalizeBasePath(process.env.STATEWEAVE_WEB_BASE_PATH ?? "/");
@@ -259,11 +259,7 @@ function safeChatMessages(value: unknown): ChatMessage[] {
 }
 
 function regularModelInput(history: ChatMessage[], input: string): ModelMessage[] {
-  return [
-    { role: "system", content: "You are a concise chat assistant." },
-    ...history,
-    { role: "user", content: input }
-  ];
+  return [...history, { role: "user", content: input }];
 }
 
 function serializeMessages(messages: ModelMessage[]): string {

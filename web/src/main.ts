@@ -2,7 +2,7 @@ import type { GraphFrame, GraphOp, StateGraph, TraceStep } from "../../src/core/
 import "./styles.css";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
-type ModelMessage = { role: "system" | "user" | "assistant" | "tool"; content: string };
+type ModelMessage = { role: "user" | "assistant"; content: string };
 
 type StateWeavePayload = {
   inputFrame?: GraphFrame;
