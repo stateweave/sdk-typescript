@@ -10,52 +10,60 @@ export function createEmptyGraph(): StateGraph {
 
 export function createInitialGraphFrame(args: {
   objective: string;
-  input: string;
+  input?: string;
+  systemPrompt?: string;
   availableActions: string[];
 }): GraphFrame {
   const createdAt = nowIso();
   const system: GraphNode = {
     id: "system_root",
     type: "system",
-    text: "StateWeave system root. The graph is the runtime state; compile GraphFrame from the graph instead of provider messages.",
-    data: { activeSystemNodeId: "system_root" },
+    text: args.systemPrompt ?? "StateWeave system root. The graph is the runtime state; compile GraphFrame from the graph instead of provider messages.",
+    data: { activeSystemNodeId: "system_root", ...(args.systemPrompt ? { systemPrompt: args.systemPrompt } : {}) },
     status: "active",
     confidence: 1,
     createdAt
   };
-  const input: GraphNode = {
-    id: "user_input_1",
-    type: "user_input",
-    text: args.input,
-    status: "active",
-    confidence: 1,
-    createdAt
-  };
-  const constraints = extractConstraints(args.input);
+  const inputText = args.input?.trim();
+  const input: GraphNode | undefined = inputText
+    ? {
+        id: "user_input_1",
+        type: "user_input",
+        text: inputText,
+        status: "active",
+        confidence: 1,
+        createdAt
+      }
+    : undefined;
+  const constraints = inputText ? extractConstraints(inputText) : [];
 
   return {
     frame: {
       objective: args.objective,
-      currentFocus: "Cortex focus is user_input_1. The model should weave this user input into the graph with GraphOps.",
-      focusNodeId: "user_input_1",
-      latestInputNodeId: "user_input_1",
-      activeUserInputNodeId: "user_input_1",
-      candidateFocusNodeIds: ["system_root", "user_input_1"],
-      nextExpectedOutput: "Return SWX/1 commands that attach the active user input to the right node, create semantic nodes with model-chosen types, and produce a final answer.",
+      currentFocus: input ? "Cortex focus is user_input_1. The model should weave this user input into the graph with GraphOps." : "Cortex focus is system_root. Append a user input or create semantic graph nodes with GraphOps.",
+      focusNodeId: input ? "user_input_1" : "system_root",
+      latestInputNodeId: input ? "user_input_1" : undefined,
+      activeUserInputNodeId: input ? "user_input_1" : undefined,
+      candidateFocusNodeIds: input ? ["system_root", "user_input_1"] : ["system_root"],
+      nextExpectedOutput: input
+        ? "Return SWX/1 commands that attach the active user input to the right node, create semantic nodes with model-chosen types, and produce a final answer."
+        : "Return SWX/1 commands that create or update graph nodes, or wait for the next user input.",
       activeConstraints: constraints,
       availableActions: ["add_node", "add_edge", "update_node", "focus", "call_tool", "final", ...args.availableActions]
     },
     graph: {
-      nodes: [system, input],
-      edges: [
-        {
-          id: "edge_system_root_follows_user_input_1",
-          from: "system_root",
-          to: "user_input_1",
-          type: "follows",
-          createdAt
-        }
-      ]
+      nodes: input ? [system, input] : [system],
+      edges: input
+        ? [
+            {
+              id: "edge_system_root_follows_user_input_1",
+              from: "system_root",
+              to: "user_input_1",
+              type: "follows",
+              createdAt
+            }
+          ]
+        : []
     }
   };
 }

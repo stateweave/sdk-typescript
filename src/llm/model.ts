@@ -20,10 +20,17 @@ export type ModelInput = {
   signal?: AbortSignal;
 };
 
-export type ModelToken = {
-  type: "token";
-  token: string;
-};
+export type ModelStreamMetadata = Record<string, unknown>;
+
+export type ModelToken =
+  | {
+      type: "token";
+      token: string;
+    }
+  | {
+      type: "metadata";
+      metadata: ModelStreamMetadata;
+    };
 
 export type ModelOutput = {
   text: string;
@@ -36,7 +43,9 @@ export type Model = {
 
 export async function collectModelText(stream: AsyncIterable<ModelToken>): Promise<{ text: string; tokens: string[] }> {
   const tokens: string[] = [];
-  for await (const event of stream) tokens.push(event.token);
+  for await (const event of stream) {
+    if (event.type === "token") tokens.push(event.token);
+  }
   return { text: tokens.join(""), tokens };
 }
 
@@ -64,7 +73,7 @@ export class MockModel implements Model {
     const hasToolResult = input.frame?.graph.nodes.some((node) => node.type === "tool_result") ?? input.prompt.toLowerCase().includes("tool_result");
     if (input.mode === "text") return finalFor(task);
 
-    if (!hasToolResult) {
+    if (!hasToolResult && source.includes(`tool:${toolFor(task)}`)) {
       return [
         "SWX/1",
         `@edge system_root follows ${inputNodeId}`,

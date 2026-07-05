@@ -63,6 +63,7 @@ export type GraphOp =
 
 export type StateWeaveRunMetadata = {
   runId: string;
+  tools: { name: string; description: string }[];
   startedAt: string;
   completedAt?: string;
   durationMs?: number;
@@ -81,6 +82,7 @@ export type TraceStep = {
   prompt: string;
   tokenEstimate: { estimatedTokens: number; messageCount: number };
   streamedTokens: string[];
+  modelMetadata?: Record<string, unknown>[];
   rawModelOutput: string;
   parsedOps: GraphOp[];
   frameAfter: GraphFrame;
@@ -98,6 +100,7 @@ export type StateWeaveStreamEvent =
   | { type: "metadata"; metadata: StateWeaveRunMetadata }
   | { type: "frame"; step: number; phase: "before" | "after"; frame: GraphFrame; prompt?: string; tokenEstimate?: { estimatedTokens: number; messageCount: number } }
   | { type: "token"; step: number; token: string }
+  | { type: "model_metadata"; step: number; metadata: Record<string, unknown> }
   | { type: "ops"; step: number; ops: GraphOp[] }
   | { type: "error"; step: number; message: string; retryable: boolean }
   | { type: "final"; result: AgentResult };

@@ -13,4 +13,5 @@ export * from "./llm/anthropicModel.js";
 export * from "./llm/factory.js";
 export * from "./llm/tokenizer.js";
 export * from "./tools/types.js";
+export * from "./tools/fileSystemTools.js";
 export * from "./tools/mockTools.js";

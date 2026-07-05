@@ -1,12 +1,13 @@
 import "dotenv/config";
 import { createReadStream } from "node:fs";
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runStateWeave, StateWeaveRunError, streamStateWeave } from "../agent/stateweaveRunner.js";
 import type { GraphFrame, StateWeaveRunMetadata, TraceStep } from "../core/types.js";
 import { createModelFromEnv } from "../llm/factory.js";
+import { createDefaultTools, describeTools } from "../tools/fileSystemTools.js";
 import { mockTools } from "../tools/mockTools.js";
 
 type RunRequest = {
@@ -83,6 +84,7 @@ type EvalRun = {
 type StartEvalRunRequest = { suiteId?: unknown; suiteTitle?: unknown; cases?: unknown; confirmJudges?: unknown };
 type EvalVoteRequest = { vote?: unknown };
 type EvalOptionsRequest = { confirmJudges?: unknown };
+type WorkspaceFile = { path: string; size: number; updatedAt: string; mime: string; renderable: boolean };
 
 const port = Number(process.env.PORT ?? 3000);
 const basePath = normalizeBasePath(process.env.STATEWEAVE_WEB_BASE_PATH ?? "/");
@@ -90,6 +92,8 @@ const distDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.
 const runStorePath = path.resolve(process.env.STATEWEAVE_RUN_STORE ?? ".stateweave/eval-runs.json");
 const traceDir = path.resolve(process.env.STATEWEAVE_TRACE_DIR ?? ".stateweave/traces");
 const model = createModelFromEnv();
+const workspaceDir = path.resolve(process.env.STATEWEAVE_WORKSPACE_DIR ?? "/data/workspace");
+const agentTools = [...createDefaultTools({ rootDir: workspaceDir }), ...mockTools];
 const evalRuns = new Map<string, EvalRun>();
 const activeEvalRuns = new Set<string>();
 const evalRunsReady = loadEvalRuns().catch((error: unknown) => {
@@ -112,6 +116,26 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
 
   if (request.method === "GET" && url.pathname === "/api/health") {
     json(response, 200, { ok: true, provider: providerName() });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/stateweave/tools") {
+    json(response, 200, { tools: describeTools(agentTools), workspaceDir });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/stateweave/files") {
+    json(response, 200, { files: await listWorkspaceFiles(), workspaceDir });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/stateweave/files/read") {
+    await readWorkspaceFile(url, response);
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/stateweave/files/reboot") {
+    await rebootWorkspace(response);
     return;
   }
 
@@ -175,7 +199,7 @@ async function streamStateWeaveRun(request: IncomingMessage, response: ServerRes
   let finalMetadata: StateWeaveRunMetadata | undefined;
   try {
     for await (const event of streamStateWeave(
-      { model, tools: mockTools, maxSteps: safeMaxSteps(body.maxSteps) },
+      { model, tools: agentTools, maxSteps: safeMaxSteps(body.maxSteps) },
       body.input,
       { frame: isGraphFrame(body.frame) ? body.frame : undefined }
     )) {
@@ -205,7 +229,7 @@ async function runStateWeaveTurn(request: IncomingMessage, response: ServerRespo
   let stateweave;
   try {
     stateweave = await runStateWeave(
-      { model, tools: mockTools, maxSteps: safeMaxSteps(body.maxSteps) },
+      { model, tools: agentTools, maxSteps: safeMaxSteps(body.maxSteps) },
       input,
       { frame: isGraphFrame(body.frame) ? body.frame : undefined }
     );
@@ -248,7 +272,7 @@ async function compareTurn(input: string, stateFrame: GraphFrame | undefined, hi
   const regularPrompt = serializeMessages(traditionalMessages);
   const [regular, stateweave] = await Promise.all([
     model.complete({ prompt: regularPrompt, mode: "text", frame: emptyFrame(input) }),
-    runStateWeave({ model, tools: mockTools, maxSteps }, input, { frame: stateFrame })
+    runStateWeave({ model, tools: agentTools, maxSteps }, input, { frame: stateFrame })
   ]);
   await persistTrace("compare", input, stateweave.trace, stateweave.metadata);
 
@@ -543,6 +567,70 @@ async function persistEvalRuns(): Promise<void> {
   const tmp = `${runStorePath}.tmp`;
   await writeFile(tmp, JSON.stringify({ runs: [...evalRuns.values()] }, null, 2));
   await rename(tmp, runStorePath);
+}
+
+async function listWorkspaceFiles(): Promise<WorkspaceFile[]> {
+  await mkdir(workspaceDir, { recursive: true });
+  const files: WorkspaceFile[] = [];
+  await collectWorkspaceFiles(workspaceDir, "", files);
+  return files.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+async function collectWorkspaceFiles(dir: string, prefix: string, files: WorkspaceFile[]): Promise<void> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    const absolutePath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await collectWorkspaceFiles(absolutePath, relativePath, files);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    const info = await stat(absolutePath);
+    const mime = fileMime(relativePath);
+    files.push({ path: relativePath, size: info.size, updatedAt: info.mtime.toISOString(), mime, renderable: isRenderableMime(mime) });
+  }
+}
+
+async function readWorkspaceFile(url: URL, response: ServerResponse): Promise<void> {
+  const requestedPath = url.searchParams.get("path");
+  if (!requestedPath) {
+    json(response, 400, { error: "path is required" });
+    return;
+  }
+  const filePath = resolveWorkspaceFilePath(requestedPath);
+  const content = await readFile(filePath, "utf8");
+  const info = await stat(filePath);
+  const mime = fileMime(requestedPath);
+  json(response, 200, { path: requestedPath, content, size: info.size, updatedAt: info.mtime.toISOString(), mime, renderable: isRenderableMime(mime) });
+}
+
+async function rebootWorkspace(response: ServerResponse): Promise<void> {
+  if (workspaceDir === "/" || workspaceDir.length < 8) throw new Error(`Refusing to reboot unsafe workspace path: ${workspaceDir}`);
+  await rm(workspaceDir, { recursive: true, force: true });
+  await mkdir(workspaceDir, { recursive: true });
+  json(response, 200, { ok: true, files: [] });
+}
+
+function resolveWorkspaceFilePath(requestedPath: string): string {
+  if (path.isAbsolute(requestedPath)) throw new Error("File paths must be relative to the workspace.");
+  const resolved = path.resolve(workspaceDir, requestedPath);
+  if (resolved !== workspaceDir && !resolved.startsWith(`${workspaceDir}${path.sep}`)) throw new Error(`Path escapes the workspace: ${requestedPath}`);
+  return resolved;
+}
+
+function fileMime(filePath: string): string {
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension === ".html" || extension === ".htm") return "text/html";
+  if (extension === ".svg") return "image/svg+xml";
+  if (extension === ".json") return "application/json";
+  if (extension === ".md") return "text/markdown";
+  if ([".js", ".ts", ".tsx", ".jsx", ".css", ".txt", ".xml"].includes(extension)) return "text/plain";
+  return "application/octet-stream";
+}
+
+function isRenderableMime(mime: string): boolean {
+  return mime === "text/html" || mime === "image/svg+xml";
 }
 
 async function persistTrace(kind: string, input: string, trace: TraceStep[], metadata?: StateWeaveRunMetadata): Promise<void> {

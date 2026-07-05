@@ -33,6 +33,7 @@ it("retries rejected GraphOps and commits the corrected transaction", async () =
 
   expect(result.metadata.retryCount).toBe(1);
   expect(result.metadata.status).toBe("done");
+  expect(result.metadata.tools).toEqual([]);
   expect(result.trace).toHaveLength(2);
   expect(result.trace[0].durationMs).toBeGreaterThanOrEqual(0);
   expect(result.trace[0].error).toMatch(/pending latest user input user_input_2 is disconnected/);

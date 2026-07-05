@@ -26,7 +26,7 @@ type CompareResponse = StateWeaveResponse & {
   };
 };
 
-type PageName = "state" | "ab" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
+type PageName = "state" | "quickstart" | "ab" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
 type SuiteId = "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
 type EvalCategory = "memory" | "logical" | "holistic" | PromptFiveCategory | PromptSixCategory;
 type MultiCase = { prompt: string; expect: string; categories?: EvalCategory[] };
@@ -65,7 +65,11 @@ type EvalRun = {
 };
 
 type GraphPosition = { x: number; y: number; vx: number; vy: number; pinned: boolean };
-type LiveStreamLog = { metadata?: StateWeaveRunMetadata; tokens: Map<number, string>; events: string[]; prompt?: string };
+type ToolInfo = { name: string; description: string };
+type WorkspaceFile = { path: string; size: number; updatedAt: string; mime: string; renderable: boolean };
+type WorkspaceFileContent = WorkspaceFile & { content: string };
+type TransferMode = "export" | "import";
+type LiveStreamLog = { metadata?: StateWeaveRunMetadata; tokens: Map<number, string>; events: string[]; prompt?: string; modelMetadata: Map<number, Record<string, unknown>[]> };
 
 let activePage: PageName = pageFromHash();
 let multiSuiteId: SuiteId = suiteIdForPage(activePage) ?? "prompt-one";
@@ -85,6 +89,8 @@ let copyCounter = 0;
 let artifactPreviewCounter = 0;
 let selectedGraphNodeId: string | undefined;
 let graphAnimationFrame: number | undefined;
+let transferMode: TransferMode = "export";
+let selectedFilePath: string | undefined;
 
 const graphPositions = new Map<string, GraphPosition>();
 const copyPayloads = new Map<string, string>();
@@ -424,6 +430,7 @@ function lcm(a: number, b: number): number {
 
 const apiBase = import.meta.env.BASE_URL.replace(/\/$/, "");
 const stateTab = element<HTMLButtonElement>("state-tab");
+const quickstartTab = element<HTMLButtonElement>("quickstart-tab");
 const abTab = element<HTMLButtonElement>("ab-tab");
 const multiTab = element<HTMLButtonElement>("multi-tab");
 const multiTwoTab = element<HTMLButtonElement>("multi-two-tab");
@@ -432,6 +439,7 @@ const multiFourTab = element<HTMLButtonElement>("multi-four-tab");
 const multiFiveTab = element<HTMLButtonElement>("multi-five-tab");
 const multiSixTab = element<HTMLButtonElement>("multi-six-tab");
 const statePage = element<HTMLElement>("state-page");
+const quickstartPage = element<HTMLElement>("quickstart-page");
 const abPage = element<HTMLElement>("ab-page");
 const multiPage = element<HTMLElement>("multi-page");
 const chat = element<HTMLElement>("chat");
@@ -444,6 +452,22 @@ const provider = element<HTMLElement>("provider");
 const stateInput = element<HTMLElement>("state-input");
 const stateOutput = element<HTMLElement>("state-output");
 const graph = element<HTMLElement>("graph");
+const toolList = element<HTMLElement>("tool-list");
+const toolCount = element<HTMLElement>("tool-count");
+const fileList = element<HTMLElement>("file-list");
+const fileCount = element<HTMLElement>("file-count");
+const fileViewer = element<HTMLElement>("file-viewer");
+const refreshFiles = element<HTMLButtonElement>("refresh-files");
+const rebootFiles = element<HTMLButtonElement>("reboot-files");
+const exportGraph = element<HTMLButtonElement>("export-graph");
+const importGraph = element<HTMLButtonElement>("import-graph");
+const transferModal = element<HTMLElement>("graph-transfer-modal");
+const transferTitle = element<HTMLElement>("graph-transfer-title");
+const transferHelp = element<HTMLElement>("graph-transfer-help");
+const transferText = element<HTMLTextAreaElement>("graph-transfer-text");
+const closeTransfer = element<HTMLButtonElement>("close-transfer");
+const copyTransfer = element<HTMLButtonElement>("copy-transfer");
+const applyImport = element<HTMLButtonElement>("apply-import");
 const abForm = element<HTMLFormElement>("ab-composer");
 const abInput = element<HTMLTextAreaElement>("ab-input");
 const abSend = element<HTMLButtonElement>("ab-send");
@@ -462,8 +486,11 @@ const multiStage = element<HTMLElement>("multi-stage");
 setActivePage(activePage, false);
 renderMultiProgress();
 void loadHealth();
+void loadTools();
+void loadWorkspaceFiles();
 
 stateTab.addEventListener("click", () => setActivePage("state"));
+quickstartTab.addEventListener("click", () => setActivePage("quickstart"));
 abTab.addEventListener("click", () => setActivePage("ab"));
 multiTab.addEventListener("click", () => setActivePage("prompt-one"));
 multiTwoTab.addEventListener("click", () => setActivePage("prompt-two"));
@@ -481,6 +508,7 @@ abForm.addEventListener("submit", (event) => {
 });
 reset.addEventListener("click", () => {
   if (activePage === "state") resetStateWeaveChat();
+  else if (activePage === "quickstart") setActivePage("state");
   else if (activePage === "ab") resetAbTests();
   else void resetCurrentMultiTest();
 });
@@ -507,6 +535,21 @@ multiStart.addEventListener("click", () => {
 multiConfirmJudges.addEventListener("change", () => {
   void updateBackgroundEvalOptions(multiConfirmJudges.checked);
 });
+refreshFiles.addEventListener("click", () => void loadWorkspaceFiles());
+rebootFiles.addEventListener("click", () => void rebootWorkspaceFiles());
+exportGraph.addEventListener("click", () => openGraphTransfer("export"));
+importGraph.addEventListener("click", () => openGraphTransfer("import"));
+closeTransfer.addEventListener("click", closeGraphTransfer);
+copyTransfer.addEventListener("click", () => void copyText(transferText.value, copyTransfer));
+applyImport.addEventListener("click", applyGraphImport);
+transferModal.addEventListener("click", (event) => {
+  if (event.target === transferModal) closeGraphTransfer();
+});
+fileList.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button[data-file-path]") : undefined;
+  if (!target?.dataset.filePath) return;
+  void openWorkspaceFile(target.dataset.filePath);
+});
 chat.addEventListener("click", (event) => {
   if (handleArtifactPreviewClick(event)) return;
 });
@@ -530,6 +573,7 @@ setupCopyableLog(stateInput, "GraphFrame");
 setupCopyableLog(stateOutput, "GraphOps");
 
 function pageFromHash(): PageName {
+  if (location.hash === "#quick-start") return "quickstart";
   if (location.hash === "#ab") return "ab";
   if (location.hash === "#prompt-one") return "prompt-one";
   if (location.hash === "#prompt-two") return "prompt-two";
@@ -552,6 +596,7 @@ function currentSuite(): PromptSuite {
 function setActivePage(page: PageName, updateHash = true): void {
   activePage = page;
   const isState = page === "state";
+  const isQuickstart = page === "quickstart";
   const isAb = page === "ab";
   const nextSuiteId = suiteIdForPage(page);
   const isMulti = Boolean(nextSuiteId);
@@ -563,6 +608,8 @@ function setActivePage(page: PageName, updateHash = true): void {
   const suite = currentSuite();
   stateTab.classList.toggle("active", isState);
   stateTab.setAttribute("aria-selected", String(isState));
+  quickstartTab.classList.toggle("active", isQuickstart);
+  quickstartTab.setAttribute("aria-selected", String(isQuickstart));
   abTab.classList.toggle("active", isAb);
   abTab.setAttribute("aria-selected", String(isAb));
   multiTab.classList.toggle("active", page === "prompt-one");
@@ -579,20 +626,22 @@ function setActivePage(page: PageName, updateHash = true): void {
   multiSixTab.setAttribute("aria-selected", String(page === "prompt-six"));
   statePage.hidden = !isState;
   statePage.classList.toggle("active", isState);
+  quickstartPage.hidden = !isQuickstart;
+  quickstartPage.classList.toggle("active", isQuickstart);
   abPage.hidden = !isAb;
   abPage.classList.toggle("active", isAb);
   multiPage.hidden = !isMulti;
   multiPage.classList.toggle("active", isMulti);
   multiTitle.textContent = suite.title;
   multiDescription.textContent = suite.description;
-  reset.textContent = isState ? "Reset" : isAb ? "Reset A/B" : `Reset ${suite.title.toLowerCase()}`;
+  reset.textContent = isState ? "Reset" : isQuickstart ? "Back to chat" : isAb ? "Reset A/B" : `Reset ${suite.title.toLowerCase()}`;
   syncMultiModeControls();
-  if (updateHash) history.replaceState(null, "", isState ? location.pathname : isAb ? "#ab" : `#${suite.id}`);
+  if (updateHash) history.replaceState(null, "", isState ? location.pathname : isQuickstart ? "#quick-start" : isAb ? "#ab" : `#${suite.id}`);
   if (isMulti) void resumeStoredEvalRun();
   else stopBackgroundPoll();
   if (isState) input.focus();
   else if (isAb) abInput.focus();
-  else multiStart.focus();
+  else if (isMulti) multiStart.focus();
 }
 
 async function sendStateWeaveMessage(): Promise<void> {
@@ -624,6 +673,7 @@ async function sendStateWeaveMessage(): Promise<void> {
     const assistantMessage = appendAssistant(result.stateweave.output);
     linkLatestConversationNodes(result.stateweave.graph, userMessage, assistantMessage);
     renderStateWeave(result.stateweave);
+    void loadWorkspaceFiles();
     status.textContent = `Done · StateGraph ${result.stateweave.graph.nodes.length} nodes / ${result.stateweave.graph.edges.length} edges`;
   } catch (error) {
     pending.remove();
@@ -763,6 +813,165 @@ async function loadHealth(): Promise<void> {
   const response = await fetch(`${apiBase}/api/health`).catch(() => undefined);
   const health = response?.ok ? ((await response.json()) as { provider?: string }) : undefined;
   provider.textContent = health?.provider ? `Provider: ${health.provider}` : "Provider unavailable";
+}
+
+async function loadTools(): Promise<void> {
+  const response = await fetch(`${apiBase}/api/stateweave/tools`).catch(() => undefined);
+  const body = response?.ok ? ((await response.json()) as { tools?: ToolInfo[]; workspaceDir?: string }) : undefined;
+  const tools = body?.tools ?? [];
+  toolCount.textContent = tools.length ? `${tools.length} tools` : "Unavailable";
+  toolList.innerHTML = tools.length
+    ? tools.map((tool) => `<article><code>${escapeHtml(tool.name)}</code><p>${escapeHtml(tool.description)}</p></article>`).join("")
+    : "Tool list unavailable.";
+}
+
+async function loadWorkspaceFiles(): Promise<void> {
+  const response = await fetch(`${apiBase}/api/stateweave/files`).catch(() => undefined);
+  const body = response?.ok ? ((await response.json()) as { files?: WorkspaceFile[] }) : undefined;
+  const files = body?.files ?? [];
+  fileCount.textContent = files.length ? `${files.length} files` : "0 files";
+  fileList.innerHTML = files.length
+    ? files.map((file) => `<button class="file-row ${file.path === selectedFilePath ? "active" : ""}" type="button" data-file-path="${escapeAttribute(file.path)}"><span>${escapeHtml(file.path)}</span><small>${formatBytes(file.size)} · ${escapeHtml(file.mime)}</small></button>`).join("")
+    : `<p class="muted-copy">No workspace files yet. Ask the agent to write one, or use write_file.</p>`;
+  if (selectedFilePath && !files.some((file) => file.path === selectedFilePath)) {
+    selectedFilePath = undefined;
+    fileViewer.innerHTML = `<p class="muted-copy">Open a file to inspect or render HTML/SVG output.</p>`;
+  }
+}
+
+async function openWorkspaceFile(filePath: string): Promise<void> {
+  const response = await fetch(`${apiBase}/api/stateweave/files/read?path=${encodeURIComponent(filePath)}`);
+  const body = (await response.json()) as WorkspaceFileContent | { error?: string };
+  if (!response.ok || !isWorkspaceFileContent(body)) {
+    fileViewer.innerHTML = `<p class="message error"><span>${escapeHtml("error" in body ? body.error ?? "Failed to read file." : "Failed to read file.")}</span></p>`;
+    return;
+  }
+
+  selectedFilePath = body.path;
+  await loadWorkspaceFiles();
+  fileViewer.innerHTML = workspaceFileHtml(body);
+}
+
+async function rebootWorkspaceFiles(): Promise<void> {
+  if (!confirm("Reboot workspace files? This removes all files written by the agent in the workspace.")) return;
+  const response = await fetch(`${apiBase}/api/stateweave/files/reboot`, { method: "POST" });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => undefined)) as { error?: string } | undefined;
+    fileViewer.innerHTML = `<p class="message error"><span>${escapeHtml(body?.error ?? "Failed to reboot workspace.")}</span></p>`;
+    return;
+  }
+  selectedFilePath = undefined;
+  fileViewer.innerHTML = `<p class="muted-copy">Workspace rebooted. Files removed.</p>`;
+  await loadWorkspaceFiles();
+}
+
+function isWorkspaceFileContent(value: WorkspaceFileContent | { error?: string }): value is WorkspaceFileContent {
+  return typeof (value as WorkspaceFileContent).path === "string" && typeof (value as WorkspaceFileContent).content === "string";
+}
+
+function workspaceFileHtml(file: WorkspaceFileContent): string {
+  const preview = file.renderable
+    ? `<div class="artifact-preview file-preview"><div class="artifact-preview-toolbar"><span>Rendered ${escapeHtml(file.mime)}</span></div><iframe sandbox="allow-scripts" tabindex="0" srcdoc="${escapeAttribute(file.content)}" title="${escapeAttribute(file.path)} preview"></iframe></div>`
+    : "";
+  return `<article class="file-open"><h3>${escapeHtml(file.path)}</h3><p class="muted-copy">${formatBytes(file.size)} · ${escapeHtml(file.mime)} · ${escapeHtml(file.updatedAt)}</p>${preview}<pre class="code file-source">${escapeHtml(file.content)}</pre></article>`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function openGraphTransfer(mode: TransferMode): void {
+  transferMode = mode;
+  transferTitle.textContent = mode === "export" ? "Export current graph" : "Import graph";
+  transferHelp.textContent = mode === "export"
+    ? "Copy this TypeScript into another project to continue from the current GraphFrame."
+    : "Paste a previous export or raw GraphFrame JSON. Import replaces the current chat graph in this lab.";
+  applyImport.hidden = mode === "export";
+  copyTransfer.hidden = mode === "import";
+  transferText.value = mode === "export" ? graphExportCode(stateFrame) : "";
+  transferModal.hidden = false;
+  transferText.focus();
+  transferText.select();
+}
+
+function closeGraphTransfer(): void {
+  transferModal.hidden = true;
+}
+
+function applyGraphImport(): void {
+  try {
+    const frame = parseImportedGraphFrame(transferText.value);
+    stateFrame = frame;
+    selectedGraphNodeId = undefined;
+    graphPositions.clear();
+    renderGraph(frame.graph);
+    stateInput.textContent = compactFrame(frame);
+    stateOutput.textContent = "Imported GraphFrame. The next user turn will be appended as a pending user_input node.";
+    status.textContent = `Imported · StateGraph ${frame.graph.nodes.length} nodes / ${frame.graph.edges.length} edges`;
+    closeGraphTransfer();
+    setActivePage("state");
+  } catch (error) {
+    transferHelp.textContent = error instanceof Error ? error.message : String(error);
+  }
+}
+
+function graphExportCode(frame: GraphFrame | undefined): string {
+  const exportedFrame = frame ?? emptyExportFrame();
+  const json = JSON.stringify(exportedFrame, null, 2);
+  return `/* STATEWEAVE_FRAME_JSON_START\n${json}\nSTATEWEAVE_FRAME_JSON_END */
+import { StateWeaveAgent, createModelFromEnv, type GraphFrame } from "stateweave";
+
+const frame: GraphFrame = ${json} as GraphFrame;
+
+const agent = new StateWeaveAgent({
+  model: createModelFromEnv()
+  // default file-system tools are available unless you pass a custom tools array
+});
+
+const result = await agent.run({
+  objective: frame.frame.objective,
+  input: "Continue from this exported graph."
+}, { frame });
+
+console.log(result.finalAnswer);
+console.log(result.graph);`;
+}
+
+function parseImportedGraphFrame(value: string): GraphFrame {
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error("Paste exported TypeScript or GraphFrame JSON first.");
+  const marker = trimmed.match(/STATEWEAVE_FRAME_JSON_START\s*([\s\S]*?)\s*STATEWEAVE_FRAME_JSON_END/);
+  const raw = marker?.[1] ?? trimmed;
+  const parsed = JSON.parse(raw) as unknown;
+  if (!isGraphFrameLike(parsed)) throw new Error("Import did not contain a valid GraphFrame with frame and graph nodes/edges.");
+  return parsed;
+}
+
+function isGraphFrameLike(value: unknown): value is GraphFrame {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as { frame?: unknown; graph?: { nodes?: unknown; edges?: unknown } };
+  return Boolean(candidate.frame && candidate.graph && Array.isArray(candidate.graph.nodes) && Array.isArray(candidate.graph.edges));
+}
+
+function emptyExportFrame(): GraphFrame {
+  const createdAt = new Date().toISOString();
+  return {
+    frame: {
+      objective: "Continue graph",
+      currentFocus: "Cortex focus is system_root. Add a user input to begin.",
+      focusNodeId: "system_root",
+      candidateFocusNodeIds: ["system_root"],
+      nextExpectedOutput: "Append a user input and weave it with GraphOps.",
+      activeConstraints: [],
+      availableActions: ["add_node", "add_edge", "update_node", "focus", "call_tool", "final"]
+    },
+    graph: {
+      nodes: [{ id: "system_root", type: "system", text: "StateWeave system root.", data: { activeSystemNodeId: "system_root" }, status: "active", confidence: 1, createdAt }],
+      edges: []
+    }
+  };
 }
 
 function resetStateWeaveChat(): void {
@@ -1456,7 +1665,7 @@ function latestNodeOfType(graphValue: StateGraph, type: StateGraph["nodes"][numb
 }
 
 function createLiveStreamLog(): LiveStreamLog {
-  return { tokens: new Map(), events: [] };
+  return { tokens: new Map(), events: [], modelMetadata: new Map() };
 }
 
 function updateLiveStreamLog(live: LiveStreamLog, event: StateWeaveStreamEvent): void {
@@ -1472,6 +1681,14 @@ function updateLiveStreamLog(live: LiveStreamLog, event: StateWeaveStreamEvent):
   }
   if (event.type === "token") {
     live.tokens.set(event.step, `${live.tokens.get(event.step) ?? ""}${event.token}`);
+    return;
+  }
+  if (event.type === "model_metadata") {
+    const current = live.modelMetadata.get(event.step) ?? [];
+    current.push(event.metadata);
+    live.modelMetadata.set(event.step, current);
+    const stopReason = typeof event.metadata.stopReason === "string" ? ` · stop=${event.metadata.stopReason}` : "";
+    live.events.push(`step ${event.step} model metadata${stopReason}`);
     return;
   }
   if (event.type === "ops") {
@@ -1495,8 +1712,9 @@ function updateLiveStreamLog(live: LiveStreamLog, event: StateWeaveStreamEvent):
 function formatLiveStreamLog(live: LiveStreamLog): string {
   const metadata = live.metadata ? [`metadata:`, JSON.stringify(live.metadata, null, 2), ""] : [];
   const prompt = live.prompt ? [`current model prompt:`, live.prompt, ""] : [];
+  const modelMetadata = [...live.modelMetadata.entries()].map(([step, items]) => `step ${step} provider metadata:\n${JSON.stringify(items, null, 2)}`);
   const tokenSections = [...live.tokens.entries()].map(([step, text]) => `step ${step} streaming model output:\n${text}`);
-  return [...metadata, ...prompt, ...live.events, ...tokenSections].join("\n\n").trim() || "Waiting for StateWeave stream…";
+  return [...metadata, ...prompt, ...live.events, ...modelMetadata, ...tokenSections].join("\n\n").trim() || "Waiting for StateWeave stream…";
 }
 
 function updatePendingStateWeave(item: HTMLElement, live: LiveStreamLog): void {
@@ -1588,14 +1806,14 @@ function renderGraph(value: StateGraph): void {
   const selectedNode = layout.nodeMap.get(selectedGraphNodeId ?? "") ?? layout.nodeMap.get(latestNodeId ?? "") ?? layout.nodeMap.get("system_root") ?? layout.nodes[0];
   selectedGraphNodeId = selectedNode?.id;
 
-  graph.className = "graph-visual obsidian-graph";
+  graph.className = "graph-visual cortex-graph";
   graph.innerHTML = `
     <div class="graph-summary floating">
       <strong>Turn ${turnCount}</strong>
       <span>${value.nodes.length} nodes · ${value.edges.length} edges</span>
     </div>
     <div class="graph-help">Hover to stir · drag to pin · double-click to release · click to inspect</div>
-    <svg class="graph-svg obsidian-map" viewBox="0 0 ${layout.width} ${layout.height}" role="img" aria-label="StateGraph knowledge map">
+    <svg class="graph-svg cortex-map" viewBox="0 0 ${layout.width} ${layout.height}" role="img" aria-label="StateGraph knowledge map">
       <defs>
         <radialGradient id="graph-glow" cx="50%" cy="50%" r="70%">
           <stop offset="0%" stop-color="#ffffff"></stop>
@@ -1606,14 +1824,14 @@ function renderGraph(value: StateGraph): void {
       <rect x="0" y="0" width="${layout.width}" height="${layout.height}" rx="18" fill="url(#graph-glow)"></rect>
       <g class="edges">
         ${layout.edges.map((edge, index) => edge.fromNode && edge.toNode ? `
-          <g class="obsidian-edge ${escapeHtml(edge.type)} ${edge.from === selectedGraphNodeId || edge.to === selectedGraphNodeId ? "selected" : ""}">
+          <g class="cortex-edge ${escapeHtml(edge.type)} ${edge.from === selectedGraphNodeId || edge.to === selectedGraphNodeId ? "selected" : ""}">
             <line data-edge-index="${index}" x1="${edge.fromNode.x}" y1="${edge.fromNode.y}" x2="${edge.toNode.x}" y2="${edge.toNode.y}"></line>
             <title>${escapeHtml(edge.from)} ${escapeHtml(edge.type)} ${escapeHtml(edge.to)}</title>
           </g>` : "").join("")}
       </g>
       <g class="nodes">
         ${layout.nodes.map((node) => `
-          <g class="obsidian-node ${escapeHtml(node.type)} ${node.id === "system_root" ? "root" : ""} ${node.id === latestNodeId ? "latest" : ""} ${node.id === selectedGraphNodeId ? "selected" : ""} ${node.pinned ? "pinned" : ""}" data-node-id="${escapeAttribute(node.id)}" transform="translate(${node.x} ${node.y})">
+          <g class="cortex-node ${escapeHtml(node.type)} ${node.id === "system_root" ? "root" : ""} ${node.id === latestNodeId ? "latest" : ""} ${node.id === selectedGraphNodeId ? "selected" : ""} ${node.pinned ? "pinned" : ""}" data-node-id="${escapeAttribute(node.id)}" transform="translate(${node.x} ${node.y})">
             <circle r="${node.radius}"></circle>
             <text class="node-id" y="${node.radius + 15}">${escapeHtml(shorten(node.id, node.id === "system_root" ? 18 : 16))}</text>
             <title>${escapeHtml(`${node.id} [${node.type}]\n${node.text}`)}</title>
@@ -1695,11 +1913,11 @@ function graphLayout(value: StateGraph): {
 }
 
 function mountGraphInteractions(value: StateGraph, layout: ReturnType<typeof graphLayout>): void {
-  const svg = graph.querySelector<SVGSVGElement>("svg.obsidian-map");
+  const svg = graph.querySelector<SVGSVGElement>("svg.cortex-map");
   if (!svg) return;
 
   const nodeElements = new Map<string, SVGGElement>();
-  for (const nodeElement of svg.querySelectorAll<SVGGElement>(".obsidian-node[data-node-id]")) {
+  for (const nodeElement of svg.querySelectorAll<SVGGElement>(".cortex-node[data-node-id]")) {
     const nodeId = nodeElement.dataset.nodeId;
     if (nodeId) nodeElements.set(nodeId, nodeElement);
   }
@@ -2015,6 +2233,7 @@ function formatStateOutput(trace: TraceStep[], finalAnswer: string, metadata?: S
   const metadataLines = metadata ? ["metadata:", JSON.stringify(metadata, null, 2), ""] : [];
   const parts = trace.map((step) => [
     `step ${step.step} metadata: ${step.durationMs}ms · ${step.startedAt} → ${step.completedAt}`,
+    ...(step.modelMetadata?.length ? [`step ${step.step} provider metadata:`, JSON.stringify(step.modelMetadata, null, 2)] : []),
     `step ${step.step} raw model output:`,
     step.rawModelOutput,
     "",

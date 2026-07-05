@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentResult, StateWeaveStreamEvent, TraceStep } from "../core/types.js";
 import type { Model } from "../llm/model.js";
+import { createDefaultTools } from "../tools/fileSystemTools.js";
 import type { Tool } from "../tools/types.js";
 import { runStateWeave, StateWeaveRunError, streamStateWeave, type StateWeaveInput, type StateWeaveRunOptions } from "./stateweaveRunner.js";
 
@@ -13,9 +14,9 @@ export class StateWeaveAgent {
   private maxSteps: number;
   private traceDir?: string;
 
-  constructor(args: { model: Model; tools: Tool[]; maxSteps?: number; traceDir?: string }) {
+  constructor(args: { model: Model; tools?: Tool[]; maxSteps?: number; traceDir?: string }) {
     this.model = args.model;
-    this.tools = args.tools;
+    this.tools = args.tools ?? createDefaultTools();
     this.maxSteps = args.maxSteps ?? 5;
     this.traceDir = args.traceDir;
   }

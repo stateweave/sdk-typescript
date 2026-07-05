@@ -41,6 +41,7 @@ StateWeave is experimental. The core primitive is intentionally small and readab
 - No graph database.
 - No hidden message-history abstraction.
 - In-memory JSON graph for the MVP.
+- Built-in workspace tools: `read_file`, `write_file`, `edit_file`, and `bash_command`.
 - Cortex-style graph focus/branching over transcript replay.
 - Transactional GraphOps validation rejects orphan/disconnected graph mutations before commit.
 - Streamable model internals: metadata, compiled prompt, token stream, parsed GraphOps, retries, and final trace.
@@ -65,24 +66,47 @@ pnpm install
 pnpm test
 ```
 
+Quick start:
+
+```ts
+import { StateWeaveAgent, createModelFromEnv } from "stateweave";
+
+const agent = new StateWeaveAgent({ model: createModelFromEnv() });
+
+for await (const event of agent.stream("Create a small todo app in ./todo")) {
+  if (event.type === "token") process.stdout.write(event.token);
+  if (event.type === "model_metadata") console.log(event.metadata);
+  if (event.type === "final") console.log(event.result.metadata);
+}
+```
+
+`StateWeaveAgent` includes workspace file-system tools by default. Use `createDefaultTools()` plus your custom tools when you want to extend that default toolset.
+
 ## Quickstart
 
 ```ts
-import { StateWeaveAgent, createModelFromEnv, mockTools } from "stateweave";
+import { StateWeaveAgent, createInitialGraphFrame, createModelFromEnv } from "stateweave";
 
 const agent = new StateWeaveAgent({
   model: createModelFromEnv(),
-  tools: mockTools,
   maxSteps: 5
 });
 
-const result = await agent.run(
-  "Find why login fails after token refresh. Login fails after refresh. Do not rewrite the auth system."
-);
+const frame = createInitialGraphFrame({
+  objective: "Build a todo app",
+  systemPrompt: "Prefer small files and clear UI.",
+  input: "Create a small todo app in ./todo", // optional initial user input
+  availableActions: []
+});
+
+const result = await agent.run({ objective: "Continue the todo app", input: "Add keyboard shortcuts." }, { frame });
 
 console.log(result.finalAnswer);
+console.log(result.metadata);
 console.log(result.graph.nodes);
 ```
+
+The default toolset is workspace-scoped file-system access. For deterministic local tests, import and pass `mockTools` explicitly. To extend the default toolset, pass `tools: [...createDefaultTools(), yourTool]`.
 
 ## Run the demo CLI
 
@@ -126,7 +150,9 @@ import type { Model } from "stateweave";
 const model: Model = {
   async complete(input) {
     let text = "";
-    for await (const event of this.stream(input)) text += event.token;
+    for await (const event of this.stream(input)) {
+      if (event.type === "token") text += event.token;
+    }
     return { text };
   },
 
@@ -155,13 +181,13 @@ ANTHROPIC_API_KEY=your_key_here
 ANTHROPIC_BASE_URL=https://api.anthropic.com
 ANTHROPIC_MODEL=claude-3-5-sonnet-latest
 ANTHROPIC_VERSION=2023-06-01
-ANTHROPIC_MAX_TOKENS=1024
+ANTHROPIC_MAX_TOKENS=8192
 ANTHROPIC_TEMPERATURE=0
 ```
 
 ## Add tools
 
-Tools are Zod-validated functions. Tool results are inserted back into the graph as `tool_result` nodes.
+Tools are Zod-validated functions. Tool results are inserted back into the graph as `tool_result` nodes. `StateWeaveAgent` includes workspace file-system tools by default; pass `tools` when you want to replace them.
 
 ```ts
 import { z } from "zod";
@@ -198,7 +224,7 @@ StateWeave validates the args, executes the tool, and carries the result into th
 
 ## Visualize graph state
 
-State graphs can be rendered as Mermaid for Obsidian-style inspection.
+State graphs can be rendered as Mermaid for low-level inspection.
 
 ```ts
 import { graphToMermaid } from "stateweave";

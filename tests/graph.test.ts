@@ -2,6 +2,14 @@ import { expect, it } from "vitest";
 import { appendInputToGraphFrame, createInitialGraphFrame } from "../src/core/graph.js";
 import { serializeGraphFrame } from "../src/core/serialize.js";
 
+it("creates a system-only initial GraphFrame when no user input is provided", () => {
+  const frame = createInitialGraphFrame({ objective: "Bootstrap", systemPrompt: "Be careful.", availableActions: [] });
+  expect(frame.graph.nodes).toContainEqual(expect.objectContaining({ id: "system_root", type: "system", text: "Be careful." }));
+  expect(frame.graph.nodes.some((node) => node.type === "user_input")).toBe(false);
+  expect(frame.frame.focusNodeId).toBe("system_root");
+  expect(frame.frame.latestInputNodeId).toBeUndefined();
+});
+
 it("creates an initial GraphFrame with a system root and first user input", () => {
   const frame = createInitialGraphFrame({ objective: "Fix login", input: "Login fails. Do not rewrite auth.", availableActions: ["read_mock_file"] });
   expect(frame.frame.objective).toBe("Fix login");

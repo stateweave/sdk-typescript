@@ -21,6 +21,7 @@
 
       <nav class="tabs" aria-label="Lab pages">
         <button id="state-tab" class="tab active" type="button" aria-controls="state-page" aria-selected="true">StateWeave</button>
+        <button id="quickstart-tab" class="tab" type="button" aria-controls="quickstart-page" aria-selected="false">Quick Start</button>
         <button id="ab-tab" class="tab" type="button" aria-controls="ab-page" aria-selected="false">A/B testing</button>
         <button id="multi-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt one</button>
         <button id="multi-two-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt two</button>
@@ -32,6 +33,13 @@
 
       <main id="state-page" class="page active shell">
         <section class="card chat-card" aria-label="StateWeave chat">
+          <div class="chat-toolbar">
+            <span class="eyebrow">Chat graph</span>
+            <div>
+              <button id="export-graph" class="button secondary small-button" type="button">Export</button>
+              <button id="import-graph" class="button secondary small-button" type="button">Import</button>
+            </div>
+          </div>
           <div id="chat" class="chat">
             <div class="empty-state">
               <h2>Ask anything.</h2>
@@ -51,11 +59,34 @@
             <div class="graph-heading">
               <div>
                 <p class="eyebrow">Growing StateGraph</p>
-                <h2>Obsidian-style graph memory</h2>
+                <h2>Graph memory</h2>
                 <p><strong>StateWeave primitive:</strong> regular <code>messages[]</code> sends a linear transcript; StateWeave sends a compiled <code>GraphFrame</code> — graph state plus focus — to the model, receives <code>GraphOps</code>, then weaves those ops back into the <code>StateGraph</code>. Multiple model iterations can run before the final answer.</p>
               </div>
             </div>
             <div id="graph" class="graph-empty">No graph yet.</div>
+            <div class="side-panels">
+              <aside class="tools-panel" aria-label="Available agent tools">
+                <div class="tools-panel-header">
+                  <p class="eyebrow">Agent tools</p>
+                  <span id="tool-count" class="badge">Loading…</span>
+                </div>
+                <div id="tool-list" class="tool-list">Loading tools…</div>
+              </aside>
+              <aside class="files-panel" aria-label="Workspace files">
+                <div class="tools-panel-header">
+                  <p class="eyebrow">Workspace files</p>
+                  <span id="file-count" class="badge">Loading…</span>
+                </div>
+                <div class="file-actions">
+                  <button id="refresh-files" class="button secondary small-button" type="button">Refresh</button>
+                  <button id="reboot-files" class="button secondary small-button danger-button" type="button">Reboot files</button>
+                </div>
+                <div id="file-list" class="file-list">Loading files…</div>
+                <div id="file-viewer" class="file-viewer">
+                  <p class="muted-copy">Open a file to inspect or render HTML/SVG output.</p>
+                </div>
+              </aside>
+            </div>
           </div>
 
           <details class="model-io-panel">
@@ -69,6 +100,61 @@
               </article>
             </div>
           </details>
+        </section>
+      </main>
+
+      <main id="quickstart-page" class="page quickstart-page" hidden>
+        <section class="card quickstart-card" aria-label="Quick Start">
+          <p class="eyebrow">Quick Start</p>
+          <h2>Start a graph-native agent</h2>
+          <p class="muted-copy">Primitive: <code>StateGraph → GraphFrame → GraphOps → StateGraph</code>. A user turn is a pending graph node; the model returns transactional graph mutations, not a provider transcript.</p>
+          <pre class="code quickstart-code"><code>import { StateWeaveAgent, AnthropicModel, createDefaultTools, createInitialGraphFrame, type Tool } from "stateweave";
+import { z } from "zod";
+
+const model = new AnthropicModel({
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+  model: "claude-3-5-sonnet-latest",
+  system: "You are a careful product engineer." // provider/system prompt
+});
+
+const searchDocs: Tool = {
+  name: "search_docs",
+  description: "Search product docs by query.",
+  schema: z.object({ query: z.string() }),
+  async execute(args) {
+    const { query } = z.object({ query: z.string() }).parse(args);
+    return `docs matching ${query}`;
+  }
+};
+
+const agent = new StateWeaveAgent({
+  model,
+  tools: [...createDefaultTools(), searchDocs], // file tools + your tool
+  maxSteps: 6
+});
+
+const frame = createInitialGraphFrame({
+  objective: "Build a todo app",
+  systemPrompt: "Prefer small files and clear UI.", // optional system graph node text
+  input: "Create a small todo app in ./todo", // optional first user message
+  availableActions: ["tool:search_docs - Search product docs by query."]
+});
+
+for await (const event of agent.stream({ objective: "Continue the todo app", input: "Add keyboard shortcuts." }, { frame })) {
+  if (event.type === "metadata") console.log(event.metadata);
+  if (event.type === "frame" && event.phase === "before") console.log(event.prompt);
+  if (event.type === "token") process.stdout.write(event.token);
+  if (event.type === "model_metadata") console.log(event.metadata);
+  if (event.type === "ops") console.log(event.ops);
+  if (event.type === "error") console.warn("GraphOps retry", event.message);
+  if (event.type === "final") console.log(event.result.finalAnswer);
+}</code></pre>
+          <div class="quickstart-grid">
+            <article><h3>The primitive</h3><p>Compile graph state into a focused <code>GraphFrame</code>, ask the model for <code>GraphOps</code>, validate them transactionally, then weave them back into <code>StateGraph</code>.</p></article>
+            <article><h3>System prompt</h3><p>Pass provider/system instructions through the model adapter, e.g. <code>new AnthropicModel({ system: "..." })</code>. Graph state stays separate.</p></article>
+            <article><h3>Tools</h3><p>File-system tools are built in by default. Use <code>createDefaultTools()</code> plus your custom <code>Tool[]</code> when you want to extend the agent toolset.</p></article>
+            <article><h3>User input / initial graph</h3><p>Use <code>createInitialGraphFrame</code> when you already have graph state. Use <code>agent.run</code> or <code>agent.stream</code> with <code>{ objective, input }</code> for new user turns.</p></article>
+          </div>
         </section>
       </main>
 
@@ -124,6 +210,24 @@
           </div>
         </section>
       </main>
+    </div>
+
+    <div id="graph-transfer-modal" class="modal-backdrop" hidden>
+      <section class="modal-card transfer-card" role="dialog" aria-modal="true" aria-labelledby="graph-transfer-title">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">StateGraph transfer</p>
+            <h2 id="graph-transfer-title">Export / Import graph</h2>
+          </div>
+          <button id="close-transfer" class="button secondary small-button" type="button">Close</button>
+        </div>
+        <p id="graph-transfer-help" class="muted-copy">Export produces TypeScript you can paste into another project. Import accepts that export or raw GraphFrame JSON.</p>
+        <textarea id="graph-transfer-text" class="transfer-textarea" spellcheck="false"></textarea>
+        <div class="modal-actions">
+          <button id="copy-transfer" class="button secondary" type="button">Copy</button>
+          <button id="apply-import" class="button primary" type="button">Import graph</button>
+        </div>
+      </section>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

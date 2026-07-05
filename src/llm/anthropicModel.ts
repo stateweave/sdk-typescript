@@ -21,7 +21,7 @@ const defaultConfig = {
   baseUrl: "https://api.anthropic.com",
   version: "2023-06-01",
   model: "claude-3-5-sonnet-latest",
-  maxTokens: 4096,
+  maxTokens: 8192,
   temperature: 0
 };
 
@@ -65,15 +65,15 @@ export class AnthropicModel implements Model {
       const events = splitSseEvents(buffer);
       buffer = events.remainder;
       for (const event of events.items) {
-        const token = parseSseToken(event);
-        if (token) yield { type: "token", token };
+        const parsed = parseSseEvent(event);
+        if (parsed) yield parsed;
       }
     }
 
     buffer += decoder.decode();
     for (const event of splitSseEvents(`${buffer}\n\n`).items) {
-      const token = parseSseToken(event);
-      if (token) yield { type: "token", token };
+      const parsed = parseSseEvent(event);
+      if (parsed) yield parsed;
     }
   }
 
@@ -154,7 +154,7 @@ function anthropicError(status: number, response: AnthropicResponse): string {
   return `Anthropic request failed (${status}): ${response.error?.message ?? "unknown error"}`;
 }
 
-function parseSseToken(event: string): string | undefined {
+function parseSseEvent(event: string): ModelToken | undefined {
   const data = event
     .split(/\r?\n/)
     .filter((line) => line.startsWith("data:"))
@@ -162,8 +162,16 @@ function parseSseToken(event: string): string | undefined {
     .join("\n");
   if (!data || data === "[DONE]") return undefined;
 
-  const parsed = JSON.parse(data) as { type?: string; delta?: { type?: string; text?: string } };
-  if (parsed.type === "content_block_delta" && parsed.delta?.type === "text_delta") return parsed.delta.text;
+  const parsed = JSON.parse(data) as {
+    type?: string;
+    message?: { id?: string; model?: string; usage?: unknown };
+    delta?: { type?: string; text?: string; stop_reason?: string; stop_sequence?: string | null };
+    usage?: unknown;
+  };
+  if (parsed.type === "content_block_delta" && parsed.delta?.type === "text_delta" && parsed.delta.text) return { type: "token", token: parsed.delta.text };
+  if (parsed.type === "message_start") return { type: "metadata", metadata: { provider: "anthropic", event: parsed.type, id: parsed.message?.id, model: parsed.message?.model, usage: parsed.message?.usage } };
+  if (parsed.type === "message_delta") return { type: "metadata", metadata: { provider: "anthropic", event: parsed.type, stopReason: parsed.delta?.stop_reason, stopSequence: parsed.delta?.stop_sequence, usage: parsed.usage } };
+  if (parsed.type === "message_stop") return { type: "metadata", metadata: { provider: "anthropic", event: parsed.type } };
   return undefined;
 }
 

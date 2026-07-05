@@ -49,17 +49,24 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
   const startedAt = new Date();
   let retryCount = 0;
   let finalAnswer = "";
+  const toolInfo = [...tools.values()].map((tool) => ({ name: tool.name, description: tool.description }));
 
-  yield { type: "metadata", metadata: runMetadata(runId, startedAt, maxSteps, trace, retryCount, "running") };
+  yield { type: "metadata", metadata: runMetadata(runId, toolInfo, startedAt, maxSteps, trace, retryCount, "running") };
 
   for (let step = 1; step <= maxSteps; step++) {
     const stepStartedAt = new Date();
     const frameBefore = cloneFrame(frame);
     const prompt = serializeGraphFrame(frameBefore);
     const streamedTokens: string[] = [];
+    const modelMetadata: Record<string, unknown>[] = [];
 
     yield { type: "frame", step, phase: "before", frame: frameBefore, prompt, tokenEstimate: estimateStateWeaveTokens(prompt) };
     for await (const event of args.model.stream({ prompt, frame: frameBefore, mode: "graph_ops" })) {
+      if (event.type === "metadata") {
+        modelMetadata.push(event.metadata);
+        yield { type: "model_metadata", step, metadata: event.metadata };
+        continue;
+      }
       streamedTokens.push(event.token);
       yield { type: "token", step, token: event.token };
     }
@@ -72,10 +79,10 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const frameAfter = cloneFrame(frame);
-      trace.push(traceStep({ step, startedAt: stepStartedAt, frameBefore, prompt, streamedTokens, rawModelOutput, parsedOps, frameAfter, error: message }));
+      trace.push(traceStep({ step, startedAt: stepStartedAt, frameBefore, prompt, streamedTokens, modelMetadata, rawModelOutput, parsedOps, frameAfter, error: message }));
       const retryable = step < maxSteps;
       yield { type: "error", step, message, retryable };
-      if (!retryable) throw new StateWeaveRunError(`StateWeave GraphOps failed after ${step} step(s): ${message}`, trace, runMetadata(runId, startedAt, maxSteps, trace, retryCount, "error"));
+      if (!retryable) throw new StateWeaveRunError(`StateWeave GraphOps failed after ${step} step(s): ${message}`, trace, runMetadata(runId, toolInfo, startedAt, maxSteps, trace, retryCount, "error"));
       retryCount += 1;
       frame = retryFrameAfterGraphOpsError(frame, message);
       continue;
@@ -85,14 +92,14 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
     if (final) finalAnswer = final.answer;
 
     const frameAfter = cloneFrame(frame);
-    trace.push(traceStep({ step, startedAt: stepStartedAt, frameBefore, prompt, streamedTokens, rawModelOutput, parsedOps, frameAfter }));
+    trace.push(traceStep({ step, startedAt: stepStartedAt, frameBefore, prompt, streamedTokens, modelMetadata, rawModelOutput, parsedOps, frameAfter }));
     yield { type: "ops", step, ops: parsedOps };
     yield { type: "frame", step, phase: "after", frame: frameAfter };
     if (finalAnswer) break;
   }
 
   if (!finalAnswer) finalAnswer = "No final answer produced before maxSteps.";
-  yield { type: "final", result: { finalAnswer, graph: frame.graph, trace, metadata: runMetadata(runId, startedAt, maxSteps, trace, retryCount, "done") } };
+  yield { type: "final", result: { finalAnswer, graph: frame.graph, trace, metadata: runMetadata(runId, toolInfo, startedAt, maxSteps, trace, retryCount, "done") } };
 }
 
 function traceStep(args: {
@@ -101,6 +108,7 @@ function traceStep(args: {
   frameBefore: GraphFrame;
   prompt: string;
   streamedTokens: string[];
+  modelMetadata: Record<string, unknown>[];
   rawModelOutput: string;
   parsedOps: GraphOp[];
   frameAfter: GraphFrame;
@@ -116,6 +124,7 @@ function traceStep(args: {
     prompt: args.prompt,
     tokenEstimate: estimateStateWeaveTokens(args.prompt),
     streamedTokens: args.streamedTokens,
+    ...(args.modelMetadata.length ? { modelMetadata: args.modelMetadata } : {}),
     rawModelOutput: args.rawModelOutput,
     parsedOps: args.parsedOps,
     frameAfter: args.frameAfter,
@@ -123,10 +132,19 @@ function traceStep(args: {
   };
 }
 
-function runMetadata(runId: string, startedAt: Date, maxSteps: number, trace: TraceStep[], retryCount: number, status: StateWeaveRunMetadata["status"]): StateWeaveRunMetadata {
+function runMetadata(
+  runId: string,
+  tools: StateWeaveRunMetadata["tools"],
+  startedAt: Date,
+  maxSteps: number,
+  trace: TraceStep[],
+  retryCount: number,
+  status: StateWeaveRunMetadata["status"]
+): StateWeaveRunMetadata {
   const completedAt = status === "running" ? undefined : new Date();
   return {
     runId,
+    tools,
     startedAt: startedAt.toISOString(),
     ...(completedAt ? { completedAt: completedAt.toISOString(), durationMs: completedAt.getTime() - startedAt.getTime() } : {}),
     maxSteps,

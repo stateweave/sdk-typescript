@@ -72,6 +72,7 @@ export class TraditionalMessagesAgent {
       ],
       metadata: {
         runId: `baseline_${Date.now().toString(36)}`,
+        tools: [],
         startedAt: startedAt.toISOString(),
         completedAt: completedAt.toISOString(),
         durationMs: completedAt.getTime() - startedAt.getTime(),
