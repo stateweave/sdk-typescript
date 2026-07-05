@@ -298,8 +298,8 @@ async function startEvalRun(request: IncomingMessage, response: ServerResponse):
   }
 
   const cases = safeEvalCases(body.cases);
-  if (!cases.length || cases.length > 200) {
-    json(response, 400, { error: "cases must contain 1-200 valid eval cases" });
+  if (!cases.length || cases.length > 500) {
+    json(response, 400, { error: "cases must contain 1-500 valid eval cases" });
     return;
   }
 
