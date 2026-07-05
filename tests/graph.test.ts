@@ -29,6 +29,13 @@ it("serializes a GraphFrame into the StateWeave prompt contract", () => {
   expect(prompt).toContain("node user_input_1 [user_input]");
 });
 
+it("serializes configured semantic node type hints", () => {
+  const frame = createInitialGraphFrame({ objective: "Plan", input: "Plan the work", availableActions: [], nodeTypes: ["intent", "constraint", "artifact"] });
+  const prompt = serializeGraphFrame(frame);
+  expect(frame.frame.nodeTypes).toEqual(["intent", "constraint", "artifact"]);
+  expect(prompt).toContain("semanticNodeTypes:\n- intent\n- constraint\n- artifact");
+});
+
 it("appends new input as a pending cortex node for model attachment", () => {
   const frame = createInitialGraphFrame({ objective: "Remember my name", input: "Hi my name is Radi.", availableActions: [] });
   const next = appendInputToGraphFrame(frame, { objective: "What is my name?", input: "What is my name?" });

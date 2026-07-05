@@ -52,22 +52,24 @@ export class TraditionalMessagesAgent {
     const task = normalizeTaskInput(input);
     const result = await this.inspect(task);
     const completedAt = new Date();
+    const frame = emptyFrame(task.objective);
     return {
       finalAnswer: result.finalAnswer,
-      graph: { nodes: [], edges: [] },
+      frame,
+      graph: frame.graph,
       trace: [
         {
           step: 1,
           startedAt: startedAt.toISOString(),
           completedAt: completedAt.toISOString(),
           durationMs: completedAt.getTime() - startedAt.getTime(),
-          frameBefore: emptyFrame(task.objective),
+          frameBefore: frame,
           prompt: result.rawModelInput,
           tokenEstimate: result.tokenEstimate,
           streamedTokens: [result.rawModelOutput],
           rawModelOutput: result.rawModelOutput,
           parsedOps: [],
-          frameAfter: emptyFrame(task.objective)
+          frameAfter: frame
         }
       ],
       metadata: {

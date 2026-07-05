@@ -69,26 +69,34 @@ pnpm test
 Quick start:
 
 ```ts
-import { StateWeaveAgent, createModelFromEnv } from "stateweave";
+import { Agent, createModelFromEnv } from "stateweave";
 
-const agent = new StateWeaveAgent({ model: createModelFromEnv() });
+const agent = new Agent({
+  model: createModelFromEnv(),
+  nodeTypes: ["intent", "constraint", "artifact", "decision"]
+});
 
-const result = await agent.run("Create a tiny HTML todo app in ./todo");
+for await (const chunk of agent.stream("Create a tiny HTML todo app in ./todo")) {
+  process.stdout.write(chunk);
+}
 
-console.log(result.finalAnswer);
-console.log(result.graph.nodes);
+await agent.run("Add keyboard shortcuts.");
+console.log(agent.getFrame()?.graph.nodes);
 ```
 
-`StateWeaveAgent` includes workspace file-system tools by default, so the agent can read, write, edit, and run shell commands in its workspace without extra setup.
+`Agent` includes workspace file-system tools by default, so it can read, write, edit, and run shell commands in its workspace without extra setup.
 
 ## Quickstart
 
-For streaming, use the same agent:
+A single `Agent` owns a session `GraphFrame`. Every `run` or `stream` appends a new `user_input_N` to that same graph unless you pass an explicit frame.
+
+`maxIterations` caps the internal model/tool loop for one user input. It is not a max-turn setting; user turns are just more graph nodes.
+
+Use `streamEvents()` when you want the full trace stream:
 
 ```ts
-for await (const event of agent.stream("Add keyboard shortcuts to the todo app")) {
-  if (event.type === "token") process.stdout.write(event.token);
-  if (event.type === "final") console.log(event.result.metadata);
+for await (const event of agent.streamEvents("Inspect the graph")) {
+  console.log(event);
 }
 ```
 
@@ -175,7 +183,7 @@ ANTHROPIC_TEMPERATURE=0
 
 Tools are Zod-validated functions. Tool calls become `tool_call` / `tool_result` nodes in the graph, then the next model step receives the updated `GraphFrame`.
 
-`StateWeaveAgent` includes these workspace-scoped tools by default:
+`Agent` includes these workspace-scoped tools by default:
 
 | Tool | Args |
 | --- | --- |

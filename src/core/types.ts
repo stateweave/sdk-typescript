@@ -49,6 +49,7 @@ export type GraphFrame = {
     lastGraphOpsError?: string;
     activeConstraints: string[];
     availableActions: string[];
+    nodeTypes?: string[];
   };
   graph: StateGraph;
 };
@@ -91,6 +92,7 @@ export type TraceStep = {
 
 export type AgentResult = {
   finalAnswer: string;
+  frame: GraphFrame;
   graph: StateGraph;
   trace: TraceStep[];
   metadata: StateWeaveRunMetadata;

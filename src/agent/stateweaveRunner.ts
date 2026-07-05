@@ -10,7 +10,7 @@ import type { Tool } from "../tools/types.js";
 
 export type StateWeaveInput = TaskInput;
 export type StateWeaveRunOptions = { frame?: GraphFrame };
-export type StateWeaveRunnerArgs = { model: Model; tools: Tool[]; maxSteps?: number };
+export type StateWeaveRunnerArgs = { model: Model; tools: Tool[]; maxSteps?: number; nodeTypes?: string[] };
 
 export class StateWeaveRunError extends Error {
   trace: TraceStep[];
@@ -41,7 +41,8 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
     : createInitialGraphFrame({
         objective: task.objective,
         input: task.input,
-        availableActions: [...tools.values()].map((tool) => `tool:${tool.name} - ${tool.description}`)
+        availableActions: [...tools.values()].map((tool) => `tool:${tool.name} - ${tool.description}`),
+        nodeTypes: args.nodeTypes
       });
   const trace: TraceStep[] = [];
   const maxSteps = args.maxSteps ?? 5;
@@ -99,7 +100,7 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
   }
 
   if (!finalAnswer) finalAnswer = "No final answer produced before maxSteps.";
-  yield { type: "final", result: { finalAnswer, graph: frame.graph, trace, metadata: runMetadata(runId, toolInfo, startedAt, maxSteps, trace, retryCount, "done") } };
+  yield { type: "final", result: { finalAnswer, frame, graph: frame.graph, trace, metadata: runMetadata(runId, toolInfo, startedAt, maxSteps, trace, retryCount, "done") } };
 }
 
 function traceStep(args: {

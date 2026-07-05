@@ -13,6 +13,7 @@ export function createInitialGraphFrame(args: {
   input?: string;
   systemPrompt?: string;
   availableActions: string[];
+  nodeTypes?: string[];
 }): GraphFrame {
   const createdAt = nowIso();
   const system: GraphNode = {
@@ -49,7 +50,8 @@ export function createInitialGraphFrame(args: {
         ? "Return SWX/1 commands that attach the active user input to the right node, create semantic nodes with model-chosen types, and produce a final answer."
         : "Return SWX/1 commands that create or update graph nodes, or wait for the next user input.",
       activeConstraints: constraints,
-      availableActions: ["add_node", "add_edge", "update_node", "focus", "call_tool", "final", ...args.availableActions]
+      availableActions: ["add_node", "add_edge", "update_node", "focus", "call_tool", "final", ...args.availableActions],
+      nodeTypes: normalizeNodeTypes(args.nodeTypes ?? [])
     },
     graph: {
       nodes: input ? [system, input] : [system],
@@ -109,6 +111,10 @@ function extractConstraints(input: string): string[] {
 
 function nextIndex(nodes: GraphNode[], prefix: string): number {
   return nodes.filter((node) => node.id.startsWith(prefix)).length + 1;
+}
+
+function normalizeNodeTypes(values: string[]): string[] {
+  return unique(values.map((value) => value.trim()).filter((value) => /^[a-z][a-z0-9_-]{0,63}$/.test(value)));
 }
 
 function unique(values: string[]): string[] {

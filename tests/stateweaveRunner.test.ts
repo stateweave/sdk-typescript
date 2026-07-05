@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
+import { Agent } from "../src/agent/stateweaveAgent.js";
 import { runStateWeave } from "../src/agent/stateweaveRunner.js";
 import { applyOps } from "../src/core/applyOps.js";
 import { createInitialGraphFrame } from "../src/core/graph.js";
@@ -37,6 +38,7 @@ it("retries rejected GraphOps and commits the corrected transaction", async () =
 
   expect(result.metadata.retryCount).toBe(1);
   expect(result.metadata.status).toBe("done");
+  expect(result.frame.graph).toEqual(result.graph);
   expect(result.metadata.tools).toEqual([]);
   expect(result.trace).toHaveLength(2);
   expect(result.trace[0].durationMs).toBeGreaterThanOrEqual(0);
@@ -81,6 +83,28 @@ it("runs workspace write/edit tools end to end with SWX block-ref args", async (
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+it("Agent streams final text by default and keeps one graph across user turns", async () => {
+  const agent = new Agent({
+    model: new SequenceModel([
+      "SWX/1\n@edge system_root follows user_input_1\n@node intent_1 intent \"Build todo app\"\n@edge user_input_1 creates intent_1\n@final \"Started todo app.\"",
+      "SWX/1\n@edge intent_1 follows user_input_2\n@node constraint_1 constraint \"Add keyboard shortcuts\"\n@edge user_input_2 constrains constraint_1\n@final \"Added shortcut requirement.\""
+    ]),
+    nodeTypes: ["intent", "constraint", "artifact"],
+    maxIterations: 2,
+    tools: []
+  });
+
+  const firstChunks: string[] = [];
+  for await (const chunk of agent.stream("Build a todo app")) firstChunks.push(chunk);
+  const second = await agent.run("Add keyboard shortcuts.");
+
+  expect(firstChunks.join("")).toBe("Started todo app.");
+  expect(second.graph.nodes).toContainEqual(expect.objectContaining({ id: "user_input_1", text: "Build a todo app" }));
+  expect(second.graph.nodes).toContainEqual(expect.objectContaining({ id: "user_input_2", text: "Add keyboard shortcuts." }));
+  expect(second.trace[0].prompt).toContain("semanticNodeTypes:\n- intent\n- constraint\n- artifact");
+  expect(agent.getFrame()?.graph.nodes).toHaveLength(second.graph.nodes.length);
 });
 
 class SequenceModel implements Model {
