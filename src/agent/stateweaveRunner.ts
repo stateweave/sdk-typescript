@@ -12,6 +12,16 @@ export type StateWeaveInput = TaskInput;
 export type StateWeaveRunOptions = { frame?: GraphFrame };
 export type StateWeaveRunnerArgs = { model: Model; tools: Tool[]; maxSteps?: number };
 
+export class StateWeaveRunError extends Error {
+  trace: TraceStep[];
+
+  constructor(message: string, trace: TraceStep[]) {
+    super(message);
+    this.name = "StateWeaveRunError";
+    this.trace = trace;
+  }
+}
+
 export async function runStateWeave(args: StateWeaveRunnerArgs, input: StateWeaveInput, options?: StateWeaveRunOptions): Promise<AgentResult> {
   let result: AgentResult | undefined;
   for await (const event of streamStateWeave(args, input, options)) {
@@ -46,8 +56,16 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
     }
 
     const rawModelOutput = streamedTokens.join("");
-    const parsedOps = parseAndValidateOps(rawModelOutput);
-    frame = await applyAndRunTools(frame, parsedOps, tools, step);
+    let parsedOps: GraphOp[];
+    try {
+      parsedOps = parseAndValidateOps(rawModelOutput);
+      frame = await applyAndRunTools(frame, parsedOps, tools, step);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const frameAfter = cloneFrame(frame);
+      trace.push({ step, frameBefore, prompt, tokenEstimate: estimateStateWeaveTokens(prompt), streamedTokens, rawModelOutput, parsedOps: [], frameAfter, error: message });
+      throw new StateWeaveRunError(message, trace);
+    }
 
     const final = parsedOps.find((op): op is Extract<GraphOp, { op: "final" }> => op.op === "final");
     if (final) finalAnswer = final.answer;

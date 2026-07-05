@@ -4,7 +4,7 @@ import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { runStateWeave, streamStateWeave } from "../agent/stateweaveRunner.js";
+import { runStateWeave, StateWeaveRunError, streamStateWeave } from "../agent/stateweaveRunner.js";
 import type { GraphFrame, TraceStep } from "../core/types.js";
 import { createModelFromEnv } from "../llm/factory.js";
 import { mockTools } from "../tools/mockTools.js";
@@ -182,7 +182,8 @@ async function streamStateWeaveRun(request: IncomingMessage, response: ServerRes
     }
     if (finalTrace) await persistTrace("stream", body.input.trim(), finalTrace);
   } catch (error) {
-    response.write(`${JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error) })}\n`);
+    if (error instanceof StateWeaveRunError) await persistTrace("stream-error", body.input.trim(), error.trace);
+    response.write(`${JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error), trace: error instanceof StateWeaveRunError ? error.trace : undefined })}\n`);
   } finally {
     response.end();
   }
@@ -196,11 +197,21 @@ async function runStateWeaveTurn(request: IncomingMessage, response: ServerRespo
   }
 
   const input = body.input.trim();
-  const stateweave = await runStateWeave(
-    { model, tools: mockTools, maxSteps: safeMaxSteps(body.maxSteps) },
-    input,
-    { frame: isGraphFrame(body.frame) ? body.frame : undefined }
-  );
+  let stateweave;
+  try {
+    stateweave = await runStateWeave(
+      { model, tools: mockTools, maxSteps: safeMaxSteps(body.maxSteps) },
+      input,
+      { frame: isGraphFrame(body.frame) ? body.frame : undefined }
+    );
+  } catch (error) {
+    if (error instanceof StateWeaveRunError) {
+      await persistTrace("chat-error", input, error.trace);
+      json(response, 500, { error: error.message, trace: error.trace });
+      return;
+    }
+    throw error;
+  }
   await persistTrace("chat", input, stateweave.trace);
 
   json(response, 200, {

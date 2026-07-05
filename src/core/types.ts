@@ -69,6 +69,7 @@ export type TraceStep = {
   rawModelOutput: string;
   parsedOps: GraphOp[];
   frameAfter: GraphFrame;
+  error?: string;
 };
 
 export type AgentResult = {
