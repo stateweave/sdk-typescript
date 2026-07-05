@@ -272,7 +272,7 @@ function promptFourCases(): MultiCase[] {
   add("Using the stored ledgers, compute lcm(Atlas prime, Boreal multiplier).", String(lcm(47, 9)), holistic);
   add("Using the stored ledgers, compute (Cedar passengers / Cedar stops) + Delta sampleB.", "40", holistic);
   add("Using the stored ledgers, compute Boreal crates × Cedar add − Delta sampleA.", "281", holistic);
-  add("Using the stored ledgers, identify the two ledgers with animal-like names and give their associated location fields.", "Atlas Finch: Quito; Ember Kite: Valencia", ["memory", "holistic"]);
+  add("Using the stored ledgers, identify the stored animal and the ship name that contains an animal word; give each associated location.", "lynx: Quito; Ember Kite: Valencia", ["memory", "holistic"]);
   add("Using the stored ledgers, compute (Ember speed + Atlas offset)^2 mod 100.", "25", holistic);
   add("Using the stored ledgers, compute Delta sample total minus Atlas prime.", "51", holistic);
   add("Using the stored ledgers, compute Boreal multiplier^Cedar add mod 100.", String(powMod(9, 8, 100)), holistic);
@@ -291,9 +291,6 @@ function promptFourCases(): MultiCase[] {
   add("Recall the Delta reagent from setup D. Do not infer; answer exactly.", "argon", memory);
   add("Recall the Ember cargo from setup E. Do not infer; answer exactly.", "ceramics", memory);
   add("Final holistic check: using all five ledgers, compute Atlas prime + Boreal crates + Cedar stops + Delta sampleC + Ember delay.", "154", holistic);
-  add("Final memory check: list the five ledger names in the order they were introduced.", "Atlas, Boreal, Cedar, Delta, Ember", ["memory", "holistic"]);
-  add("Final logic check: if the five stored ledger numeric answers 65, 31, 9, 98, and 612 are sorted ascending, what is the median?", "65", holistic);
-  add("Final cross-check: compute (Delta checksum − Ember distance) + (Atlas prime + Boreal multiplier + Cedar add).", "354", holistic);
   add("Final exact answer: which stored location is paired with the cargo ceramics?", "Valencia", memory);
 
   if (cases.length !== 100) throw new Error(`Prompt four expected 100 cases, got ${cases.length}`);
