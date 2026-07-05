@@ -244,6 +244,20 @@ h3 {
   color: var(--muted);
 }
 
+.stream-preview {
+  max-height: 220px;
+  overflow: auto;
+  margin: 8px 0 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #27272a;
+  font: 0.74rem/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
 .composer {
   display: grid;
   grid-template-columns: 1fr auto;

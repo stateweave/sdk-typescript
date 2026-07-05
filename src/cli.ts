@@ -159,6 +159,13 @@ async function runOnce(agent: StateWeaveAgent, traditional: TraditionalMessagesA
       printOps(event.ops);
     }
 
+    if (event.type === "error") {
+      stdout.write(color.reset("\n"));
+      section(`STEP ${event.step} · GRAPH OPS REJECTED`, "red");
+      console.log(color.red(event.message));
+      if (event.retryable) console.log(color.dim("retrying with the same graph state and structured error feedback"));
+    }
+
     if (event.type === "frame" && event.phase === "after") {
       latestFrame = event.frame;
       section(`STEP ${event.step} · STATE AFTER`, "cyan");

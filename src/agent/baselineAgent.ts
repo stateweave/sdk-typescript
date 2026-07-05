@@ -48,14 +48,19 @@ export class TraditionalMessagesAgent {
   }
 
   async run(input: TaskInput): Promise<AgentResult> {
+    const startedAt = new Date();
     const task = normalizeTaskInput(input);
     const result = await this.inspect(task);
+    const completedAt = new Date();
     return {
       finalAnswer: result.finalAnswer,
       graph: { nodes: [], edges: [] },
       trace: [
         {
           step: 1,
+          startedAt: startedAt.toISOString(),
+          completedAt: completedAt.toISOString(),
+          durationMs: completedAt.getTime() - startedAt.getTime(),
           frameBefore: emptyFrame(task.objective),
           prompt: result.rawModelInput,
           tokenEstimate: result.tokenEstimate,
@@ -64,7 +69,17 @@ export class TraditionalMessagesAgent {
           parsedOps: [],
           frameAfter: emptyFrame(task.objective)
         }
-      ]
+      ],
+      metadata: {
+        runId: `baseline_${Date.now().toString(36)}`,
+        startedAt: startedAt.toISOString(),
+        completedAt: completedAt.toISOString(),
+        durationMs: completedAt.getTime() - startedAt.getTime(),
+        maxSteps: 1,
+        stepCount: 1,
+        retryCount: 0,
+        status: "done"
+      }
     };
   }
 

@@ -1,4 +1,4 @@
-import type { GraphFrame, GraphOp, StateGraph, TraceStep } from "../../src/core/types.js";
+import type { GraphFrame, GraphOp, StateGraph, StateWeaveRunMetadata, StateWeaveStreamEvent, TraceStep } from "../../src/core/types.js";
 import { scoreEvalRecords, type EvalPrimitive as Primitive, type EvalVote as Vote, type ScoreBreakdown } from "./evalScores.js";
 import { promptFiveCases, promptFiveCategoryOrder, type PromptFiveCategory } from "./promptFive.js";
 import { promptSixCases, promptSixCategoryOrder, promptSixHypothesis, type PromptSixCategory, type PromptSixHypothesis } from "./promptSix.js";
@@ -13,6 +13,7 @@ type StateWeavePayload = {
   output: string;
   trace: TraceStep[];
   graph: StateGraph;
+  metadata?: StateWeaveRunMetadata;
 };
 
 type StateWeaveResponse = { stateweave: StateWeavePayload };
@@ -64,6 +65,7 @@ type EvalRun = {
 };
 
 type GraphPosition = { x: number; y: number; vx: number; vy: number; pinned: boolean };
+type LiveStreamLog = { metadata?: StateWeaveRunMetadata; tokens: Map<number, string>; events: string[]; prompt?: string };
 
 let activePage: PageName = pageFromHash();
 let multiSuiteId: SuiteId = suiteIdForPage(activePage) ?? "prompt-one";
@@ -605,9 +607,18 @@ async function sendStateWeaveMessage(): Promise<void> {
   clearEmptyState(chat);
   const userMessage = appendUser(text);
   const pending = appendPendingStateWeave();
+  const live = createLiveStreamLog();
 
   try {
-    const result = await runStateWeave(text, stateFrame);
+    const result = await streamStateWeave(text, stateFrame, (event) => {
+      updateLiveStreamLog(live, event);
+      updatePendingStateWeave(pending, live);
+      stateOutput.textContent = formatLiveStreamLog(live);
+      if (event.type === "frame" && event.phase === "before") stateInput.textContent = event.prompt ?? compactFrame(event.frame);
+      if (event.type === "frame") renderGraph(event.frame.graph);
+      if (event.type === "error") status.textContent = event.retryable ? `GraphOps rejected at step ${event.step}; retrying…` : "GraphOps rejected.";
+      if (event.type === "token") status.textContent = `Streaming step ${event.step} GraphOps…`;
+    });
     stateFrame = result.stateweave.frameAfter;
     pending.remove();
     const assistantMessage = appendAssistant(result.stateweave.output);
@@ -657,16 +668,59 @@ async function runAbTest(): Promise<void> {
   }
 }
 
-async function runStateWeave(text: string, frame: GraphFrame | undefined): Promise<StateWeaveResponse> {
-  const response = await fetch(`${apiBase}/api/stateweave/chat`, {
+async function streamStateWeave(text: string, frame: GraphFrame | undefined, onEvent: (event: StateWeaveStreamEvent) => void): Promise<StateWeaveResponse> {
+  const response = await fetch(`${apiBase}/api/stateweave/run`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ input: text, frame })
   });
 
-  const body = (await response.json()) as StateWeaveResponse | { error?: string };
-  if (!response.ok) throw new Error("error" in body && body.error ? body.error : `Request failed (${response.status})`);
-  return body as StateWeaveResponse;
+  if (!response.ok) {
+    const body = (await response.json().catch(() => undefined)) as { error?: string } | undefined;
+    throw new Error(body?.error ?? `Request failed (${response.status})`);
+  }
+  if (!response.body) throw new Error("Streaming response body was empty.");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let final: StateWeaveResponse | undefined;
+  let terminalError: string | undefined;
+
+  const consumeLine = (line: string): void => {
+    if (!line.trim()) return;
+    const event = JSON.parse(line) as StateWeaveStreamEvent | { type: "error"; message: string; trace?: TraceStep[]; metadata?: StateWeaveRunMetadata };
+    if (event.type === "final") {
+      final = {
+        stateweave: {
+          inputFrame: event.result.trace[0]?.frameBefore,
+          frameAfter: event.result.trace.at(-1)?.frameAfter,
+          output: event.result.finalAnswer,
+          trace: event.result.trace,
+          graph: event.result.graph,
+          metadata: event.result.metadata
+        }
+      };
+    } else if (event.type === "error" && !("step" in event)) {
+      terminalError = event.message;
+    }
+    if ("step" in event || event.type === "metadata" || event.type === "final") onEvent(event as StateWeaveStreamEvent);
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() ?? "";
+    for (const line of lines) consumeLine(line);
+  }
+  buffer += decoder.decode();
+  consumeLine(buffer);
+
+  if (terminalError) throw new Error(terminalError);
+  if (!final) throw new Error("StateWeave stream ended without a final result.");
+  return final;
 }
 
 async function compareStateWeave(text: string, frame: GraphFrame | undefined, messages: ChatMessage[]): Promise<CompareResponse> {
@@ -700,8 +754,8 @@ async function judgeComparison(record: MultiRecord): Promise<JudgeResponse> {
 }
 
 function renderStateWeave(result: StateWeavePayload): void {
-  stateInput.textContent = result.inputFrame ? compactFrame(result.inputFrame) : "No GraphFrame captured.";
-  stateOutput.textContent = formatStateOutput(result.trace, result.output);
+  stateInput.textContent = result.trace[0]?.prompt ?? (result.inputFrame ? compactFrame(result.inputFrame) : "No GraphFrame captured.");
+  stateOutput.textContent = formatStateOutput(result.trace, result.output, result.metadata);
   renderGraph(result.graph);
 }
 
@@ -1401,10 +1455,64 @@ function latestNodeOfType(graphValue: StateGraph, type: StateGraph["nodes"][numb
   return graphValue.nodes.filter((node) => node.type === type).at(-1);
 }
 
+function createLiveStreamLog(): LiveStreamLog {
+  return { tokens: new Map(), events: [] };
+}
+
+function updateLiveStreamLog(live: LiveStreamLog, event: StateWeaveStreamEvent): void {
+  if (event.type === "metadata") {
+    live.metadata = event.metadata;
+    live.events.push(`run ${event.metadata.runId} started · maxSteps=${event.metadata.maxSteps}`);
+    return;
+  }
+  if (event.type === "frame" && event.phase === "before") {
+    live.prompt = event.prompt;
+    live.events.push(`step ${event.step} model call · promptTokens≈${event.tokenEstimate?.estimatedTokens ?? "unknown"}`);
+    return;
+  }
+  if (event.type === "token") {
+    live.tokens.set(event.step, `${live.tokens.get(event.step) ?? ""}${event.token}`);
+    return;
+  }
+  if (event.type === "ops") {
+    live.events.push(`step ${event.step} parsed GraphOps\n${formatOps(event.ops)}`);
+    return;
+  }
+  if (event.type === "error") {
+    live.events.push(`step ${event.step} GraphOps rejected${event.retryable ? " · retrying" : ""}\n${event.message}`);
+    return;
+  }
+  if (event.type === "frame" && event.phase === "after") {
+    live.events.push(`step ${event.step} committed · ${event.frame.graph.nodes.length} nodes / ${event.frame.graph.edges.length} edges`);
+    return;
+  }
+  if (event.type === "final") {
+    live.metadata = event.result.metadata;
+    live.events.push(`final · steps=${event.result.metadata.stepCount} retries=${event.result.metadata.retryCount} duration=${event.result.metadata.durationMs ?? 0}ms`);
+  }
+}
+
+function formatLiveStreamLog(live: LiveStreamLog): string {
+  const metadata = live.metadata ? [`metadata:`, JSON.stringify(live.metadata, null, 2), ""] : [];
+  const prompt = live.prompt ? [`current model prompt:`, live.prompt, ""] : [];
+  const tokenSections = [...live.tokens.entries()].map(([step, text]) => `step ${step} streaming model output:\n${text}`);
+  return [...metadata, ...prompt, ...live.events, ...tokenSections].join("\n\n").trim() || "Waiting for StateWeave stream…";
+}
+
+function updatePendingStateWeave(item: HTMLElement, live: LiveStreamLog): void {
+  const statusEl = item.querySelector<HTMLElement>("[data-stream-status]");
+  const previewEl = item.querySelector<HTMLElement>("[data-stream-preview]");
+  const latestStep = [...live.tokens.keys()].at(-1);
+  const latestTokens = latestStep ? live.tokens.get(latestStep) ?? "" : "";
+  if (statusEl) statusEl.textContent = latestStep ? `Streaming step ${latestStep} GraphOps…` : "Opening StateWeave stream…";
+  if (previewEl) previewEl.textContent = latestTokens || live.events.at(-1) || "Waiting for tokens…";
+  scrollChat(chat);
+}
+
 function appendPendingStateWeave(): HTMLElement {
   const item = document.createElement("article");
   item.className = "answer pending assistant-response";
-  item.innerHTML = `<span>StateWeave</span><p>Compiling GraphFrame and growing the StateGraph…</p>`;
+  item.innerHTML = `<span>StateWeave</span><p data-stream-status>Opening StateWeave stream…</p><pre class="stream-preview" data-stream-preview>Waiting for tokens…</pre>`;
   chat.append(item);
   scrollChat(chat);
   return item;
@@ -1903,15 +2011,18 @@ function compactFrame(frame: GraphFrame): string {
   return lines.join("\n");
 }
 
-function formatStateOutput(trace: TraceStep[], finalAnswer: string): string {
+function formatStateOutput(trace: TraceStep[], finalAnswer: string, metadata?: StateWeaveRunMetadata): string {
+  const metadataLines = metadata ? ["metadata:", JSON.stringify(metadata, null, 2), ""] : [];
   const parts = trace.map((step) => [
+    `step ${step.step} metadata: ${step.durationMs}ms · ${step.startedAt} → ${step.completedAt}`,
     `step ${step.step} raw model output:`,
     step.rawModelOutput,
     "",
     `step ${step.step} parsed GraphOps:`,
-    formatOps(step.parsedOps)
+    formatOps(step.parsedOps),
+    ...(step.error ? ["", `step ${step.step} GraphOps error:`, step.error] : [])
   ].join("\n"));
-  return [...parts, "", "final answer:", finalAnswer].join("\n");
+  return [...metadataLines, ...parts, "", "final answer:", finalAnswer].join("\n");
 }
 
 function formatOps(ops: GraphOp[]): string {

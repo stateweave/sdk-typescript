@@ -46,6 +46,7 @@ export type GraphFrame = {
     activeUserInputNodeId?: string;
     candidateFocusNodeIds?: string[];
     nextExpectedOutput: string;
+    lastGraphOpsError?: string;
     activeConstraints: string[];
     availableActions: string[];
   };
@@ -60,8 +61,22 @@ export type GraphOp =
   | { op: "call_tool"; tool: string; args: Record<string, unknown> }
   | { op: "final"; answer: string; artifactId?: string };
 
+export type StateWeaveRunMetadata = {
+  runId: string;
+  startedAt: string;
+  completedAt?: string;
+  durationMs?: number;
+  maxSteps: number;
+  stepCount: number;
+  retryCount: number;
+  status: "running" | "done" | "error";
+};
+
 export type TraceStep = {
   step: number;
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
   frameBefore: GraphFrame;
   prompt: string;
   tokenEstimate: { estimatedTokens: number; messageCount: number };
@@ -76,10 +91,13 @@ export type AgentResult = {
   finalAnswer: string;
   graph: StateGraph;
   trace: TraceStep[];
+  metadata: StateWeaveRunMetadata;
 };
 
 export type StateWeaveStreamEvent =
-  | { type: "frame"; step: number; phase: "before" | "after"; frame: GraphFrame }
+  | { type: "metadata"; metadata: StateWeaveRunMetadata }
+  | { type: "frame"; step: number; phase: "before" | "after"; frame: GraphFrame; prompt?: string; tokenEstimate?: { estimatedTokens: number; messageCount: number } }
   | { type: "token"; step: number; token: string }
   | { type: "ops"; step: number; ops: GraphOp[] }
+  | { type: "error"; step: number; message: string; retryable: boolean }
   | { type: "final"; result: AgentResult };

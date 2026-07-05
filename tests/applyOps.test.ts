@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { applyOps, addToolResult } from "../src/core/applyOps.js";
-import { createInitialGraphFrame } from "../src/core/graph.js";
+import { applyOps, addToolResult, GraphOpsValidationError } from "../src/core/applyOps.js";
+import { appendInputToGraphFrame, createInitialGraphFrame } from "../src/core/graph.js";
 
 it("applies add_node, add_edge, update_node, and focus ops", () => {
   const frame = createInitialGraphFrame({ objective: "Fix login", input: "Login fails", availableActions: [] });
@@ -24,10 +24,28 @@ it("moves cortex focus to an explicit user input node", () => {
   expect(next.frame.candidateFocusNodeIds).toContain("user_input_1");
 });
 
-it("auto-connects model-added semantic nodes to the latest user input when no edge is provided", () => {
+it("rejects model-added semantic nodes that are disconnected from the graph", () => {
   const frame = createInitialGraphFrame({ objective: "Fix login", input: "Login fails", availableActions: [] });
-  const next = applyOps(frame, [{ op: "add_node", node: { id: "hypothesis_1", type: "hypothesis", text: "Token is cleared early" } }]);
-  expect(next.graph.edges.some((edge) => edge.from === "user_input_1" && edge.to === "hypothesis_1" && edge.type === "relates_to")).toBe(true);
+  expect(() => applyOps(frame, [{ op: "add_node", node: { id: "hypothesis_1", type: "hypothesis", text: "Token is cleared early" } }])).toThrow(GraphOpsValidationError);
+});
+
+it("rejects a second-turn answer when the pending user input was not woven into the existing graph", () => {
+  const first = createInitialGraphFrame({ objective: "Draw SVG", input: "Create a butterfly", availableActions: [] });
+  const frame = appendInputToGraphFrame(first, { objective: "Draw SVG", input: "Create a house" });
+  expect(() => applyOps(frame, [{ op: "final", answer: "Here is a house." }])).toThrow(/pending latest user input user_input_2 is disconnected/);
+});
+
+it("accepts connected second-turn artifact output after the pending input is attached", () => {
+  const first = createInitialGraphFrame({ objective: "Draw SVG", input: "Create a butterfly", availableActions: [] });
+  const frame = appendInputToGraphFrame(first, { objective: "Draw SVG", input: "Create a house" });
+  const next = applyOps(frame, [
+    { op: "add_edge", from: "system_root", to: "user_input_2", type: "follows" },
+    { op: "add_node", node: { id: "house_svg", type: "svg_artifact", text: "House SVG", data: { mime: "image/svg+xml", content: "<svg></svg>" } } },
+    { op: "final", answer: "<svg></svg>", artifactId: "house_svg" }
+  ]);
+
+  expect(next.graph.edges).toContainEqual(expect.objectContaining({ from: "system_root", to: "user_input_2", type: "follows" }));
+  expect(next.graph.edges).toContainEqual(expect.objectContaining({ from: "assistant_output_1", to: "house_svg", type: "creates" }));
 });
 
 it("applies model-chosen attachment edges for pending user inputs", () => {

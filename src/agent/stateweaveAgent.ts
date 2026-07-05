@@ -3,7 +3,7 @@ import path from "node:path";
 import type { AgentResult, StateWeaveStreamEvent, TraceStep } from "../core/types.js";
 import type { Model } from "../llm/model.js";
 import type { Tool } from "../tools/types.js";
-import { runStateWeave, streamStateWeave, type StateWeaveInput, type StateWeaveRunOptions } from "./stateweaveRunner.js";
+import { runStateWeave, StateWeaveRunError, streamStateWeave, type StateWeaveInput, type StateWeaveRunOptions } from "./stateweaveRunner.js";
 
 export type { StateWeaveInput, StateWeaveRunOptions } from "./stateweaveRunner.js";
 
@@ -21,15 +21,25 @@ export class StateWeaveAgent {
   }
 
   async run(input: StateWeaveInput, options?: StateWeaveRunOptions): Promise<AgentResult> {
-    const result = await runStateWeave({ model: this.model, tools: this.tools, maxSteps: this.maxSteps }, input, options);
-    if (this.traceDir) await this.saveTrace(traceObjective(result.trace), result.trace);
-    return result;
+    try {
+      const result = await runStateWeave({ model: this.model, tools: this.tools, maxSteps: this.maxSteps }, input, options);
+      if (this.traceDir) await this.saveTrace(traceObjective(result.trace), result.trace);
+      return result;
+    } catch (error) {
+      if (this.traceDir && error instanceof StateWeaveRunError) await this.saveTrace(traceObjective(error.trace), error.trace);
+      throw error;
+    }
   }
 
   async *stream(input: StateWeaveInput, options?: StateWeaveRunOptions): AsyncIterable<StateWeaveStreamEvent> {
-    for await (const event of streamStateWeave({ model: this.model, tools: this.tools, maxSteps: this.maxSteps }, input, options)) {
-      if (event.type === "final" && this.traceDir) await this.saveTrace(traceObjective(event.result.trace), event.result.trace);
-      yield event;
+    try {
+      for await (const event of streamStateWeave({ model: this.model, tools: this.tools, maxSteps: this.maxSteps }, input, options)) {
+        if (event.type === "final" && this.traceDir) await this.saveTrace(traceObjective(event.result.trace), event.result.trace);
+        yield event;
+      }
+    } catch (error) {
+      if (this.traceDir && error instanceof StateWeaveRunError) await this.saveTrace(traceObjective(error.trace), error.trace);
+      throw error;
     }
   }
 

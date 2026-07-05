@@ -53,9 +53,10 @@ export class MockModel implements Model {
 
   private output(input: ModelInput): string {
     const source = input.frame ? frameText(input.frame) : input.prompt;
+    const inputNodeId = input.frame?.frame.latestInputNodeId ?? "user_input_1";
     const lower = source.toLowerCase();
     if (lower.includes("evaluate a blind a/b answer comparison")) return mockJudge(source);
-    const identity = identityOutput(source);
+    const identity = identityOutput(source, inputNodeId);
     if (identity && input.mode === "text") return identity.answer;
     if (identity && input.mode !== "text") return identity.swx;
 
@@ -66,14 +67,18 @@ export class MockModel implements Model {
     if (!hasToolResult) {
       return [
         "SWX/1",
+        `@edge system_root follows ${inputNodeId}`,
         `@node hypothesis_${task} hypothesis "${hypothesisFor(task)}" confidence=0.72 status=active`,
+        `@edge ${inputNodeId} supports hypothesis_${task}`,
         `@tool ${toolFor(task)} ${argsForSwx(task)}`
       ].join("\n");
     }
 
     return [
       "SWX/1",
+      `@edge system_root follows ${inputNodeId}`,
       `@node decision_${task} decision "${finalFor(task)}" confidence=0.86 status=resolved`,
+      `@edge ${inputNodeId} supports decision_${task}`,
       `@final "${finalFor(task)}"`
     ].join("\n");
   }
@@ -89,7 +94,7 @@ function mockJudge(source: string): string {
   return `WINNER: ${winner}\nREASON: Mock judge compared answers to the gold string.`;
 }
 
-function identityOutput(source: string): { answer: string; swx: string } | undefined {
+function identityOutput(source: string, inputNodeId: string): { answer: string; swx: string } | undefined {
   const name = source.match(/my name is\s+([a-z][a-z0-9_-]*)/i)?.[1];
   const asksName = /what(?:'| i)?s my name|what is my name/i.test(source);
   if (!name) return undefined;
@@ -99,7 +104,9 @@ function identityOutput(source: string): { answer: string; swx: string } | undef
     answer,
     swx: [
       "SWX/1",
+      `@edge system_root follows ${inputNodeId}`,
       `@node fact_user_name fact "The user's name is ${name}." confidence=1 status=active`,
+      `@edge ${inputNodeId} supports fact_user_name`,
       `@final "${answer}"`
     ].join("\n")
   };

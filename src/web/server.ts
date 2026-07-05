@@ -5,7 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runStateWeave, StateWeaveRunError, streamStateWeave } from "../agent/stateweaveRunner.js";
-import type { GraphFrame, TraceStep } from "../core/types.js";
+import type { GraphFrame, StateWeaveRunMetadata, TraceStep } from "../core/types.js";
 import { createModelFromEnv } from "../llm/factory.js";
 import { mockTools } from "../tools/mockTools.js";
 
@@ -43,6 +43,7 @@ type ComparePayload = {
     output: string;
     trace: unknown[];
     graph: unknown;
+    metadata?: StateWeaveRunMetadata;
   };
 };
 type JudgeDecision = { id: string; vote: JudgeVote; reason: string; raw: string };
@@ -171,19 +172,23 @@ async function streamStateWeaveRun(request: IncomingMessage, response: ServerRes
   });
 
   let finalTrace: TraceStep[] | undefined;
+  let finalMetadata: StateWeaveRunMetadata | undefined;
   try {
     for await (const event of streamStateWeave(
       { model, tools: mockTools, maxSteps: safeMaxSteps(body.maxSteps) },
       body.input,
       { frame: isGraphFrame(body.frame) ? body.frame : undefined }
     )) {
-      if (event.type === "final") finalTrace = event.result.trace;
+      if (event.type === "final") {
+        finalTrace = event.result.trace;
+        finalMetadata = event.result.metadata;
+      }
       response.write(`${JSON.stringify(event)}\n`);
     }
-    if (finalTrace) await persistTrace("stream", body.input.trim(), finalTrace);
+    if (finalTrace) await persistTrace("stream", body.input.trim(), finalTrace, finalMetadata);
   } catch (error) {
-    if (error instanceof StateWeaveRunError) await persistTrace("stream-error", body.input.trim(), error.trace);
-    response.write(`${JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error), trace: error instanceof StateWeaveRunError ? error.trace : undefined })}\n`);
+    if (error instanceof StateWeaveRunError) await persistTrace("stream-error", body.input.trim(), error.trace, error.metadata);
+    response.write(`${JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error), trace: error instanceof StateWeaveRunError ? error.trace : undefined, metadata: error instanceof StateWeaveRunError ? error.metadata : undefined })}\n`);
   } finally {
     response.end();
   }
@@ -206,13 +211,13 @@ async function runStateWeaveTurn(request: IncomingMessage, response: ServerRespo
     );
   } catch (error) {
     if (error instanceof StateWeaveRunError) {
-      await persistTrace("chat-error", input, error.trace);
-      json(response, 500, { error: error.message, trace: error.trace });
+      await persistTrace("chat-error", input, error.trace, error.metadata);
+      json(response, 500, { error: error.message, trace: error.trace, metadata: error.metadata });
       return;
     }
     throw error;
   }
-  await persistTrace("chat", input, stateweave.trace);
+  await persistTrace("chat", input, stateweave.trace, stateweave.metadata);
 
   json(response, 200, {
     stateweave: {
@@ -220,7 +225,8 @@ async function runStateWeaveTurn(request: IncomingMessage, response: ServerRespo
       frameAfter: stateweave.trace.at(-1)?.frameAfter,
       output: stateweave.finalAnswer,
       trace: stateweave.trace,
-      graph: stateweave.graph
+      graph: stateweave.graph,
+      metadata: stateweave.metadata
     }
   });
 }
@@ -244,7 +250,7 @@ async function compareTurn(input: string, stateFrame: GraphFrame | undefined, hi
     model.complete({ prompt: regularPrompt, mode: "text", frame: emptyFrame(input) }),
     runStateWeave({ model, tools: mockTools, maxSteps }, input, { frame: stateFrame })
   ]);
-  await persistTrace("compare", input, stateweave.trace);
+  await persistTrace("compare", input, stateweave.trace, stateweave.metadata);
 
   return {
     traditional: {
@@ -258,7 +264,8 @@ async function compareTurn(input: string, stateFrame: GraphFrame | undefined, hi
       frameAfter: stateweave.trace.at(-1)?.frameAfter,
       output: stateweave.finalAnswer,
       trace: stateweave.trace,
-      graph: stateweave.graph
+      graph: stateweave.graph,
+      metadata: stateweave.metadata
     }
   };
 }
@@ -538,13 +545,13 @@ async function persistEvalRuns(): Promise<void> {
   await rename(tmp, runStorePath);
 }
 
-async function persistTrace(kind: string, input: string, trace: TraceStep[]): Promise<void> {
+async function persistTrace(kind: string, input: string, trace: TraceStep[], metadata?: StateWeaveRunMetadata): Promise<void> {
   if (!trace.length) return;
   try {
     await mkdir(traceDir, { recursive: true });
     const createdAt = new Date().toISOString();
     const name = `${Date.now()}-${safeFilePart(kind)}-${safeFilePart(input).slice(0, 64) || "stateweave"}.json`;
-    await writeFile(path.join(traceDir, name), JSON.stringify({ kind, input, createdAt, trace }, null, 2));
+    await writeFile(path.join(traceDir, name), JSON.stringify({ kind, input, createdAt, metadata, trace }, null, 2));
   } catch (error) {
     console.error(`Failed to persist StateWeave trace: ${error instanceof Error ? error.message : String(error)}`);
   }

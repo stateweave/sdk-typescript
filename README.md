@@ -12,7 +12,7 @@ GraphFrame -> model -> GraphOps -> StateGraph
 
 The model is still a normal transformer. StateWeave changes the runtime primitive around it: the SDK serializes a structured graph frame, asks the model for validated operations, applies them to an in-memory graph, and exposes every state transition for inspection.
 
-The current runtime uses a Cortex-style focus model: `system_root` anchors the graph, new user inputs enter as pending nodes, and `GraphFrame` carries `focusNodeId`, `activeUserInputNodeId`, and candidate focus points. The model then returns GraphOps edges deciding whether the input starts a new root-level branch, continues a prior node, updates an output, or relates elsewhere. Only runtime nodes are structural (`system`, `user_input`, `assistant_output`, `tool_call`, `tool_result`); all other node types are model-created semantic slugs.
+The current runtime uses a Cortex-style focus model: `system_root` anchors the graph, new user inputs enter as pending nodes, and `GraphFrame` carries `focusNodeId`, `activeUserInputNodeId`, and candidate focus points. The model then returns GraphOps edges deciding whether the input starts a new root-level branch, continues a prior node, updates an output, or relates elsewhere. GraphOps apply transactionally: disconnected pending inputs or new semantic/output nodes are rejected and retried with structured error feedback. Runs expose trace metadata and can stream model-call frames, output tokens, parsed GraphOps, retry errors, and final results. Only runtime nodes are structural (`system`, `user_input`, `assistant_output`, `tool_call`, `tool_result`); all other node types are model-created semantic slugs.
 
 ## Why StateWeave?
 
@@ -42,6 +42,8 @@ StateWeave is experimental. The core primitive is intentionally small and readab
 - No hidden message-history abstraction.
 - In-memory JSON graph for the MVP.
 - Cortex-style graph focus/branching over transcript replay.
+- Transactional GraphOps validation rejects orphan/disconnected graph mutations before commit.
+- Streamable model internals: metadata, compiled prompt, token stream, parsed GraphOps, retries, and final trace.
 - Web lab trace JSON is persisted under `STATEWEAVE_TRACE_DIR` (Docker default `/data/traces`).
 
 ## Installation
