@@ -560,6 +560,9 @@ fileList.addEventListener("click", (event) => {
   if (!target?.dataset.filePath) return;
   void openWorkspaceFile(target.dataset.filePath);
 });
+fileViewer.addEventListener("click", (event) => {
+  if (handleArtifactPreviewClick(event)) return;
+});
 chat.addEventListener("click", (event) => {
   if (handleArtifactPreviewClick(event)) return;
 });
@@ -896,10 +899,30 @@ function isWorkspaceFileContent(value: WorkspaceFileContent | { error?: string }
 }
 
 function workspaceFileHtml(file: WorkspaceFileContent): string {
-  const preview = file.renderable
-    ? `<div class="artifact-preview file-preview"><div class="artifact-preview-toolbar"><span>Rendered ${escapeHtml(file.mime)}</span></div><iframe sandbox="allow-scripts" tabindex="0" srcdoc="${escapeAttribute(file.content)}" title="${escapeAttribute(file.path)} preview"></iframe></div>`
+  const previewDoc = file.renderable ? filePreviewSrcDoc(file) : undefined;
+  const previewId = previewDoc ? registerArtifactPreview(previewDoc) : undefined;
+  const warning = file.mime === "image/svg+xml" && !looksLikeCompleteSvg(file.content)
+    ? `<p class="file-render-warning">This SVG looks incomplete or invalid. Source is shown below.</p>`
     : "";
-  return `<article class="file-open"><h3>${escapeHtml(file.path)}</h3><p class="muted-copy">${formatBytes(file.size)} · ${escapeHtml(file.mime)} · ${escapeHtml(file.updatedAt)}</p>${preview}<pre class="code file-source">${escapeHtml(file.content)}</pre></article>`;
+  const preview = previewDoc
+    ? `<div class="artifact-preview file-preview"><div class="artifact-preview-toolbar"><span>Rendered ${escapeHtml(file.mime)}</span><button class="button secondary small-button" type="button" data-artifact-preview-id="${previewId}">Open full screen</button></div><iframe sandbox="allow-scripts" tabindex="0" srcdoc="${escapeAttribute(previewDoc)}" title="${escapeAttribute(file.path)} preview"></iframe></div>`
+    : "";
+  return `<article class="file-open"><h3>${escapeHtml(file.path)}</h3><p class="muted-copy">${formatBytes(file.size)} · ${escapeHtml(file.mime)} · ${escapeHtml(file.updatedAt)}</p>${warning}${preview}<pre class="code file-source">${escapeHtml(file.content)}</pre></article>`;
+}
+
+function filePreviewSrcDoc(file: WorkspaceFileContent): string {
+  if (file.mime !== "image/svg+xml") return file.content;
+
+  if (!looksLikeCompleteSvg(file.content)) {
+    return `<!doctype html><html><body style="margin:0;display:grid;place-items:center;min-height:100vh;font:14px system-ui;color:#b91c1c;background:#fff;"><p>Invalid or truncated SVG file. Source is shown below.</p></body></html>`;
+  }
+
+  const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(file.content)}`;
+  return `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;min-height:100vh;background:#fff;display:grid;place-items:center;}img{display:block;max-width:100%;max-height:100vh;object-fit:contain;}</style></head><body><img src="${escapeAttribute(dataUrl)}" alt="${escapeAttribute(file.path)}"></body></html>`;
+}
+
+function looksLikeCompleteSvg(content: string): boolean {
+  return /<svg[\s>]/i.test(content) && /<\/svg\s*>/i.test(content);
 }
 
 function formatBytes(bytes: number): string {

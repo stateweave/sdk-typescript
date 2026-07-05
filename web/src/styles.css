@@ -976,6 +976,16 @@ label {
   font-size: 0.88rem;
 }
 
+.file-render-warning {
+  margin: 8px 0;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fef2f2;
+  padding: 8px;
+  color: #b91c1c;
+  font-size: 0.78rem;
+}
+
 .file-source {
   min-height: 120px;
   max-height: 240px;
