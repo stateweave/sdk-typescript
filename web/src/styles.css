@@ -101,6 +101,7 @@ h3 {
 
 .tabs {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 16px;
   border: 1px solid var(--border);

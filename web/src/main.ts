@@ -1,4 +1,5 @@
 import type { GraphFrame, GraphOp, StateGraph, TraceStep } from "../../src/core/types.js";
+import { promptFiveCases, promptFiveCategoryOrder, type PromptFiveCategory } from "./promptFive.js";
 import "./styles.css";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -22,11 +23,11 @@ type CompareResponse = StateWeaveResponse & {
   };
 };
 
-type PageName = "state" | "ab" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four";
-type SuiteId = "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four";
+type PageName = "state" | "ab" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five";
+type SuiteId = "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five";
 type Primitive = "regular" | "stateweave";
 type Vote = "a" | "b" | "both" | "neither";
-type EvalCategory = "memory" | "logical" | "holistic";
+type EvalCategory = "memory" | "logical" | "holistic" | PromptFiveCategory;
 type MultiCase = { prompt: string; expect: string; categories?: EvalCategory[] };
 type PromptSuite = { id: SuiteId; title: string; description: string; readyTitle: string; readyCopy: string; expectLabel: string; mode?: "manual" | "judge"; cases: MultiCase[] };
 type JudgeDecision = { id: string; vote: Vote; reason: string; raw: string };
@@ -60,6 +61,7 @@ let abRunning = false;
 let copyCounter = 0;
 
 const copyPayloads = new Map<string, string>();
+const categoryOrder: EvalCategory[] = ["memory", "logical", "holistic", ...promptFiveCategoryOrder];
 const promptSuites: Record<SuiteId, PromptSuite> = {
   "prompt-one": {
     id: "prompt-one",
@@ -195,6 +197,16 @@ const promptSuites: Record<SuiteId, PromptSuite> = {
     expectLabel: "Gold answer",
     mode: "judge",
     cases: promptFourCases()
+  },
+  "prompt-five": {
+    id: "prompt-five",
+    title: "Prompt five",
+    description: "One hundred adversarial auto-judged cases: pure logic controls, distractors, corrections, revocations, conflicts, entity confusion, chronology, needle retrieval, multihop links, and exact formatting.",
+    readyTitle: "Ready for adversarial prompt five.",
+    readyCopy: "This sequence is balanced across ten primary categories. It should challenge StateWeave instead of only testing long memory.",
+    expectLabel: "Gold answer",
+    mode: "judge",
+    cases: promptFiveCases()
   }
 };
 
@@ -377,6 +389,7 @@ const multiTab = element<HTMLButtonElement>("multi-tab");
 const multiTwoTab = element<HTMLButtonElement>("multi-two-tab");
 const multiThreeTab = element<HTMLButtonElement>("multi-three-tab");
 const multiFourTab = element<HTMLButtonElement>("multi-four-tab");
+const multiFiveTab = element<HTMLButtonElement>("multi-five-tab");
 const statePage = element<HTMLElement>("state-page");
 const abPage = element<HTMLElement>("ab-page");
 const multiPage = element<HTMLElement>("multi-page");
@@ -412,6 +425,7 @@ multiTab.addEventListener("click", () => setActivePage("prompt-one"));
 multiTwoTab.addEventListener("click", () => setActivePage("prompt-two"));
 multiThreeTab.addEventListener("click", () => setActivePage("prompt-three"));
 multiFourTab.addEventListener("click", () => setActivePage("prompt-four"));
+multiFiveTab.addEventListener("click", () => setActivePage("prompt-five"));
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   void sendStateWeaveMessage();
@@ -460,11 +474,12 @@ function pageFromHash(): PageName {
   if (location.hash === "#prompt-two") return "prompt-two";
   if (location.hash === "#prompt-three") return "prompt-three";
   if (location.hash === "#prompt-four") return "prompt-four";
+  if (location.hash === "#prompt-five") return "prompt-five";
   return "state";
 }
 
 function suiteIdForPage(page: PageName): SuiteId | undefined {
-  if (page === "prompt-one" || page === "prompt-two" || page === "prompt-three" || page === "prompt-four") return page;
+  if (page === "prompt-one" || page === "prompt-two" || page === "prompt-three" || page === "prompt-four" || page === "prompt-five") return page;
   return undefined;
 }
 
@@ -496,6 +511,8 @@ function setActivePage(page: PageName, updateHash = true): void {
   multiThreeTab.setAttribute("aria-selected", String(page === "prompt-three"));
   multiFourTab.classList.toggle("active", page === "prompt-four");
   multiFourTab.setAttribute("aria-selected", String(page === "prompt-four"));
+  multiFiveTab.classList.toggle("active", page === "prompt-five");
+  multiFiveTab.setAttribute("aria-selected", String(page === "prompt-five"));
   statePage.hidden = !isState;
   statePage.classList.toggle("active", isState);
   abPage.hidden = !isAb;
@@ -923,7 +940,8 @@ function revealRow(record: MultiRecord): string {
 }
 
 function categorySummaryTable(): string {
-  const categories: EvalCategory[] = ["memory", "logical", "holistic"];
+  const present = new Set(multiRecords.flatMap((record) => record.categories));
+  const categories = categoryOrder.filter((category) => present.has(category));
   const rows = categories.map((category) => {
     const records = multiRecords.filter((record) => record.categories.includes(category));
     const scores = scoreRecords(records);
