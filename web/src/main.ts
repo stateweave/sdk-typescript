@@ -46,6 +46,8 @@ type MultiRecord = {
   judges?: JudgeDecision[];
 };
 
+type ScoreBreakdown = { stateweave: number; regular: number; both: number; neither: number; completed: number };
+
 let activePage: PageName = pageFromHash();
 let multiSuiteId: SuiteId = suiteIdForPage(activePage) ?? "prompt-one";
 let stateFrame: GraphFrame | undefined;
@@ -62,6 +64,7 @@ let copyCounter = 0;
 
 const copyPayloads = new Map<string, string>();
 const categoryOrder: EvalCategory[] = ["memory", "logical", "holistic", ...promptFiveCategoryOrder];
+const autoJudgePreviewMs = 2000;
 const promptSuites: Record<SuiteId, PromptSuite> = {
   "prompt-one": {
     id: "prompt-one",
@@ -412,6 +415,7 @@ const multiStart = element<HTMLButtonElement>("multi-start");
 const multiTitle = element<HTMLElement>("multi-title");
 const multiDescription = element<HTMLElement>("multi-description");
 const multiProgress = element<HTMLElement>("multi-progress");
+const multiLiveScore = element<HTMLElement>("multi-live-score");
 const multiSteps = element<HTMLElement>("multi-steps");
 const multiStage = element<HTMLElement>("multi-stage");
 
@@ -718,9 +722,9 @@ async function runNextMultiCase(): Promise<void> {
         renderMultiProgress();
         renderMultiAutoJudged(record);
         if (multiIndex >= currentSuite().cases.length) {
-          window.setTimeout(renderMultiReveal, 900);
+          window.setTimeout(renderMultiReveal, autoJudgePreviewMs);
         } else {
-          window.setTimeout(() => void runNextMultiCase(), 900);
+          window.setTimeout(() => void runNextMultiCase(), autoJudgePreviewMs);
         }
       } else {
         renderMultiProgress();
@@ -759,7 +763,7 @@ function voteMulti(vote: Vote): void {
     renderMultiAutoJudged(record);
     multiStart.disabled = true;
     multiStart.textContent = `Running ${multiIndex + 1} / ${currentSuite().cases.length}…`;
-    window.setTimeout(() => void runNextMultiCase(), 900);
+    window.setTimeout(() => void runNextMultiCase(), autoJudgePreviewMs);
     return;
   }
 
@@ -772,6 +776,7 @@ function renderMultiProgress(): void {
   const cases = currentSuite().cases;
   const voted = multiRecords.filter((record) => record.vote).length;
   multiProgress.textContent = `${voted} / ${cases.length} voted`;
+  multiLiveScore.innerHTML = liveScoreHtml();
   multiSteps.innerHTML = cases.map((item, index) => {
     const record = multiRecords[index];
     const state = record?.vote ? "done" : index === multiIndex ? "current" : index < multiIndex ? "done" : "";
@@ -853,6 +858,7 @@ function renderMultiAutoJudged(record: MultiRecord): void {
       <div class="judge-result ${record.judgedBy === "human" ? "human" : "agreed"}">
         <strong>${record.judgedBy === "human" ? "Human vote" : "Judges agreed"}: ${voteLabel(record.vote)}</strong>
         ${record.judges ? record.judges.map((judge) => `<p>${escapeHtml(judge.id)}: ${voteLabel(judge.vote)} — ${escapeHtml(judge.reason)}</p>`).join("") : ""}
+        ${judgeRawDetails(record.judges)}
       </div>
     </article>`;
 }
@@ -870,6 +876,7 @@ function renderJudgeDisagreement(record: MultiRecord): void {
       </div>
       <div class="judge-result disagreement">
         ${record.judges?.map((judge) => `<p><strong>${escapeHtml(judge.id)}:</strong> ${voteLabel(judge.vote)} — ${escapeHtml(judge.reason)}</p>`).join("") ?? ""}
+        ${judgeRawDetails(record.judges)}
       </div>
       <div class="blind-grid">
         <article class="blind-answer"><h3>Answer A</h3>${responseHtml(answerFor(record, "a"))}</article>
@@ -882,6 +889,12 @@ function renderJudgeDisagreement(record: MultiRecord): void {
         <button class="button secondary" type="button" data-vote="neither">Neither</button>
       </div>
     </article>`;
+}
+
+function judgeRawDetails(judges: JudgeDecision[] | undefined): string {
+  if (!judges?.length) return "";
+  const raw = judges.map((judge) => `${judge.id}:\n${judge.raw.trim()}`).join("\n\n---\n\n");
+  return `<details class="judge-raw" open><summary>Raw judge LLM responses</summary><pre>${escapeHtml(raw)}</pre></details>`;
 }
 
 function categoryPills(categories: EvalCategory[]): string {
@@ -909,7 +922,7 @@ function renderMultiReveal(): void {
       <div class="multi-case-header">
         <p class="eyebrow">${escapeHtml(suite.title)} complete</p>
         <h2>${winnerText(scores)}</h2>
-        <p class="expectation">StateWeave ${scores.stateweave} · Regular ${scores.regular} · Neither ${scores.neither}</p>
+        <p class="expectation">StateWeave ${scores.stateweave} · Regular ${scores.regular} · Both ${scores.both} · Neither ${scores.neither}</p>
       </div>
       ${categorySummaryTable()}
       <div class="reveal-list">
@@ -939,34 +952,67 @@ function revealRow(record: MultiRecord): string {
     </article>`;
 }
 
+function liveScoreHtml(): string {
+  const scores = multiScores();
+  const total = currentSuite().cases.length;
+  return `
+    <div class="live-score-header"><span>Live score</span><strong>${scores.completed} / ${total}</strong></div>
+    <div class="live-score-grid">
+      <div><span>StateWeave</span><strong>${scores.stateweave}</strong></div>
+      <div><span>Regular</span><strong>${scores.regular}</strong></div>
+      <div><span>Both</span><strong>${scores.both}</strong></div>
+      <div><span>Neither</span><strong>${scores.neither}</strong></div>
+    </div>
+    ${liveCategoryScoreHtml()}`;
+}
+
+function liveCategoryScoreHtml(): string {
+  const categories = currentSuiteCategories();
+  if (!categories.length) return "";
+  const rows = categories.map((category) => {
+    const categoryTotal = currentSuite().cases.filter((item) => item.categories?.includes(category)).length;
+    const scores = scoreRecords(multiRecords.filter((record) => record.categories.includes(category)));
+    return `<tr><td>${category}</td><td>${scores.stateweave}</td><td>${scores.regular}</td><td>${scores.both}</td><td>${scores.neither}</td><td>${scores.completed}/${categoryTotal}</td></tr>`;
+  }).join("");
+  return `<table class="live-category-summary"><thead><tr><th>Cat</th><th>SW</th><th>Reg</th><th>Both</th><th>Neither</th><th>Done</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 function categorySummaryTable(): string {
-  const present = new Set(multiRecords.flatMap((record) => record.categories));
-  const categories = categoryOrder.filter((category) => present.has(category));
+  const categories = currentSuiteCategories();
+  if (!categories.length) return "";
   const rows = categories.map((category) => {
     const records = multiRecords.filter((record) => record.categories.includes(category));
     const scores = scoreRecords(records);
-    return `<tr><td>${category}</td><td>${scores.stateweave}</td><td>${scores.regular}</td><td>${scores.neither}</td><td>${records.length}</td></tr>`;
+    return `<tr><td>${category}</td><td>${scores.stateweave}</td><td>${scores.regular}</td><td>${scores.both}</td><td>${scores.neither}</td><td>${scores.completed}</td></tr>`;
   }).join("");
-  return `<table class="category-summary"><thead><tr><th>Category</th><th>StateWeave</th><th>Regular</th><th>Neither</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="category-summary"><thead><tr><th>Category</th><th>StateWeave</th><th>Regular</th><th>Both</th><th>Neither</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
-function multiScores(): { stateweave: number; regular: number; neither: number } {
+function currentSuiteCategories(): EvalCategory[] {
+  const present = new Set(currentSuite().cases.flatMap((item) => item.categories ?? []));
+  const ordered = categoryOrder.filter((category) => present.has(category));
+  const extra = [...present].filter((category) => !ordered.includes(category));
+  return [...ordered, ...extra];
+}
+
+function multiScores(): ScoreBreakdown {
   return scoreRecords(multiRecords);
 }
 
-function scoreRecords(records: MultiRecord[]): { stateweave: number; regular: number; neither: number } {
-  return records.reduce((scores, record) => {
+function scoreRecords(records: MultiRecord[]): ScoreBreakdown {
+  return records.reduce<ScoreBreakdown>((scores, record) => {
+    if (!record.vote) return scores;
+    scores.completed += 1;
     if (record.vote === "both") {
-      scores.stateweave += 1;
-      scores.regular += 1;
-    } else if (record.vote === "neither" || !record.vote) {
+      scores.both += 1;
+    } else if (record.vote === "neither") {
       scores.neither += 1;
     } else {
       const primitive = record[record.vote];
       scores[primitive] += 1;
     }
     return scores;
-  }, { stateweave: 0, regular: 0, neither: 0 });
+  }, { stateweave: 0, regular: 0, both: 0, neither: 0, completed: 0 });
 }
 
 function winnerForRecord(record: MultiRecord): string {
@@ -975,7 +1021,7 @@ function winnerForRecord(record: MultiRecord): string {
   return primitiveLabel(record[record.vote]);
 }
 
-function winnerText(scores: { stateweave: number; regular: number; neither: number }): string {
+function winnerText(scores: ScoreBreakdown): string {
   if (scores.stateweave > scores.regular) return "StateWeave won the blind vote";
   if (scores.regular > scores.stateweave) return "Regular messages won the blind vote";
   return "Blind vote ended in a tie";

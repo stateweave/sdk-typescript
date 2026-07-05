@@ -710,6 +710,77 @@ label {
   text-align: center;
 }
 
+.multi-live-score {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+}
+
+.live-score-header,
+.live-score-grid {
+  display: grid;
+  gap: 6px;
+}
+
+.live-score-header {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.live-score-header strong {
+  color: var(--foreground);
+}
+
+.live-score-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.live-score-grid div {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fafafa;
+  padding: 8px;
+}
+
+.live-score-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.live-score-grid strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 1.05rem;
+}
+
+.live-category-summary {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+
+.live-category-summary th,
+.live-category-summary td {
+  border: 1px solid var(--border);
+  padding: 5px;
+  text-align: left;
+}
+
+.live-category-summary th {
+  background: #fafafa;
+  color: var(--muted-foreground);
+}
+
 .multi-steps {
   display: grid;
   gap: 6px;
@@ -875,6 +946,28 @@ label {
 .judge-result.human {
   border-color: #bfdbfe;
   background: #eff6ff;
+}
+
+.judge-raw {
+  margin-top: 10px;
+}
+
+.judge-raw summary {
+  cursor: pointer;
+  color: var(--foreground);
+  font-weight: 700;
+}
+
+.judge-raw pre {
+  max-height: 180px;
+  overflow: auto;
+  margin: 8px 0 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px;
+  white-space: pre-wrap;
+  font: 0.76rem/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
 
 .category-summary {
