@@ -3,6 +3,7 @@ export type NodeType =
   | "user_input"
   | "assistant_output"
   | "artifact"
+  | "branch"
   | "intent"
   | "constraint"
   | "fact"
@@ -55,6 +56,10 @@ export type GraphFrame = {
   frame: {
     objective: string;
     currentFocus: string;
+    focusNodeId?: string;
+    latestInputNodeId?: string;
+    activeBranchNodeId?: string;
+    candidateBranchNodeIds?: string[];
     nextExpectedOutput: string;
     activeConstraints: string[];
     availableActions: string[];
@@ -66,7 +71,7 @@ export type GraphOp =
   | { op: "add_node"; node: Omit<GraphNode, "createdAt"> }
   | { op: "add_edge"; from: string; to: string; type: EdgeType }
   | { op: "update_node"; id: string; patch: Partial<GraphNode> }
-  | { op: "focus"; currentFocus: string }
+  | { op: "focus"; currentFocus: string; nodeId?: string }
   | { op: "call_tool"; tool: string; args: Record<string, unknown> }
   | { op: "final"; answer: string; artifactId?: string };
 

@@ -24,7 +24,14 @@ export function serializeGraphFrame(frame: GraphFrame): string {
     ">>>",
     "",
     "Keep commands small so model attention stays on the user's task.",
-    "Allowed node types: system, user_input, assistant_output, artifact, intent, constraint, fact, hypothesis, decision, tool_call, tool_result, test_result, patch, risk, question.",
+    "Cortex rules:",
+    "- The StateGraph is non-linear working memory, not a transcript. Use the relevant node/branch as attention.",
+    "- If the user asks for a new branch/thread/fresh start, create a branch node from system_root and focus it: @node branch_N branch \"...\"; @edge system_root supports branch_N; @focus branch_N \"reason\".",
+    "- If the current frame says a branch was already created for this turn, use/focus that branch instead of creating a duplicate.",
+    "- If the user returns to an older topic, focus or connect to that older node instead of appending blindly to the latest message.",
+    "- Mark outdated facts stale/rejected with @update; connect contradictions, dependencies, and merges explicitly.",
+    "- Use @focus <node_id> \"short reason\" whenever the active graph region should move.",
+    "Allowed node types: system, user_input, assistant_output, artifact, branch, intent, constraint, fact, hypothesis, decision, tool_call, tool_result, test_result, patch, risk, question.",
     "Allowed edge types: follows, creates, supports, contradicts, explains, depends_on, addresses, validates, constrains, causes, relates_to.",
     "Allowed statuses: active, resolved, rejected, stale.",
     "",
@@ -32,12 +39,20 @@ export function serializeGraphFrame(frame: GraphFrame): string {
     "<FRAME>",
     `objective: ${frame.frame.objective}`,
     `currentFocus: ${frame.frame.currentFocus}`,
+    `focusNodeId: ${frame.frame.focusNodeId ?? "unknown"}`,
+    `latestInputNodeId: ${frame.frame.latestInputNodeId ?? latestNodeId(frame, "user_input") ?? "unknown"}`,
+    `activeBranchNodeId: ${frame.frame.activeBranchNodeId ?? "system_root"}`,
+    `candidateBranchNodeIds: ${(frame.frame.candidateBranchNodeIds ?? ["system_root"]).join(", ")}`,
     `nextExpectedOutput: ${frame.frame.nextExpectedOutput}`,
     "activeConstraints:",
     ...frame.frame.activeConstraints.map((c) => `- ${c}`),
     "availableActions:",
     ...frame.frame.availableActions.map((a) => `- ${a}`),
     "</FRAME>",
+    "",
+    "<BRANCH_POINTS>",
+    ...branchPointLines(frame),
+    "</BRANCH_POINTS>",
     "",
     "<GRAPH>"
   ];
@@ -51,6 +66,21 @@ export function serializeGraphFrame(frame: GraphFrame): string {
   lines.push("</GRAPH>");
 
   return lines.join("\n");
+}
+
+function branchPointLines(frame: GraphFrame): string[] {
+  const ids = frame.frame.candidateBranchNodeIds?.length ? frame.frame.candidateBranchNodeIds : ["system_root"];
+  return ids.map((id) => {
+    const node = frame.graph.nodes.find((item) => item.id === id);
+    if (!node) return `- ${id}`;
+    const active = id === frame.frame.activeBranchNodeId ? " active" : "";
+    const focus = id === frame.frame.focusNodeId ? " focus" : "";
+    return `- ${node.id} [${node.type}]${active}${focus}: ${oneLine(node.text).slice(0, 240)}`;
+  });
+}
+
+function latestNodeId(frame: GraphFrame, type: GraphNode["type"]): string | undefined {
+  return [...frame.graph.nodes].reverse().find((node) => node.type === type)?.id;
 }
 
 function nodeDataSummary(node: GraphNode): string {

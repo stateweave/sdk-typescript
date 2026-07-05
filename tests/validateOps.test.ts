@@ -75,6 +75,16 @@ it("parses graph ops wrapped in a markdown swx fence", () => {
   expect(ops).toEqual([{ op: "focus", currentFocus: "next" }]);
 });
 
+it("parses branch nodes and node-targeted focus", () => {
+  const ops = parseAndValidateOps(`SWX/1
+@node branch_1 branch "Fresh branch"
+@edge system_root supports branch_1
+@focus branch_1 "Work from the fresh branch"
+@final "Ready."`);
+  expect(ops).toContainEqual({ op: "add_node", node: { id: "branch_1", type: "branch", text: "Fresh branch" } });
+  expect(ops).toContainEqual({ op: "focus", nodeId: "branch_1", currentFocus: "Work from the fresh branch" });
+});
+
 it("keeps legacy JSON parsing as a compatibility fallback", () => {
   const ops = parseAndValidateOps(`Here is the JSON:\n{"ops":[{"op":"final","answer":"done"}]}\nThanks.`);
   expect(ops).toEqual([{ op: "final", answer: "done" }]);

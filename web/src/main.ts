@@ -1893,6 +1893,10 @@ function compactFrame(frame: GraphFrame): string {
   const lines = [
     `objective: ${frame.frame.objective}`,
     `currentFocus: ${frame.frame.currentFocus}`,
+    `focusNodeId: ${frame.frame.focusNodeId ?? "unknown"}`,
+    `latestInputNodeId: ${frame.frame.latestInputNodeId ?? "unknown"}`,
+    `activeBranchNodeId: ${frame.frame.activeBranchNodeId ?? "system_root"}`,
+    `candidateBranchNodeIds: ${frame.frame.candidateBranchNodeIds?.join(", ") ?? "system_root"}`,
     `nextExpectedOutput: ${frame.frame.nextExpectedOutput}`,
     `activeConstraints: ${frame.frame.activeConstraints.length ? frame.frame.activeConstraints.join("; ") : "none"}`,
     "",
@@ -1922,7 +1926,7 @@ function formatOp(op: GraphOp): string {
   if (op.op === "add_node") return `@node ${op.node.id} ${op.node.type} "${shorten(op.node.text, 96)}"`;
   if (op.op === "add_edge") return `@edge ${op.from} ${op.type} ${op.to}`;
   if (op.op === "update_node") return `@update ${op.id}`;
-  if (op.op === "focus") return `@focus "${op.currentFocus}"`;
+  if (op.op === "focus") return op.nodeId ? `@focus ${op.nodeId} "${op.currentFocus}"` : `@focus "${op.currentFocus}"`;
   if (op.op === "call_tool") return `@tool ${op.tool}`;
   if (op.op === "final") return op.artifactId ? `@final ${op.artifactId}` : `@final "${shorten(op.answer, 120)}"`;
   return "@unknown";

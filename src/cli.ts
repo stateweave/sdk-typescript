@@ -195,6 +195,8 @@ function printFrame(frame: GraphFrame, full: boolean): void {
 
   console.log(`${label("objective")} ${frame.frame.objective}`);
   console.log(`${label("focus")} ${frame.frame.currentFocus}`);
+  console.log(`${label("focus node")} ${frame.frame.focusNodeId ?? "unknown"}`);
+  console.log(`${label("branch")} ${frame.frame.activeBranchNodeId ?? "system_root"}`);
   if (frame.frame.activeConstraints.length) console.log(`${label("constraints")} ${frame.frame.activeConstraints.join("; ")}`);
   console.log(`${label("graph")} ${frame.graph.nodes.length} nodes · ${frame.graph.edges.length} edges`);
 
@@ -214,7 +216,7 @@ function printOps(ops: GraphOp[]): void {
     if (op.op === "add_node") console.log(`${opLabel(op.op)} ${op.node.id} ${color.magenta(`[${op.node.type}]`)} ${truncate(op.node.text, 120)}`);
     else if (op.op === "add_edge") console.log(`${opLabel(op.op)} ${op.from} ${color.gray(op.type)} ${op.to}`);
     else if (op.op === "update_node") console.log(`${opLabel(op.op)} ${op.id} ${JSON.stringify(op.patch)}`);
-    else if (op.op === "focus") console.log(`${opLabel(op.op)} ${op.currentFocus}`);
+    else if (op.op === "focus") console.log(`${opLabel(op.op)} ${op.nodeId ? `${op.nodeId} ` : ""}${op.currentFocus}`);
     else if (op.op === "call_tool") console.log(`${opLabel(op.op)} ${op.tool} ${JSON.stringify(op.args)}`);
     else console.log(`${opLabel(op.op)} ${op.answer}`);
   }

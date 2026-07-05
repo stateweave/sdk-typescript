@@ -16,6 +16,18 @@ it("applies add_node, add_edge, update_node, and focus ops", () => {
   expect(next.frame.currentFocus).toBe("finalize");
 });
 
+it("moves cortex focus to an explicit graph node", () => {
+  const frame = createInitialGraphFrame({ objective: "Branch", input: "Start", availableActions: [] });
+  const next = applyOps(frame, [
+    { op: "add_node", node: { id: "branch_1", type: "branch", text: "Physics branch" } },
+    { op: "add_edge", from: "system_root", to: "branch_1", type: "supports" },
+    { op: "focus", nodeId: "branch_1", currentFocus: "Work in physics branch" }
+  ]);
+  expect(next.frame.focusNodeId).toBe("branch_1");
+  expect(next.frame.activeBranchNodeId).toBe("branch_1");
+  expect(next.frame.candidateBranchNodeIds).toContain("branch_1");
+});
+
 it("auto-connects model-added semantic nodes to the latest user input when no edge is provided", () => {
   const frame = createInitialGraphFrame({ objective: "Fix login", input: "Login fails", availableActions: [] });
   const next = applyOps(frame, [{ op: "add_node", node: { id: "hypothesis_1", type: "hypothesis", text: "Token is cleared early" } }]);
@@ -27,6 +39,7 @@ it("adds assistant output nodes when final ops are applied", () => {
   const next = applyOps(frame, [{ op: "final", answer: "Move token persistence earlier." }]);
   expect(next.graph.nodes).toContainEqual(expect.objectContaining({ id: "assistant_output_1", type: "assistant_output", text: "Move token persistence earlier." }));
   expect(next.graph.edges.some((edge) => edge.from === "user_input_1" && edge.to === "assistant_output_1" && edge.type === "follows")).toBe(true);
+  expect(next.frame.focusNodeId).toBe("assistant_output_1");
 });
 
 it("reuses a model-added assistant output node when final is also returned", () => {

@@ -6,6 +6,7 @@ export const nodeTypeSchema = z.enum([
   "user_input",
   "assistant_output",
   "artifact",
+  "branch",
   "intent",
   "constraint",
   "fact",
@@ -58,7 +59,7 @@ export const graphOpSchema = z.discriminatedUnion("op", [
       createdAt: z.string().optional()
     })
   }),
-  z.object({ op: z.literal("focus"), currentFocus: z.string().min(1) }),
+  z.object({ op: z.literal("focus"), currentFocus: z.string().min(1), nodeId: z.string().min(1).optional() }),
   z.object({ op: z.literal("call_tool"), tool: z.string().min(1), args: z.record(z.unknown()) }),
   z.object({ op: z.literal("final"), answer: z.string().min(1), artifactId: z.string().min(1).optional() })
 ]);
@@ -139,8 +140,8 @@ function parseSwx(raw: string): GraphOp[] {
     }
 
     if (command === "@focus") {
-      const currentFocus = tokens.slice(1).join(" ").trim();
-      if (currentFocus) otherOps.push({ op: "focus", currentFocus });
+      const focus = parseFocus(tokens.slice(1));
+      if (focus.currentFocus) otherOps.push(focus);
       continue;
     }
 
@@ -236,6 +237,16 @@ function parseLabelAndAttrs(tokens: string[]): { label?: string; attrs: Record<s
   const attrTokens = firstAttr === -1 ? [] : tokens.slice(firstAttr);
   const label = labelTokens.join(" ").trim() || undefined;
   return { label, attrs: parseAttrs(attrTokens) };
+}
+
+function parseFocus(tokens: string[]): Extract<GraphOp, { op: "focus" }> {
+  const { label, attrs } = parseLabelAndAttrs(tokens);
+  const explicitNode = stringAttr(attrs.node) ?? stringAttr(attrs.nodeId) ?? stringAttr(attrs.focusNodeId);
+  const first = tokens[0];
+  const firstLooksLikeNodeId = first && !isAttrToken(first) && /^(?:[A-Za-z][A-Za-z0-9_-]*_\d+|system_root)$/.test(first);
+  const nodeId = explicitNode ?? (firstLooksLikeNodeId ? first : undefined);
+  const currentFocus = stringAttr(attrs.text) ?? (nodeId && tokens.length > 1 ? tokens.slice(1).join(" ").trim() : label) ?? nodeId ?? "focus";
+  return withoutUndefined({ op: "focus", currentFocus, nodeId });
 }
 
 function parseAttrs(tokens: string[]): Record<string, unknown> {
