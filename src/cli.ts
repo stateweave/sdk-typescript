@@ -13,7 +13,7 @@ import { mockTools } from "./tools/mockTools.js";
 
 type CliOptions = {
   input?: string;
-  maxSteps: number;
+  maxIterations: number;
   showPrompt: boolean;
   fullFrame: boolean;
   compare: boolean;
@@ -49,7 +49,7 @@ const model = createModelFromEnv();
 const agent = new StateWeaveAgent({
   model,
   tools: mockTools,
-  maxSteps: options.maxSteps,
+  maxIterations: options.maxIterations,
   traceDir: path.resolve("src/traces")
 });
 const traditional = new TraditionalMessagesAgent({ model, tools: mockTools });
@@ -236,13 +236,13 @@ async function readPipedInput(): Promise<string> {
 }
 
 function parseArgs(args: string[]): CliOptions {
-  const options: CliOptions = { maxSteps: 5, showPrompt: false, fullFrame: false, compare: false, showGraph: false };
+  const options: CliOptions = { maxIterations: 5, showPrompt: false, fullFrame: false, compare: false, showGraph: false };
   const positional: string[] = [];
 
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === "--input" || arg === "-i") options.input = value(args, ++index, arg);
-    else if (arg === "--max-steps") options.maxSteps = Number(value(args, ++index, arg));
+    else if (arg === "--max-iterations") options.maxIterations = Number(value(args, ++index, arg));
     else if (arg === "--prompt") options.showPrompt = true;
     else if (arg === "--no-prompt") options.showPrompt = false;
     else if (arg === "--full") options.fullFrame = true;
@@ -253,7 +253,7 @@ function parseArgs(args: string[]): CliOptions {
   }
 
   if (!options.input && positional.length) options.input = positional.join(" ");
-  if (!Number.isInteger(options.maxSteps) || options.maxSteps < 1) throw new Error("--max-steps must be a positive integer.");
+  if (!Number.isInteger(options.maxIterations) || options.maxIterations < 1) throw new Error("--max-iterations must be a positive integer.");
   return options;
 }
 

@@ -10,7 +10,7 @@ import type { Tool } from "../tools/types.js";
 
 export type StateWeaveInput = TaskInput;
 export type StateWeaveRunOptions = { frame?: GraphFrame; inputAlreadyAppended?: boolean };
-export type StateWeaveRunnerArgs = { model: Model; tools: Tool[]; maxSteps?: number; systemPrompt?: string; nodeTypes?: string[] };
+export type StateWeaveRunnerArgs = { model: Model; tools: Tool[]; maxIterations?: number; systemPrompt?: string; nodeTypes?: string[] };
 
 export class StateWeaveRunError extends Error {
   trace: TraceStep[];
@@ -48,16 +48,16 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
         nodeTypes: args.nodeTypes
       });
   const trace: TraceStep[] = [];
-  const maxSteps = args.maxSteps ?? 30;
+  const maxIterations = args.maxIterations ?? 30;
   const runId = runIdForNow();
   const startedAt = new Date();
   let retryCount = 0;
   let finalAnswer = "";
   const toolInfo = [...tools.values()].map((tool) => ({ name: tool.name, description: tool.description }));
 
-  yield { type: "metadata", metadata: runMetadata(runId, toolInfo, startedAt, maxSteps, trace, retryCount, "running") };
+  yield { type: "metadata", metadata: runMetadata(runId, toolInfo, startedAt, maxIterations, trace, retryCount, "running") };
 
-  for (let step = 1; step <= maxSteps; step++) {
+  for (let step = 1; step <= maxIterations; step++) {
     const stepStartedAt = new Date();
     const frameBefore = cloneFrame(frame);
     const prompt = serializeGraphFrame(frameBefore);
@@ -84,9 +84,9 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
       const message = error instanceof Error ? error.message : String(error);
       const frameAfter = cloneFrame(frame);
       trace.push(traceStep({ step, startedAt: stepStartedAt, frameBefore, prompt, streamedTokens, modelMetadata, rawModelOutput, parsedOps, frameAfter, error: message }));
-      const retryable = step < maxSteps;
+      const retryable = step < maxIterations;
       yield { type: "error", step, message, retryable };
-      if (!retryable) throw new StateWeaveRunError(`StateWeave GraphOps failed after ${step} step(s): ${message}`, trace, runMetadata(runId, toolInfo, startedAt, maxSteps, trace, retryCount, "error"));
+      if (!retryable) throw new StateWeaveRunError(`StateWeave GraphOps failed after ${step} step(s): ${message}`, trace, runMetadata(runId, toolInfo, startedAt, maxIterations, trace, retryCount, "error"));
       retryCount += 1;
       frame = retryFrameAfterGraphOpsError(frame, message);
       continue;
@@ -104,12 +104,12 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
 
   if (!finalAnswer) {
     throw new StateWeaveRunError(
-      `Recursion limit reached after ${maxSteps} iteration(s); consider increasing maxIterations.`,
+      `Recursion limit reached after ${maxIterations} iteration(s); consider increasing maxIterations.`,
       trace,
-      runMetadata(runId, toolInfo, startedAt, maxSteps, trace, retryCount, "error")
+      runMetadata(runId, toolInfo, startedAt, maxIterations, trace, retryCount, "error")
     );
   }
-  yield { type: "final", result: { finalAnswer, frame, graph: frame.graph, trace, metadata: runMetadata(runId, toolInfo, startedAt, maxSteps, trace, retryCount, "done") } };
+  yield { type: "final", result: { finalAnswer, frame, graph: frame.graph, trace, metadata: runMetadata(runId, toolInfo, startedAt, maxIterations, trace, retryCount, "done") } };
 }
 
 function traceStep(args: {
@@ -146,7 +146,7 @@ function runMetadata(
   runId: string,
   tools: StateWeaveRunMetadata["tools"],
   startedAt: Date,
-  maxSteps: number,
+  maxIterations: number,
   trace: TraceStep[],
   retryCount: number,
   status: StateWeaveRunMetadata["status"]
@@ -157,7 +157,7 @@ function runMetadata(
     tools,
     startedAt: startedAt.toISOString(),
     ...(completedAt ? { completedAt: completedAt.toISOString(), durationMs: completedAt.getTime() - startedAt.getTime() } : {}),
-    maxSteps,
+    maxIterations,
     stepCount: trace.length,
     retryCount,
     status

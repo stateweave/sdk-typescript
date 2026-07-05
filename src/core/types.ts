@@ -68,7 +68,7 @@ export type StateWeaveRunMetadata = {
   startedAt: string;
   completedAt?: string;
   durationMs?: number;
-  maxSteps: number;
+  maxIterations: number;
   stepCount: number;
   retryCount: number;
   status: "running" | "done" | "error";

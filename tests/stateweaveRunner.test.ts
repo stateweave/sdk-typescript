@@ -34,7 +34,7 @@ it("retries rejected GraphOps and commits the corrected transaction", async () =
     ].join("\n")
   ]);
 
-  const result = await runStateWeave({ model, tools: [], maxSteps: 2 }, "Create a house", { frame: firstFrame });
+  const result = await runStateWeave({ model, tools: [], maxIterations: 2 }, "Create a house", { frame: firstFrame });
 
   expect(result.metadata.retryCount).toBe(1);
   expect(result.metadata.status).toBe("done");
@@ -73,7 +73,7 @@ it("runs workspace write/edit tools end to end with SWX block-ref args", async (
       "SWX/1\n@final \"Created and edited the SVG file.\""
     ]);
 
-    const result = await runStateWeave({ model, tools: createFileSystemTools({ rootDir: root }), maxSteps: 3 }, "Create and refine an SVG file");
+    const result = await runStateWeave({ model, tools: createFileSystemTools({ rootDir: root }), maxIterations: 3 }, "Create and refine an SVG file");
     const content = await readFile(path.join(root, "created_with_tool.svg"), "utf8");
 
     expect(content).toBe("<svg viewBox=\"0 0 10 10\"><circle cx=\"5\" cy=\"5\" r=\"4\" /></svg>");
@@ -111,7 +111,7 @@ it("returns long final_ref answers with multiple artifact refs end to end", asyn
       ].join("\n")
     ]);
 
-    const result = await runStateWeave({ model, tools: createFileSystemTools({ rootDir: root }), maxSteps: 1 }, "Create one game and index");
+    const result = await runStateWeave({ model, tools: createFileSystemTools({ rootDir: root }), maxIterations: 1 }, "Create one game and index");
 
     expect(result.finalAnswer).toBe("Created the game files:\n- snake.html\n- index.html");
     expect(result.graph.nodes).not.toContainEqual(expect.objectContaining({ id: "final_answer" }));
@@ -126,8 +126,8 @@ it("returns long final_ref answers with multiple artifact refs end to end", asyn
 it("throws a clear recursion-limit error when maxIterations is exhausted", async () => {
   const output = "SWX/1\n@edge system_root follows user_input_1\n@node note_1 note \"Still working\"\n@edge user_input_1 creates note_1";
 
-  await expect(runStateWeave({ model: new SequenceModel([output]), tools: [], maxSteps: 1 }, "Keep going forever")).rejects.toThrow(StateWeaveRunError);
-  await expect(runStateWeave({ model: new SequenceModel([output]), tools: [], maxSteps: 1 }, "Keep going forever")).rejects.toThrow(/Recursion limit reached.*maxIterations/);
+  await expect(runStateWeave({ model: new SequenceModel([output]), tools: [], maxIterations: 1 }, "Keep going forever")).rejects.toThrow(StateWeaveRunError);
+  await expect(runStateWeave({ model: new SequenceModel([output]), tools: [], maxIterations: 1 }, "Keep going forever")).rejects.toThrow(/Recursion limit reached.*maxIterations/);
 });
 
 it("Agent streams final text by default and keeps one graph across user turns", async () => {

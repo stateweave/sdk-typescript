@@ -1957,7 +1957,7 @@ function ensureLiveStep(live: LiveStreamLog, stepNumber: number): LiveStreamStep
 function updateLiveStreamLog(live: LiveStreamLog, event: StateWeaveStreamEvent): void {
   if (event.type === "metadata") {
     live.metadata = event.metadata;
-    live.events.push(`run ${event.metadata.runId} started · maxSteps=${event.metadata.maxSteps}`);
+    live.events.push(`run ${event.metadata.runId} started · maxIterations=${event.metadata.maxIterations}`);
     return;
   }
   if (event.type === "frame" && event.phase === "before") {
@@ -2036,12 +2036,12 @@ function updatePendingStateWeave(item: HTMLElement, live: LiveStreamLog): void {
   const statusEl = item.querySelector<HTMLElement>("[data-stream-status]");
   const stepsEl = item.querySelector<HTMLElement>("[data-stream-steps]");
   const latestStep = live.latestStep;
-  const maxSteps = live.metadata?.maxSteps;
+  const maxIterations = live.metadata?.maxIterations;
   if (statusEl) {
     statusEl.textContent = live.finalAnswer
       ? `Done · ${live.metadata?.stepCount ?? live.steps.size} step${(live.metadata?.stepCount ?? live.steps.size) === 1 ? "" : "s"}`
       : latestStep
-        ? `Weaving GraphOps · step ${latestStep}${maxSteps ? ` / ${maxSteps}` : ""}`
+        ? `Weaving GraphOps · step ${latestStep}${maxIterations ? ` / ${maxIterations}` : ""}`
         : "Opening StateWeave stream…";
   }
   if (stepsEl) {

@@ -78,7 +78,7 @@ export class TraditionalMessagesAgent {
         startedAt: startedAt.toISOString(),
         completedAt: completedAt.toISOString(),
         durationMs: completedAt.getTime() - startedAt.getTime(),
-        maxSteps: 1,
+        maxIterations: 1,
         stepCount: 1,
         retryCount: 0,
         status: "done"

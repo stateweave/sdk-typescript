@@ -52,7 +52,7 @@
                 <input id="agent-node-types" type="text" />
               </label>
               <label>
-                <span>Max turns</span>
+                <span>Max iterations</span>
                 <input id="agent-max-iterations" type="number" min="1" step="1" />
               </label>
               <button id="reset-agent-settings" class="button secondary small-button" type="button">Reset defaults</button>
@@ -143,12 +143,28 @@
           <p class="muted-copy">Primitive: <code>StateGraph → GraphFrame → GraphOps → StateGraph</code>. A user turn is a pending graph node; the model returns transactional graph mutations, not a provider transcript.</p>
           <pre class="code quickstart-code"><code>import { Agent, createModelFromEnv } from "stateweave";
 
+// Optional: seed or resume from a minimal GraphFrame.
+// const existingFrame = {
+//   frame: {
+//     objective: "Continue an existing workspace",
+//     currentFocus: "Cortex focus is system_root.",
+//     focusNodeId: "system_root",
+//     nextExpectedOutput: "Append the next user input and weave it with GraphOps.",
+//     activeConstraints: [],
+//     availableActions: [],
+//     nodeTypes: ["intent", "artifact"]
+//   },
+//   graph: {
+//     nodes: [{ id: "system_root", type: "system", text: "StateWeave system root.", status: "active", confidence: 1, createdAt: new Date().toISOString() }],
+//     edges: []
+//   }
+// };
+
 const agent = new Agent({
   model: createModelFromEnv(), // required
 
   // tools: myTools, // default: workspace read/write/edit/bash tools
   // maxIterations: 30, // default: model/tool loop limit per user turn
-  // maxSteps: 30, // legacy alias for maxIterations
   // systemPrompt: "You are a careful product engineer.",
   // nodeTypes: ["intent", "constraint", "artifact", "decision"],
   // traceDir: ".stateweave/traces",

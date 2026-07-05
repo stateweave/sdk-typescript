@@ -4,7 +4,7 @@ import { StateWeaveAgent } from "./agent/stateweaveAgent.js";
 import { createModelFromEnv } from "./llm/factory.js";
 import { mockTools } from "./tools/mockTools.js";
 
-const agent = new StateWeaveAgent({ model: createModelFromEnv(), tools: mockTools, maxSteps: 5, traceDir: path.resolve("src/traces") });
+const agent = new StateWeaveAgent({ model: createModelFromEnv(), tools: mockTools, maxIterations: 5, traceDir: path.resolve("src/traces") });
 const result = await agent.run("Find why login fails after token refresh. Login fails after refresh. Do not rewrite the auth system.");
 
 console.log("Final answer:\n", result.finalAnswer);

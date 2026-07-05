@@ -15,7 +15,6 @@ const defaultMaxIterations = 30;
 export type StateWeaveAgentArgs = {
   model: Model;
   tools?: Tool[];
-  maxSteps?: number;
   maxIterations?: number;
   systemPrompt?: string;
   nodeTypes?: string[];
@@ -36,7 +35,7 @@ export class StateWeaveAgent {
   constructor(args: StateWeaveAgentArgs) {
     this.model = args.model;
     this.tools = args.tools ?? createDefaultTools();
-    this.maxIterations = args.maxIterations ?? args.maxSteps ?? defaultMaxIterations;
+    this.maxIterations = args.maxIterations ?? defaultMaxIterations;
     this.systemPrompt = args.systemPrompt;
     this.nodeTypes = normalizeNodeTypes(args.nodeTypes ?? []);
     this.traceDir = args.traceDir;
@@ -102,7 +101,7 @@ export class StateWeaveAgent {
 
   private async runOnce(input: StateWeaveInput, options: StateWeaveRunOptions | undefined): Promise<AgentResult> {
     try {
-      const result = await runStateWeave({ model: this.model, tools: this.tools, maxSteps: this.maxIterations, systemPrompt: this.systemPrompt, nodeTypes: this.nodeTypes }, input, options);
+      const result = await runStateWeave({ model: this.model, tools: this.tools, maxIterations: this.maxIterations, systemPrompt: this.systemPrompt, nodeTypes: this.nodeTypes }, input, options);
       if (this.traceDir) await this.saveTrace(traceObjective(result.trace), result.trace);
       return result;
     } catch (error) {
@@ -113,7 +112,7 @@ export class StateWeaveAgent {
 
   private async *streamOnce(input: StateWeaveInput, options: StateWeaveRunOptions | undefined): AsyncIterable<StateWeaveStreamEvent> {
     try {
-      for await (const event of streamStateWeave({ model: this.model, tools: this.tools, maxSteps: this.maxIterations, systemPrompt: this.systemPrompt, nodeTypes: this.nodeTypes }, input, options)) {
+      for await (const event of streamStateWeave({ model: this.model, tools: this.tools, maxIterations: this.maxIterations, systemPrompt: this.systemPrompt, nodeTypes: this.nodeTypes }, input, options)) {
         if (event.type === "final" && this.traceDir) await this.saveTrace(traceObjective(event.result.trace), event.result.trace);
         yield event;
       }

@@ -9,7 +9,7 @@ import { evalTasks } from "./tasks.js";
 
 const model = createModelFromEnv();
 const baseline = new BaselineAgent({ model, tools: mockTools });
-const stateweave = new StateWeaveAgent({ model, tools: mockTools, maxSteps: 4, traceDir: path.resolve("src/traces") });
+const stateweave = new StateWeaveAgent({ model, tools: mockTools, maxIterations: 4, traceDir: path.resolve("src/traces") });
 
 const rows: string[] = ["Task | Traditional messages success | StateWeave success | Traditional steps | StateWeave steps | Notes", "--- | --- | --- | --- | --- | ---"];
 

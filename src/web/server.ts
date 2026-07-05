@@ -13,7 +13,6 @@ import { createDefaultTools, describeTools } from "../tools/fileSystemTools.js";
 type RunRequest = {
   input?: unknown;
   frame?: unknown;
-  maxSteps?: unknown;
   maxIterations?: unknown;
   systemPrompt?: unknown;
   nodeTypes?: unknown;
@@ -203,7 +202,7 @@ async function streamStateWeaveRun(request: IncomingMessage, response: ServerRes
   let finalMetadata: StateWeaveRunMetadata | undefined;
   try {
     for await (const event of streamStateWeave(
-      { model, tools: agentTools, maxSteps: safeMaxSteps(body.maxIterations ?? body.maxSteps), systemPrompt: safeSystemPrompt(body.systemPrompt), nodeTypes: safeNodeTypes(body.nodeTypes) },
+      { model, tools: agentTools, maxIterations: safeMaxIterations(body.maxIterations), systemPrompt: safeSystemPrompt(body.systemPrompt), nodeTypes: safeNodeTypes(body.nodeTypes) },
       body.input,
       { frame: isGraphFrame(body.frame) ? body.frame : undefined }
     )) {
@@ -233,7 +232,7 @@ async function runStateWeaveTurn(request: IncomingMessage, response: ServerRespo
   let stateweave;
   try {
     stateweave = await runStateWeave(
-      { model, tools: agentTools, maxSteps: safeMaxSteps(body.maxIterations ?? body.maxSteps), systemPrompt: safeSystemPrompt(body.systemPrompt), nodeTypes: safeNodeTypes(body.nodeTypes) },
+      { model, tools: agentTools, maxIterations: safeMaxIterations(body.maxIterations), systemPrompt: safeSystemPrompt(body.systemPrompt), nodeTypes: safeNodeTypes(body.nodeTypes) },
       input,
       { frame: isGraphFrame(body.frame) ? body.frame : undefined }
     );
@@ -267,16 +266,16 @@ async function compareStateWeave(request: IncomingMessage, response: ServerRespo
   }
 
   const input = body.input.trim();
-  const result = await compareTurn(input, isGraphFrame(body.frame) ? body.frame : undefined, safeChatMessages(body.messages), safeMaxSteps(body.maxIterations ?? body.maxSteps), safeSystemPrompt(body.systemPrompt), safeNodeTypes(body.nodeTypes));
+  const result = await compareTurn(input, isGraphFrame(body.frame) ? body.frame : undefined, safeChatMessages(body.messages), safeMaxIterations(body.maxIterations), safeSystemPrompt(body.systemPrompt), safeNodeTypes(body.nodeTypes));
   json(response, 200, result);
 }
 
-async function compareTurn(input: string, stateFrame: GraphFrame | undefined, history: ChatMessage[], maxSteps: number, systemPrompt?: string, nodeTypes?: string[]): Promise<ComparePayload> {
+async function compareTurn(input: string, stateFrame: GraphFrame | undefined, history: ChatMessage[], maxIterations: number, systemPrompt?: string, nodeTypes?: string[]): Promise<ComparePayload> {
   const traditionalMessages = regularModelInput(history, input);
   const regularPrompt = serializeMessages(traditionalMessages);
   const [regular, stateweave] = await Promise.all([
     model.complete({ prompt: regularPrompt, mode: "text", frame: emptyFrame(input) }),
-    runStateWeave({ model, tools: agentTools, maxSteps, systemPrompt, nodeTypes }, input, { frame: stateFrame })
+    runStateWeave({ model, tools: agentTools, maxIterations, systemPrompt, nodeTypes }, input, { frame: stateFrame })
   ]);
   await persistTrace("compare", input, stateweave.trace, stateweave.metadata);
 
@@ -732,7 +731,7 @@ function isGraphFrame(value: unknown): value is GraphFrame {
   );
 }
 
-function safeMaxSteps(value: unknown): number {
+function safeMaxIterations(value: unknown): number {
   const numeric = Number(value);
   if (!Number.isInteger(numeric) || numeric < 1) return 30;
   return numeric;
