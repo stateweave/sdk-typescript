@@ -52,14 +52,14 @@
               <div>
                 <p class="eyebrow">Growing StateGraph</p>
                 <h2>Obsidian-style graph memory</h2>
-                <p>The system root stays centered while facts, turns, decisions, and artifacts orbit by graph relation.</p>
+                <p><strong>StateWeave primitive:</strong> regular <code>messages[]</code> sends a linear transcript; StateWeave sends a compiled <code>GraphFrame</code> — graph state plus focus — to the model, receives <code>GraphOps</code>, then weaves those ops back into the <code>StateGraph</code>. Multiple model iterations can run before the final answer.</p>
               </div>
             </div>
             <div id="graph" class="graph-empty">No graph yet.</div>
           </div>
 
           <details class="model-io-panel">
-            <summary>Latest GraphFrame → GraphOps</summary>
+            <summary>Latest model loop: GraphFrame → GraphOps · click either log to copy</summary>
             <div class="comparison single">
               <article class="compare-column">
                 <label>Compiled GraphFrame input</label>

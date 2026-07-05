@@ -6,7 +6,6 @@ export const nodeTypeSchema = z.enum([
   "user_input",
   "assistant_output",
   "artifact",
-  "branch",
   "intent",
   "constraint",
   "fact",

@@ -396,6 +396,22 @@ label {
   min-height: 180px;
 }
 
+.copyable-log {
+  cursor: copy;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.copyable-log:hover,
+.copyable-log:focus {
+  border-color: rgba(124, 58, 237, 0.55);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+}
+
+.copyable-log.copied {
+  border-color: #16a34a;
+  background: #f0fdf4;
+}
+
 .graph-card {
   display: flex;
   flex: 1;
@@ -423,15 +439,26 @@ label {
 }
 
 .graph-heading p:not(.eyebrow) {
-  max-width: 760px;
+  max-width: 820px;
   color: var(--muted);
   font-size: 0.85rem;
   line-height: 1.45;
 }
 
+.graph-heading code {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  padding: 1px 5px;
+  color: var(--foreground);
+  font-size: 0.86em;
+}
+
 .graph-visual {
   position: relative;
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-height: 0;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -476,8 +503,8 @@ label {
 
 .graph-svg {
   display: block;
+  flex: 1;
   width: 100%;
-  height: 100%;
   min-height: 0;
 }
 
@@ -516,7 +543,7 @@ label {
 }
 
 .obsidian-node.root {
-  cursor: pointer;
+  cursor: grab;
 }
 
 .obsidian-node.dragging {
@@ -566,10 +593,6 @@ label {
   stroke: #db2777;
 }
 
-.obsidian-node.branch circle {
-  fill: #eef2ff;
-  stroke: #4f46e5;
-}
 
 .obsidian-node.intent circle,
 .obsidian-node.constraint circle {
@@ -615,101 +638,13 @@ label {
   font-weight: 700;
 }
 
-.graph-inspector {
-  position: absolute;
-  z-index: 2;
-  top: 58px;
-  left: 12px;
-  width: min(340px, calc(100% - 24px));
-  max-height: 42%;
-  overflow: auto;
-  border: 1px solid rgba(229, 229, 229, 0.92);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.9);
-  padding: 12px;
-  box-shadow: 0 10px 26px rgba(24, 24, 27, 0.08);
-  backdrop-filter: blur(12px);
+.graph-selected-node {
+  border-top: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.96);
+  padding: 9px 12px;
 }
 
 .graph-inspector-header {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-
-.graph-inspector-header h3 {
-  font-size: 0.95rem;
-}
-
-.graph-inspector-header span {
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 3px 8px;
-  color: var(--muted-foreground);
-  font-size: 0.72rem;
-}
-
-.graph-inspector-text {
-  max-height: 150px;
-  overflow: auto;
-  color: var(--foreground);
-  font-size: 0.86rem;
-  line-height: 1.45;
-  white-space: pre-wrap;
-}
-
-.graph-inspector-edges {
-  display: grid;
-  gap: 4px;
-  margin: 10px 0;
-  padding-left: 16px;
-}
-
-.graph-inspector-edges code {
-  color: var(--muted-foreground);
-  font-size: 0.74rem;
-}
-
-.graph-inspector-hint {
-  color: var(--muted);
-  font-size: 0.76rem;
-  line-height: 1.35;
-}
-
-.graph-focus-strip {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  left: 12px;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px;
-  max-height: 142px;
-  overflow: auto;
-  padding: 2px;
-}
-
-.node-detail {
-  border: 1px solid rgba(229, 229, 229, 0.9);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.88);
-  padding: 10px;
-  backdrop-filter: blur(10px);
-}
-
-.node-detail.compact {
-  padding: 8px;
-  cursor: pointer;
-}
-
-.node-detail.selected {
-  border-color: rgba(124, 58, 237, 0.6);
-  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.12);
-}
-
-.node-detail div {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -717,19 +652,100 @@ label {
   margin-bottom: 5px;
 }
 
-.node-detail strong {
-  font-size: 0.78rem;
+.graph-inspector-header h3 {
+  font-size: 0.88rem;
 }
 
-.node-detail span {
-  color: var(--muted);
-  font-size: 0.72rem;
+.graph-inspector-header span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
 }
 
-.node-detail p {
+.graph-inspector-text {
+  max-height: 58px;
+  overflow: auto;
+  color: var(--foreground);
+  font-size: 0.8rem;
+  line-height: 1.38;
+  white-space: pre-wrap;
+}
+
+.graph-inspector-edges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.graph-inspector-edges code {
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+}
+
+.graph-inspector-hint {
+  display: none;
+}
+
+.graph-node-list {
+  border-top: 1px solid var(--border);
+  background: #fff;
+}
+
+.graph-node-list summary {
+  cursor: pointer;
+  padding: 8px 12px;
   color: var(--muted-foreground);
   font-size: 0.78rem;
-  line-height: 1.4;
+  font-weight: 700;
+}
+
+.graph-node-list ul {
+  display: grid;
+  gap: 2px;
+  max-height: 150px;
+  overflow: auto;
+  margin: 0;
+  padding: 0 12px 10px;
+  list-style: none;
+}
+
+.graph-node-list li {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) 92px minmax(140px, 1.2fr);
+  gap: 8px;
+  align-items: center;
+  border-radius: 7px;
+  padding: 5px 7px;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.graph-node-list li:hover,
+.graph-node-list li.selected {
+  background: #f5f3ff;
+  color: var(--foreground);
+}
+
+.graph-node-list strong,
+.graph-node-list span,
+.graph-node-list em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-node-list span {
+  color: var(--muted);
+}
+
+.graph-node-list em {
+  font-style: normal;
 }
 
 .conversation-focus {

@@ -31,13 +31,14 @@ it("appends new input to the current cortex focus", () => {
   expect(next.graph.edges.some((edge) => edge.from === "user_input_1" && edge.to === "user_input_2" && edge.type === "follows")).toBe(true);
 });
 
-it("creates a cortex branch from system_root when the user asks for a fresh branch", () => {
+it("uses the new user input as the graph branch when the user asks for fresh context", () => {
   const frame = createInitialGraphFrame({ objective: "First topic", input: "Talk about apples.", availableActions: [] });
-  const next = appendInputToGraphFrame(frame, { objective: "New branch", input: "Start a new branch for physics notes." });
-  expect(next.graph.nodes).toContainEqual(expect.objectContaining({ id: "branch_1", type: "branch" }));
-  expect(next.graph.nodes).toContainEqual(expect.objectContaining({ id: "user_input_2", data: { branchId: "branch_1" } }));
-  expect(next.graph.edges).toContainEqual(expect.objectContaining({ from: "system_root", to: "branch_1", type: "supports" }));
-  expect(next.graph.edges).toContainEqual(expect.objectContaining({ from: "branch_1", to: "user_input_2", type: "follows" }));
-  expect(next.frame.activeBranchNodeId).toBe("branch_1");
+  const next = appendInputToGraphFrame(frame, { objective: "Fresh context", input: "Start a new branch for physics notes." });
+  expect(next.graph.nodes.some((node) => node.id.startsWith("branch_"))).toBe(false);
+  expect(next.graph.nodes).toContainEqual(expect.objectContaining({ id: "user_input_2", type: "user_input" }));
+  expect(next.graph.nodes.find((node) => node.id === "user_input_2")?.data).toBeUndefined();
+  expect(next.graph.edges).toContainEqual(expect.objectContaining({ from: "system_root", to: "user_input_2", type: "follows" }));
+  expect(next.frame.activeUserInputNodeId).toBe("user_input_2");
   expect(next.frame.focusNodeId).toBe("user_input_2");
+  expect(next.frame.candidateFocusNodeIds).toEqual(["system_root", "user_input_2", "user_input_1"]);
 });

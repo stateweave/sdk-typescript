@@ -4,7 +4,6 @@ import { nowIso } from "./graph.js";
 export function applyOps(frame: GraphFrame, ops: GraphOp[]): GraphFrame {
   const next: GraphFrame = structuredClone(frame);
   const anchor = latestUserInput(next.graph.nodes) ?? focusedNode(next) ?? next.graph.nodes.find((node) => node.id === "system_root") ?? next.graph.nodes[0];
-  const anchorBranchId = branchIdForNode(next.graph, anchor) ?? next.frame.activeBranchNodeId;
   const addedNodeIds: string[] = [];
 
   for (const op of ops) {
@@ -12,7 +11,7 @@ export function applyOps(frame: GraphFrame, ops: GraphOp[]): GraphFrame {
       case "add_node": {
         const existing = next.graph.nodes.find((node) => node.id === op.node.id);
         if (!existing) {
-          next.graph.nodes.push({ ...op.node, data: inheritBranchData(op.node, anchorBranchId), createdAt: nowIso() });
+          next.graph.nodes.push({ ...op.node, createdAt: nowIso() });
           addedNodeIds.push(op.node.id);
         }
         break;
@@ -37,8 +36,8 @@ export function applyOps(frame: GraphFrame, ops: GraphOp[]): GraphFrame {
       case "final": {
         const assistant = addAssistantOutput(next.graph, op.answer, anchor, addedNodeIds, op.artifactId);
         next.frame.focusNodeId = assistant.id;
-        next.frame.activeBranchNodeId = branchIdForNode(next.graph, assistant) ?? next.frame.activeBranchNodeId ?? "system_root";
-        next.frame.currentFocus = `Cortex focus is ${assistant.id}; continue this branch unless the next user input asks to branch, merge, or refocus.`;
+        next.frame.activeUserInputNodeId = userInputIdForNode(next.graph, assistant) ?? next.frame.latestInputNodeId ?? next.frame.activeUserInputNodeId;
+        next.frame.currentFocus = `Cortex focus is ${assistant.id}; continue from this answer unless the next user input asks for a fresh context or another focus.`;
         break;
       }
       default:
@@ -47,15 +46,13 @@ export function applyOps(frame: GraphFrame, ops: GraphOp[]): GraphFrame {
   }
 
   connectNewNodes(next.graph, addedNodeIds, anchor);
-  next.frame.candidateBranchNodeIds = candidateBranchNodeIds(next);
+  next.frame.candidateFocusNodeIds = candidateFocusNodeIds(next);
   return next;
 }
 
 export function addToolResult(graph: StateGraph, args: { tool: string; result: unknown; step: number }): StateGraph {
   const next = structuredClone(graph);
   const anchor = latestUserInput(next.nodes) ?? next.nodes.find((node) => node.id === "system_root") ?? next.nodes[0];
-  const branchId = branchIdForNode(next, anchor);
-  const branchData = branchId && branchId !== "system_root" ? { branchId } : {};
   const callId = `tool_call_${args.step}_${next.nodes.length}`;
   const resultId = `tool_result_${args.step}_${next.nodes.length + 1}`;
   const createdAt = nowIso();
@@ -64,7 +61,7 @@ export function addToolResult(graph: StateGraph, args: { tool: string; result: u
       id: callId,
       type: "tool_call",
       text: `Called ${args.tool}`,
-      data: { tool: args.tool, ...branchData },
+      data: { tool: args.tool },
       status: "resolved",
       createdAt
     },
@@ -72,7 +69,7 @@ export function addToolResult(graph: StateGraph, args: { tool: string; result: u
       id: resultId,
       type: "tool_result",
       text: typeof args.result === "string" ? args.result : JSON.stringify(args.result),
-      data: { tool: args.tool, result: args.result, ...branchData },
+      data: { tool: args.tool, result: args.result },
       status: "active",
       confidence: 1,
       createdAt
@@ -90,7 +87,7 @@ function addAssistantOutput(graph: StateGraph, answer: string, anchor: GraphNode
 
   if (existing) {
     existing.text = text;
-    existing.data = inheritBranchData({ data: data ? { ...existing.data, ...data } : existing.data }, branchIdForNode(graph, anchor));
+    existing.data = data ? { ...existing.data, ...data } : existing.data;
     existing.status = "resolved";
     existing.confidence = existing.confidence ?? 1;
     if (anchor && !isReferenced(graph, existing.id)) addEdge(graph, anchor.id, existing.id, "follows");
@@ -99,7 +96,7 @@ function addAssistantOutput(graph: StateGraph, answer: string, anchor: GraphNode
   }
 
   const id = `assistant_output_${nextIndex(graph.nodes, "assistant_output_")}`;
-  const node: GraphNode = { id, type: "assistant_output", text, data: inheritBranchData({ data }, branchIdForNode(graph, anchor)), status: "resolved", confidence: 1, createdAt: nowIso() };
+  const node: GraphNode = { id, type: "assistant_output", text, data, status: "resolved", confidence: 1, createdAt: nowIso() };
   graph.nodes.push(node);
   if (anchor) addEdge(graph, anchor.id, id, "follows");
   if (artifactId && graph.nodes.some((item) => item.id === artifactId)) addEdge(graph, id, artifactId, "creates");
@@ -131,19 +128,12 @@ function applyFocus(frame: GraphFrame, op: Extract<GraphOp, { op: "focus" }>): v
   const node = frame.graph.nodes.find((item) => item.id === nodeId);
   if (!node) return;
   frame.frame.focusNodeId = node.id;
-  frame.frame.activeBranchNodeId = node.type === "branch" || node.type === "system" ? node.id : branchIdForNode(frame.graph, node) ?? frame.frame.activeBranchNodeId ?? "system_root";
+  frame.frame.activeUserInputNodeId = userInputIdForNode(frame.graph, node) ?? frame.frame.activeUserInputNodeId;
 }
 
-function inheritBranchData(node: { type?: string; data?: Record<string, unknown> }, branchId: string | undefined): Record<string, unknown> | undefined {
-  if (!branchId || branchId === "system_root" || node.type === "branch") return node.data;
-  const existing = node.data ?? {};
-  return typeof existing.branchId === "string" ? existing : { ...existing, branchId };
-}
-
-function branchIdForNode(graph: StateGraph, node: GraphNode | undefined): string | undefined {
-  if (!node) return undefined;
-  if (node.type === "branch" || node.type === "system") return node.id;
-  if (typeof node.data?.branchId === "string") return node.data.branchId;
+function userInputIdForNode(graph: StateGraph, node: GraphNode | undefined): string | undefined {
+  if (!node || node.type === "system") return undefined;
+  if (node.type === "user_input") return node.id;
 
   const visited = new Set<string>();
   const queue = [node.id];
@@ -152,19 +142,19 @@ function branchIdForNode(graph: StateGraph, node: GraphNode | undefined): string
     if (!current || visited.has(current)) continue;
     visited.add(current);
     const currentNode = graph.nodes.find((item) => item.id === current);
-    if (currentNode?.type === "branch" || currentNode?.type === "system") return currentNode.id;
-    if (typeof currentNode?.data?.branchId === "string") return currentNode.data.branchId;
+    if (currentNode?.type === "user_input") return currentNode.id;
     for (const edge of graph.edges.filter((item) => item.to === current)) queue.push(edge.from);
   }
   return undefined;
 }
 
-function candidateBranchNodeIds(frame: GraphFrame): string[] {
+function candidateFocusNodeIds(frame: GraphFrame): string[] {
   return unique([
     "system_root",
-    frame.frame.activeBranchNodeId,
+    frame.frame.activeUserInputNodeId,
+    frame.frame.latestInputNodeId,
     frame.frame.focusNodeId,
-    ...frame.graph.nodes.filter((node) => node.type === "branch" && node.status !== "rejected").map((node) => node.id)
+    ...frame.graph.nodes.filter((node) => node.type === "user_input").map((node) => node.id)
   ].filter((id): id is string => Boolean(id) && frame.graph.nodes.some((node) => node.id === id)));
 }
 

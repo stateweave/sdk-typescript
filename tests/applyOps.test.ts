@@ -16,16 +16,12 @@ it("applies add_node, add_edge, update_node, and focus ops", () => {
   expect(next.frame.currentFocus).toBe("finalize");
 });
 
-it("moves cortex focus to an explicit graph node", () => {
-  const frame = createInitialGraphFrame({ objective: "Branch", input: "Start", availableActions: [] });
-  const next = applyOps(frame, [
-    { op: "add_node", node: { id: "branch_1", type: "branch", text: "Physics branch" } },
-    { op: "add_edge", from: "system_root", to: "branch_1", type: "supports" },
-    { op: "focus", nodeId: "branch_1", currentFocus: "Work in physics branch" }
-  ]);
-  expect(next.frame.focusNodeId).toBe("branch_1");
-  expect(next.frame.activeBranchNodeId).toBe("branch_1");
-  expect(next.frame.candidateBranchNodeIds).toContain("branch_1");
+it("moves cortex focus to an explicit user input node", () => {
+  const frame = createInitialGraphFrame({ objective: "Focus", input: "Start", availableActions: [] });
+  const next = applyOps(frame, [{ op: "focus", nodeId: "user_input_1", currentFocus: "Work from the first user input" }]);
+  expect(next.frame.focusNodeId).toBe("user_input_1");
+  expect(next.frame.activeUserInputNodeId).toBe("user_input_1");
+  expect(next.frame.candidateFocusNodeIds).toContain("user_input_1");
 });
 
 it("auto-connects model-added semantic nodes to the latest user input when no edge is provided", () => {

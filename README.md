@@ -12,7 +12,7 @@ GraphFrame -> model -> GraphOps -> StateGraph
 
 The model is still a normal transformer. StateWeave changes the runtime primitive around it: the SDK serializes a structured graph frame, asks the model for validated operations, applies them to an in-memory graph, and exposes every state transition for inspection.
 
-The current runtime uses a Cortex-style focus model: `system_root` anchors the graph, `branch` nodes represent non-linear working-memory regions, and `GraphFrame` carries `focusNodeId`, `activeBranchNodeId`, and candidate branch points so the model can continue, fork, merge, or refocus state instead of blindly appending to the latest message.
+The current runtime uses a Cortex-style focus model: `system_root` anchors the graph, user input nodes act as non-linear focus roots, and `GraphFrame` carries `focusNodeId`, `activeUserInputNodeId`, and candidate focus points so the model can continue, fork, merge, or refocus state instead of blindly appending to the latest message.
 
 ## Why StateWeave?
 

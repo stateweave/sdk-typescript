@@ -517,6 +517,8 @@ multiStage.addEventListener("click", (event) => {
   if (currentSuite().mode === "judge" && multiRun) void voteBackgroundEvalRun(voteButton.dataset.vote as Vote);
   else voteMulti(voteButton.dataset.vote as Vote);
 });
+setupCopyableLog(stateInput, "GraphFrame");
+setupCopyableLog(stateOutput, "GraphOps");
 
 function pageFromHash(): PageName {
   if (location.hash === "#ab") return "ab";
@@ -1503,16 +1505,20 @@ function renderGraph(value: StateGraph): void {
           </g>`).join("")}
       </g>
     </svg>
-    <aside id="graph-inspector" class="graph-inspector">
+    <div id="graph-selected-node" class="graph-selected-node">
       ${selectedNode ? graphInspectorHtml(value, selectedNode) : ""}
-    </aside>
-    <div class="graph-focus-strip">
-      ${layout.featuredNodes.map((node) => `
-        <article class="node-detail compact ${escapeHtml(node.type)} ${node.id === selectedGraphNodeId ? "selected" : ""}" data-node-card-id="${escapeAttribute(node.id)}">
-          <div><strong>${escapeHtml(node.id)}</strong><span>${escapeHtml(node.type)}</span></div>
-          <p>${escapeHtml(shorten(node.text, 160))}</p>
-        </article>`).join("")}
     </div>
+    <details class="graph-node-list">
+      <summary>Node list (${value.nodes.length})</summary>
+      <ul>
+        ${layout.nodes.map((node) => `
+          <li class="${node.id === selectedGraphNodeId ? "selected" : ""}" data-node-card-id="${escapeAttribute(node.id)}">
+            <strong>${escapeHtml(node.id)}</strong>
+            <span>${escapeHtml(node.type)}</span>
+            <em>${escapeHtml(shorten(node.text, 120))}</em>
+          </li>`).join("")}
+      </ul>
+    </details>
   `;
   mountGraphInteractions(value, layout);
 }
@@ -1548,13 +1554,13 @@ function graphLayout(value: StateGraph): {
     const y = existing?.y ?? (root ? centerY : centerY + Math.sin(angle) * ring);
     return {
       ...node,
-      x: root ? centerX : x,
-      y: root ? centerY : y,
+      x,
+      y,
       vx: existing?.vx ?? 0,
       vy: existing?.vy ?? 0,
       radius: nodeRadius(node.type, degree.get(node.id) ?? 0, root),
       degree: degree.get(node.id) ?? 0,
-      pinned: root || Boolean(existing?.pinned)
+      pinned: Boolean(existing?.pinned)
     };
   });
   const nodeMap = new Map(nodes.map((node) => [node.id, node]));
@@ -1583,7 +1589,7 @@ function mountGraphInteractions(value: StateGraph, layout: ReturnType<typeof gra
     if (nodeId) nodeElements.set(nodeId, nodeElement);
   }
   const edgeElements = layout.edges.map((_, index) => svg.querySelector<SVGLineElement>(`line[data-edge-index="${index}"]`));
-  const inspector = graph.querySelector<HTMLElement>("#graph-inspector");
+  const inspector = graph.querySelector<HTMLElement>("#graph-selected-node");
   const cards = [...graph.querySelectorAll<HTMLElement>("[data-node-card-id]")];
   let hoveredNodeId: string | undefined;
   let hoverPoint: GraphPointer | undefined;
@@ -1625,7 +1631,7 @@ function mountGraphInteractions(value: StateGraph, layout: ReturnType<typeof gra
     });
     nodeElement.addEventListener("pointerdown", (event) => {
       selectNode(node.id);
-      if (event.button !== 0 || node.id === "system_root") return;
+      if (event.button !== 0) return;
       event.preventDefault();
       const point = svgPoint(svg, event);
       node.pinned = true;
@@ -1662,7 +1668,6 @@ function mountGraphInteractions(value: StateGraph, layout: ReturnType<typeof gra
     nodeElement.addEventListener("pointercancel", releaseDrag);
     nodeElement.addEventListener("click", () => selectNode(node.id));
     nodeElement.addEventListener("dblclick", () => {
-      if (node.id === "system_root") return;
       node.pinned = false;
       nodeElement.classList.remove("pinned");
       rememberGraphNodePosition(node);
@@ -1698,7 +1703,7 @@ function applyGraphForces(
 ): void {
   const centerX = width / 2;
   const centerY = height / 2;
-  const movable = (node: GraphLayoutNode) => node.id !== "system_root" && !node.pinned && node.id !== options.draggingNodeId;
+  const movable = (node: GraphLayoutNode) => !node.pinned && node.id !== options.draggingNodeId;
 
   for (let i = 0; i < nodes.length; i++) {
     const a = nodes[i];
@@ -1745,14 +1750,6 @@ function applyGraphForces(
 
   const hovered = options.hoveredNodeId ? nodes.find((node) => node.id === options.hoveredNodeId) : undefined;
   for (const node of nodes) {
-    if (node.id === "system_root") {
-      node.x = centerX;
-      node.y = centerY;
-      node.vx = 0;
-      node.vy = 0;
-      rememberGraphNodePosition(node);
-      continue;
-    }
     if (node.id === options.draggingNodeId || node.pinned) {
       node.vx = 0;
       node.vy = 0;
@@ -1801,7 +1798,7 @@ function updateGraphDom(
     const element = nodeElements.get(node.id);
     if (!element) continue;
     element.setAttribute("transform", `translate(${node.x.toFixed(1)} ${node.y.toFixed(1)})`);
-    element.classList.toggle("pinned", node.pinned && node.id !== "system_root");
+    element.classList.toggle("pinned", node.pinned);
   }
   layout.edges.forEach((edge, index) => {
     const line = edgeElements[index];
@@ -1855,7 +1852,7 @@ function svgPoint(svg: SVGSVGElement, event: PointerEvent): GraphPointer {
 }
 
 function rememberGraphNodePosition(node: GraphLayoutNode): void {
-  graphPositions.set(node.id, { x: node.x, y: node.y, vx: node.vx, vy: node.vy, pinned: node.pinned && node.id !== "system_root" });
+  graphPositions.set(node.id, { x: node.x, y: node.y, vx: node.vx, vy: node.vy, pinned: node.pinned });
 }
 
 function stopGraphAnimation(): void {
@@ -1895,8 +1892,8 @@ function compactFrame(frame: GraphFrame): string {
     `currentFocus: ${frame.frame.currentFocus}`,
     `focusNodeId: ${frame.frame.focusNodeId ?? "unknown"}`,
     `latestInputNodeId: ${frame.frame.latestInputNodeId ?? "unknown"}`,
-    `activeBranchNodeId: ${frame.frame.activeBranchNodeId ?? "system_root"}`,
-    `candidateBranchNodeIds: ${frame.frame.candidateBranchNodeIds?.join(", ") ?? "system_root"}`,
+    `activeUserInputNodeId: ${frame.frame.activeUserInputNodeId ?? frame.frame.latestInputNodeId ?? "unknown"}`,
+    `candidateFocusNodeIds: ${frame.frame.candidateFocusNodeIds?.join(", ") ?? "system_root"}`,
     `nextExpectedOutput: ${frame.frame.nextExpectedOutput}`,
     `activeConstraints: ${frame.frame.activeConstraints.length ? frame.frame.activeConstraints.join("; ") : "none"}`,
     "",
@@ -1953,6 +1950,33 @@ function registerCopy(value: string): string {
   const id = `copy_${++copyCounter}`;
   copyPayloads.set(id, value);
   return id;
+}
+
+function setupCopyableLog(element: HTMLElement, label: string): void {
+  element.classList.add("copyable-log");
+  element.setAttribute("role", "button");
+  element.setAttribute("tabindex", "0");
+  element.setAttribute("title", `Click to copy ${label}`);
+  element.addEventListener("click", () => void copyLog(element, label));
+  element.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    void copyLog(element, label);
+  });
+}
+
+async function copyLog(element: HTMLElement, label: string): Promise<void> {
+  const value = element.textContent?.trim() ?? "";
+  if (!value || value.startsWith("No turn") || value.startsWith("No output")) return;
+  try {
+    await writeClipboard(value);
+    element.classList.add("copied");
+    status.textContent = `Copied ${label} to clipboard.`;
+  } catch {
+    status.textContent = `Failed to copy ${label}.`;
+  } finally {
+    window.setTimeout(() => element.classList.remove("copied"), 900);
+  }
 }
 
 async function copyText(value: string, button: HTMLButtonElement): Promise<void> {

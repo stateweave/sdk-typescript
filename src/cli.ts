@@ -196,7 +196,7 @@ function printFrame(frame: GraphFrame, full: boolean): void {
   console.log(`${label("objective")} ${frame.frame.objective}`);
   console.log(`${label("focus")} ${frame.frame.currentFocus}`);
   console.log(`${label("focus node")} ${frame.frame.focusNodeId ?? "unknown"}`);
-  console.log(`${label("branch")} ${frame.frame.activeBranchNodeId ?? "system_root"}`);
+  console.log(`${label("active input")} ${frame.frame.activeUserInputNodeId ?? frame.frame.latestInputNodeId ?? "unknown"}`);
   if (frame.frame.activeConstraints.length) console.log(`${label("constraints")} ${frame.frame.activeConstraints.join("; ")}`);
   console.log(`${label("graph")} ${frame.graph.nodes.length} nodes · ${frame.graph.edges.length} edges`);
 

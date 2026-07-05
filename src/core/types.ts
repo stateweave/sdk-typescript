@@ -3,7 +3,6 @@ export type NodeType =
   | "user_input"
   | "assistant_output"
   | "artifact"
-  | "branch"
   | "intent"
   | "constraint"
   | "fact"
@@ -58,8 +57,8 @@ export type GraphFrame = {
     currentFocus: string;
     focusNodeId?: string;
     latestInputNodeId?: string;
-    activeBranchNodeId?: string;
-    candidateBranchNodeIds?: string[];
+    activeUserInputNodeId?: string;
+    candidateFocusNodeIds?: string[];
     nextExpectedOutput: string;
     activeConstraints: string[];
     availableActions: string[];
