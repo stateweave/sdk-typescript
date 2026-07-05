@@ -236,7 +236,7 @@ function appendAssistant(stateweave: string): void {
     "beforeend",
     `<article class="answer state-answer assistant-response">
       <span>StateWeave</span>
-      <p>${escapeHtml(stateweave)}</p>
+      ${responseHtml(stateweave)}
     </article>`
   );
   scrollChat(chat);
@@ -293,14 +293,14 @@ function appendAbResult(prompt: string, regular: string, stateweave: string, val
             <h4>Regular messages</h4>
             <button class="button secondary small-button" type="button" data-copy-id="${regularCopy}">Copy</button>
           </div>
-          <pre>${escapeHtml(regular)}</pre>
+          ${responseHtml(regular)}
         </article>
         <article class="ab-answer state">
           <div class="ab-answer-header">
             <h4>StateWeave</h4>
             <button class="button secondary small-button" type="button" data-copy-id="${stateCopy}">Copy</button>
           </div>
-          <pre>${escapeHtml(stateweave)}</pre>
+          ${responseHtml(stateweave)}
         </article>
       </div>
     </article>`
@@ -408,7 +408,34 @@ function formatStateOutput(trace: TraceStep[], finalAnswer: string): string {
 }
 
 function formatOps(ops: GraphOp[]): string {
-  return ops.map((op) => JSON.stringify(op)).join("\n");
+  return ops.map(formatOp).join("\n");
+}
+
+function formatOp(op: GraphOp): string {
+  if (op.op === "add_node") return `@node ${op.node.id} ${op.node.type} "${shorten(op.node.text, 96)}"`;
+  if (op.op === "add_edge") return `@edge ${op.from} ${op.type} ${op.to}`;
+  if (op.op === "update_node") return `@update ${op.id}`;
+  if (op.op === "focus") return `@focus "${op.currentFocus}"`;
+  if (op.op === "call_tool") return `@tool ${op.tool}`;
+  if (op.op === "final") return op.artifactId ? `@final ${op.artifactId}` : `@final "${shorten(op.answer, 120)}"`;
+  return "@unknown";
+}
+
+function responseHtml(value: string): string {
+  const artifact = extractPreviewArtifact(value);
+  if (!artifact) return `<p>${escapeHtml(value)}</p>`;
+  return `
+    <div class="artifact-preview">
+      <iframe sandbox="" srcdoc="${escapeAttribute(artifact)}" title="Generated artifact preview"></iframe>
+    </div>
+    <pre class="artifact-source">${escapeHtml(value)}</pre>`;
+}
+
+function extractPreviewArtifact(value: string): string | undefined {
+  const fenced = value.match(/```(?:svg|html|xml)?\s*([\s\S]*?)```/i)?.[1]?.trim();
+  const candidate = fenced || value.trim();
+  if (/^(?:<!doctype\s+html|<html[\s>]|<svg[\s>])/i.test(candidate)) return candidate;
+  return undefined;
 }
 
 function registerCopy(value: string): string {
@@ -468,4 +495,8 @@ function shorten(value: string, length: number): string {
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" })[char] ?? char);
+}
+
+function escapeAttribute(value: string): string {
+  return escapeHtml(value).replace(/'/g, "&#39;");
 }

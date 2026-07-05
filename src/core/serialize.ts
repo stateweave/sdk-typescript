@@ -1,16 +1,34 @@
-import type { GraphFrame } from "./types.js";
+import type { GraphFrame, GraphNode } from "./types.js";
 
 export function serializeGraphFrame(frame: GraphFrame): string {
   const lines: string[] = [
     "You are operating inside StateWeave.",
-    "",
     "The graph is the runtime state; do not reconstruct this as provider messages[].",
+    "Return StateWeave Exchange, not JSON, YAML, markdown, or prose.",
+    "Start the response with exactly: SWX/1",
     "",
-    "You return JSON GraphOps only.",
-    "The model must return only valid JSON. No markdown. No prose outside JSON. Escape every newline and quote inside string values, especially code in final.answer.",
+    "Tiny commands mutate the graph:",
+    "@node <id> <type> \"short label\" status=active confidence=0.8 mime=text/plain",
+    "@edge <from> <type> <to>",
+    "@update <id> status=resolved text=\"short update\"",
+    "@focus \"short next focus\"",
+    "@tool <tool_name> key=value",
+    "@final \"short final answer\" OR @final <artifact_id>",
     "",
-    "The current GraphFrame is:",
+    "For SVG, HTML, code, markdown, or any long answer, put raw content in a block. No escaping inside blocks:",
+    "@node artifact_1 artifact \"Generated artifact\" mime=image/svg+xml",
+    "@edge user_input_1 creates artifact_1",
+    "@final artifact_1",
+    "<<<artifact_1:image/svg+xml",
+    "<svg>raw content here</svg>",
+    ">>>",
     "",
+    "Keep commands small so model attention stays on the user's task.",
+    "Allowed node types: system, user_input, assistant_output, artifact, intent, constraint, fact, hypothesis, decision, tool_call, tool_result, test_result, patch, risk, question.",
+    "Allowed edge types: follows, creates, supports, contradicts, explains, depends_on, addresses, validates, constrains, causes, relates_to.",
+    "Allowed statuses: active, resolved, rejected, stale.",
+    "",
+    "Current GraphFrame:",
     "<FRAME>",
     `objective: ${frame.frame.objective}`,
     `currentFocus: ${frame.frame.currentFocus}`,
@@ -25,37 +43,27 @@ export function serializeGraphFrame(frame: GraphFrame): string {
   ];
 
   for (const node of frame.graph.nodes) {
-    const details = node.data ? ` data=${JSON.stringify(node.data)}` : "";
-    lines.push(`node ${node.id} [${node.type}]: ${node.text}${details}`);
+    lines.push(`node ${node.id} [${node.type}]: ${node.text}${nodeDataSummary(node)}`);
   }
   for (const edge of frame.graph.edges) {
     lines.push(`edge ${edge.from} ${edge.type} ${edge.to}`);
   }
-  lines.push(
-    "</GRAPH>",
-    "",
-    "Return exactly one JSON object with an ops array. Each item must use the `op` field, never `action`. For long code answers, keep graph mutations minimal so final.answer has enough output budget.",
-    "",
-    "Allowed edge types: follows, supports, contradicts, explains, depends_on, addresses, validates, constrains, causes, relates_to. If unsure, use relates_to or explains. Never invent edge types.",
-    "Allowed node types: system, user_input, assistant_output, intent, constraint, fact, hypothesis, decision, tool_call, tool_result, test_result, patch, risk, question.",
-    "Allowed node statuses: active, resolved, rejected, stale. Never invent status values.",
-    "",
-    "Allowed operation shapes:",
-    JSON.stringify(
-      {
-        ops: [
-          { op: "add_node", node: { id: "hypothesis_1", type: "hypothesis", text: "...", confidence: 0.7, status: "active" } },
-          { op: "add_edge", from: "user_input_1", to: "hypothesis_1", type: "relates_to" },
-          { op: "update_node", id: "fact_1", patch: { status: "resolved" } },
-          { op: "focus", currentFocus: "..." },
-          { op: "call_tool", tool: "read_mock_file", args: { path: "auth.ts" } },
-          { op: "final", answer: "..." }
-        ]
-      },
-      null,
-      2
-    )
-  );
+  lines.push("</GRAPH>");
 
   return lines.join("\n");
+}
+
+function nodeDataSummary(node: GraphNode): string {
+  if (!node.data) return "";
+  const parts = Object.entries(node.data).map(([key, value]) => {
+    if (key === "content" && typeof value === "string") {
+      return `contentLength=${value.length} contentPreview=${JSON.stringify(oneLine(value.slice(0, 360)))}`;
+    }
+    return `${key}=${JSON.stringify(value)}`;
+  });
+  return parts.length ? ` data ${parts.join(" ")}` : "";
+}
+
+function oneLine(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
 }

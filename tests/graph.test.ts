@@ -15,7 +15,8 @@ it("serializes a GraphFrame into the StateWeave prompt contract", () => {
   const prompt = serializeGraphFrame(frame);
   expect(prompt).toContain("You are operating inside StateWeave.");
   expect(prompt).toContain("provider messages[]");
-  expect(prompt).toContain("Return exactly one JSON object");
+  expect(prompt).toContain("Return StateWeave Exchange");
+  expect(prompt).toContain("SWX/1");
   expect(prompt).toContain("node system_root [system]");
   expect(prompt).toContain("node user_input_1 [user_input]");
 });

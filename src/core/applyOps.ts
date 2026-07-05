@@ -34,7 +34,7 @@ export function applyOps(frame: GraphFrame, ops: GraphOp[]): GraphFrame {
       case "call_tool":
         break;
       case "final":
-        addAssistantOutput(next.graph, op.answer, anchor, addedNodeIds);
+        addAssistantOutput(next.graph, op.answer, anchor, addedNodeIds, op.artifactId);
         break;
       default:
         assertNever(op);
@@ -75,19 +75,25 @@ export function addToolResult(graph: StateGraph, args: { tool: string; result: u
   return next;
 }
 
-function addAssistantOutput(graph: StateGraph, answer: string, anchor: GraphNode | undefined, addedNodeIds: string[]): void {
+function addAssistantOutput(graph: StateGraph, answer: string, anchor: GraphNode | undefined, addedNodeIds: string[], artifactId?: string): void {
   const existing = addedNodeIds.map((id) => graph.nodes.find((node) => node.id === id)).find((node): node is GraphNode => node?.type === "assistant_output");
+  const text = artifactId ? `Returned artifact ${artifactId}` : answer;
+  const data = artifactId ? { artifactId } : undefined;
+
   if (existing) {
-    existing.text = answer;
+    existing.text = text;
+    existing.data = data ? { ...existing.data, ...data } : existing.data;
     existing.status = "resolved";
     existing.confidence = existing.confidence ?? 1;
     if (anchor && !isReferenced(graph, existing.id)) addEdge(graph, anchor.id, existing.id, "follows");
+    if (artifactId && graph.nodes.some((node) => node.id === artifactId)) addEdge(graph, existing.id, artifactId, "creates");
     return;
   }
 
   const id = `assistant_output_${nextIndex(graph.nodes, "assistant_output_")}`;
-  graph.nodes.push({ id, type: "assistant_output", text: answer, status: "resolved", confidence: 1, createdAt: nowIso() });
+  graph.nodes.push({ id, type: "assistant_output", text, data, status: "resolved", confidence: 1, createdAt: nowIso() });
   if (anchor) addEdge(graph, anchor.id, id, "follows");
+  if (artifactId && graph.nodes.some((node) => node.id === artifactId)) addEdge(graph, id, artifactId, "creates");
 }
 
 function connectNewNodes(graph: StateGraph, ids: string[], anchor: GraphNode | undefined): void {

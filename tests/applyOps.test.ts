@@ -39,6 +39,16 @@ it("reuses a model-added assistant output node when final is also returned", () 
   expect(next.graph.nodes.find((node) => node.id === "assistant_output_custom")?.text).toBe("final answer");
 });
 
+it("keeps large artifact final answers out of assistant output node text", () => {
+  const frame = createInitialGraphFrame({ objective: "Draw SVG", input: "Make an SVG", availableActions: [] });
+  const next = applyOps(frame, [
+    { op: "add_node", node: { id: "artifact_1", type: "artifact", text: "SVG", data: { mime: "image/svg+xml", content: "<svg></svg>" } } },
+    { op: "final", answer: "<svg></svg>", artifactId: "artifact_1" }
+  ]);
+  expect(next.graph.nodes).toContainEqual(expect.objectContaining({ id: "assistant_output_1", text: "Returned artifact artifact_1", data: { artifactId: "artifact_1" } }));
+  expect(next.graph.edges.some((edge) => edge.from === "assistant_output_1" && edge.to === "artifact_1" && edge.type === "creates")).toBe(true);
+});
+
 it("adds deterministic tool call and result nodes to the same graph", () => {
   const frame = createInitialGraphFrame({ objective: "Fix login", input: "Login fails", availableActions: [] });
   const graph = addToolResult(frame.graph, { tool: "read_mock_file", result: "auth summary", step: 1 });

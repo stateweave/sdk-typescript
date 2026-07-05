@@ -137,7 +137,7 @@ export function anthropicConfigFromEnv(env: NodeJS.ProcessEnv): AnthropicModelCo
 }
 
 function defaultSystem(mode?: string): string {
-  if (mode === "graph_ops") return "Return only the JSON object requested by the StateWeave prompt.";
+  if (mode === "graph_ops") return "Return only the SWX/1 StateWeave Exchange requested by the prompt. Do not return JSON, YAML, markdown fences, or prose.";
   return "Return plain text only.";
 }
 

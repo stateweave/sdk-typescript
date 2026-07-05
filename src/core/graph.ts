@@ -37,7 +37,7 @@ export function createInitialGraphFrame(args: {
     frame: {
       objective: args.objective,
       currentFocus: "Use the graph rooted at system_root to respond to the latest user_input node.",
-      nextExpectedOutput: "Return GraphOps that grow the same StateGraph with useful semantic nodes, tool calls, or a final answer.",
+      nextExpectedOutput: "Return SWX/1 commands that grow the same StateGraph with useful semantic nodes, tool calls, artifacts, or a final answer.",
       activeConstraints: constraints,
       availableActions: ["add_node", "add_edge", "update_node", "focus", "call_tool", "final", ...args.availableActions]
     },
@@ -64,7 +64,7 @@ export function appendInputToGraphFrame(frame: GraphFrame, args: { objective: st
 
   next.frame.objective = args.objective;
   next.frame.currentFocus = "Use existing StateGraph as long-running state and respond to the latest user_input node.";
-  next.frame.nextExpectedOutput = "Return GraphOps that continue or branch the graph intelligently, then produce a final answer when ready.";
+  next.frame.nextExpectedOutput = "Return SWX/1 commands that continue or branch the graph intelligently, then produce a final answer or artifact when ready.";
   next.frame.activeConstraints = unique([...next.frame.activeConstraints, ...extractConstraints(args.input)]);
   next.graph.nodes.push({ id: inputId, type: "user_input", text: args.input, status: "active", confidence: 1, createdAt });
   if (previous) next.graph.edges.push({ id: edgeId(previous.id, "follows", inputId), from: previous.id, to: inputId, type: "follows", createdAt });

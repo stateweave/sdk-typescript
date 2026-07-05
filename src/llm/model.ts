@@ -55,49 +55,29 @@ export class MockModel implements Model {
     const lower = source.toLowerCase();
     const identity = identityOutput(source);
     if (identity && input.mode === "text") return identity.answer;
-    if (identity && input.mode !== "text") return JSON.stringify(identity.ops);
+    if (identity && input.mode !== "text") return identity.swx;
 
     const task = inferTask(lower);
     const hasToolResult = input.frame?.graph.nodes.some((node) => node.type === "tool_result") ?? input.prompt.toLowerCase().includes("tool_result");
     if (input.mode === "text") return finalFor(task);
 
     if (!hasToolResult) {
-      return JSON.stringify({
-        ops: [
-          {
-            op: "add_node",
-            node: {
-              id: `hypothesis_${task}`,
-              type: "hypothesis",
-              text: hypothesisFor(task),
-              confidence: 0.72,
-              status: "active"
-            }
-          },
-          { op: "call_tool", tool: toolFor(task), args: argsFor(task) }
-        ]
-      });
+      return [
+        "SWX/1",
+        `@node hypothesis_${task} hypothesis "${hypothesisFor(task)}" confidence=0.72 status=active`,
+        `@tool ${toolFor(task)} ${argsForSwx(task)}`
+      ].join("\n");
     }
 
-    return JSON.stringify({
-      ops: [
-        {
-          op: "add_node",
-          node: {
-            id: `decision_${task}`,
-            type: "decision",
-            text: finalFor(task),
-            confidence: 0.86,
-            status: "resolved"
-          }
-        },
-        { op: "final", answer: finalFor(task) }
-      ]
-    });
+    return [
+      "SWX/1",
+      `@node decision_${task} decision "${finalFor(task)}" confidence=0.86 status=resolved`,
+      `@final "${finalFor(task)}"`
+    ].join("\n");
   }
 }
 
-function identityOutput(source: string): { answer: string; ops: { ops: unknown[] } } | undefined {
+function identityOutput(source: string): { answer: string; swx: string } | undefined {
   const name = source.match(/my name is\s+([a-z][a-z0-9_-]*)/i)?.[1];
   const asksName = /what(?:'| i)?s my name|what is my name/i.test(source);
   if (!name) return undefined;
@@ -105,12 +85,11 @@ function identityOutput(source: string): { answer: string; ops: { ops: unknown[]
   const answer = asksName ? `Your name is ${name}.` : `Nice to meet you, ${name}.`;
   return {
     answer,
-    ops: {
-      ops: [
-        { op: "add_node", node: { id: "fact_user_name", type: "fact", text: `The user's name is ${name}.`, confidence: 1, status: "active" } },
-        { op: "final", answer }
-      ]
-    }
+    swx: [
+      "SWX/1",
+      `@node fact_user_name fact "The user's name is ${name}." confidence=1 status=active`,
+      `@final "${answer}"`
+    ].join("\n")
   };
 }
 
@@ -134,6 +113,10 @@ function argsFor(task: "login" | "payment" | "api"): Record<string, unknown> {
   if (task === "payment") return { pattern: "payment" };
   if (task === "api") return { query: "api response shape" };
   return { path: "auth.ts" };
+}
+
+function argsForSwx(task: "login" | "payment" | "api"): string {
+  return Object.entries(argsFor(task)).map(([key, value]) => `${key}="${String(value)}"`).join(" ");
 }
 
 function hypothesisFor(task: "login" | "payment" | "api"): string {

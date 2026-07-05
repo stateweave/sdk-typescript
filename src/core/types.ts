@@ -2,6 +2,7 @@ export type NodeType =
   | "system"
   | "user_input"
   | "assistant_output"
+  | "artifact"
   | "intent"
   | "constraint"
   | "fact"
@@ -16,6 +17,7 @@ export type NodeType =
 
 export type EdgeType =
   | "follows"
+  | "creates"
   | "supports"
   | "contradicts"
   | "explains"
@@ -66,7 +68,7 @@ export type GraphOp =
   | { op: "update_node"; id: string; patch: Partial<GraphNode> }
   | { op: "focus"; currentFocus: string }
   | { op: "call_tool"; tool: string; args: Record<string, unknown> }
-  | { op: "final"; answer: string };
+  | { op: "final"; answer: string; artifactId?: string };
 
 export type TraceStep = {
   step: number;
