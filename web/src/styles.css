@@ -206,6 +206,65 @@ h3 {
   gap: 8px;
 }
 
+.agent-settings {
+  margin: 10px 12px 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fafafa;
+  padding: 8px 10px;
+}
+
+.agent-settings summary {
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.agent-settings-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.45fr) 120px auto;
+  gap: 8px;
+  align-items: end;
+  margin-top: 8px;
+}
+
+.agent-settings label {
+  margin: 0;
+}
+
+.agent-settings label span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.agent-settings textarea,
+.agent-settings input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px;
+  color: var(--foreground);
+  font: inherit;
+}
+
+.agent-settings textarea {
+  min-height: 76px;
+  resize: vertical;
+  font-size: 0.76rem;
+}
+
+.agent-settings .muted-copy {
+  margin-top: 7px;
+  font-size: 0.72rem;
+}
+
 .chat {
   flex: 1;
   min-height: 0;
@@ -1751,7 +1810,8 @@ label {
   .ab-answer-grid,
   .multi-shell,
   .blind-grid,
-  .reveal-row {
+  .reveal-row,
+  .agent-settings-grid {
     grid-template-columns: 1fr;
   }
 

@@ -70,6 +70,7 @@ type WorkspaceFile = { path: string; size: number; updatedAt: string; mime: stri
 type WorkspaceFileContent = WorkspaceFile & { content: string };
 type TransferMode = "export" | "import";
 type WorkspaceViewName = "graph" | "tools" | "files";
+type AgentSettings = { systemPrompt: string; nodeTypes: string[]; maxIterations: number };
 type LiveStreamLog = { metadata?: StateWeaveRunMetadata; tokens: Map<number, string>; events: string[]; prompt?: string; modelMetadata: Map<number, Record<string, unknown>[]> };
 
 let activePage: PageName = pageFromHash();
@@ -93,6 +94,13 @@ let graphAnimationFrame: number | undefined;
 let transferMode: TransferMode = "export";
 let selectedFilePath: string | undefined;
 
+const defaultAgentSettings: AgentSettings = {
+  systemPrompt: "StateWeave system root. The graph is the runtime state; compile GraphFrame from the graph instead of provider messages.",
+  nodeTypes: ["intent", "constraint", "artifact", "decision", "fact", "hypothesis", "risk", "question", "wisdom"],
+  maxIterations: 30
+};
+const agentSettingsStorageKey = "stateweave.agentSettings.v1";
+let agentSettings = loadAgentSettings();
 const graphPositions = new Map<string, GraphPosition>();
 const copyPayloads = new Map<string, string>();
 const artifactPreviews = new Map<string, string>();
@@ -450,6 +458,10 @@ const send = element<HTMLButtonElement>("send");
 const reset = element<HTMLButtonElement>("reset");
 const status = element<HTMLElement>("status");
 const provider = element<HTMLElement>("provider");
+const agentSystemPrompt = element<HTMLTextAreaElement>("agent-system-prompt");
+const agentNodeTypes = element<HTMLInputElement>("agent-node-types");
+const agentMaxIterations = element<HTMLInputElement>("agent-max-iterations");
+const resetAgentSettings = element<HTMLButtonElement>("reset-agent-settings");
 const stateInput = element<HTMLElement>("state-input");
 const stateOutput = element<HTMLElement>("state-output");
 const graphViewTab = element<HTMLButtonElement>("graph-view-tab");
@@ -491,6 +503,7 @@ const multiSteps = element<HTMLElement>("multi-steps");
 const multiStage = element<HTMLElement>("multi-stage");
 
 setActivePage(activePage, false);
+renderAgentSettings();
 renderMultiProgress();
 void loadHealth();
 void loadTools();
@@ -524,6 +537,16 @@ input.addEventListener("keydown", (event) => {
     event.preventDefault();
     void sendStateWeaveMessage();
   }
+});
+agentSystemPrompt.addEventListener("input", saveAgentSettingsFromForm);
+agentNodeTypes.addEventListener("input", saveAgentSettingsFromForm);
+agentMaxIterations.addEventListener("input", saveAgentSettingsFromForm);
+resetAgentSettings.addEventListener("click", () => {
+  agentSettings = structuredClone(defaultAgentSettings);
+  saveAgentSettings();
+  renderAgentSettings();
+  stateFrame = applyAgentSettingsToFrame(stateFrame);
+  if (stateFrame) renderGraph(stateFrame.graph);
 });
 abInput.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
@@ -600,6 +623,67 @@ function pageFromHash(): PageName {
 function suiteIdForPage(page: PageName): SuiteId | undefined {
   if (page === "prompt-one" || page === "prompt-two" || page === "prompt-three" || page === "prompt-four" || page === "prompt-five" || page === "prompt-six") return page;
   return undefined;
+}
+
+function loadAgentSettings(): AgentSettings {
+  const raw = localStorage.getItem(agentSettingsStorageKey);
+  if (!raw) return structuredClone(defaultAgentSettings);
+  try {
+    const parsed = JSON.parse(raw) as Partial<AgentSettings>;
+    return {
+      systemPrompt: typeof parsed.systemPrompt === "string" && parsed.systemPrompt.trim() ? parsed.systemPrompt : defaultAgentSettings.systemPrompt,
+      nodeTypes: normalizeNodeTypes(Array.isArray(parsed.nodeTypes) ? parsed.nodeTypes : defaultAgentSettings.nodeTypes),
+      maxIterations: normalizeMaxIterations(parsed.maxIterations)
+    };
+  } catch {
+    return structuredClone(defaultAgentSettings);
+  }
+}
+
+function saveAgentSettings(): void {
+  localStorage.setItem(agentSettingsStorageKey, JSON.stringify(agentSettings));
+}
+
+function renderAgentSettings(): void {
+  agentSystemPrompt.value = agentSettings.systemPrompt;
+  agentNodeTypes.value = agentSettings.nodeTypes.join(", ");
+  agentMaxIterations.value = String(agentSettings.maxIterations);
+}
+
+function saveAgentSettingsFromForm(): void {
+  agentSettings = {
+    systemPrompt: agentSystemPrompt.value.trim() || defaultAgentSettings.systemPrompt,
+    nodeTypes: normalizeNodeTypes(agentNodeTypes.value.split(",")),
+    maxIterations: normalizeMaxIterations(agentMaxIterations.value)
+  };
+  saveAgentSettings();
+  stateFrame = applyAgentSettingsToFrame(stateFrame);
+  abStateFrame = applyAgentSettingsToFrame(abStateFrame);
+}
+
+function applyAgentSettingsToFrame(frame: GraphFrame | undefined): GraphFrame | undefined {
+  if (!frame) return undefined;
+  const next = structuredClone(frame);
+  next.frame.nodeTypes = agentSettings.nodeTypes;
+  const root = next.graph.nodes.find((node) => node.id === "system_root" && node.type === "system");
+  if (root) {
+    root.text = agentSettings.systemPrompt;
+    root.data = { ...root.data, activeSystemNodeId: "system_root", systemPrompt: agentSettings.systemPrompt };
+  }
+  return next;
+}
+
+function normalizeNodeTypes(values: unknown[]): string[] {
+  return [...new Set(values
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
+    .filter((value) => /^[a-z][a-z0-9_-]{0,63}$/.test(value)))];
+}
+
+function normalizeMaxIterations(value: unknown): number {
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric < 1) return defaultAgentSettings.maxIterations;
+  return Math.min(numeric, 100);
 }
 
 function setWorkspaceView(view: WorkspaceViewName): void {
@@ -688,7 +772,8 @@ async function sendStateWeaveMessage(): Promise<void> {
   const live = createLiveStreamLog();
 
   try {
-    const result = await streamStateWeave(text, stateFrame, (event) => {
+    stateFrame = applyAgentSettingsToFrame(stateFrame);
+    const result = await streamStateWeave(text, stateFrame, agentSettings, (event) => {
       updateLiveStreamLog(live, event);
       updatePendingStateWeave(pending, live);
       stateOutput.textContent = formatLiveStreamLog(live);
@@ -729,6 +814,7 @@ async function runAbTest(): Promise<void> {
   const pending = appendAbPending(text);
 
   try {
+    abStateFrame = applyAgentSettingsToFrame(abStateFrame);
     const result = await compareStateWeave(text, abStateFrame, abRegularHistory);
     abStateFrame = result.stateweave.frameAfter;
     abRegularHistory = result.traditional.history;
@@ -747,11 +833,11 @@ async function runAbTest(): Promise<void> {
   }
 }
 
-async function streamStateWeave(text: string, frame: GraphFrame | undefined, onEvent: (event: StateWeaveStreamEvent) => void): Promise<StateWeaveResponse> {
+async function streamStateWeave(text: string, frame: GraphFrame | undefined, settings: AgentSettings, onEvent: (event: StateWeaveStreamEvent) => void): Promise<StateWeaveResponse> {
   const response = await fetch(`${apiBase}/api/stateweave/run`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ input: text, frame })
+    body: JSON.stringify({ input: text, frame, systemPrompt: settings.systemPrompt, nodeTypes: settings.nodeTypes, maxIterations: settings.maxIterations })
   });
 
   if (!response.ok) {
@@ -773,7 +859,7 @@ async function streamStateWeave(text: string, frame: GraphFrame | undefined, onE
       final = {
         stateweave: {
           inputFrame: event.result.trace[0]?.frameBefore,
-          frameAfter: event.result.trace.at(-1)?.frameAfter,
+          frameAfter: event.result.frame ?? event.result.trace.at(-1)?.frameAfter,
           output: event.result.finalAnswer,
           trace: event.result.trace,
           graph: event.result.graph,
@@ -806,7 +892,7 @@ async function compareStateWeave(text: string, frame: GraphFrame | undefined, me
   const response = await fetch(`${apiBase}/api/stateweave/compare`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ input: text, frame, messages })
+    body: JSON.stringify({ input: text, frame, messages, systemPrompt: agentSettings.systemPrompt, nodeTypes: agentSettings.nodeTypes, maxIterations: agentSettings.maxIterations })
   });
 
   const body = (await response.json()) as CompareResponse | { error?: string };

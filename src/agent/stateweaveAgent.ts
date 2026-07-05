@@ -1,6 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { AgentResult, GraphFrame, StateWeaveStreamEvent, TraceStep } from "../core/types.js";
+import { appendInputToGraphFrame, cloneFrame, createInitialGraphFrame } from "../core/graph.js";
+import { normalizeTaskInput } from "../core/input.js";
+import type { AgentResult, GraphEdge, GraphFrame, GraphNode, StateGraph, StateWeaveStreamEvent, TraceStep } from "../core/types.js";
 import type { Model } from "../llm/model.js";
 import { createDefaultTools } from "../tools/fileSystemTools.js";
 import type { Tool } from "../tools/types.js";
@@ -8,11 +10,14 @@ import { runStateWeave, StateWeaveRunError, streamStateWeave, type StateWeaveInp
 
 export type { StateWeaveInput, StateWeaveRunOptions } from "./stateweaveRunner.js";
 
+const defaultMaxIterations = 30;
+
 export type StateWeaveAgentArgs = {
   model: Model;
   tools?: Tool[];
   maxSteps?: number;
   maxIterations?: number;
+  systemPrompt?: string;
   nodeTypes?: string[];
   traceDir?: string;
   frame?: GraphFrame;
@@ -21,37 +26,45 @@ export type StateWeaveAgentArgs = {
 export class StateWeaveAgent {
   private model: Model;
   private tools: Tool[];
-  private maxSteps: number;
+  private maxIterations: number;
+  private systemPrompt?: string;
   private nodeTypes: string[];
   private traceDir?: string;
   private frame?: GraphFrame;
-  private stateQueue: Promise<void> = Promise.resolve();
+  private stateLock: Promise<void> = Promise.resolve();
 
   constructor(args: StateWeaveAgentArgs) {
     this.model = args.model;
     this.tools = args.tools ?? createDefaultTools();
-    this.maxSteps = args.maxIterations ?? args.maxSteps ?? 5;
+    this.maxIterations = args.maxIterations ?? args.maxSteps ?? defaultMaxIterations;
+    this.systemPrompt = args.systemPrompt;
     this.nodeTypes = normalizeNodeTypes(args.nodeTypes ?? []);
     this.traceDir = args.traceDir;
-    this.frame = args.frame;
+    this.frame = args.frame ? cloneFrame(args.frame) : undefined;
   }
 
   async run(input: StateWeaveInput, options?: StateWeaveRunOptions): Promise<AgentResult> {
-    if (options?.frame) return this.runOnce(input, options, false);
-    return this.withStateLock(() => this.runOnce(input, { frame: this.frame }, true));
+    if (options?.frame) return this.runOnce(input, options);
+
+    const baseFrame = await this.reserveFrame(input);
+    const result = await this.runOnce(input, { frame: baseFrame, inputAlreadyAppended: true });
+    return this.commitResult(result, baseFrame);
   }
 
   async *stream(input: StateWeaveInput, options?: StateWeaveRunOptions): AsyncIterable<StateWeaveStreamEvent> {
     if (options?.frame) {
-      yield* this.streamOnce(input, options, false);
+      yield* this.streamOnce(input, options);
       return;
     }
 
-    const release = await this.acquireStateLock();
-    try {
-      yield* this.streamOnce(input, { frame: this.frame }, true);
-    } finally {
-      release();
+    const baseFrame = await this.reserveFrame(input);
+    for await (const event of this.streamOnce(input, { frame: baseFrame, inputAlreadyAppended: true })) {
+      if (event.type !== "final") {
+        yield event;
+        continue;
+      }
+      const committed = await this.commitResult(event.result, baseFrame);
+      yield { ...event, result: committed };
     }
   }
 
@@ -62,17 +75,34 @@ export class StateWeaveAgent {
   }
 
   getFrame(): GraphFrame | undefined {
-    return this.frame ? structuredClone(this.frame) : undefined;
+    return this.frame ? cloneFrame(this.frame) : undefined;
   }
 
   resetFrame(frame?: GraphFrame): void {
-    this.frame = frame ? structuredClone(frame) : undefined;
+    this.frame = frame ? cloneFrame(frame) : undefined;
   }
 
-  private async runOnce(input: StateWeaveInput, options: StateWeaveRunOptions | undefined, updateFrame: boolean): Promise<AgentResult> {
+  private async reserveFrame(input: StateWeaveInput): Promise<GraphFrame> {
+    const task = normalizeTaskInput(input);
+    return this.withStateLock(() => {
+      const next = this.frame
+        ? appendInputToGraphFrame(this.frame, task)
+        : createInitialGraphFrame({
+            objective: task.objective,
+            input: task.input,
+            systemPrompt: this.systemPrompt,
+            availableActions: this.toolActions(),
+            nodeTypes: this.nodeTypes
+          });
+      next.frame.nodeTypes = normalizeNodeTypes([...this.nodeTypes, ...(next.frame.nodeTypes ?? [])]);
+      this.frame = next;
+      return cloneFrame(next);
+    });
+  }
+
+  private async runOnce(input: StateWeaveInput, options: StateWeaveRunOptions | undefined): Promise<AgentResult> {
     try {
-      const result = await runStateWeave({ model: this.model, tools: this.tools, maxSteps: this.maxSteps, nodeTypes: this.nodeTypes }, input, options);
-      if (updateFrame) this.frame = result.frame;
+      const result = await runStateWeave({ model: this.model, tools: this.tools, maxSteps: this.maxIterations, systemPrompt: this.systemPrompt, nodeTypes: this.nodeTypes }, input, options);
       if (this.traceDir) await this.saveTrace(traceObjective(result.trace), result.trace);
       return result;
     } catch (error) {
@@ -81,13 +111,10 @@ export class StateWeaveAgent {
     }
   }
 
-  private async *streamOnce(input: StateWeaveInput, options: StateWeaveRunOptions | undefined, updateFrame: boolean): AsyncIterable<StateWeaveStreamEvent> {
+  private async *streamOnce(input: StateWeaveInput, options: StateWeaveRunOptions | undefined): AsyncIterable<StateWeaveStreamEvent> {
     try {
-      for await (const event of streamStateWeave({ model: this.model, tools: this.tools, maxSteps: this.maxSteps, nodeTypes: this.nodeTypes }, input, options)) {
-        if (event.type === "final") {
-          if (updateFrame) this.frame = event.result.frame;
-          if (this.traceDir) await this.saveTrace(traceObjective(event.result.trace), event.result.trace);
-        }
+      for await (const event of streamStateWeave({ model: this.model, tools: this.tools, maxSteps: this.maxIterations, systemPrompt: this.systemPrompt, nodeTypes: this.nodeTypes }, input, options)) {
+        if (event.type === "final" && this.traceDir) await this.saveTrace(traceObjective(event.result.trace), event.result.trace);
         yield event;
       }
     } catch (error) {
@@ -96,24 +123,31 @@ export class StateWeaveAgent {
     }
   }
 
-  private async withStateLock<T>(work: () => Promise<T>): Promise<T> {
-    const release = await this.acquireStateLock();
+  private async commitResult(result: AgentResult, baseFrame: GraphFrame): Promise<AgentResult> {
+    return this.withStateLock(() => {
+      const frame = mergeConcurrentFrame(this.frame ?? baseFrame, result.frame, baseFrame);
+      this.frame = frame;
+      return { ...result, frame, graph: frame.graph };
+    });
+  }
+
+  private toolActions(): string[] {
+    return this.tools.map((tool) => `tool:${tool.name} - ${tool.description}`);
+  }
+
+  private async withStateLock<T>(work: () => T | Promise<T>): Promise<T> {
+    const previous = this.stateLock.catch(() => undefined);
+    let release: () => void = () => undefined;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.stateLock = previous.then(() => current);
+    await previous;
     try {
       return await work();
     } finally {
       release();
     }
-  }
-
-  private async acquireStateLock(): Promise<() => void> {
-    const previous = this.stateQueue.catch(() => undefined);
-    let release: () => void = () => undefined;
-    const current = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    this.stateQueue = previous.then(() => current);
-    await previous;
-    return release;
   }
 
   private async saveTrace(objective: string, trace: TraceStep[]): Promise<void> {
@@ -156,10 +190,103 @@ export class Agent {
   }
 }
 
+function mergeConcurrentFrame(currentFrame: GraphFrame, resultFrame: GraphFrame, baseFrame: GraphFrame): GraphFrame {
+  const next = cloneFrame(currentFrame);
+  const baseNodeIds = new Set(baseFrame.graph.nodes.map((node) => node.id));
+  const baseEdgeKeys = new Set(baseFrame.graph.edges.map(edgeKey));
+  const nodeRenames = new Map<string, string>();
+  const newResultNodes = resultFrame.graph.nodes.filter((node) => !baseNodeIds.has(node.id));
+
+  for (const node of newResultNodes) {
+    if (!next.graph.nodes.some((item) => item.id === node.id)) continue;
+    nodeRenames.set(node.id, uniqueNodeId(next.graph, node.id));
+  }
+
+  for (const node of newResultNodes) {
+    const id = nodeRenames.get(node.id) ?? node.id;
+    if (next.graph.nodes.some((item) => item.id === id)) continue;
+    next.graph.nodes.push(rewriteNode(node, id, nodeRenames));
+  }
+
+  for (const edge of resultFrame.graph.edges) {
+    if (baseEdgeKeys.has(edgeKey(edge))) continue;
+    const rewritten = rewriteEdge(edge, nodeRenames);
+    if (!hasNode(next.graph, rewritten.from) || !hasNode(next.graph, rewritten.to)) continue;
+    if (next.graph.edges.some((item) => edgeKey(item) === edgeKey(rewritten))) continue;
+    next.graph.edges.push({ ...rewritten, id: uniqueEdgeId(next.graph, rewritten) });
+  }
+
+  next.frame.currentFocus = resultFrame.frame.currentFocus;
+  next.frame.focusNodeId = rewriteOptionalId(resultFrame.frame.focusNodeId, nodeRenames) ?? next.frame.focusNodeId;
+  next.frame.activeUserInputNodeId = rewriteOptionalId(resultFrame.frame.activeUserInputNodeId, nodeRenames) ?? next.frame.activeUserInputNodeId;
+  next.frame.activeConstraints = unique([...next.frame.activeConstraints, ...resultFrame.frame.activeConstraints]);
+  next.frame.nodeTypes = normalizeNodeTypes([...(next.frame.nodeTypes ?? []), ...(resultFrame.frame.nodeTypes ?? [])]);
+  next.frame.candidateFocusNodeIds = unique([
+    ...(next.frame.candidateFocusNodeIds ?? []),
+    ...(resultFrame.frame.candidateFocusNodeIds ?? []).map((id) => nodeRenames.get(id) ?? id),
+    ...newResultNodes.map((node) => nodeRenames.get(node.id) ?? node.id)
+  ]).filter((id) => hasNode(next.graph, id));
+  if (!resultFrame.frame.lastGraphOpsError) delete next.frame.lastGraphOpsError;
+
+  return next;
+}
+
+function rewriteNode(node: GraphNode, id: string, renames: Map<string, string>): GraphNode {
+  return { ...node, id, data: rewriteValue(node.data, renames) as Record<string, unknown> | undefined };
+}
+
+function rewriteEdge(edge: GraphEdge, renames: Map<string, string>): GraphEdge {
+  return { ...edge, from: renames.get(edge.from) ?? edge.from, to: renames.get(edge.to) ?? edge.to };
+}
+
+function rewriteValue(value: unknown, renames: Map<string, string>): unknown {
+  if (typeof value === "string") return renames.get(value) ?? value;
+  if (Array.isArray(value)) return value.map((item) => rewriteValue(item, renames));
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, rewriteValue(item, renames)]));
+}
+
+function rewriteOptionalId(id: string | undefined, renames: Map<string, string>): string | undefined {
+  return id ? renames.get(id) ?? id : undefined;
+}
+
+function uniqueNodeId(graph: StateGraph, id: string): string {
+  let index = 2;
+  let next = `${id}_${index}`;
+  while (graph.nodes.some((node) => node.id === next)) {
+    index += 1;
+    next = `${id}_${index}`;
+  }
+  return next;
+}
+
+function uniqueEdgeId(graph: StateGraph, edge: Pick<GraphEdge, "from" | "type" | "to">): string {
+  const base = `edge_${edge.from}_${edge.type}_${edge.to}`.replace(/[^a-zA-Z0-9_]/g, "_");
+  let next = base;
+  let index = 2;
+  while (graph.edges.some((item) => item.id === next)) {
+    next = `${base}_${index}`;
+    index += 1;
+  }
+  return next;
+}
+
+function edgeKey(edge: Pick<GraphEdge, "from" | "type" | "to">): string {
+  return `${edge.from}\u0000${edge.type}\u0000${edge.to}`;
+}
+
+function hasNode(graph: StateGraph, id: string): boolean {
+  return graph.nodes.some((node) => node.id === id);
+}
+
 function traceObjective(trace: TraceStep[]): string {
   return trace[0]?.frameBefore.frame.objective ?? "stateweave";
 }
 
 function normalizeNodeTypes(values: string[]): string[] {
-  return [...new Set(values.map((value) => value.trim()).filter((value) => /^[a-z][a-z0-9_-]{0,63}$/.test(value)))];
+  return unique(values.map((value) => value.trim()).filter((value) => /^[a-z][a-z0-9_-]{0,63}$/.test(value)));
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)];
 }

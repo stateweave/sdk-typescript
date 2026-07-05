@@ -9,8 +9,8 @@ import { estimateStateWeaveTokens } from "../llm/tokenizer.js";
 import type { Tool } from "../tools/types.js";
 
 export type StateWeaveInput = TaskInput;
-export type StateWeaveRunOptions = { frame?: GraphFrame };
-export type StateWeaveRunnerArgs = { model: Model; tools: Tool[]; maxSteps?: number; nodeTypes?: string[] };
+export type StateWeaveRunOptions = { frame?: GraphFrame; inputAlreadyAppended?: boolean };
+export type StateWeaveRunnerArgs = { model: Model; tools: Tool[]; maxSteps?: number; systemPrompt?: string; nodeTypes?: string[] };
 
 export class StateWeaveRunError extends Error {
   trace: TraceStep[];
@@ -37,15 +37,18 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
   const tools = new Map(args.tools.map((tool) => [tool.name, tool]));
   const task = normalizeTaskInput(input);
   let frame = options?.frame
-    ? appendInputToGraphFrame(options.frame, task)
+    ? options.inputAlreadyAppended
+      ? cloneFrame(options.frame)
+      : appendInputToGraphFrame(options.frame, task)
     : createInitialGraphFrame({
         objective: task.objective,
         input: task.input,
+        systemPrompt: args.systemPrompt,
         availableActions: [...tools.values()].map((tool) => `tool:${tool.name} - ${tool.description}`),
         nodeTypes: args.nodeTypes
       });
   const trace: TraceStep[] = [];
-  const maxSteps = args.maxSteps ?? 5;
+  const maxSteps = args.maxSteps ?? 30;
   const runId = runIdForNow();
   const startedAt = new Date();
   let retryCount = 0;
@@ -99,7 +102,13 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
     if (finalAnswer) break;
   }
 
-  if (!finalAnswer) finalAnswer = "No final answer produced before maxSteps.";
+  if (!finalAnswer) {
+    throw new StateWeaveRunError(
+      `Recursion limit reached after ${maxSteps} iteration(s); consider increasing maxIterations.`,
+      trace,
+      runMetadata(runId, toolInfo, startedAt, maxSteps, trace, retryCount, "error")
+    );
+  }
   yield { type: "final", result: { finalAnswer, frame, graph: frame.graph, trace, metadata: runMetadata(runId, toolInfo, startedAt, maxSteps, trace, retryCount, "done") } };
 }
 

@@ -40,6 +40,25 @@
               <button id="import-graph" class="button secondary small-button" type="button">Import</button>
             </div>
           </div>
+          <details class="agent-settings">
+            <summary>Agent settings</summary>
+            <div class="agent-settings-grid">
+              <label>
+                <span>System prompt</span>
+                <textarea id="agent-system-prompt" rows="4"></textarea>
+              </label>
+              <label>
+                <span>NodeTypes</span>
+                <input id="agent-node-types" type="text" />
+              </label>
+              <label>
+                <span>Max turns</span>
+                <input id="agent-max-iterations" type="number" min="1" max="100" />
+              </label>
+              <button id="reset-agent-settings" class="button secondary small-button" type="button">Reset defaults</button>
+            </div>
+            <p class="muted-copy">Settings persist in this browser and are sent with every StateWeave chat turn.</p>
+          </details>
           <div id="chat" class="chat">
             <div class="empty-state">
               <h2>Ask anything.</h2>

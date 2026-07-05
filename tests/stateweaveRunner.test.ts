@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
 import { Agent } from "../src/agent/stateweaveAgent.js";
-import { runStateWeave } from "../src/agent/stateweaveRunner.js";
+import { runStateWeave, StateWeaveRunError } from "../src/agent/stateweaveRunner.js";
 import { applyOps } from "../src/core/applyOps.js";
 import { createInitialGraphFrame } from "../src/core/graph.js";
 import type { Model, ModelInput, ModelOutput, ModelToken } from "../src/llm/model.js";
@@ -85,6 +85,13 @@ it("runs workspace write/edit tools end to end with SWX block-ref args", async (
   }
 });
 
+it("throws a clear recursion-limit error when maxIterations is exhausted", async () => {
+  const output = "SWX/1\n@edge system_root follows user_input_1\n@node note_1 note \"Still working\"\n@edge user_input_1 creates note_1";
+
+  await expect(runStateWeave({ model: new SequenceModel([output]), tools: [], maxSteps: 1 }, "Keep going forever")).rejects.toThrow(StateWeaveRunError);
+  await expect(runStateWeave({ model: new SequenceModel([output]), tools: [], maxSteps: 1 }, "Keep going forever")).rejects.toThrow(/Recursion limit reached.*maxIterations/);
+});
+
 it("Agent streams final text by default and keeps one graph across user turns", async () => {
   const agent = new Agent({
     model: new SequenceModel([
@@ -106,6 +113,38 @@ it("Agent streams final text by default and keeps one graph across user turns", 
   expect(second.trace[0].prompt).toContain("semanticNodeTypes:\n- intent\n- constraint\n- artifact");
   expect(agent.getFrame()?.graph.nodes).toHaveLength(second.graph.nodes.length);
 });
+
+it("Agent runs same-graph turns concurrently and merges branch results", async () => {
+  const agent = new Agent({ model: new ConcurrentModel(), tools: [], maxIterations: 2 });
+
+  const [slow, fast] = await Promise.all([agent.run("slow branch"), agent.run("fast branch")]);
+  const frame = agent.getFrame();
+
+  expect(slow.finalAnswer).toBe("slow done");
+  expect(fast.finalAnswer).toBe("fast done");
+  expect(frame?.graph.nodes).toContainEqual(expect.objectContaining({ id: "user_input_1", text: "slow branch" }));
+  expect(frame?.graph.nodes).toContainEqual(expect.objectContaining({ id: "user_input_2", text: "fast branch" }));
+  expect(frame?.graph.nodes.filter((node) => node.type === "assistant_output")).toHaveLength(2);
+  expect(new Set(frame?.graph.nodes.filter((node) => node.type === "assistant_output").map((node) => node.id)).size).toBe(2);
+});
+
+class ConcurrentModel implements Model {
+  async complete(input: ModelInput): Promise<ModelOutput> {
+    return { text: await this.output(input) };
+  }
+
+  async *stream(input: ModelInput): AsyncIterable<ModelToken> {
+    yield { type: "token", token: await this.output(input) };
+  }
+
+  private async output(input: ModelInput): Promise<string> {
+    const latest = input.frame?.frame.latestInputNodeId ?? "user_input_1";
+    const slow = input.frame?.graph.nodes.find((node) => node.id === latest)?.text.includes("slow") ?? false;
+    if (slow) await new Promise((resolve) => setTimeout(resolve, 25));
+    const label = slow ? "slow" : "fast";
+    return `SWX/1\n@edge system_root follows ${latest}\n@node ${label}_branch branch_work \"${label} branch\"\n@edge ${latest} creates ${label}_branch\n@final \"${label} done\"`;
+  }
+}
 
 class SequenceModel implements Model {
   private index = 0;

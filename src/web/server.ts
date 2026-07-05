@@ -5,6 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runStateWeave, StateWeaveRunError, streamStateWeave } from "../agent/stateweaveRunner.js";
+import { defaultSystemPrompt } from "../core/graph.js";
 import type { GraphFrame, StateWeaveRunMetadata, TraceStep } from "../core/types.js";
 import { createModelFromEnv } from "../llm/factory.js";
 import { createDefaultTools, describeTools } from "../tools/fileSystemTools.js";
@@ -13,6 +14,9 @@ type RunRequest = {
   input?: unknown;
   frame?: unknown;
   maxSteps?: unknown;
+  maxIterations?: unknown;
+  systemPrompt?: unknown;
+  nodeTypes?: unknown;
   messages?: unknown;
 };
 
@@ -93,6 +97,7 @@ const traceDir = path.resolve(process.env.STATEWEAVE_TRACE_DIR ?? ".stateweave/t
 const model = createModelFromEnv();
 const workspaceDir = path.resolve(process.env.STATEWEAVE_WORKSPACE_DIR ?? "/data/workspace");
 const agentTools = createDefaultTools({ rootDir: workspaceDir });
+const defaultNodeTypes = ["intent", "constraint", "artifact", "decision", "fact", "hypothesis", "risk", "question", "wisdom"];
 const evalRuns = new Map<string, EvalRun>();
 const activeEvalRuns = new Set<string>();
 const evalRunsReady = loadEvalRuns().catch((error: unknown) => {
@@ -114,7 +119,7 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   const url = requestUrl(request);
 
   if (request.method === "GET" && url.pathname === "/api/health") {
-    json(response, 200, { ok: true, provider: providerName() });
+    json(response, 200, { ok: true, provider: providerName(), defaultSystemPrompt, defaultNodeTypes, defaultMaxIterations: 30 });
     return;
   }
 
@@ -198,7 +203,7 @@ async function streamStateWeaveRun(request: IncomingMessage, response: ServerRes
   let finalMetadata: StateWeaveRunMetadata | undefined;
   try {
     for await (const event of streamStateWeave(
-      { model, tools: agentTools, maxSteps: safeMaxSteps(body.maxSteps) },
+      { model, tools: agentTools, maxSteps: safeMaxSteps(body.maxIterations ?? body.maxSteps), systemPrompt: safeSystemPrompt(body.systemPrompt), nodeTypes: safeNodeTypes(body.nodeTypes) },
       body.input,
       { frame: isGraphFrame(body.frame) ? body.frame : undefined }
     )) {
@@ -228,7 +233,7 @@ async function runStateWeaveTurn(request: IncomingMessage, response: ServerRespo
   let stateweave;
   try {
     stateweave = await runStateWeave(
-      { model, tools: agentTools, maxSteps: safeMaxSteps(body.maxSteps) },
+      { model, tools: agentTools, maxSteps: safeMaxSteps(body.maxIterations ?? body.maxSteps), systemPrompt: safeSystemPrompt(body.systemPrompt), nodeTypes: safeNodeTypes(body.nodeTypes) },
       input,
       { frame: isGraphFrame(body.frame) ? body.frame : undefined }
     );
@@ -245,7 +250,7 @@ async function runStateWeaveTurn(request: IncomingMessage, response: ServerRespo
   json(response, 200, {
     stateweave: {
       inputFrame: stateweave.trace[0]?.frameBefore,
-      frameAfter: stateweave.trace.at(-1)?.frameAfter,
+      frameAfter: stateweave.frame,
       output: stateweave.finalAnswer,
       trace: stateweave.trace,
       graph: stateweave.graph,
@@ -262,16 +267,16 @@ async function compareStateWeave(request: IncomingMessage, response: ServerRespo
   }
 
   const input = body.input.trim();
-  const result = await compareTurn(input, isGraphFrame(body.frame) ? body.frame : undefined, safeChatMessages(body.messages), safeMaxSteps(body.maxSteps));
+  const result = await compareTurn(input, isGraphFrame(body.frame) ? body.frame : undefined, safeChatMessages(body.messages), safeMaxSteps(body.maxIterations ?? body.maxSteps), safeSystemPrompt(body.systemPrompt), safeNodeTypes(body.nodeTypes));
   json(response, 200, result);
 }
 
-async function compareTurn(input: string, stateFrame: GraphFrame | undefined, history: ChatMessage[], maxSteps: number): Promise<ComparePayload> {
+async function compareTurn(input: string, stateFrame: GraphFrame | undefined, history: ChatMessage[], maxSteps: number, systemPrompt?: string, nodeTypes?: string[]): Promise<ComparePayload> {
   const traditionalMessages = regularModelInput(history, input);
   const regularPrompt = serializeMessages(traditionalMessages);
   const [regular, stateweave] = await Promise.all([
     model.complete({ prompt: regularPrompt, mode: "text", frame: emptyFrame(input) }),
-    runStateWeave({ model, tools: agentTools, maxSteps }, input, { frame: stateFrame })
+    runStateWeave({ model, tools: agentTools, maxSteps, systemPrompt, nodeTypes }, input, { frame: stateFrame })
   ]);
   await persistTrace("compare", input, stateweave.trace, stateweave.metadata);
 
@@ -284,7 +289,7 @@ async function compareTurn(input: string, stateFrame: GraphFrame | undefined, hi
     },
     stateweave: {
       inputFrame: stateweave.trace[0]?.frameBefore,
-      frameAfter: stateweave.trace.at(-1)?.frameAfter,
+      frameAfter: stateweave.frame,
       output: stateweave.finalAnswer,
       trace: stateweave.trace,
       graph: stateweave.graph,
@@ -729,8 +734,18 @@ function isGraphFrame(value: unknown): value is GraphFrame {
 
 function safeMaxSteps(value: unknown): number {
   const numeric = Number(value);
-  if (!Number.isInteger(numeric) || numeric < 1) return 5;
-  return Math.min(numeric, 8);
+  if (!Number.isInteger(numeric) || numeric < 1) return 30;
+  return Math.min(numeric, 100);
+}
+
+function safeSystemPrompt(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim().slice(0, 12_000) : undefined;
+}
+
+function safeNodeTypes(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const nodeTypes = value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter((item) => /^[a-z][a-z0-9_-]{0,63}$/.test(item));
+  return [...new Set(nodeTypes)].slice(0, 64);
 }
 
 function json(response: ServerResponse, status: number, body: unknown): void {

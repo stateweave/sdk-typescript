@@ -4,6 +4,8 @@ export function nowIso(): string {
   return new Date().toISOString();
 }
 
+export const defaultSystemPrompt = "StateWeave system root. The graph is the runtime state; compile GraphFrame from the graph instead of provider messages.";
+
 export function createEmptyGraph(): StateGraph {
   return { nodes: [], edges: [] };
 }
@@ -19,7 +21,7 @@ export function createInitialGraphFrame(args: {
   const system: GraphNode = {
     id: "system_root",
     type: "system",
-    text: args.systemPrompt ?? "StateWeave system root. The graph is the runtime state; compile GraphFrame from the graph instead of provider messages.",
+    text: args.systemPrompt ?? defaultSystemPrompt,
     data: { activeSystemNodeId: "system_root", ...(args.systemPrompt ? { systemPrompt: args.systemPrompt } : {}) },
     status: "active",
     confidence: 1,
