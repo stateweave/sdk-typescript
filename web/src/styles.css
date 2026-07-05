@@ -948,6 +948,16 @@ label {
   background: #eff6ff;
 }
 
+.result-score {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+}
+
 .judge-raw {
   margin-top: 10px;
 }

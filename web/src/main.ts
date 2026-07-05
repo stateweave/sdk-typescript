@@ -1,4 +1,5 @@
 import type { GraphFrame, GraphOp, StateGraph, TraceStep } from "../../src/core/types.js";
+import { scoreEvalRecords, type EvalPrimitive as Primitive, type EvalVote as Vote, type ScoreBreakdown } from "./evalScores.js";
 import { promptFiveCases, promptFiveCategoryOrder, type PromptFiveCategory } from "./promptFive.js";
 import "./styles.css";
 
@@ -25,8 +26,6 @@ type CompareResponse = StateWeaveResponse & {
 
 type PageName = "state" | "ab" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five";
 type SuiteId = "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five";
-type Primitive = "regular" | "stateweave";
-type Vote = "a" | "b" | "both" | "neither";
 type EvalCategory = "memory" | "logical" | "holistic" | PromptFiveCategory;
 type MultiCase = { prompt: string; expect: string; categories?: EvalCategory[] };
 type PromptSuite = { id: SuiteId; title: string; description: string; readyTitle: string; readyCopy: string; expectLabel: string; mode?: "manual" | "judge"; cases: MultiCase[] };
@@ -45,8 +44,6 @@ type MultiRecord = {
   judgedBy?: "judges" | "human";
   judges?: JudgeDecision[];
 };
-
-type ScoreBreakdown = { stateweave: number; regular: number; both: number; neither: number; completed: number };
 
 let activePage: PageName = pageFromHash();
 let multiSuiteId: SuiteId = suiteIdForPage(activePage) ?? "prompt-one";
@@ -847,6 +844,7 @@ function renderMultiJudging(record: MultiRecord): void {
 }
 
 function renderMultiAutoJudged(record: MultiRecord): void {
+  renderMultiProgress();
   multiStage.innerHTML = `
     <article class="multi-card">
       <div class="multi-case-header">
@@ -860,10 +858,14 @@ function renderMultiAutoJudged(record: MultiRecord): void {
         ${record.judges ? record.judges.map((judge) => `<p>${escapeHtml(judge.id)}: ${voteLabel(judge.vote)} — ${escapeHtml(judge.reason)}</p>`).join("") : ""}
         ${judgeRawDetails(record.judges)}
       </div>
+      <div class="result-score">
+        ${liveScoreHtml()}
+      </div>
     </article>`;
 }
 
 function renderJudgeDisagreement(record: MultiRecord): void {
+  renderMultiProgress();
   multiStart.disabled = true;
   multiStart.textContent = "Waiting for human vote";
   multiStage.innerHTML = `
@@ -877,6 +879,9 @@ function renderJudgeDisagreement(record: MultiRecord): void {
       <div class="judge-result disagreement">
         ${record.judges?.map((judge) => `<p><strong>${escapeHtml(judge.id)}:</strong> ${voteLabel(judge.vote)} — ${escapeHtml(judge.reason)}</p>`).join("") ?? ""}
         ${judgeRawDetails(record.judges)}
+      </div>
+      <div class="result-score">
+        ${liveScoreHtml()}
       </div>
       <div class="blind-grid">
         <article class="blind-answer"><h3>Answer A</h3>${responseHtml(answerFor(record, "a"))}</article>
@@ -1000,19 +1005,7 @@ function multiScores(): ScoreBreakdown {
 }
 
 function scoreRecords(records: MultiRecord[]): ScoreBreakdown {
-  return records.reduce<ScoreBreakdown>((scores, record) => {
-    if (!record.vote) return scores;
-    scores.completed += 1;
-    if (record.vote === "both") {
-      scores.both += 1;
-    } else if (record.vote === "neither") {
-      scores.neither += 1;
-    } else {
-      const primitive = record[record.vote];
-      scores[primitive] += 1;
-    }
-    return scores;
-  }, { stateweave: 0, regular: 0, both: 0, neither: 0, completed: 0 });
+  return scoreEvalRecords(records);
 }
 
 function winnerForRecord(record: MultiRecord): string {
