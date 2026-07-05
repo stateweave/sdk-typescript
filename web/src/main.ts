@@ -106,6 +106,7 @@ let selectedGraphNodeId: string | undefined;
 let graphAnimationFrame: number | undefined;
 let transferMode: TransferMode = "export";
 let selectedFilePath: string | undefined;
+let workspaceFiles: WorkspaceFile[] = [];
 
 const defaultAgentSettings: AgentSettings = {
   systemPrompt: "StateWeave system root. The graph is the runtime state; compile GraphFrame from the graph instead of provider messages.",
@@ -598,6 +599,17 @@ fileList.addEventListener("click", (event) => {
 });
 fileViewer.addEventListener("click", (event) => {
   if (handleArtifactPreviewClick(event)) return;
+  const target = event.target instanceof Element ? event.target : undefined;
+  if (target?.closest("[data-file-back]")) {
+    closeWorkspaceFile();
+    return;
+  }
+  const copyButton = target?.closest<HTMLButtonElement>("button[data-copy-id]");
+  const copyId = copyButton?.dataset.copyId;
+  if (copyButton && copyId) {
+    const value = copyPayloads.get(copyId);
+    if (value) void copyText(value, copyButton);
+  }
 });
 chat.addEventListener("click", (event) => {
   if (handleArtifactPreviewClick(event)) return;
@@ -957,28 +969,37 @@ async function loadTools(): Promise<void> {
 async function loadWorkspaceFiles(): Promise<void> {
   const response = await fetch(`${apiBase}/api/stateweave/files`).catch(() => undefined);
   const body = response?.ok ? ((await response.json()) as { files?: WorkspaceFile[] }) : undefined;
-  const files = body?.files ?? [];
-  fileCount.textContent = files.length ? `${files.length} files` : "0 files";
-  fileList.innerHTML = files.length
-    ? files.map((file) => `<button class="file-row ${file.path === selectedFilePath ? "active" : ""}" type="button" data-file-path="${escapeAttribute(file.path)}"><span>${escapeHtml(file.path)}</span><small>${formatBytes(file.size)} · ${escapeHtml(file.mime)}</small></button>`).join("")
-    : `<p class="muted-copy">No workspace files yet. Ask the agent to write one, or use write_file.</p>`;
-  if (selectedFilePath && !files.some((file) => file.path === selectedFilePath)) {
-    selectedFilePath = undefined;
-    fileViewer.innerHTML = `<p class="muted-copy">Open a file to inspect or render HTML/SVG output.</p>`;
-  }
+  workspaceFiles = sortWorkspaceFiles(body?.files ?? []);
+  fileCount.textContent = workspaceFiles.length ? `${workspaceFiles.length} file${workspaceFiles.length === 1 ? "" : "s"}` : "0 files";
+  fileList.innerHTML = workspaceFiles.length ? workspaceFileListHtml(workspaceFiles) : workspaceFilesEmptyHtml();
+  if (selectedFilePath && !workspaceFiles.some((file) => file.path === selectedFilePath)) selectedFilePath = undefined;
+  if (!selectedFilePath) fileViewer.innerHTML = workspaceFileLandingHtml(workspaceFiles.length);
 }
 
 async function openWorkspaceFile(filePath: string): Promise<void> {
+  selectedFilePath = filePath;
+  renderWorkspaceFileList();
+  fileViewer.innerHTML = workspaceFileLoadingHtml(filePath);
   const response = await fetch(`${apiBase}/api/stateweave/files/read?path=${encodeURIComponent(filePath)}`);
   const body = (await response.json()) as WorkspaceFileContent | { error?: string };
   if (!response.ok || !isWorkspaceFileContent(body)) {
-    fileViewer.innerHTML = `<p class="message error"><span>${escapeHtml("error" in body ? body.error ?? "Failed to read file." : "Failed to read file.")}</span></p>`;
+    fileViewer.innerHTML = workspaceFileErrorHtml("error" in body ? body.error ?? "Failed to read file." : "Failed to read file.");
     return;
   }
 
   selectedFilePath = body.path;
-  await loadWorkspaceFiles();
+  renderWorkspaceFileList();
   fileViewer.innerHTML = workspaceFileHtml(body);
+}
+
+function closeWorkspaceFile(): void {
+  selectedFilePath = undefined;
+  renderWorkspaceFileList();
+  fileViewer.innerHTML = workspaceFileLandingHtml(workspaceFiles.length);
+}
+
+function renderWorkspaceFileList(): void {
+  fileList.innerHTML = workspaceFiles.length ? workspaceFileListHtml(workspaceFiles) : workspaceFilesEmptyHtml();
 }
 
 async function rebootWorkspaceFiles(): Promise<void> {
@@ -986,11 +1007,12 @@ async function rebootWorkspaceFiles(): Promise<void> {
   const response = await fetch(`${apiBase}/api/stateweave/files/reboot`, { method: "POST" });
   if (!response.ok) {
     const body = (await response.json().catch(() => undefined)) as { error?: string } | undefined;
-    fileViewer.innerHTML = `<p class="message error"><span>${escapeHtml(body?.error ?? "Failed to reboot workspace.")}</span></p>`;
+    fileViewer.innerHTML = workspaceFileErrorHtml(body?.error ?? "Failed to reboot workspace.");
     return;
   }
   selectedFilePath = undefined;
-  fileViewer.innerHTML = `<p class="muted-copy">Workspace rebooted. Files removed.</p>`;
+  workspaceFiles = [];
+  fileViewer.innerHTML = workspaceFileLandingHtml(0, "Workspace rebooted. Files removed.");
   await loadWorkspaceFiles();
 }
 
@@ -998,16 +1020,135 @@ function isWorkspaceFileContent(value: WorkspaceFileContent | { error?: string }
   return typeof (value as WorkspaceFileContent).path === "string" && typeof (value as WorkspaceFileContent).content === "string";
 }
 
+function workspaceFileListHtml(files: WorkspaceFile[]): string {
+  return groupWorkspaceFiles(files).map(([folder, folderFiles]) => `
+    <details class="file-section" open>
+      <summary><span>${escapeHtml(folder)}</span><small>${folderFiles.length}</small></summary>
+      <div class="file-section-list">
+        ${folderFiles.map(workspaceFileRowHtml).join("")}
+      </div>
+    </details>`).join("");
+}
+
+function workspaceFileRowHtml(file: WorkspaceFile): string {
+  const active = file.path === selectedFilePath;
+  const name = fileBaseName(file.path);
+  const folder = fileFolder(file.path);
+  return `<button class="file-row ${active ? "active" : ""}" type="button" data-file-path="${escapeAttribute(file.path)}" title="${escapeAttribute(file.path)}">
+    <span class="file-kind ${fileKindClass(file)}">${escapeHtml(fileKindLabel(file))}</span>
+    <span class="file-row-main"><strong>${escapeHtml(name)}</strong><small>${escapeHtml(folder === "." ? "root" : folder)}</small></span>
+    <span class="file-row-meta"><small>${formatBytes(file.size)}</small><small>${escapeHtml(file.mime)}</small></span>
+  </button>`;
+}
+
 function workspaceFileHtml(file: WorkspaceFileContent): string {
   const previewDoc = file.renderable ? filePreviewSrcDoc(file) : undefined;
   const previewId = previewDoc ? registerArtifactPreview(previewDoc) : undefined;
+  const sourceCopyId = registerCopy(file.content);
+  const pathCopyId = registerCopy(file.path);
   const warning = file.mime === "image/svg+xml" && !looksLikeCompleteSvg(file.content)
     ? `<p class="file-render-warning">This SVG looks incomplete or invalid. Source is shown below.</p>`
     : "";
   const preview = previewDoc
-    ? `<div class="artifact-preview file-preview"><div class="artifact-preview-toolbar"><span>Rendered ${escapeHtml(file.mime)}</span><button class="button secondary small-button" type="button" data-artifact-preview-id="${previewId}">Open full screen</button></div><iframe sandbox="allow-scripts" tabindex="0" srcdoc="${escapeAttribute(previewDoc)}" title="${escapeAttribute(file.path)} preview"></iframe></div>`
-    : "";
-  return `<article class="file-open"><h3>${escapeHtml(file.path)}</h3><p class="muted-copy">${formatBytes(file.size)} · ${escapeHtml(file.mime)} · ${escapeHtml(file.updatedAt)}</p>${warning}${preview}<pre class="code file-source">${escapeHtml(file.content)}</pre></article>`;
+    ? `<section class="file-preview-card"><div class="artifact-preview-toolbar"><span>Rendered ${escapeHtml(file.mime)}</span><button class="button secondary small-button" type="button" data-artifact-preview-id="${previewId}">Open full screen</button></div><iframe sandbox="allow-scripts" tabindex="0" srcdoc="${escapeAttribute(previewDoc)}" title="${escapeAttribute(file.path)} preview"></iframe></section>`
+    : `<section class="file-empty-preview"><span class="file-kind ${fileKindClass(file)}">${escapeHtml(fileKindLabel(file))}</span><p>No rich preview for this file type. Source is shown below.</p></section>`;
+  return `<article class="file-open">
+    <header class="file-open-header">
+      <button class="button secondary small-button file-back-button" type="button" data-file-back>Back to files</button>
+      <div class="file-open-title">
+        <span class="file-kind ${fileKindClass(file)}">${escapeHtml(fileKindLabel(file))}</span>
+        <div>
+          <h3>${escapeHtml(fileBaseName(file.path))}</h3>
+          <p>${escapeHtml(file.path)}</p>
+        </div>
+      </div>
+      <div class="file-open-actions">
+        <button class="button secondary small-button" type="button" data-copy-id="${pathCopyId}">Copy path</button>
+        <button class="button secondary small-button" type="button" data-copy-id="${sourceCopyId}">Copy source</button>
+      </div>
+    </header>
+    <div class="file-meta-grid">
+      <span><strong>Size</strong>${formatBytes(file.size)}</span>
+      <span><strong>Type</strong>${escapeHtml(file.mime)}</span>
+      <span><strong>Updated</strong>${escapeHtml(formatFileTimestamp(file.updatedAt))}</span>
+    </div>
+    ${warning}
+    ${preview}
+    <section class="file-source-card"><div class="file-source-header"><span>Source</span><small>${file.content.length.toLocaleString()} chars</small></div><pre class="code file-source">${escapeHtml(file.content)}</pre></section>
+  </article>`;
+}
+
+function workspaceFilesEmptyHtml(): string {
+  return `<div class="files-empty"><strong>No files yet</strong><p>Ask the agent to create HTML, SVG, Markdown, or source files. They will appear here grouped by folder.</p></div>`;
+}
+
+function workspaceFileLandingHtml(count: number, message?: string): string {
+  return `<div class="file-landing">
+    <div class="file-landing-icon">${count ? "⌘" : "◇"}</div>
+    <h3>${message ? escapeHtml(message) : count ? "Select a file" : "Workspace is empty"}</h3>
+    <p>${count ? "Choose a file from the browser to preview rendered HTML/SVG and inspect source. You can always return to the list with Back to files." : "Generated workspace files will appear here after write_file or edit_file runs."}</p>
+  </div>`;
+}
+
+function workspaceFileLoadingHtml(filePath: string): string {
+  return `<div class="file-landing"><div class="file-landing-icon">…</div><h3>Opening ${escapeHtml(fileBaseName(filePath))}</h3><p>${escapeHtml(filePath)}</p></div>`;
+}
+
+function workspaceFileErrorHtml(message: string): string {
+  return `<div class="file-error-panel"><button class="button secondary small-button file-back-button" type="button" data-file-back>Back to files</button><p>${escapeHtml(message)}</p></div>`;
+}
+
+function sortWorkspaceFiles(files: WorkspaceFile[]): WorkspaceFile[] {
+  return [...files].sort((a, b) => fileFolder(a.path).localeCompare(fileFolder(b.path)) || fileBaseName(a.path).localeCompare(fileBaseName(b.path)));
+}
+
+function groupWorkspaceFiles(files: WorkspaceFile[]): [string, WorkspaceFile[]][] {
+  const groups = new Map<string, WorkspaceFile[]>();
+  for (const file of files) {
+    const folder = fileFolder(file.path);
+    groups.set(folder, [...(groups.get(folder) ?? []), file]);
+  }
+  return [...groups.entries()].map(([folder, folderFiles]) => [folder === "." ? "root" : folder, folderFiles] as [string, WorkspaceFile[]]);
+}
+
+function fileFolder(pathValue: string): string {
+  const parts = pathValue.split("/").filter(Boolean);
+  return parts.length > 1 ? parts.slice(0, -1).join("/") : ".";
+}
+
+function fileBaseName(pathValue: string): string {
+  return pathValue.split("/").filter(Boolean).at(-1) ?? pathValue;
+}
+
+function fileExtension(pathValue: string): string {
+  const name = fileBaseName(pathValue);
+  const index = name.lastIndexOf(".");
+  return index > 0 ? name.slice(index + 1).toLowerCase() : "";
+}
+
+function fileKindLabel(file: WorkspaceFile): string {
+  const ext = fileExtension(file.path);
+  if (file.mime === "image/svg+xml" || ext === "svg") return "SVG";
+  if (file.mime === "text/html" || ext === "html" || ext === "htm") return "HTML";
+  if (ext === "md" || ext === "mdx") return "MD";
+  if (ext === "css") return "CSS";
+  if (ext === "js" || ext === "mjs" || ext === "cjs") return "JS";
+  if (ext === "ts" || ext === "tsx") return "TS";
+  if (ext === "json") return "JSON";
+  if (file.mime.startsWith("image/")) return "IMG";
+  return ext ? ext.slice(0, 4).toUpperCase() : "FILE";
+}
+
+function fileKindClass(file: WorkspaceFile): string {
+  const label = fileKindLabel(file).toLowerCase();
+  if (["html", "svg", "css", "js", "ts", "json", "md", "img"].includes(label)) return `kind-${label}`;
+  return "kind-file";
+}
+
+function formatFileTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
 function filePreviewSrcDoc(file: WorkspaceFileContent): string {

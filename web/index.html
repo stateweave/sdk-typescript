@@ -99,17 +99,24 @@
                 <div id="tool-list" class="tool-list">Loading tools…</div>
               </aside>
               <aside id="files-view" class="workspace-view files-panel" aria-label="Workspace files" hidden>
-                <div class="tools-panel-header">
-                  <p class="eyebrow">Workspace files</p>
-                  <span id="file-count" class="badge">Loading…</span>
-                </div>
-                <div class="file-actions">
-                  <button id="refresh-files" class="button secondary small-button" type="button">Refresh</button>
-                  <button id="reboot-files" class="button secondary small-button danger-button" type="button">Reboot files</button>
-                </div>
-                <div id="file-list" class="file-list">Loading files…</div>
-                <div id="file-viewer" class="file-viewer">
-                  <p class="muted-copy">Open a file to inspect or render HTML/SVG output.</p>
+                <div class="files-layout">
+                  <section class="files-sidebar" aria-label="Workspace file list">
+                    <div class="tools-panel-header files-sidebar-header">
+                      <div>
+                        <p class="eyebrow">Workspace files</p>
+                        <strong>Project browser</strong>
+                      </div>
+                      <span id="file-count" class="badge">Loading…</span>
+                    </div>
+                    <div class="file-actions">
+                      <button id="refresh-files" class="button secondary small-button" type="button">Refresh</button>
+                      <button id="reboot-files" class="button secondary small-button danger-button" type="button">Reboot files</button>
+                    </div>
+                    <div id="file-list" class="file-list">Loading files…</div>
+                  </section>
+                  <section id="file-viewer" class="file-viewer" aria-label="Workspace file preview">
+                    <p class="muted-copy">Open a file to inspect or render HTML/SVG output.</p>
+                  </section>
                 </div>
               </aside>
             </div>

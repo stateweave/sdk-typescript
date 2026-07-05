@@ -1124,13 +1124,21 @@ label {
   display: none !important;
 }
 
-.tools-panel,
-.files-panel {
+.tools-panel {
   min-width: 0;
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: #fff;
+  padding: 10px;
+}
+
+.files-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fff 0%, #fafafa 100%);
   padding: 10px;
 }
 
@@ -1168,26 +1176,103 @@ label {
   line-height: 1.35;
 }
 
+.files-layout {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(220px, 0.38fr) minmax(0, 1fr);
+  gap: 10px;
+  min-height: 0;
+  height: 100%;
+}
+
+.files-sidebar,
+.file-viewer {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.files-sidebar {
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+}
+
+.files-sidebar-header strong {
+  display: block;
+  color: var(--foreground);
+  font-size: 0.92rem;
+  letter-spacing: -0.01em;
+}
+
 .file-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .file-list {
   display: grid;
-  gap: 6px;
-  max-height: 260px;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
   overflow: auto;
+  padding-right: 2px;
+}
+
+.file-section {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fbfbfb;
+  overflow: hidden;
+}
+
+.file-section summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.file-section summary small {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.file-section-list {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+  padding: 7px;
 }
 
 .file-row {
   display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
   width: 100%;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: #fafafa;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: #fff;
   padding: 8px;
+  color: var(--foreground);
   text-align: left;
   cursor: pointer;
 }
@@ -1198,36 +1283,221 @@ label {
   background: #f5f3ff;
 }
 
-.file-row span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.78rem;
-  font-weight: 700;
+.file-row-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 
-.file-row small {
+.file-row-main strong,
+.file-row-main small,
+.file-row-meta small {
   overflow: hidden;
-  color: var(--muted);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.file-row-main strong {
+  color: var(--foreground);
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.file-row-main small,
+.file-row-meta small {
+  min-width: 0;
+  color: var(--muted);
   font-size: 0.68rem;
 }
 
+.file-row-meta {
+  grid-column: 2;
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+}
+
+.file-kind {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 28px;
+  border-radius: 8px;
+  background: #f4f4f5;
+  color: #3f3f46;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+}
+
+.file-kind.kind-html,
+.file-kind.kind-svg {
+  background: rgba(124, 58, 237, 0.1);
+  color: var(--stateweave);
+}
+
+.file-kind.kind-css {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.file-kind.kind-js,
+.file-kind.kind-ts,
+.file-kind.kind-json {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.file-kind.kind-md,
+.file-kind.kind-img {
+  background: #ecfdf5;
+  color: #047857;
+}
+
 .file-viewer {
-  margin-top: 8px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.files-empty,
+.file-landing,
+.file-error-panel,
+.file-empty-preview {
+  display: grid;
+  gap: 8px;
+  place-items: center;
+  min-height: 240px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: #fafafa;
+  padding: 18px;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+.files-empty {
+  min-height: 180px;
+}
+
+.files-empty strong,
+.file-landing h3 {
+  color: var(--foreground);
+  font-size: 0.96rem;
+}
+
+.files-empty p,
+.file-landing p,
+.file-empty-preview p {
+  max-width: 420px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.file-landing-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin-bottom: 8px;
+  border-radius: 14px;
+  background: #f5f3ff;
+  color: var(--stateweave);
+  font-size: 1.1rem;
+  font-weight: 900;
+}
+
+.file-error-panel {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.file-open {
+  display: grid;
+  gap: 12px;
+}
+
+.file-open-header {
+  position: sticky;
+  z-index: 2;
+  top: -12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.94);
+  padding: 0 0 10px;
+  backdrop-filter: blur(10px);
+}
+
+.file-open-title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 9px;
+  flex: 1;
 }
 
 .file-open h3 {
   overflow: hidden;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
+  color: var(--foreground);
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.88rem;
+  font-size: 0.98rem;
+  letter-spacing: -0.02em;
+}
+
+.file-open-title p {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.74rem;
+}
+
+.file-open-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.file-back-button {
+  flex: 0 0 auto;
+}
+
+.file-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.file-meta-grid span {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fafafa;
+  padding: 8px;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-meta-grid strong {
+  color: var(--muted);
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .file-render-warning {
-  margin: 8px 0;
   border: 1px solid #fecaca;
   border-radius: 10px;
   background: #fef2f2;
@@ -1236,14 +1506,54 @@ label {
   font-size: 0.78rem;
 }
 
-.file-source {
-  min-height: 120px;
-  max-height: 240px;
-  margin-top: 8px;
+.file-preview-card {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
 }
 
-.file-preview iframe {
-  min-height: 220px;
+.file-preview-card iframe {
+  display: block;
+  width: 100%;
+  min-height: 320px;
+  border: 0;
+  background: #fff;
+}
+
+.file-source-card {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.file-source-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.file-source {
+  max-height: 360px;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: #0f172a;
+  color: #e5e7eb;
+}
+
+.file-empty-preview {
+  min-height: 190px;
+  gap: 8px;
 }
 
 .model-io-panel {
@@ -2002,7 +2312,9 @@ label {
   .multi-shell,
   .blind-grid,
   .reveal-row,
-  .agent-settings-grid {
+  .agent-settings-grid,
+  .files-layout,
+  .file-meta-grid {
     grid-template-columns: 1fr;
   }
 
@@ -2045,5 +2357,21 @@ label {
 
   .stream-step summary small {
     grid-column: 1 / -1;
+  }
+
+  .file-open-header {
+    position: static;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .file-open-actions,
+  .file-back-button {
+    width: 100%;
+  }
+
+  .file-open-actions .button,
+  .file-back-button {
+    justify-content: center;
   }
 }
