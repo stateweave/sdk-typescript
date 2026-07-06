@@ -1,4 +1,5 @@
 import type { GraphFrame, GraphOp, StateGraph, StateWeaveRunMetadata, StateWeaveStreamEvent, TraceStep, WorkerRunSummary } from "../../src/core/types.js";
+import { renderMarkdown } from "./markdown.js";
 import { scoreEvalRecords, type EvalPrimitive as Primitive, type EvalVote as Vote, type ScoreBreakdown } from "./evalScores.js";
 import { promptFiveCases, promptFiveCategoryOrder, type PromptFiveCategory } from "./promptFive.js";
 import { promptSixCases, promptSixCategoryOrder, promptSixHypothesis, type PromptSixCategory, type PromptSixHypothesis } from "./promptSix.js";
@@ -1929,7 +1930,7 @@ function voteLabel(value: Vote | undefined): string {
 }
 
 function appendUser(text: string): HTMLElement {
-  chat.insertAdjacentHTML("beforeend", `<div class="message user"><div>${escapeHtml(text)}</div></div>`);
+  chat.insertAdjacentHTML("beforeend", `<div class="message user"><div class="markdown">${renderMarkdown(text)}</div></div>`);
   scrollChat(chat);
   return chat.lastElementChild as HTMLElement;
 }
@@ -2747,7 +2748,7 @@ function formatOp(op: GraphOp): string {
 
 function responseHtml(value: string): string {
   const artifact = extractPreviewArtifact(value);
-  if (!artifact) return `<p>${escapeHtml(value)}</p>`;
+  if (!artifact) return `<div class="markdown">${renderMarkdown(value)}</div>`;
   const previewId = registerArtifactPreview(artifact);
   return `
     <div class="artifact-preview">
