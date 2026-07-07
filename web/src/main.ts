@@ -798,8 +798,7 @@ function setActivePage(page: PageName, updateHash = true): void {
   if (updateHash) history.replaceState(null, "", isState ? location.pathname : isQuickstart ? "#quick-start" : isAb ? "#ab" : isInfinite ? "#infinite" : `#${suite.id}`);
   if (isMulti) void resumeStoredEvalRun();
   else stopBackgroundPoll();
-  if (isInfinite) startInfinitePoll();
-  else stopInfinitePoll();
+  if (isInfinite) { startInfinitePoll(); startSwLoopPoll(); } else { stopInfinitePoll(); stopSwLoopPoll(); }
   if (isState) input.focus();
   else if (isAb) abInput.focus();
   else if (isMulti) multiStart.focus();
@@ -3154,3 +3153,133 @@ function drawLineChart<T extends { turn: number }>(canvas: HTMLCanvasElement, se
   const dot = (color: string, v: number) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(xFor(last.turn), yFor(v), 3.5, 0, Math.PI * 2); ctx.fill(); };
   dot("#f97316", lines.baseline(last)); dot("#0ea5e9", lines.windowed(last)); dot("#6366f1", lines.sw(last));
 }
+
+// --- Self-improvement loop ---
+
+type SwLoopIteration = { iteration: number; turns: number; swPassRate: string; naivePassRate: string; commit: string; shipped: string; diffstat: string; timestamp: string };
+type SwLoopState = {
+  status: string;
+  iteration: number;
+  phase: string;
+  message: string;
+  iterations: SwLoopIteration[];
+};
+
+const swLoopStartButton = element<HTMLButtonElement>("sw-loop-start");
+const swLoopStopButton = element<HTMLButtonElement>("sw-loop-stop");
+const swLoopStatus = element<HTMLElement>("sw-loop-status");
+const swLoopIterations = element<HTMLElement>("sw-loop-iterations");
+let swLoopPollTimer: ReturnType<typeof setInterval> | undefined;
+
+swLoopStartButton.addEventListener("click", async () => {
+  swLoopStartButton.disabled = true;
+  try {
+    await fetch(`${apiBase}/api/sw-loop/control`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "start" }) });
+    swLoopStatus.innerHTML = `<p class="muted-copy">Start signal sent. The VPS worker will pick it up within a few seconds…</p>`;
+    startSwLoopPoll();
+  } catch (error) {
+    swLoopStartButton.disabled = false;
+    swLoopStatus.innerHTML = `<p class="message error"><div>${escapeHtml(error instanceof Error ? error.message : String(error))}</div></p>`;
+  }
+});
+
+swLoopStopButton.addEventListener("click", async () => {
+  swLoopStopButton.disabled = true;
+  await fetch(`${apiBase}/api/sw-loop/control`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "stop" }) }).catch(() => undefined);
+});
+
+function startSwLoopPoll(): void {
+  stopSwLoopPoll();
+  void pollSwLoop();
+  swLoopPollTimer = setInterval(() => void pollSwLoop(), 3000);
+}
+
+function stopSwLoopPoll(): void {
+  if (swLoopPollTimer !== undefined) clearInterval(swLoopPollTimer);
+  swLoopPollTimer = undefined;
+}
+
+async function pollSwLoop(): Promise<void> {
+  try {
+    const response = await fetch(`${apiBase}/api/sw-loop/state`, { cache: "no-store" });
+    if (!response.ok) return;
+    renderSwLoop(await response.json() as SwLoopState);
+  } catch { /* network blip */ }
+}
+
+function renderSwLoop(state: SwLoopState): void {
+  const running = state.status === "running";
+  swLoopStartButton.disabled = running;
+  swLoopStopButton.disabled = !running;
+
+  const phaseColors: Record<string, string> = { building: "#6366f1", harness: "#0ea5e9", scored: "#10b981", improving: "#f59e0b", error: "#ef4444", waiting: "#64748b" };
+  const phase = state.phase || "idle";
+  const iters = state.iterations || [];
+  const lastIter = iters[iters.length - 1];
+  swLoopStatus.innerHTML = `
+    <div class="infinite-metric"><span class="metric-label">Loop status</span><strong>${escapeHtml(state.status || "idle")}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Iteration</span><strong>${state.iteration || 0}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Phase</span><strong style="color:${phaseColors[phase] || "#64748b"}">${escapeHtml(phase)}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Last SW score</span><strong>${lastIter?.swPassRate ? lastIter.swPassRate + "%" : "—"}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Last vs naive</span><strong>${lastIter ? `${lastIter.swPassRate}% / ${lastIter.naivePassRate}%` : "—"}</strong></div>
+    <div class="infinite-metric" style="grid-column: span 2"><span class="metric-label">Message</span><strong style="font-size:0.82rem">${escapeHtml(state.message || "")}</strong></div>`;
+
+  renderSwLoopChart(iters);
+
+  swLoopIterations.innerHTML = iters.length
+    ? [...iters].reverse().map((it) => `
+      <article class="sw-loop-iter">
+        <header>
+          <span class="turn-badge">#${it.iteration}</span>
+          <small>${it.turns} turns · ${escapeHtml(it.timestamp)}</small>
+          <span class="score-chip ${Number(it.swPassRate) >= Number(it.naivePassRate) ? "pass" : "fail"}">SW ${it.swPassRate}% vs ${it.naivePassRate}%</span>
+          ${it.commit && it.commit !== "none" && it.commit !== "reverted" ? `<code class="iter-commit">${escapeHtml(it.commit)}</code>` : ""}
+        </header>
+        <p class="turn-answer"><strong>Shipped:</strong> ${escapeHtml(it.shipped)}</p>
+        ${it.diffstat ? `<pre class="iter-diffstat">${escapeHtml(it.diffstat)}</pre>` : ""}
+      </article>`).join("")
+    : `<p class="muted-copy">No iterations yet.</p>`;
+}
+
+function renderSwLoopChart(iters: SwLoopIteration[]): void {
+  const canvas = document.getElementById("sw-loop-chart") as HTMLCanvasElement | null;
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth || 800, cssH = canvas.clientHeight || 200;
+  canvas.width = cssW * dpr; canvas.height = cssH * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+  const padL = 50, padR = 16, padT = 12, padB = 28;
+  const plotW = cssW - padL - padR, plotH = cssH - padT - padB;
+  ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+  if (iters.length < 1) {
+    ctx.fillStyle = "#94a3b8"; ctx.font = "13px ui-sans-serif, system-ui, sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("No iterations yet. Start the loop to see the trend.", cssW / 2, cssH / 2); return;
+  }
+  const maxIter = Math.max(...iters.map((i) => i.iteration), 1);
+  const allVals = iters.flatMap((i) => [Number(i.swPassRate), Number(i.naivePassRate)]).filter((v) => !isNaN(v));
+  const niceMax = Math.max(100, Math.ceil(Math.max(...allVals, 1) / 10) * 10);
+  ctx.textAlign = "right";
+  for (let i = 0; i <= 4; i++) {
+    const value = (niceMax / 4) * i;
+    const y = padT + plotH - (plotH / 4) * i;
+    ctx.strokeStyle = "rgba(148,163,184,0.12)"; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(cssW - padR, y); ctx.stroke();
+    ctx.fillStyle = "#64748b"; ctx.fillText(`${Math.round(value)}%`, padL - 8, y + 4);
+  }
+  ctx.textAlign = "center";
+  for (let i = 0; i <= maxIter; i++) { const x = padL + (plotW / maxIter) * i; ctx.fillText(`#${i}`, x, cssH - padB + 18); }
+  const xFor = (iter: number) => padL + (plotW / maxIter) * iter;
+  const yFor = (v: number) => padT + plotH - (Math.min(v, niceMax) / niceMax) * plotH;
+  const drawLine = (color: string, fn: (i: SwLoopIteration) => number, width: number) => {
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath();
+    iters.forEach((it, idx) => { const x = xFor(it.iteration), y = yFor(fn(it)); idx === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }); ctx.stroke();
+    iters.forEach((it) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(xFor(it.iteration), yFor(fn(it)), 3, 0, Math.PI * 2); ctx.fill(); });
+  };
+  drawLine("#f97316", (i) => Number(i.naivePassRate), 2);
+  drawLine("#6366f1", (i) => Number(i.swPassRate), 2.5);
+}
+
+// Start polling loop state when the Infinite page is active
+if (activePage === "infinite") startSwLoopPoll();

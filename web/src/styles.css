@@ -2898,3 +2898,50 @@ label {
 @media (max-width: 700px) {
   .report-cols { grid-template-columns: 1fr; }
 }
+
+/* Self-improvement loop */
+.sw-loop-status {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.sw-loop-iterations {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.sw-loop-iter {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fafbfc;
+}
+
+.sw-loop-iter header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.sw-loop-iter .iter-commit {
+  font-family: var(--mono-font, ui-monospace, monospace);
+  font-size: 0.76rem;
+  background: #f1f5f9;
+  padding: 2px 8px;
+  border-radius: 6px;
+  color: #475569;
+}
+
+.sw-loop-iter .iter-diffstat {
+  font-size: 0.76rem;
+  color: var(--muted);
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+}

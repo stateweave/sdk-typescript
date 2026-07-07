@@ -282,6 +282,29 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
             </section>
           </div>
         </section>
+
+        <section class="card infinite-shell" aria-label="Self-improvement loop" style="margin-top: 20px;">
+          <div class="infinite-header">
+            <div>
+              <p class="eyebrow">Autonomous SDK self-improvement</p>
+              <h2>Self-improve loop</h2>
+              <p class="muted-copy">Runs the harness, feeds the assessment to X-Agent, which fixes the SDK, runs tests, commits, and loops. Each iteration escalates the turn count to find new edge cases.</p>
+            </div>
+            <div class="infinite-controls">
+              <button id="sw-loop-start" class="button" type="button">Start loop</button>
+              <button id="sw-loop-stop" class="button secondary" type="button" disabled>Stop loop</button>
+            </div>
+          </div>
+          <div id="sw-loop-status" class="sw-loop-status"></div>
+          <div class="infinite-chart-wrap">
+            <div class="infinite-chart-header">
+              <h3>SW pass-rate trend across iterations</h3>
+              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave <span class="legend-dot baseline"></span>Naive baseline</div>
+            </div>
+            <canvas id="sw-loop-chart" class="infinite-chart" width="800" height="200"></canvas>
+          </div>
+          <div id="sw-loop-iterations" class="sw-loop-iterations"><p class="muted-copy">No iterations yet. Click Start loop.</p></div>
+        </section>
       </main>
     </div>
 
