@@ -470,6 +470,14 @@ const quickstartPage = element<HTMLElement>("quickstart-page");
 const abPage = element<HTMLElement>("ab-page");
 const multiPage = element<HTMLElement>("multi-page");
 const infinitePage = element<HTMLElement>("infinite-page");
+const infiniteStartButton = element<HTMLButtonElement>("infinite-start");
+const infiniteStopButton = element<HTMLButtonElement>("infinite-stop");
+const infiniteBatchesInput = element<HTMLInputElement>("infinite-batches");
+const infiniteBatchSizeInput = element<HTMLInputElement>("infinite-batch-size");
+const infiniteMetrics = element<HTMLElement>("infinite-metrics");
+const infiniteTurns = element<HTMLElement>("infinite-turns");
+const infiniteClusters = element<HTMLElement>("infinite-clusters");
+let infinitePollTimer: ReturnType<typeof setInterval> | undefined;
 const chat = element<HTMLElement>("chat");
 const form = element<HTMLFormElement>("composer");
 const input = element<HTMLTextAreaElement>("input");
@@ -2947,19 +2955,11 @@ type InfiniteStateView = {
   message?: string;
 };
 
-const infiniteStartButton = element<HTMLButtonElement>("infinite-start");
-const infiniteStopButton = element<HTMLButtonElement>("infinite-stop");
-const infiniteBatchesInput = element<HTMLInputElement>("infinite-batches");
-const infiniteBatchSizeInput = element<HTMLInputElement>("infinite-batch-size");
-const infiniteMetrics = element<HTMLElement>("infinite-metrics");
-const infiniteTurns = element<HTMLElement>("infinite-turns");
-const infiniteClusters = element<HTMLElement>("infinite-clusters");
-let infinitePollTimer: ReturnType<typeof setInterval> | undefined;
-
 infiniteStartButton.addEventListener("click", async () => {
   const batches = Number(infiniteBatchesInput.value || "1");
   const batchSize = Number(infiniteBatchSizeInput.value || "25");
   infiniteStartButton.disabled = true;
+  infiniteMetrics.innerHTML = `<div class="infinite-metric"><span class="metric-label">Status</span><strong>starting…</strong></div>`;
   try {
     const response = await fetch(`${apiBase}/api/infinite/start`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batches, batchSize, selfImprove: false }) });
     if (!response.ok) {
@@ -2993,10 +2993,14 @@ function stopInfinitePoll(): void {
 async function pollInfiniteState(): Promise<void> {
   try {
     const response = await fetch(`${apiBase}/api/infinite/state`, { cache: "no-store" });
-    if (!response.ok) return;
-    renderInfiniteState(await response.json() as InfiniteStateView);
-  } catch {
-    // network blip; keep polling
+    if (!response.ok) {
+      infiniteMetrics.innerHTML = `<p class="message error"><div>State request failed (${response.status}).</div></p>`;
+      return;
+    }
+    const data = await response.json();
+    renderInfiniteState(data as InfiniteStateView);
+  } catch (error) {
+    infiniteMetrics.innerHTML = `<p class="message error"><div>${escapeHtml(error instanceof Error ? error.message : String(error))}</div></p>`;
   }
 }
 
