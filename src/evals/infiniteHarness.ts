@@ -5,20 +5,35 @@ import { createModelFromEnv } from "../llm/factory.js";
 import type { Model, ModelInput } from "../llm/model.js";
 import { clusterGraph } from "../core/projection.js";
 import { serializeGraphFrame } from "../core/serialize.js";
+import { NaiveBaselineAgent } from "./naiveBaseline.js";
 
 const DEFAULT_BATCH_SIZE = 25;
 const MAX_TURNS_KEPT = 50;
+const MAX_SERIES_KEPT = 5000;
 
 export type InfiniteTurnRecord = {
   batch: number;
   turn: number;
   prompt: string;
   answer: string;
+  baselineAnswer: string;
   nodeCount: number;
   edgeCount: number;
   clusterCount: number;
   promptTokenEstimate: number;
+  baselineTokenEstimate: number;
   latencyMs: number;
+  baselineLatencyMs: number;
+};
+
+export type InfiniteSeriesPoint = {
+  turn: number;
+  stateweaveTokens: number;
+  baselineTokens: number;
+  stateweaveNodes: number;
+  stateweaveClusters: number;
+  stateweaveLatencyMs: number;
+  baselineLatencyMs: number;
 };
 
 export type InfiniteReviewRecord = {
@@ -44,6 +59,7 @@ export type InfiniteState = {
   agentModel: string;
   selfImprove: boolean;
   turns: InfiniteTurnRecord[];
+  series: InfiniteSeriesPoint[];
   reviews: InfiniteReviewRecord[];
   graphSnapshot?: { nodeCount: number; edgeCount: number; clusterCount: number; clusters: { id: string; label: string; nodeCount: number }[] };
   message?: string;
@@ -56,6 +72,7 @@ export type InfiniteHarnessArgs = {
   statePath: string;
   challengerModel?: Model;
   agentModel?: Model;
+  baselineModel?: Model;
   maxIterations?: number;
 };
 
@@ -67,6 +84,7 @@ export class InfiniteHarness {
   private challenger: Model;
   private agentModel: Model;
   private agent: Agent;
+  private baseline: NaiveBaselineAgent;
   private maxIterations: number;
   private state: InfiniteState;
   private challengerMessages: { role: "user" | "assistant"; content: string }[] = [];
@@ -79,8 +97,10 @@ export class InfiniteHarness {
     this.statePath = args.statePath;
     this.challenger = args.challengerModel ?? createModelFromEnv();
     this.agentModel = args.agentModel ?? createModelFromEnv();
+    const baselineModel = args.baselineModel ?? this.agentModel;
     this.maxIterations = args.maxIterations ?? 8;
     this.agent = new Agent({ model: this.agentModel, maxIterations: this.maxIterations, systemPrompt: agentSystemPrompt() });
+    this.baseline = new NaiveBaselineAgent({ model: baselineModel });
     this.state = emptyState(this.batchSize, this.batchCount, this.selfImprove, modelName(this.challenger), modelName(this.agentModel));
   }
 
@@ -136,32 +156,54 @@ export class InfiniteHarness {
   }
 
   private async runBatch(batch: number, onTurn?: (state: InfiniteState) => void): Promise<void> {
+    this.baseline.wipe();
+
     for (let turn = 1; turn <= this.batchSize && this.running; turn++) {
-      const promptStart = Date.now();
       const clusterSummary = this.clusterSummary();
       const prompt = await this.nextChallengerPrompt(turn, batch, clusterSummary);
-      const result = await this.agent.run({ objective: `Infinite harness batch ${batch} turn ${turn}`, input: prompt });
-      const latencyMs = Date.now() - promptStart;
 
-      this.challengerMessages.push({ role: "assistant", content: prompt }, { role: "user", content: challengerObservePrompt(prompt, result.finalAnswer, clusterSummary) });
+      // Run both agents concurrently on the same prompt — fair fight.
+      const [swStart, baselineStart] = [Date.now(), Date.now()];
+      const [swResult, baselineResult] = await Promise.all([
+        this.agent.run({ objective: `Infinite harness batch ${batch} turn ${turn}`, input: prompt }),
+        this.baseline.run(prompt)
+      ]);
+      const swLatency = Date.now() - swStart;
+      const baselineLatency = Date.now() - baselineStart;
+
+      this.challengerMessages.push({ role: "assistant", content: prompt }, { role: "user", content: challengerObservePrompt(prompt, swResult.finalAnswer, clusterSummary) });
 
       const frame = this.agent.getFrame();
-      const promptTokenEstimate = frame ? Math.round(serializeGraphFrame(frame).length / 4) : 0;
+      const swTokens = frame ? Math.round(serializeGraphFrame(frame).length / 4) : 0;
       const clusters = frame ? clusterGraph(frame.graph) : [];
+
+      const turnNumber = this.state.turnCount + 1;
       const record: InfiniteTurnRecord = {
         batch,
-        turn: this.state.turnCount + 1,
+        turn: turnNumber,
         prompt,
-        answer: result.finalAnswer,
-        nodeCount: result.graph.nodes.length,
-        edgeCount: result.graph.edges.length,
+        answer: swResult.finalAnswer,
+        baselineAnswer: baselineResult.answer.slice(0, 400),
+        nodeCount: swResult.graph.nodes.length,
+        edgeCount: swResult.graph.edges.length,
         clusterCount: clusters.length,
-        promptTokenEstimate,
-        latencyMs
+        promptTokenEstimate: swTokens,
+        baselineTokenEstimate: baselineResult.tokenEstimate,
+        latencyMs: swLatency,
+        baselineLatencyMs: baselineLatency
       };
 
-      this.state.turnCount += 1;
+      this.state.turnCount = turnNumber;
       this.state.turns = [...this.state.turns, record].slice(-MAX_TURNS_KEPT);
+      this.state.series = [...this.state.series, {
+        turn: turnNumber,
+        stateweaveTokens: swTokens,
+        baselineTokens: baselineResult.tokenEstimate,
+        stateweaveNodes: swResult.graph.nodes.length,
+        stateweaveClusters: clusters.length,
+        stateweaveLatencyMs: swLatency,
+        baselineLatencyMs: baselineLatency
+      }].slice(-MAX_SERIES_KEPT);
       this.state.graphSnapshot = graphSnapshot(frame?.graph, clusters);
       this.state.status = "running";
       await this.saveState();
@@ -219,6 +261,7 @@ function emptyState(batchSize: number, batchCount: number, selfImprove: boolean,
     agentModel,
     selfImprove,
     turns: [],
+    series: [],
     reviews: []
   };
 }

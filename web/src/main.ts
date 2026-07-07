@@ -2936,7 +2936,8 @@ function escapeAttribute(value: string): string {
 
 // --- Infinite harness ---
 
-type InfiniteTurn = { batch: number; turn: number; prompt: string; answer: string; nodeCount: number; edgeCount: number; clusterCount: number; promptTokenEstimate: number; latencyMs: number };
+type InfiniteTurn = { batch: number; turn: number; prompt: string; answer: string; baselineAnswer: string; nodeCount: number; edgeCount: number; clusterCount: number; promptTokenEstimate: number; baselineTokenEstimate: number; latencyMs: number; baselineLatencyMs: number };
+type InfiniteSeriesPoint = { turn: number; stateweaveTokens: number; baselineTokens: number; stateweaveNodes: number; stateweaveClusters: number; stateweaveLatencyMs: number; baselineLatencyMs: number };
 type InfiniteReview = { batch: number; findings: string; filesChanged: string[]; testsPassed: boolean; commit?: string; error?: string };
 type InfiniteStateView = {
   status: string;
@@ -2950,6 +2951,7 @@ type InfiniteStateView = {
   agentModel: string;
   selfImprove: boolean;
   turns: InfiniteTurn[];
+  series: InfiniteSeriesPoint[];
   reviews: InfiniteReview[];
   graphSnapshot?: { nodeCount: number; edgeCount: number; clusterCount: number; clusters: { id: string; label: string; nodeCount: number }[] };
   message?: string;
@@ -3010,27 +3012,36 @@ function renderInfiniteState(state: InfiniteStateView): void {
   infiniteStopButton.disabled = !running;
 
   const snapshot = state.graphSnapshot;
-  const tokens = state.turns.at(-1)?.promptTokenEstimate ?? 0;
+  const lastTurn = state.turns.at(-1);
+  const swTokens = lastTurn?.promptTokenEstimate ?? 0;
+  const baselineTokens = lastTurn?.baselineTokenEstimate ?? 0;
   const avgLatency = state.turns.length ? Math.round(state.turns.reduce((sum, t) => sum + t.latencyMs, 0) / state.turns.length) : 0;
+  const baselineAvgLatency = state.turns.length ? Math.round(state.turns.reduce((sum, t) => sum + t.baselineLatencyMs, 0) / state.turns.length) : 0;
+  const tokenDelta = baselineTokens > 0 ? Math.round((1 - swTokens / baselineTokens) * 100) : 0;
   infiniteMetrics.innerHTML = `
     <div class="infinite-metric"><span class="metric-label">Status</span><strong>${escapeHtml(state.status)}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Turns</span><strong>${state.turnCount}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Batch</span><strong>${state.currentBatch} / ${state.batchCount}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Nodes</span><strong>${snapshot?.nodeCount ?? 0}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Clusters</span><strong>${snapshot?.clusterCount ?? 0}</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Context ~</span><strong>${tokens.toLocaleString()} tok</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Avg latency</span><strong>${avgLatency.toLocaleString()} ms</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Challenger</span><strong>${escapeHtml(state.challengerModel)}</strong></div>`;
+    <div class="infinite-metric sw-metric"><span class="metric-label">SW context</span><strong>${swTokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric baseline-metric"><span class="metric-label">Naive context</span><strong>${baselineTokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric ${tokenDelta > 0 ? "sw-metric" : ""}"><span class="metric-label">SW saves</span><strong>${tokenDelta > 0 ? `${tokenDelta}%` : "—"}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">SW latency</span><strong>${avgLatency.toLocaleString()} ms</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Naive latency</span><strong>${baselineAvgLatency.toLocaleString()} ms</strong></div>`;
 
   if (state.message) infiniteMetrics.insertAdjacentHTML("beforeend", `<p class="message error"><div>${escapeHtml(state.message)}</div></p>`);
+
+  renderInfiniteChart(state.series);
 
   const turns = [...state.turns].reverse().slice(0, 20);
   infiniteTurns.innerHTML = turns.length
     ? turns.map((t) => `
       <article class="infinite-turn">
-        <header><span class="turn-badge">B${t.batch} T${t.turn}</span><small>${t.nodeCount}n · ${t.clusterCount}c · ~${t.promptTokenEstimate.toLocaleString()}tok · ${t.latencyMs}ms</small></header>
+        <header><span class="turn-badge">B${t.batch} T${t.turn}</span><small>${t.nodeCount}n · ${t.clusterCount}c · SW ${t.promptTokenEstimate.toLocaleString()}tok vs naive ${t.baselineTokenEstimate.toLocaleString()}tok</small></header>
         <p class="turn-prompt"><strong>Challenger:</strong> ${escapeHtml(t.prompt.slice(0, 200))}</p>
-        <p class="turn-answer">${escapeHtml(t.answer.slice(0, 280))}</p>
+        <p class="turn-answer"><strong>SW:</strong> ${escapeHtml(t.answer.slice(0, 200))}</p>
+        <p class="turn-answer baseline"><strong>Naive:</strong> ${escapeHtml(t.baselineAnswer.slice(0, 160))}</p>
       </article>`).join("")
     : `<p class="muted-copy">Waiting for the first turn…</p>`;
 
@@ -3040,4 +3051,98 @@ function renderInfiniteState(state: InfiniteStateView): void {
     : `<p class="muted-copy">No topics yet.</p>`;
 
   if (!running) stopInfinitePoll();
+}
+
+function renderInfiniteChart(series: InfiniteSeriesPoint[]): void {
+  const canvas = document.getElementById("infinite-chart") as HTMLCanvasElement | null;
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth || 800;
+  const cssH = canvas.clientHeight || 260;
+  canvas.width = cssW * dpr;
+  canvas.height = cssH * dpr;
+  ctx.scale(dpr, dpr);
+
+  ctx.clearRect(0, 0, cssW, cssH);
+  const padL = 56;
+  const padR = 16;
+  const padT = 12;
+  const padB = 28;
+  const plotW = cssW - padL - padR;
+  const plotH = cssH - padT - padB;
+
+  // grid
+  ctx.strokeStyle = "rgba(148,163,184,0.15)";
+  ctx.fillStyle = "#64748b";
+  ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+  ctx.lineWidth = 1;
+
+  if (series.length < 1) {
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "13px ui-sans-serif, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Waiting for the first data point…", cssW / 2, cssH / 2);
+    return;
+  }
+
+  const turns = series.map((p) => p.turn);
+  const maxTurn = Math.max(...turns, 1);
+  const allTokens = series.flatMap((p) => [p.stateweaveTokens, p.baselineTokens]);
+  const maxTokens = Math.max(...allTokens, 1000);
+  const niceMax = Math.ceil(maxTokens / 1000) * 1000;
+
+  // y-axis labels + horizontal grid lines
+  const ySteps = 4;
+  ctx.textAlign = "right";
+  for (let i = 0; i <= ySteps; i++) {
+    const value = Math.round((niceMax / ySteps) * i);
+    const y = padT + plotH - (plotH / ySteps) * i;
+    ctx.strokeStyle = "rgba(148,163,184,0.12)";
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(cssW - padR, y);
+    ctx.stroke();
+    ctx.fillStyle = "#64748b";
+    ctx.fillText(`${(value / 1000).toFixed(value >= 1000 ? 0 : 1)}k`, padL - 8, y + 4);
+  }
+
+  // x-axis labels
+  ctx.textAlign = "center";
+  const xLabelCount = Math.min(8, maxTurn);
+  for (let i = 0; i <= xLabelCount; i++) {
+    const turn = Math.round((maxTurn / xLabelCount) * i);
+    const x = padL + (plotW / xLabelCount) * i;
+    ctx.fillText(String(turn), x, cssH - padB + 18);
+  }
+
+  const xFor = (turn: number) => padL + (turn / maxTurn) * plotW;
+  const yFor = (tokens: number) => padT + plotH - (Math.min(tokens, niceMax) / niceMax) * plotH;
+
+  // baseline line (orange, climbing)
+  ctx.strokeStyle = "#f97316";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  series.forEach((p, i) => { const x = xFor(p.turn); const y = yFor(p.baselineTokens); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+  ctx.stroke();
+
+  // stateweave line (blue, flat)
+  ctx.strokeStyle = "#6366f1";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  series.forEach((p, i) => { const x = xFor(p.turn); const y = yFor(p.stateweaveTokens); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+  ctx.stroke();
+
+  // last-point dots
+  const last = series[series.length - 1];
+  ctx.fillStyle = "#f97316";
+  ctx.beginPath();
+  ctx.arc(xFor(last.turn), yFor(last.baselineTokens), 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#6366f1";
+  ctx.beginPath();
+  ctx.arc(xFor(last.turn), yFor(last.stateweaveTokens), 3.5, 0, Math.PI * 2);
+  ctx.fill();
 }
