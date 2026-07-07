@@ -258,11 +258,19 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
           <div id="infinite-metrics" class="infinite-metrics"></div>
           <div class="infinite-chart-wrap">
             <div class="infinite-chart-header">
-              <h3>Context window: StateWeave vs naive messages</h3>
-              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave <span class="legend-dot baseline"></span>Naive messages[]</div>
+              <h3>Context window: StateWeave vs baselines</h3>
+              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave <span class="legend-dot baseline"></span>Naive messages[] <span class="legend-dot windowed"></span>Windowed</div>
             </div>
-            <canvas id="infinite-chart" class="infinite-chart" width="800" height="260"></canvas>
+            <canvas id="infinite-chart" class="infinite-chart" width="800" height="220"></canvas>
           </div>
+          <div class="infinite-chart-wrap">
+            <div class="infinite-chart-header">
+              <h3>Quality: cumulative recall pass-rate</h3>
+              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave <span class="legend-dot baseline"></span>Naive <span class="legend-dot windowed"></span>Windowed</div>
+            </div>
+            <canvas id="infinite-quality-chart" class="infinite-chart" width="800" height="220"></canvas>
+          </div>
+          <div id="infinite-report" class="infinite-report" hidden></div>
           <div class="infinite-body">
             <section class="infinite-panel">
               <h3>Live turns</h3>

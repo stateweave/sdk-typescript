@@ -7,45 +7,78 @@ import { clusterGraph } from "../core/projection.js";
 import { serializeGraphFrame } from "../core/serialize.js";
 import { NaiveBaselineAgent } from "./naiveBaseline.js";
 
-const DEFAULT_BATCH_SIZE = 25;
-const MAX_TURNS_KEPT = 50;
+const MAX_TURNS_KEPT = 60;
 const MAX_SERIES_KEPT = 5000;
+const SEED_INTERVAL = 6;
+const CONSISTENCY_EVERY = 20;
+const WINDOWED_BUDGET_TOKENS = 12000;
+
+export type ProbeScore = { score: "pass" | "partial" | "fail"; reasoning: string };
+
+export type SeedRecord = { turn: number; prompt: string; facts: string[] };
+
+export type ProbeRecord = {
+  turn: number;
+  prompt: string;
+  goldAnswer: string;
+  assertions: string[];
+  difficulty: string;
+  dependsOnTurn: number;
+  scores: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore };
+};
+
+export type ConsistencyCheck = {
+  originalTurn: number;
+  reaskTurn: number;
+  prompt: string;
+  goldAnswer: string;
+  originalAnswer: string;
+  newAnswer: string;
+  matchesOriginal: boolean;
+  matchesGold: ProbeScore;
+};
+
+export type QualityPoint = {
+  turn: number;
+  stateweavePassRate: number;
+  naivePassRate: number;
+  windowedPassRate: number;
+  stateweaveScored: number;
+  naiveScored: number;
+  windowedScored: number;
+};
 
 export type InfiniteTurnRecord = {
   batch: number;
   turn: number;
+  phase: "seed" | "probe" | "consistency";
   prompt: string;
   answer: string;
   baselineAnswer: string;
+  windowedAnswer: string;
   nodeCount: number;
   edgeCount: number;
   clusterCount: number;
   promptTokenEstimate: number;
   baselineTokenEstimate: number;
+  windowedTokenEstimate: number;
   latencyMs: number;
   baselineLatencyMs: number;
+  windowedLatencyMs: number;
+  score?: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore };
 };
 
-export type InfiniteSeriesPoint = {
-  turn: number;
-  stateweaveTokens: number;
-  baselineTokens: number;
-  stateweaveNodes: number;
-  stateweaveClusters: number;
-  stateweaveLatencyMs: number;
-  baselineLatencyMs: number;
+export type InfiniteFinalReport = {
+  generatedAt: string;
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  categoryBreakdown: { difficulty: string; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; count: number }[];
+  driftInstances: { turn: number; description: string }[];
+  verdict: string;
 };
 
-export type InfiniteReviewRecord = {
-  batch: number;
-  findings: string;
-  filesChanged: string[];
-  testsPassed: boolean;
-  commit?: string;
-  error?: string;
-};
-
-export type InfiniteStatus = "idle" | "running" | "batch_done" | "reviewing" | "committed" | "failed" | "stopped";
+export type InfiniteStatus = "idle" | "running" | "batch_done" | "reviewing" | "committed" | "failed" | "stopped" | "reporting";
 
 export type InfiniteState = {
   status: InfiniteStatus;
@@ -59,8 +92,13 @@ export type InfiniteState = {
   agentModel: string;
   selfImprove: boolean;
   turns: InfiniteTurnRecord[];
-  series: InfiniteSeriesPoint[];
-  reviews: InfiniteReviewRecord[];
+  series: Array<{ turn: number; stateweaveTokens: number; baselineTokens: number; windowedTokens: number; stateweaveNodes: number; stateweaveClusters: number; stateweaveLatencyMs: number; baselineLatencyMs: number; windowedLatencyMs: number }>;
+  qualitySeries: QualityPoint[];
+  seeds: SeedRecord[];
+  probes: ProbeRecord[];
+  consistencyChecks: ConsistencyCheck[];
+  reviews: Array<{ batch: number; findings: string; filesChanged: string[]; testsPassed: boolean }>;
+  finalReport?: InfiniteFinalReport;
   graphSnapshot?: { nodeCount: number; edgeCount: number; clusterCount: number; clusters: { id: string; label: string; nodeCount: number }[] };
   message?: string;
 };
@@ -72,7 +110,6 @@ export type InfiniteHarnessArgs = {
   statePath: string;
   challengerModel?: Model;
   agentModel?: Model;
-  baselineModel?: Model;
   maxIterations?: number;
 };
 
@@ -84,46 +121,42 @@ export class InfiniteHarness {
   private challenger: Model;
   private agentModel: Model;
   private agent: Agent;
-  private baseline: NaiveBaselineAgent;
+  private naive: NaiveBaselineAgent;
+  private windowed: NaiveBaselineAgent;
   private maxIterations: number;
   private state: InfiniteState;
-  private challengerMessages: { role: "user" | "assistant"; content: string }[] = [];
+  private ledger: SeedRecord[] = [];
+  private askedProbeStems: Set<string> = new Set();
   private running = false;
 
   constructor(args: InfiniteHarnessArgs) {
-    this.batchSize = args.batchSize ?? DEFAULT_BATCH_SIZE;
+    this.batchSize = args.batchSize ?? 50;
     this.batchCount = args.batches ?? 1;
     this.selfImprove = args.selfImprove ?? false;
     this.statePath = args.statePath;
     this.challenger = args.challengerModel ?? createModelFromEnv();
     this.agentModel = args.agentModel ?? createModelFromEnv();
-    const baselineModel = args.baselineModel ?? this.agentModel;
     this.maxIterations = args.maxIterations ?? 8;
     this.agent = new Agent({ model: this.agentModel, maxIterations: this.maxIterations, systemPrompt: agentSystemPrompt() });
-    this.baseline = new NaiveBaselineAgent({ model: baselineModel });
+    this.naive = new NaiveBaselineAgent({ model: this.agentModel, variant: "full" });
+    this.windowed = new NaiveBaselineAgent({ model: this.agentModel, variant: "windowed", maxContextTokens: WINDOWED_BUDGET_TOKENS });
     this.state = emptyState(this.batchSize, this.batchCount, this.selfImprove, modelName(this.challenger), modelName(this.agentModel));
   }
 
-  getState(): InfiniteState {
-    return structuredClone(this.state);
-  }
+  getState(): InfiniteState { return structuredClone(this.state); }
 
   async loadState(): Promise<void> {
     try {
       const raw = await readFile(this.statePath, "utf8");
       this.state = { ...this.state, ...JSON.parse(raw) };
-    } catch {
-      // fresh state
-    }
+      this.ledger = this.state.seeds ?? [];
+    } catch { /* fresh */ }
   }
 
   async saveState(): Promise<void> {
     await mkdir(path.dirname(this.statePath), { recursive: true });
     this.state.updatedAt = new Date().toISOString();
-    const tmp = `${this.statePath}.tmp`;
-    await writeFile(tmp, JSON.stringify(this.getState(), null, 2));
-    await writeFile(this.statePath, await readFile(tmp, "utf8"));
-    await writeFile(tmp, "{}").catch(() => undefined);
+    await writeFile(this.statePath, JSON.stringify(this.getState(), null, 2));
   }
 
   async stop(): Promise<void> {
@@ -136,144 +169,278 @@ export class InfiniteHarness {
     this.running = true;
     this.state.status = "running";
     this.state.startedAt = new Date().toISOString();
-    if (this.challengerMessages.length === 0) this.challengerMessages = [{ role: "user", content: challengerSeedPrompt() }];
     await this.saveState();
 
     for (let batch = this.state.currentBatch + 1; batch <= this.batchCount && this.running; batch++) {
       this.state.currentBatch = batch;
       await this.runBatch(batch, onTurn);
       if (!this.running) break;
-
-      if (this.selfImprove) {
-        await this.reviewAndImprove(batch);
-      }
       await this.saveState();
     }
 
-    if (this.running) this.state.status = "stopped";
+    if (this.running) {
+      await this.generateFinalReport();
+      this.state.status = "stopped";
+    }
     await this.saveState();
     return this.getState();
   }
 
   private async runBatch(batch: number, onTurn?: (state: InfiniteState) => void): Promise<void> {
-    this.baseline.wipe();
+    this.naive.wipe();
+    this.windowed.wipe();
 
     for (let turn = 1; turn <= this.batchSize && this.running; turn++) {
-      const clusterSummary = this.clusterSummary();
-      const prompt = await this.nextChallengerPrompt(turn, batch, clusterSummary);
-
-      // Run both agents concurrently on the same prompt — fair fight.
-      const [swStart, baselineStart] = [Date.now(), Date.now()];
-      const [swResult, baselineResult] = await Promise.all([
-        this.agent.run({ objective: `Infinite harness batch ${batch} turn ${turn}`, input: prompt }),
-        this.baseline.run(prompt)
-      ]);
-      const swLatency = Date.now() - swStart;
-      const baselineLatency = Date.now() - baselineStart;
-
-      this.challengerMessages.push({ role: "assistant", content: prompt }, { role: "user", content: challengerObservePrompt(prompt, swResult.finalAnswer, clusterSummary) });
-
-      const frame = this.agent.getFrame();
-      const swTokens = frame ? Math.round(serializeGraphFrame(frame).length / 4) : 0;
-      const clusters = frame ? clusterGraph(frame.graph) : [];
-
-      const turnNumber = this.state.turnCount + 1;
-      const record: InfiniteTurnRecord = {
-        batch,
-        turn: turnNumber,
-        prompt,
-        answer: swResult.finalAnswer,
-        baselineAnswer: baselineResult.answer.slice(0, 400),
-        nodeCount: swResult.graph.nodes.length,
-        edgeCount: swResult.graph.edges.length,
-        clusterCount: clusters.length,
-        promptTokenEstimate: swTokens,
-        baselineTokenEstimate: baselineResult.tokenEstimate,
-        latencyMs: swLatency,
-        baselineLatencyMs: baselineLatency
-      };
-
-      this.state.turnCount = turnNumber;
-      this.state.turns = [...this.state.turns, record].slice(-MAX_TURNS_KEPT);
-      this.state.series = [...this.state.series, {
-        turn: turnNumber,
-        stateweaveTokens: swTokens,
-        baselineTokens: baselineResult.tokenEstimate,
-        stateweaveNodes: swResult.graph.nodes.length,
-        stateweaveClusters: clusters.length,
-        stateweaveLatencyMs: swLatency,
-        baselineLatencyMs: baselineLatency
-      }].slice(-MAX_SERIES_KEPT);
-      this.state.graphSnapshot = graphSnapshot(frame?.graph, clusters);
-      this.state.status = "running";
-      await this.saveState();
+      const globalTurn = this.state.turnCount + 1;
+      const phase = this.phaseFor(globalTurn, this.batchSize);
+      await this.runTurn(batch, globalTurn, turn, phase);
       onTurn?.(this.getState());
     }
 
-    this.challengerMessages = [{ role: "user", content: challengerSeedPrompt(this.clusterSummary()) }];
+    this.naive.wipe();
+    this.windowed.wipe();
     this.state.status = "batch_done";
     await this.saveState();
   }
 
-  private clusterSummary(): string {
-    const frame = this.agent.getFrame();
-    if (!frame) return "(no graph yet)";
-    const clusters = clusterGraph(frame.graph);
-    if (!clusters.length) return "(no topics yet)";
-    return clusters.map((c) => `- ${c.id} (${c.summary}): ${c.label}`).join("\n");
+  private phaseFor(globalTurn: number, batchSize: number): "seed" | "probe" | "consistency" {
+    if (globalTurn === 1 || (globalTurn - 1) % SEED_INTERVAL === 0) return "seed";
+    if (globalTurn % CONSISTENCY_EVERY === 0 && globalTurn > 10) {
+      const oldProbes = this.state.probes.filter((p) => p.turn <= globalTurn - 10);
+      if (oldProbes.length) return "consistency";
+    }
+    return "probe";
   }
 
-  private async nextChallengerPrompt(turn: number, batch: number, clusterSummary: string): Promise<string> {
-    const context = `Batch ${batch}, turn ${turn}. StateWeave graph topics so far:\n${clusterSummary}\n\nChallenger messages so far: ${this.challengerMessages.length}.`;
+  private async runTurn(batch: number, globalTurn: number, localTurn: number, phase: "seed" | "probe" | "consistency"): Promise<void> {
+    if (phase === "seed") {
+      const seed = await this.generateSeed(globalTurn);
+      const result = await this.runAllAgents(seed.prompt);
+      this.ledger.push(seed);
+      this.state.seeds = [...this.ledger];
+      this.recordTurn(batch, globalTurn, "seed", seed.prompt, result, undefined);
+      return;
+    }
+
+    if (phase === "consistency") {
+      const target = this.pickConsistencyTarget(globalTurn);
+      if (target) {
+        const result = await this.runAllAgents(target.prompt);
+        const swAnswer = result.stateweave.answer;
+        const check: ConsistencyCheck = {
+          originalTurn: target.turn,
+          reaskTurn: globalTurn,
+          prompt: target.prompt,
+          goldAnswer: target.goldAnswer,
+          originalAnswer: this.originalAnswerFor(target.turn),
+          newAnswer: swAnswer,
+          matchesOriginal: false,
+          matchesGold: await this.judgeScore(target.prompt, target.assertions, target.goldAnswer, swAnswer)
+        };
+        check.matchesOriginal = await this.judgeAgreement(target.prompt, this.originalAnswerFor(target.turn), swAnswer);
+        this.state.consistencyChecks = [...this.state.consistencyChecks, check];
+        this.recordTurn(batch, globalTurn, "consistency", target.prompt, result, undefined);
+        return;
+      }
+    }
+
+    // probe
+    const probe = await this.generateProbe(globalTurn);
+    const result = await this.runAllAgents(probe.prompt);
+    const scores = {
+      stateweave: await this.judgeScore(probe.prompt, probe.assertions, probe.goldAnswer, result.stateweave.answer),
+      naive: await this.judgeScore(probe.prompt, probe.assertions, probe.goldAnswer, result.naive.answer),
+      windowed: await this.judgeScore(probe.prompt, probe.assertions, probe.goldAnswer, result.windowed.answer)
+    };
+    const probeRecord: ProbeRecord = { turn: globalTurn, prompt: probe.prompt, goldAnswer: probe.goldAnswer, assertions: probe.assertions, difficulty: probe.difficulty, dependsOnTurn: probe.dependsOnTurn, scores };
+    this.state.probes = [...this.state.probes, probeRecord];
+    this.updateQualitySeries();
+    this.recordTurn(batch, globalTurn, "probe", probe.prompt, result, scores);
+  }
+
+  private originalAnswerFor(turn: number): string {
+    return this.state.turns.find((t) => t.turn === turn)?.answer ?? "";
+  }
+
+  private async runAllAgents(prompt: string): Promise<{ stateweave: { answer: string; latencyMs: number }; naive: { answer: string; latencyMs: number; tokenEstimate: number }; windowed: { answer: string; latencyMs: number; tokenEstimate: number } }> {
+    const [sw, n, w] = await Promise.all([
+      (async () => { const start = Date.now(); const r = await this.agent.run({ objective: "Infinite harness probe", input: prompt }); return { answer: r.finalAnswer, latencyMs: Date.now() - start }; })(),
+      (async () => { const start = Date.now(); const r = await this.naive.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, tokenEstimate: r.tokenEstimate }; })(),
+      (async () => { const start = Date.now(); const r = await this.windowed.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, tokenEstimate: r.tokenEstimate }; })()
+    ]);
+    return { stateweave: sw, naive: n, windowed: w };
+  }
+
+  private recordTurn(batch: number, globalTurn: number, phase: "seed" | "probe" | "consistency", prompt: string, result: { stateweave: { answer: string; latencyMs: number }; naive: { answer: string; latencyMs: number; tokenEstimate: number }; windowed: { answer: string; latencyMs: number; tokenEstimate: number } }, score: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore } | undefined): void {
+    const frame = this.agent.getFrame();
+    const swTokens = frame ? Math.round(serializeGraphFrame(frame).length / 4) : 0;
+    const clusters = frame ? clusterGraph(frame.graph) : [];
+    this.state.turnCount = globalTurn;
+    const record: InfiniteTurnRecord = {
+      batch, turn: globalTurn, phase, prompt,
+      answer: result.stateweave.answer,
+      baselineAnswer: result.naive.answer.slice(0, 500),
+      windowedAnswer: result.windowed.answer.slice(0, 500),
+      nodeCount: frame?.graph.nodes.length ?? 0,
+      edgeCount: frame?.graph.edges.length ?? 0,
+      clusterCount: clusters.length,
+      promptTokenEstimate: swTokens,
+      baselineTokenEstimate: result.naive.tokenEstimate,
+      windowedTokenEstimate: result.windowed.tokenEstimate,
+      latencyMs: result.stateweave.latencyMs,
+      baselineLatencyMs: result.naive.latencyMs,
+      windowedLatencyMs: result.windowed.latencyMs,
+      score
+    };
+    this.state.turns = [...this.state.turns, record].slice(-MAX_TURNS_KEPT);
+    this.state.series = [...this.state.series, {
+      turn: globalTurn, stateweaveTokens: swTokens, baselineTokens: result.naive.tokenEstimate, windowedTokens: result.windowed.tokenEstimate,
+      stateweaveNodes: frame?.graph.nodes.length ?? 0, stateweaveClusters: clusters.length,
+      stateweaveLatencyMs: result.stateweave.latencyMs, baselineLatencyMs: result.naive.latencyMs, windowedLatencyMs: result.windowed.latencyMs
+    }].slice(-MAX_SERIES_KEPT);
+    this.state.graphSnapshot = graphSnapshot(frame?.graph, clusters);
+  }
+
+  private updateQualitySeries(): void {
+    const probes = this.state.probes;
+    if (!probes.length) return;
+    const score = (s: ProbeScore) => (s.score === "pass" ? 1 : s.score === "partial" ? 0.5 : 0);
+    const rate = (arr: ProbeScore[]) => arr.length ? arr.reduce((a, b) => a + score(b), 0) / arr.length : 0;
+    const sw = probes.map((p) => p.scores.stateweave);
+    const n = probes.map((p) => p.scores.naive);
+    const w = probes.map((p) => p.scores.windowed);
+    this.state.qualitySeries = [...this.state.qualitySeries, {
+      turn: probes[probes.length - 1].turn,
+      stateweavePassRate: rate(sw), naivePassRate: rate(n), windowedPassRate: rate(w),
+      stateweaveScored: sw.length, naiveScored: n.length, windowedScored: w.length
+    }].slice(-MAX_SERIES_KEPT);
+  }
+
+  // --- Challenger generation ---
+
+  private async generateSeed(turn: number): Promise<SeedRecord> {
+    const existing = this.ledger.length;
     const input: ModelInput = {
-      prompt: `${context}\n\nGenerate ONLY the next adversarial prompt (one to three sentences, no preamble, no quotes). It must test StateWeave's graph memory, cross-turn reasoning, artifact continuity, or a topic it has NOT been tested on yet.`,
+      prompt: `Turn ${turn}. Generate a SEED that plants 3 to 5 memorable, distinct facts a memory system must retain. Each fact must be specific (a name, number, color, relation, or rule) so it can be probed later. Output ONLY JSON:\n{"prompt":"<the natural-language seed message the agent receives>","facts":["<fact1>","<fact2>","<fact3>"]}\nSeeds so far: ${existing}. Vary the domain (avoid repeating prior topics).`,
       mode: "text"
     };
-    const output = await this.challenger.complete(input);
-    return output.text.trim().replace(/^["']|["']$/g, "").slice(0, 1000);
+    try {
+      const out = await this.challenger.complete(input);
+      const parsed = extractJson(out.text) as { prompt?: string; facts?: string[] };
+      if (parsed.prompt && Array.isArray(parsed.facts) && parsed.facts.length) {
+        return { turn, prompt: String(parsed.prompt), facts: parsed.facts.map(String) };
+      }
+    } catch { /* fall through */ }
+    return fallbackSeed(turn);
   }
 
-  private async reviewAndImprove(batch: number): Promise<void> {
-    this.state.status = "reviewing";
-    await this.saveState();
-    const review: InfiniteReviewRecord = {
-      batch,
-      findings: "Self-improvement is stubbed in this validation run; no files were edited.",
-      filesChanged: [],
-      testsPassed: true
+  private async generateProbe(turn: number): Promise<{ prompt: string; goldAnswer: string; assertions: string[]; difficulty: string; dependsOnTurn: number }> {
+    const eligible = this.ledger.filter((s) => s.turn <= turn - 2);
+    if (!eligible.length) {
+      const seed = await this.generateSeed(turn);
+      this.ledger.push(seed);
+      this.state.seeds = [...this.ledger];
+      eligible.push(seed);
+    }
+    const target = eligible[Math.floor(Math.random() * eligible.length)];
+    const difficulty = pickDifficulty(turn);
+    const fact = target.facts[Math.floor(Math.random() * target.facts.length)];
+    const input: ModelInput = {
+      prompt: `You are probing recall of a fact planted at turn ${target.turn}. The planted fact is: "${fact}" (from seed: "${target.prompt.slice(0, 120)}"). Difficulty: ${difficulty} (${difficultyHint(difficulty)}). Output ONLY JSON:\n{"prompt":"<a question the agent must answer>","goldAnswer":"<correct answer>","assertions":["<key phrase the answer must contain>"]}\nDo NOT repeat the fact verbatim in the prompt. Make it require recall.`,
+      mode: "text"
     };
-    this.state.reviews = [...this.state.reviews, review];
-    this.state.status = "committed";
+    try {
+      const out = await this.challenger.complete(input);
+      const parsed = extractJson(out.text) as { prompt?: string; goldAnswer?: string; assertions?: string[] };
+      if (parsed.prompt && parsed.goldAnswer) {
+        const stem = String(parsed.prompt).toLowerCase().slice(0, 40);
+        if (this.askedProbeStems.has(stem)) return this.generateProbe(turn);
+        this.askedProbeStems.add(stem);
+        return { prompt: String(parsed.prompt), goldAnswer: String(parsed.goldAnswer), assertions: Array.isArray(parsed.assertions) ? parsed.assertions.map(String) : [String(parsed.goldAnswer)], difficulty, dependsOnTurn: target.turn };
+      }
+    } catch { /* fall through */ }
+    return { prompt: `Recall: what was established as "${fact}"?`, goldAnswer: fact, assertions: [fact], difficulty, dependsOnTurn: target.turn };
+  }
+
+  private pickConsistencyTarget(turn: number): ProbeRecord | undefined {
+    const old = this.state.probes.filter((p) => p.turn <= turn - 10);
+    return old[old.length - 1];
+  }
+
+  private async judgeScore(prompt: string, assertions: string[], gold: string, answer: string): Promise<ProbeScore> {
+    const input: ModelInput = {
+      prompt: `You are a strict grader. Score the agent's answer.\nQuestion: ${prompt}\nKey assertions the answer must include: ${JSON.stringify(assertions)}\nGold reference: ${gold}\nAgent answer: ${answer.slice(0, 1500)}\nOutput ONLY JSON: {"score":"pass"|"partial"|"fail","reasoning":"one short sentence"}\nRules: pass = answer contains the essential correct fact(s). partial = vague or missing detail. fail = wrong, evasive, or hallucinated.`,
+      mode: "text"
+    };
+    try {
+      const out = await this.challenger.complete(input);
+      const parsed = extractJson(out.text) as { score?: string; reasoning?: string };
+      const score = parsed.score === "pass" ? "pass" : parsed.score === "partial" ? "partial" : parsed.score === "fail" ? "fail" : "fail";
+      return { score, reasoning: String(parsed.reasoning ?? score).slice(0, 200) };
+    } catch {
+      return { score: "fail", reasoning: "judge error" };
+    }
+  }
+
+  private async judgeAgreement(prompt: string, answerA: string, answerB: string): Promise<boolean> {
+    if (!answerA || !answerB) return false;
+    const input: ModelInput = {
+      prompt: `Do these two answers to the same question agree on the core fact? Answer ONLY JSON: {"agree":true} or {"agree":false}.\nQuestion: ${prompt}\nAnswer A: ${answerA.slice(0, 800)}\nAnswer B: ${answerB.slice(0, 800)}`,
+      mode: "text"
+    };
+    try {
+      const out = await this.challenger.complete(input);
+      const parsed = extractJson(out.text) as { agree?: boolean };
+      return Boolean(parsed.agree);
+    } catch {
+      return false;
+    }
+  }
+
+  private async generateFinalReport(): Promise<void> {
+    this.state.status = "reporting";
+    await this.saveState();
+    const probes = this.state.probes;
+    const score = (s: ProbeScore) => (s.score === "pass" ? 1 : s.score === "partial" ? 0.5 : 0);
+    const rate = (arr: ProbeScore[]) => arr.length ? Math.round((arr.reduce((a, b) => a + score(b), 0) / arr.length) * 100) : 0;
+    const swRate = rate(probes.map((p) => p.scores.stateweave));
+    const naiveRate = rate(probes.map((p) => p.scores.naive));
+    const windowedRate = rate(probes.map((p) => p.scores.windowed));
+    const drifts = this.state.consistencyChecks.filter((c) => !c.matchesGold);
+    const diffBreakdown: InfiniteFinalReport["categoryBreakdown"] = [...new Set(probes.map((p) => p.difficulty))].map((d) => {
+      const subset = probes.filter((p) => p.difficulty === d);
+      return { difficulty: d, count: subset.length, stateweavePassRate: rate(subset.map((p) => p.scores.stateweave)), naivePassRate: rate(subset.map((p) => p.scores.naive)), windowedPassRate: rate(subset.map((p) => p.scores.windowed)) };
+    });
+
+    const input: ModelInput = {
+      prompt: `You are the lead interviewer who just completed a ${this.state.turnCount}-turn adversarial interview of a memory system called StateWeave, compared against a naive messages[] baseline and a sliding-window baseline.\n\nResults across ${probes.length} scored recall probes:\n- StateWeave pass rate: ${swRate}%\n- Naive messages[] pass rate: ${naiveRate}%\n- Windowed messages[] pass rate: ${windowedRate}%\n\nConsistency checks: ${this.state.consistencyChecks.length} (${drifts.length} failed to match gold on re-ask).\n\nCategory breakdown:\n${diffBreakdown.map((d) => `- ${d.difficulty}: SW ${d.stateweavePassRate}%, naive ${d.naivePassRate}%, windowed ${d.windowedPassRate}% (${d.count} probes)`).join("\n")}\n\nGraph state: ${this.state.graphSnapshot?.nodeCount ?? 0} nodes, ${this.state.graphSnapshot?.clusterCount ?? 0} clusters.\n\nWrite a direct executive assessment as JSON:\n{"summary":"2-3 sentence verdict","strengths":["..."],"weaknesses":["..."],"verdict":"one punchy line"}\nBe specific and honest. If StateWeave is not clearly better on quality, say so.`,
+      mode: "text"
+    };
+    let report: InfiniteFinalReport = {
+      generatedAt: new Date().toISOString(),
+      summary: `StateWeave: ${swRate}% pass vs naive ${naiveRate}% vs windowed ${windowedRate}% across ${probes.length} probes.`,
+      strengths: [], weaknesses: [],
+      categoryBreakdown: diffBreakdown,
+      driftInstances: drifts.map((c) => ({ turn: c.reaskTurn, description: `Re-ask of turn ${c.originalTurn} did not match gold: "${c.prompt.slice(0, 80)}"` })),
+      verdict: swRate > Math.max(naiveRate, windowedRate) ? "StateWeave retained memory better under load." : "No clear quality advantage; context efficiency without quality is not enough."
+    };
+    try {
+      const out = await this.challenger.complete(input);
+      const parsed = extractJson(out.text) as Partial<InfiniteFinalReport>;
+      report = { ...report, ...parsed, categoryBreakdown: diffBreakdown, driftInstances: report.driftInstances, generatedAt: report.generatedAt };
+    } catch { /* keep computed fallback */ }
+    this.state.finalReport = report;
   }
 }
 
 function emptyState(batchSize: number, batchCount: number, selfImprove: boolean, challengerModel: string, agentModel: string): InfiniteState {
   const now = new Date().toISOString();
-  return {
-    status: "idle",
-    batchSize,
-    batchCount,
-    turnCount: 0,
-    startedAt: now,
-    updatedAt: now,
-    currentBatch: 0,
-    challengerModel,
-    agentModel,
-    selfImprove,
-    turns: [],
-    series: [],
-    reviews: []
-  };
+  return { status: "idle", batchSize, batchCount, turnCount: 0, startedAt: now, updatedAt: now, currentBatch: 0, challengerModel, agentModel, selfImprove, turns: [], series: [], qualitySeries: [], seeds: [], probes: [], consistencyChecks: [], reviews: [] };
 }
 
-function graphSnapshot(graph: { nodes: { id: string; type: string; text: string }[]; edges: unknown[] } | undefined, clusters: ReturnType<typeof clusterGraph>): InfiniteState["graphSnapshot"] {
+function graphSnapshot(graph: { nodes: { id: string; type: string; text: string }[]; edges: unknown[] } | undefined, clusters: ReturnType<typeof clusterGraph>): InfiniteState["graphSnapshot"] | undefined {
   if (!graph) return undefined;
-  return {
-    nodeCount: graph.nodes.length,
-    edgeCount: graph.edges.length,
-    clusterCount: clusters.length,
-    clusters: clusters.map((c) => ({ id: c.id, label: c.label, nodeCount: c.nodeCount }))
-  };
+  return { nodeCount: graph.nodes.length, edgeCount: graph.edges.length, clusterCount: clusters.length, clusters: clusters.map((c) => ({ id: c.id, label: c.label, nodeCount: c.nodeCount })) };
 }
 
 function modelName(model: Model): string {
@@ -281,24 +448,46 @@ function modelName(model: Model): string {
   return config?.model ?? model.constructor.name;
 }
 
+function pickDifficulty(turn: number): string {
+  const ramp = Math.min(4, Math.floor(turn / 12));
+  const labels = ["recall", "recall", "combine", "conflict", "chronology"];
+  const pool = labels.slice(0, ramp + 2);
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function difficultyHint(difficulty: string): string {
+  switch (difficulty) {
+    case "recall": return "ask for a single planted fact";
+    case "combine": return "ask how two facts relate";
+    case "conflict": return "present a contradicting decoy and ask for the true fact";
+    case "chronology": return "ask which fact came first";
+    default: return "test recall of a planted fact";
+  }
+}
+
+function fallbackSeed(turn: number): SeedRecord {
+  const bank: Array<{ prompt: string; facts: string[] }> = [
+    { prompt: "Remember: the project codename is HALCYON, the target market is fintech, the launch budget is $4.2M, and the lead engineer is Priya.", facts: ["codename=HALCYON", "market=fintech", "budget=$4.2M", "lead=Priya"] },
+    { prompt: "Store: the vault combination is 7-29-44, the access tier is platinum, the expiry is March, and the region is north.", facts: ["combination=7-29-44", "tier=platinum", "expiry=March", "region=north"] },
+    { prompt: "Note: the encryption key suffix is B9F2, the rotation policy is quarterly, the custodian is Oren, and the backup site is Vega.", facts: ["suffix=B9F2", "rotation=quarterly", "custodian=Oren", "backup=Vega"] }
+  ];
+  return { turn, ...bank[turn % bank.length] };
+}
+
 function agentSystemPrompt(): string {
   return [
-    "You are a StateWeave agent under adversarial stress testing.",
-    "Your StateGraph is persistent working memory that never resets — use it to remember facts, artifacts, and prior conclusions across all turns.",
-    "Answer concretely and reference your graph memory when the challenger tests cross-turn recall.",
-    "When asked to build or revise artifacts, use the workspace file tools (write_file, edit_file, read_file, bash_command)."
+    "You are a StateWeave agent under adversarial memory testing.",
+    "Your StateGraph is persistent working memory that never resets — use it to remember every fact across all turns.",
+    "Answer concretely and precisely. When asked to recall a fact, retrieve it from your graph memory and state it directly.",
+    "Never guess. If you cannot recall, say so."
   ].join(" ");
 }
 
-function challengerSeedPrompt(clusterSummary?: string): string {
-  return [
-    "You are an adversarial tester probing a graph-native agent (StateWeave) that claims persistent memory across unlimited turns.",
-    "Generate diverse, escalating challenges: test cross-turn recall, contradiction detection, artifact revision, multi-step planning, and edge cases.",
-    "Each turn output ONLY the next challenge prompt — no meta commentary.",
-    clusterSummary ? `\nTopics already covered (avoid exact repeats, push into adjacent areas):\n${clusterSummary}` : ""
-  ].join("\n");
-}
-
-function challengerObservePrompt(prompt: string, answer: string, clusterSummary: string): string {
-  return `You asked: ${prompt}\n\nStateWeave answered: ${answer.slice(0, 800)}\n\nCurrent graph topics:\n${clusterSummary}\n\nDecide the next challenge that exposes a weakness or an untested area.`;
+function extractJson(text: string): Record<string, unknown> {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] ?? "";
+  const candidate = fenced || text;
+  const start = candidate.indexOf("{");
+  const end = candidate.lastIndexOf("}");
+  if (start < 0 || end <= start) throw new Error("no JSON object found");
+  return JSON.parse(candidate.slice(start, end + 1)) as Record<string, unknown>;
 }

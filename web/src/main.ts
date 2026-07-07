@@ -2936,9 +2936,12 @@ function escapeAttribute(value: string): string {
 
 // --- Infinite harness ---
 
-type InfiniteTurn = { batch: number; turn: number; prompt: string; answer: string; baselineAnswer: string; nodeCount: number; edgeCount: number; clusterCount: number; promptTokenEstimate: number; baselineTokenEstimate: number; latencyMs: number; baselineLatencyMs: number };
-type InfiniteSeriesPoint = { turn: number; stateweaveTokens: number; baselineTokens: number; stateweaveNodes: number; stateweaveClusters: number; stateweaveLatencyMs: number; baselineLatencyMs: number };
+type InfiniteTurn = { batch: number; turn: number; phase: "seed" | "probe" | "consistency"; prompt: string; answer: string; baselineAnswer: string; windowedAnswer: string; nodeCount: number; edgeCount: number; clusterCount: number; promptTokenEstimate: number; baselineTokenEstimate: number; windowedTokenEstimate: number; latencyMs: number; baselineLatencyMs: number; windowedLatencyMs: number; score?: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore } };
+type ProbeScore = { score: "pass" | "partial" | "fail"; reasoning: string };
+type InfiniteSeriesPoint = { turn: number; stateweaveTokens: number; baselineTokens: number; windowedTokens: number; stateweaveNodes: number; stateweaveClusters: number; stateweaveLatencyMs: number; baselineLatencyMs: number; windowedLatencyMs: number };
+type InfiniteQualityPoint = { turn: number; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; stateweaveScored: number; naiveScored: number; windowedScored: number };
 type InfiniteReview = { batch: number; findings: string; filesChanged: string[]; testsPassed: boolean; commit?: string; error?: string };
+type InfiniteFinalReport = { generatedAt: string; summary: string; strengths: string[]; weaknesses: string[]; categoryBreakdown: { difficulty: string; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; count: number }[]; driftInstances: { turn: number; description: string }[]; verdict: string };
 type InfiniteStateView = {
   status: string;
   batchSize: number;
@@ -2952,6 +2955,8 @@ type InfiniteStateView = {
   selfImprove: boolean;
   turns: InfiniteTurn[];
   series: InfiniteSeriesPoint[];
+  qualitySeries: InfiniteQualityPoint[];
+  finalReport?: InfiniteFinalReport;
   reviews: InfiniteReview[];
   graphSnapshot?: { nodeCount: number; edgeCount: number; clusterCount: number; clusters: { id: string; label: string; nodeCount: number }[] };
   message?: string;
@@ -3007,7 +3012,7 @@ async function pollInfiniteState(): Promise<void> {
 }
 
 function renderInfiniteState(state: InfiniteStateView): void {
-  const running = state.status === "running" || state.status === "batch_done" || state.status === "reviewing" || state.status === "committed";
+  const running = state.status === "running" || state.status === "batch_done" || state.status === "reviewing" || state.status === "committed" || state.status === "reporting";
   infiniteStartButton.disabled = running;
   infiniteStopButton.disabled = !running;
 
@@ -3015,34 +3020,42 @@ function renderInfiniteState(state: InfiniteStateView): void {
   const lastTurn = state.turns.at(-1);
   const swTokens = lastTurn?.promptTokenEstimate ?? 0;
   const baselineTokens = lastTurn?.baselineTokenEstimate ?? 0;
+  const windowedTokens = lastTurn?.windowedTokenEstimate ?? 0;
   const avgLatency = state.turns.length ? Math.round(state.turns.reduce((sum, t) => sum + t.latencyMs, 0) / state.turns.length) : 0;
-  const baselineAvgLatency = state.turns.length ? Math.round(state.turns.reduce((sum, t) => sum + t.baselineLatencyMs, 0) / state.turns.length) : 0;
   const tokenDelta = baselineTokens > 0 ? Math.round((1 - swTokens / baselineTokens) * 100) : 0;
+  const lastQ = state.qualitySeries.at(-1);
   infiniteMetrics.innerHTML = `
     <div class="infinite-metric"><span class="metric-label">Status</span><strong>${escapeHtml(state.status)}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Turns</span><strong>${state.turnCount}</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Batch</span><strong>${state.currentBatch} / ${state.batchCount}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Probes scored</span><strong>${state.qualitySeries.at(-1)?.stateweaveScored ?? 0}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Nodes</span><strong>${snapshot?.nodeCount ?? 0}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Clusters</span><strong>${snapshot?.clusterCount ?? 0}</strong></div>
     <div class="infinite-metric sw-metric"><span class="metric-label">SW context</span><strong>${swTokens.toLocaleString()} tok</strong></div>
     <div class="infinite-metric baseline-metric"><span class="metric-label">Naive context</span><strong>${baselineTokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric windowed-metric"><span class="metric-label">Windowed context</span><strong>${windowedTokens.toLocaleString()} tok</strong></div>
     <div class="infinite-metric ${tokenDelta > 0 ? "sw-metric" : ""}"><span class="metric-label">SW saves</span><strong>${tokenDelta > 0 ? `${tokenDelta}%` : "—"}</strong></div>
-    <div class="infinite-metric"><span class="metric-label">SW latency</span><strong>${avgLatency.toLocaleString()} ms</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Naive latency</span><strong>${baselineAvgLatency.toLocaleString()} ms</strong></div>`;
+    <div class="infinite-metric sw-metric"><span class="metric-label">SW pass-rate</span><strong>${lastQ ? `${Math.round(lastQ.stateweavePassRate * 100)}%` : "—"}</strong></div>
+    <div class="infinite-metric baseline-metric"><span class="metric-label">Naive pass-rate</span><strong>${lastQ ? `${Math.round(lastQ.naivePassRate * 100)}%` : "—"}</strong></div>
+    <div class="infinite-metric windowed-metric"><span class="metric-label">Windowed pass-rate</span><strong>${lastQ ? `${Math.round(lastQ.windowedPassRate * 100)}%` : "—"}</strong></div>`;
 
   if (state.message) infiniteMetrics.insertAdjacentHTML("beforeend", `<p class="message error"><div>${escapeHtml(state.message)}</div></p>`);
 
   renderInfiniteChart(state.series);
+  renderInfiniteQualityChart(state.qualitySeries);
+  renderInfiniteReport(state.finalReport);
 
   const turns = [...state.turns].reverse().slice(0, 20);
   infiniteTurns.innerHTML = turns.length
-    ? turns.map((t) => `
+    ? turns.map((t) => {
+        const badges = t.score ? scoreBadges(t.score) : (t.phase === "seed" ? `<span class="phase-badge seed">seed</span>` : `<span class="phase-badge consistency">consistency</span>`);
+        return `
       <article class="infinite-turn">
-        <header><span class="turn-badge">B${t.batch} T${t.turn}</span><small>${t.nodeCount}n · ${t.clusterCount}c · SW ${t.promptTokenEstimate.toLocaleString()}tok vs naive ${t.baselineTokenEstimate.toLocaleString()}tok</small></header>
-        <p class="turn-prompt"><strong>Challenger:</strong> ${escapeHtml(t.prompt.slice(0, 200))}</p>
+        <header><span class="turn-badge">T${t.turn}</span> ${badges} <small>${t.nodeCount}n · SW ${t.promptTokenEstimate.toLocaleString()}tok / naive ${t.baselineTokenEstimate.toLocaleString()}tok / win ${t.windowedTokenEstimate.toLocaleString()}tok</small></header>
+        <p class="turn-prompt"><strong>Probe:</strong> ${escapeHtml(t.prompt.slice(0, 180))}</p>
         <p class="turn-answer"><strong>SW:</strong> ${escapeHtml(t.answer.slice(0, 200))}</p>
         <p class="turn-answer baseline"><strong>Naive:</strong> ${escapeHtml(t.baselineAnswer.slice(0, 160))}</p>
-      </article>`).join("")
+      </article>`;
+      }).join("")
     : `<p class="muted-copy">Waiting for the first turn…</p>`;
 
   const clusters = snapshot?.clusters ?? [];
@@ -3053,96 +3066,91 @@ function renderInfiniteState(state: InfiniteStateView): void {
   if (!running) stopInfinitePoll();
 }
 
+function scoreBadges(score: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore }): string {
+  const chip = (label: string, s: ProbeScore) => `<span class="score-chip ${s.score}">${label} ${s.score}</span>`;
+  return chip("SW", score.stateweave) + chip("naive", score.naive) + chip("win", score.windowed);
+}
+
+function renderInfiniteReport(report: InfiniteFinalReport | undefined): void {
+  const el = document.getElementById("infinite-report");
+  if (!el || !report) { if (el) el.hidden = true; return; }
+  el.hidden = false;
+  const cats = report.categoryBreakdown?.length ? `<table class="report-table"><thead><tr><th>Difficulty</th><th>Count</th><th>StateWeave</th><th>Naive</th><th>Windowed</th></tr></thead><tbody>${report.categoryBreakdown.map((c) => `<tr><td>${escapeHtml(c.difficulty)}</td><td>${c.count}</td><td class="sw-cell">${c.stateweavePassRate}%</td><td>${c.naivePassRate}%</td><td>${c.windowedPassRate}%</td></tr>`).join("")}</tbody></table>` : "";
+  const drift = report.driftInstances?.length ? `<div class="callout warn"><strong>Drift detected on re-ask:</strong><ul>${report.driftInstances.map((d) => `<li>T${d.turn}: ${escapeHtml(d.description)}</li>`).join("")}</ul></div>` : "";
+  el.innerHTML = `
+    <div class="report-header"><h3>Executive assessment</h3><small>by the challenger · ${escapeHtml(report.generatedAt)}</small></div>
+    <p class="report-summary">${escapeHtml(report.summary)}</p>
+    <p class="report-verdict"><strong>Verdict:</strong> ${escapeHtml(report.verdict)}</p>
+    ${cats}${drift}
+    <div class="report-cols"><div><h4>Strengths</h4><ul>${(report.strengths ?? []).map((s) => `<li>${escapeHtml(s)}</li>`).join("") || "<li>—</li>"}</ul></div><div><h4>Weaknesses</h4><ul>${(report.weaknesses ?? []).map((s) => `<li>${escapeHtml(s)}</li>`).join("") || "<li>—</li>"}</ul></div></div>`;
+}
+
+function renderInfiniteQualityChart(series: InfiniteQualityPoint[]): void {
+  const canvas = document.getElementById("infinite-quality-chart") as HTMLCanvasElement | null;
+  if (!canvas) return;
+  drawLineChart(canvas, series, {
+    sw: (p) => p.stateweavePassRate * 100,
+    baseline: (p) => p.naivePassRate * 100,
+    windowed: (p) => p.windowedPassRate * 100,
+    yLabel: "%", yMax: 100, emptyText: "Waiting for the first scored probe…"
+  });
+}
+
 function renderInfiniteChart(series: InfiniteSeriesPoint[]): void {
   const canvas = document.getElementById("infinite-chart") as HTMLCanvasElement | null;
   if (!canvas) return;
+  drawLineChart(canvas, series, {
+    sw: (p) => p.stateweaveTokens,
+    baseline: (p) => p.baselineTokens,
+    windowed: (p) => p.windowedTokens,
+    yLabel: "tokens", yMax: "auto", emptyText: "Waiting for the first data point…"
+  });
+}
+
+function drawLineChart<T extends { turn: number }>(canvas: HTMLCanvasElement, series: T[], lines: { sw: (p: T) => number; baseline: (p: T) => number; windowed: (p: T) => number; yLabel: string; yMax: number | "auto"; emptyText: string }): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
-
   const dpr = window.devicePixelRatio || 1;
   const cssW = canvas.clientWidth || 800;
-  const cssH = canvas.clientHeight || 260;
+  const cssH = canvas.clientHeight || 220;
   canvas.width = cssW * dpr;
   canvas.height = cssH * dpr;
-  ctx.scale(dpr, dpr);
-
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cssW, cssH);
-  const padL = 56;
-  const padR = 16;
-  const padT = 12;
-  const padB = 28;
-  const plotW = cssW - padL - padR;
-  const plotH = cssH - padT - padB;
-
-  // grid
-  ctx.strokeStyle = "rgba(148,163,184,0.15)";
-  ctx.fillStyle = "#64748b";
+  const padL = 56, padR = 16, padT = 12, padB = 28;
+  const plotW = cssW - padL - padR, plotH = cssH - padT - padB;
   ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
-  ctx.lineWidth = 1;
-
   if (series.length < 1) {
-    ctx.fillStyle = "#94a3b8";
-    ctx.font = "13px ui-sans-serif, system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("Waiting for the first data point…", cssW / 2, cssH / 2);
-    return;
+    ctx.fillStyle = "#94a3b8"; ctx.font = "13px ui-sans-serif, system-ui, sans-serif"; ctx.textAlign = "center";
+    ctx.fillText(lines.emptyText, cssW / 2, cssH / 2); return;
   }
-
   const turns = series.map((p) => p.turn);
   const maxTurn = Math.max(...turns, 1);
-  const allTokens = series.flatMap((p) => [p.stateweaveTokens, p.baselineTokens]);
-  const maxTokens = Math.max(...allTokens, 1000);
-  const niceMax = Math.ceil(maxTokens / 1000) * 1000;
-
-  // y-axis labels + horizontal grid lines
+  const allVals = series.flatMap((p) => [lines.sw(p), lines.baseline(p), lines.windowed(p)]);
+  const maxVal = Math.max(...allVals, 1);
+  const niceMax = lines.yMax === "auto" ? Math.ceil(maxVal / 1000) * 1000 || 1000 : lines.yMax;
   const ySteps = 4;
   ctx.textAlign = "right";
   for (let i = 0; i <= ySteps; i++) {
-    const value = Math.round((niceMax / ySteps) * i);
+    const value = (niceMax / ySteps) * i;
     const y = padT + plotH - (plotH / ySteps) * i;
-    ctx.strokeStyle = "rgba(148,163,184,0.12)";
-    ctx.beginPath();
-    ctx.moveTo(padL, y);
-    ctx.lineTo(cssW - padR, y);
-    ctx.stroke();
+    ctx.strokeStyle = "rgba(148,163,184,0.12)"; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(cssW - padR, y); ctx.stroke();
     ctx.fillStyle = "#64748b";
-    ctx.fillText(`${(value / 1000).toFixed(value >= 1000 ? 0 : 1)}k`, padL - 8, y + 4);
+    ctx.fillText(lines.yLabel === "%" ? `${Math.round(value)}%` : `${value >= 1000 ? (value / 1000).toFixed(0) + "k" : Math.round(value)}`, padL - 8, y + 4);
   }
-
-  // x-axis labels
   ctx.textAlign = "center";
   const xLabelCount = Math.min(8, maxTurn);
-  for (let i = 0; i <= xLabelCount; i++) {
-    const turn = Math.round((maxTurn / xLabelCount) * i);
-    const x = padL + (plotW / xLabelCount) * i;
-    ctx.fillText(String(turn), x, cssH - padB + 18);
-  }
-
+  for (let i = 0; i <= xLabelCount; i++) { const turn = Math.round((maxTurn / xLabelCount) * i); const x = padL + (plotW / xLabelCount) * i; ctx.fillText(String(turn), x, cssH - padB + 18); }
   const xFor = (turn: number) => padL + (turn / maxTurn) * plotW;
-  const yFor = (tokens: number) => padT + plotH - (Math.min(tokens, niceMax) / niceMax) * plotH;
-
-  // baseline line (orange, climbing)
-  ctx.strokeStyle = "#f97316";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  series.forEach((p, i) => { const x = xFor(p.turn); const y = yFor(p.baselineTokens); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
-  ctx.stroke();
-
-  // stateweave line (blue, flat)
-  ctx.strokeStyle = "#6366f1";
-  ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  series.forEach((p, i) => { const x = xFor(p.turn); const y = yFor(p.stateweaveTokens); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
-  ctx.stroke();
-
-  // last-point dots
+  const yFor = (v: number) => padT + plotH - (Math.min(v, niceMax) / niceMax) * plotH;
+  const drawLine = (color: string, fn: (p: T) => number, width: number) => {
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath();
+    series.forEach((p, i) => { const x = xFor(p.turn), y = yFor(fn(p)); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }); ctx.stroke();
+  };
+  drawLine("#f97316", lines.baseline, 2);
+  drawLine("#0ea5e9", lines.windowed, 2);
+  drawLine("#6366f1", lines.sw, 2.5);
   const last = series[series.length - 1];
-  ctx.fillStyle = "#f97316";
-  ctx.beginPath();
-  ctx.arc(xFor(last.turn), yFor(last.baselineTokens), 3.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#6366f1";
-  ctx.beginPath();
-  ctx.arc(xFor(last.turn), yFor(last.stateweaveTokens), 3.5, 0, Math.PI * 2);
-  ctx.fill();
+  const dot = (color: string, v: number) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(xFor(last.turn), yFor(v), 3.5, 0, Math.PI * 2); ctx.fill(); };
+  dot("#f97316", lines.baseline(last)); dot("#0ea5e9", lines.windowed(last)); dot("#6366f1", lines.sw(last));
 }

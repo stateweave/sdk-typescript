@@ -2814,3 +2814,87 @@ label {
 }
 
 .turn-answer.baseline strong { color: #ea580c; }
+
+/* Infinite report + scoring */
+.legend-dot.windowed { background: #0ea5e9; }
+.infinite-metric.windowed-metric { border-color: #bae6fd; }
+.infinite-metric.windowed-metric strong { color: #0284c7; }
+
+.score-chip {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 999px;
+  margin-left: 4px;
+}
+.score-chip.pass { background: #dcfce7; color: #166534; }
+.score-chip.partial { background: #fef9c3; color: #854d0e; }
+.score-chip.fail { background: #fee2e2; color: #991b1b; }
+
+.phase-badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  margin-left: 4px;
+}
+.phase-badge.seed { background: #e0e7ff; color: #3730a3; }
+.phase-badge.consistency { background: #fae8ff; color: #86198f; }
+
+.infinite-report {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  background: #fff;
+}
+
+.report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+.report-header h3 { margin: 0; font-size: 0.95rem; }
+.report-header small { color: var(--muted); font-size: 0.72rem; }
+
+.report-summary {
+  font-size: 0.92rem;
+  line-height: 1.6;
+  margin: 0 0 8px;
+}
+.report-verdict {
+  font-size: 0.9rem;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border-left: 3px solid var(--stateweave);
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  margin-bottom: 12px;
+}
+.report-table th, .report-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.report-table th { color: var(--muted); font-weight: 600; font-size: 0.74rem; text-transform: uppercase; }
+.report-table .sw-cell { color: #4f46e5; font-weight: 700; }
+
+.report-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.report-cols h4 { margin: 0 0 6px; font-size: 0.82rem; }
+.report-cols ul { margin: 0; padding-left: 18px; font-size: 0.84rem; line-height: 1.5; }
+
+@media (max-width: 700px) {
+  .report-cols { grid-template-columns: 1fr; }
+}
