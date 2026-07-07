@@ -136,7 +136,7 @@ export class InfiniteHarness {
     this.statePath = args.statePath;
     this.challenger = args.challengerModel ?? createModelFromEnv();
     this.agentModel = args.agentModel ?? createModelFromEnv();
-    this.maxIterations = args.maxIterations ?? 8;
+    this.maxIterations = args.maxIterations ?? 3;
     this.agent = new Agent({ model: this.agentModel, maxIterations: this.maxIterations, systemPrompt: agentSystemPrompt() });
     this.naive = new NaiveBaselineAgent({ model: this.agentModel, variant: "full" });
     this.windowed = new NaiveBaselineAgent({ model: this.agentModel, variant: "windowed", maxContextTokens: WINDOWED_BUDGET_TOKENS });
@@ -247,11 +247,12 @@ export class InfiniteHarness {
     // probe
     const probe = await this.generateProbe(globalTurn);
     const result = await this.runAllAgents(probe.prompt);
-    const scores = {
-      stateweave: await this.judgeScore(probe.prompt, probe.assertions, probe.goldAnswer, result.stateweave.answer),
-      naive: await this.judgeScore(probe.prompt, probe.assertions, probe.goldAnswer, result.naive.answer),
-      windowed: await this.judgeScore(probe.prompt, probe.assertions, probe.goldAnswer, result.windowed.answer)
-    };
+    const [swScore, naiveScore, windowedScore] = await Promise.all([
+      this.judgeScore(probe.prompt, probe.assertions, probe.goldAnswer, result.stateweave.answer),
+      this.judgeScore(probe.prompt, probe.assertions, probe.goldAnswer, result.naive.answer),
+      this.judgeScore(probe.prompt, probe.assertions, probe.goldAnswer, result.windowed.answer)
+    ]);
+    const scores = { stateweave: swScore, naive: naiveScore, windowed: windowedScore };
     const probeRecord: ProbeRecord = { turn: globalTurn, prompt: probe.prompt, goldAnswer: probe.goldAnswer, assertions: probe.assertions, difficulty: probe.difficulty, dependsOnTurn: probe.dependsOnTurn, scores };
     this.state.probes = [...this.state.probes, probeRecord];
     this.updateQualitySeries();
