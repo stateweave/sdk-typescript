@@ -85,7 +85,7 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
     .map((node) => node.text)
     .join(" ");
   const retrievedNodeIds = looksLikeQuestion(activeNodeText)
-    ? retrieveNodes(graph, activeNodeText, RETRIEVAL_BUDGET)
+    ? retrieveNodes(graph, clusters, activeNodeText, RETRIEVAL_BUDGET)
     : [];
 
   // Merge positional + retrieved into the final focus set.
@@ -131,14 +131,28 @@ function looksLikeQuestion(text: string): boolean {
     || /^(show|tell|give|find|retrieve|look up|what is)/.test(lower);
 }
 
-function retrieveNodes(graph: StateGraph, queryText: string, budget: number): string[] {
+function retrieveNodes(graph: StateGraph, clusters: Cluster[], queryText: string, budget: number): string[] {
   const keywords = extractKeywords(queryText);
   if (!keywords.length) return [];
+
+  // Topic context: match each node against its cluster seed label too. A fact's
+  // own label is often terse (e.g. "Celestron NexStar 8SE"), so keyword probes
+  // like "mirror diameter" miss it even though the originating topic ("I'm
+  // setting up my new telescope...") carries the query terms. Including the
+  // topic surface lets sparse-label facts surface when their topic matches.
+  const topicFor = new Map<string, string>();
+  for (const cluster of clusters) {
+    const label = oneLine(cluster.label).toLowerCase();
+    for (const nodeId of cluster.nodeIds) topicFor.set(nodeId, label);
+  }
 
   const scored: Array<{ id: string; score: number }> = [];
   for (const node of graph.nodes) {
     if (node.type === "system" || node.type === "tool_call" || node.type === "tool_result") continue;
-    const text = `${node.type} ${node.text}`.toLowerCase();
+    const parts = [`${node.type} ${node.text}`.toLowerCase()];
+    const topic = topicFor.get(node.id);
+    if (topic) parts.push(topic);
+    const text = parts.join(" ");
     let score = 0;
     for (const kw of keywords) {
       if (text.includes(kw)) score += kw.length > 4 ? 3 : 2;
