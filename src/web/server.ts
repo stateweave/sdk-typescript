@@ -204,7 +204,7 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   }
   if (url.pathname === "/api/sw-loop/control" && request.method === "GET") {
     json(response, 200, swLoopControl);
-    if (swLoopControl.action === "start") swLoopControl = { action: "none" }; // consume start flag
+    swLoopControl = { action: "none" }; // consume the flag after read
     return;
   }
   if (url.pathname === "/api/sw-loop/update" && request.method === "POST") {
