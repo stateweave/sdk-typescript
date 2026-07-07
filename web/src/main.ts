@@ -2961,7 +2961,7 @@ infiniteStartButton.addEventListener("click", async () => {
   const batchSize = Number(infiniteBatchSizeInput.value || "25");
   infiniteStartButton.disabled = true;
   try {
-    const response = await fetch("/api/infinite/start", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batches, batchSize, selfImprove: false }) });
+    const response = await fetch(`${apiBase}/api/infinite/start`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batches, batchSize, selfImprove: false }) });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       throw new Error(body.error ?? `Request failed (${response.status})`);
@@ -2975,7 +2975,7 @@ infiniteStartButton.addEventListener("click", async () => {
 
 infiniteStopButton.addEventListener("click", async () => {
   infiniteStopButton.disabled = true;
-  await fetch("/api/infinite/stop", { method: "POST" }).catch(() => undefined);
+  await fetch(`${apiBase}/api/infinite/stop`, { method: "POST" }).catch(() => undefined);
 });
 
 function startInfinitePoll(): void {
@@ -2992,7 +2992,7 @@ function stopInfinitePoll(): void {
 
 async function pollInfiniteState(): Promise<void> {
   try {
-    const response = await fetch("/api/infinite/state", { cache: "no-store" });
+    const response = await fetch(`${apiBase}/api/infinite/state`, { cache: "no-store" });
     if (!response.ok) return;
     renderInfiniteState(await response.json() as InfiniteStateView);
   } catch {
