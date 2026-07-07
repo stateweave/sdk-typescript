@@ -102,6 +102,17 @@ export function serializeGraphFrame(frame: GraphFrame): string {
   }
   lines.push("</FOCUS>");
 
+  // Timeline: recent facts in creation order so chronology probes survive projection.
+  const timelineNodes = frame.graph.nodes
+    .filter((node) => node.type !== "system" && node.type !== "tool_call" && node.type !== "tool_result")
+    .sort((a, b) => (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0))
+    .slice(-15);
+  if (timelineNodes.length > 1) {
+    lines.push("", "<TIMELINE>", "(most recent facts in creation order — use for chronology/sequence questions)");
+    for (const node of timelineNodes) lines.push(`- ${node.id} [${node.type}]: ${truncate(node.text, 80)}`);
+    lines.push("</TIMELINE>");
+  }
+
   return lines.join("\n");
 }
 
