@@ -29,6 +29,7 @@
         <button id="multi-four-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt four</button>
         <button id="multi-five-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt five</button>
         <button id="multi-six-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt six</button>
+        <button id="infinite-tab" class="tab" type="button" aria-controls="infinite-page" aria-selected="false">Infinite</button>
       </nav>
 
       <main id="state-page" class="page active shell">
@@ -235,6 +236,35 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
                 <p>This sequence tests memory, constraint retention, topic switching, and corrections over ten turns.</p>
               </div>
             </div>
+          </div>
+        </section>
+      </main>
+
+      <main id="infinite-page" class="page infinite-page" hidden>
+        <section class="card infinite-shell" aria-label="Infinite harness">
+          <div class="infinite-header">
+            <div>
+              <p class="eyebrow">Adversarial self-improvement</p>
+              <h2>Infinite harness</h2>
+              <p class="muted-copy">A challenger agent with a fresh context window every batch fights a StateWeave agent whose graph never resets. Watch the graph grow, clusters form, and peripheral vision hold context across unlimited turns.</p>
+            </div>
+            <div class="infinite-controls">
+              <label class="infinite-field"><span>Batches</span><input id="infinite-batches" type="number" min="1" max="999" value="1" /></label>
+              <label class="infinite-field"><span>Batch size</span><input id="infinite-batch-size" type="number" min="1" max="100" value="25" /></label>
+              <button id="infinite-start" class="button" type="button">Start</button>
+              <button id="infinite-stop" class="button secondary" type="button" disabled>Stop</button>
+            </div>
+          </div>
+          <div id="infinite-metrics" class="infinite-metrics"></div>
+          <div class="infinite-body">
+            <section class="infinite-panel">
+              <h3>Live turns</h3>
+              <div id="infinite-turns" class="infinite-turns"><p class="muted-copy">No run yet.</p></div>
+            </section>
+            <section class="infinite-panel">
+              <h3>Graph map (big brain)</h3>
+              <div id="infinite-clusters" class="infinite-clusters"><p class="muted-copy">No topics yet.</p></div>
+            </section>
           </div>
         </section>
       </main>

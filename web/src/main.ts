@@ -27,7 +27,7 @@ type CompareResponse = StateWeaveResponse & {
   };
 };
 
-type PageName = "state" | "quickstart" | "ab" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
+type PageName = "state" | "quickstart" | "ab" | "infinite" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
 type SuiteId = "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
 type EvalCategory = "memory" | "logical" | "holistic" | PromptFiveCategory | PromptSixCategory;
 type MultiCase = { prompt: string; expect: string; categories?: EvalCategory[] };
@@ -464,10 +464,12 @@ const multiThreeTab = element<HTMLButtonElement>("multi-three-tab");
 const multiFourTab = element<HTMLButtonElement>("multi-four-tab");
 const multiFiveTab = element<HTMLButtonElement>("multi-five-tab");
 const multiSixTab = element<HTMLButtonElement>("multi-six-tab");
+const infiniteTab = element<HTMLButtonElement>("infinite-tab");
 const statePage = element<HTMLElement>("state-page");
 const quickstartPage = element<HTMLElement>("quickstart-page");
 const abPage = element<HTMLElement>("ab-page");
 const multiPage = element<HTMLElement>("multi-page");
+const infinitePage = element<HTMLElement>("infinite-page");
 const chat = element<HTMLElement>("chat");
 const form = element<HTMLFormElement>("composer");
 const input = element<HTMLTextAreaElement>("input");
@@ -535,6 +537,7 @@ multiThreeTab.addEventListener("click", () => setActivePage("prompt-three"));
 multiFourTab.addEventListener("click", () => setActivePage("prompt-four"));
 multiFiveTab.addEventListener("click", () => setActivePage("prompt-five"));
 multiSixTab.addEventListener("click", () => setActivePage("prompt-six"));
+infiniteTab.addEventListener("click", () => setActivePage("infinite"));
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   void sendStateWeaveMessage();
@@ -640,6 +643,7 @@ setupCopyableLog(stateOutput, "GraphOps");
 function pageFromHash(): PageName {
   if (location.hash === "#quick-start") return "quickstart";
   if (location.hash === "#ab") return "ab";
+  if (location.hash === "#infinite") return "infinite";
   if (location.hash === "#prompt-one") return "prompt-one";
   if (location.hash === "#prompt-two") return "prompt-two";
   if (location.hash === "#prompt-three") return "prompt-three";
@@ -766,6 +770,9 @@ function setActivePage(page: PageName, updateHash = true): void {
   multiFiveTab.setAttribute("aria-selected", String(page === "prompt-five"));
   multiSixTab.classList.toggle("active", page === "prompt-six");
   multiSixTab.setAttribute("aria-selected", String(page === "prompt-six"));
+  const isInfinite = page === "infinite";
+  infiniteTab.classList.toggle("active", isInfinite);
+  infiniteTab.setAttribute("aria-selected", String(isInfinite));
   statePage.hidden = !isState;
   statePage.classList.toggle("active", isState);
   quickstartPage.hidden = !isQuickstart;
@@ -774,13 +781,17 @@ function setActivePage(page: PageName, updateHash = true): void {
   abPage.classList.toggle("active", isAb);
   multiPage.hidden = !isMulti;
   multiPage.classList.toggle("active", isMulti);
+  infinitePage.hidden = !isInfinite;
+  infinitePage.classList.toggle("active", isInfinite);
   multiTitle.textContent = suite.title;
   multiDescription.textContent = suite.description;
-  reset.textContent = isState ? "Reset" : isQuickstart ? "Back to chat" : isAb ? "Reset A/B" : `Reset ${suite.title.toLowerCase()}`;
+  reset.textContent = isState ? "Reset" : isQuickstart ? "Back to chat" : isAb ? "Reset A/B" : isInfinite ? "Reset harness" : `Reset ${suite.title.toLowerCase()}`;
   syncMultiModeControls();
-  if (updateHash) history.replaceState(null, "", isState ? location.pathname : isQuickstart ? "#quick-start" : isAb ? "#ab" : `#${suite.id}`);
+  if (updateHash) history.replaceState(null, "", isState ? location.pathname : isQuickstart ? "#quick-start" : isAb ? "#ab" : isInfinite ? "#infinite" : `#${suite.id}`);
   if (isMulti) void resumeStoredEvalRun();
   else stopBackgroundPoll();
+  if (isInfinite) startInfinitePoll();
+  else stopInfinitePoll();
   if (isState) input.focus();
   else if (isAb) abInput.focus();
   else if (isMulti) multiStart.focus();
@@ -2913,4 +2924,116 @@ function escapeHtml(value: string): string {
 
 function escapeAttribute(value: string): string {
   return escapeHtml(value).replace(/'/g, "&#39;");
+}
+
+// --- Infinite harness ---
+
+type InfiniteTurn = { batch: number; turn: number; prompt: string; answer: string; nodeCount: number; edgeCount: number; clusterCount: number; promptTokenEstimate: number; latencyMs: number };
+type InfiniteReview = { batch: number; findings: string; filesChanged: string[]; testsPassed: boolean; commit?: string; error?: string };
+type InfiniteStateView = {
+  status: string;
+  batchSize: number;
+  batchCount: number;
+  turnCount: number;
+  startedAt: string;
+  updatedAt: string;
+  currentBatch: number;
+  challengerModel: string;
+  agentModel: string;
+  selfImprove: boolean;
+  turns: InfiniteTurn[];
+  reviews: InfiniteReview[];
+  graphSnapshot?: { nodeCount: number; edgeCount: number; clusterCount: number; clusters: { id: string; label: string; nodeCount: number }[] };
+  message?: string;
+};
+
+const infiniteStartButton = element<HTMLButtonElement>("infinite-start");
+const infiniteStopButton = element<HTMLButtonElement>("infinite-stop");
+const infiniteBatchesInput = element<HTMLInputElement>("infinite-batches");
+const infiniteBatchSizeInput = element<HTMLInputElement>("infinite-batch-size");
+const infiniteMetrics = element<HTMLElement>("infinite-metrics");
+const infiniteTurns = element<HTMLElement>("infinite-turns");
+const infiniteClusters = element<HTMLElement>("infinite-clusters");
+let infinitePollTimer: ReturnType<typeof setInterval> | undefined;
+
+infiniteStartButton.addEventListener("click", async () => {
+  const batches = Number(infiniteBatchesInput.value || "1");
+  const batchSize = Number(infiniteBatchSizeInput.value || "25");
+  infiniteStartButton.disabled = true;
+  try {
+    const response = await fetch("/api/infinite/start", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batches, batchSize, selfImprove: false }) });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error ?? `Request failed (${response.status})`);
+    }
+    startInfinitePoll();
+  } catch (error) {
+    infiniteStartButton.disabled = false;
+    infiniteMetrics.innerHTML = `<p class="message error"><div>${escapeHtml(error instanceof Error ? error.message : String(error))}</div></p>`;
+  }
+});
+
+infiniteStopButton.addEventListener("click", async () => {
+  infiniteStopButton.disabled = true;
+  await fetch("/api/infinite/stop", { method: "POST" }).catch(() => undefined);
+});
+
+function startInfinitePoll(): void {
+  stopInfinitePoll();
+  infiniteStopButton.disabled = false;
+  void pollInfiniteState();
+  infinitePollTimer = setInterval(() => void pollInfiniteState(), 2000);
+}
+
+function stopInfinitePoll(): void {
+  if (infinitePollTimer !== undefined) clearInterval(infinitePollTimer);
+  infinitePollTimer = undefined;
+}
+
+async function pollInfiniteState(): Promise<void> {
+  try {
+    const response = await fetch("/api/infinite/state", { cache: "no-store" });
+    if (!response.ok) return;
+    renderInfiniteState(await response.json() as InfiniteStateView);
+  } catch {
+    // network blip; keep polling
+  }
+}
+
+function renderInfiniteState(state: InfiniteStateView): void {
+  const running = state.status === "running" || state.status === "batch_done" || state.status === "reviewing" || state.status === "committed";
+  infiniteStartButton.disabled = running;
+  infiniteStopButton.disabled = !running;
+
+  const snapshot = state.graphSnapshot;
+  const tokens = state.turns.at(-1)?.promptTokenEstimate ?? 0;
+  const avgLatency = state.turns.length ? Math.round(state.turns.reduce((sum, t) => sum + t.latencyMs, 0) / state.turns.length) : 0;
+  infiniteMetrics.innerHTML = `
+    <div class="infinite-metric"><span class="metric-label">Status</span><strong>${escapeHtml(state.status)}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Turns</span><strong>${state.turnCount}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Batch</span><strong>${state.currentBatch} / ${state.batchCount}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Nodes</span><strong>${snapshot?.nodeCount ?? 0}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Clusters</span><strong>${snapshot?.clusterCount ?? 0}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Context ~</span><strong>${tokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Avg latency</span><strong>${avgLatency.toLocaleString()} ms</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Challenger</span><strong>${escapeHtml(state.challengerModel)}</strong></div>`;
+
+  if (state.message) infiniteMetrics.insertAdjacentHTML("beforeend", `<p class="message error"><div>${escapeHtml(state.message)}</div></p>`);
+
+  const turns = [...state.turns].reverse().slice(0, 20);
+  infiniteTurns.innerHTML = turns.length
+    ? turns.map((t) => `
+      <article class="infinite-turn">
+        <header><span class="turn-badge">B${t.batch} T${t.turn}</span><small>${t.nodeCount}n · ${t.clusterCount}c · ~${t.promptTokenEstimate.toLocaleString()}tok · ${t.latencyMs}ms</small></header>
+        <p class="turn-prompt"><strong>Challenger:</strong> ${escapeHtml(t.prompt.slice(0, 200))}</p>
+        <p class="turn-answer">${escapeHtml(t.answer.slice(0, 280))}</p>
+      </article>`).join("")
+    : `<p class="muted-copy">Waiting for the first turn…</p>`;
+
+  const clusters = snapshot?.clusters ?? [];
+  infiniteClusters.innerHTML = clusters.length
+    ? clusters.map((c) => `<div class="infinite-cluster"><span class="cluster-id">${escapeHtml(c.id)}</span> <span class="cluster-nodes">${c.nodeCount}n</span> <span class="cluster-label">${escapeHtml(c.label)}</span></div>`).join("")
+    : `<p class="muted-copy">No topics yet.</p>`;
+
+  if (!running) stopInfinitePoll();
 }
