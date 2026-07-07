@@ -12,6 +12,7 @@ const MAX_SERIES_KEPT = 5000;
 const SEED_INTERVAL = 6;
 const CONSISTENCY_EVERY = 20;
 const WINDOWED_BUDGET_TOKENS = 12000;
+const CALL_TIMEOUT_MS = 90_000; // 90s hard limit per model call
 
 export type ProbeScore = { score: "pass" | "partial" | "fail"; reasoning: string };
 
@@ -213,50 +214,58 @@ export class InfiniteHarness {
   }
 
   private async runTurn(batch: number, globalTurn: number, localTurn: number, phase: "seed" | "probe" | "consistency"): Promise<void> {
-    if (phase === "seed") {
-      const seed = await this.generateSeed(globalTurn);
-      const result = await this.runAllAgents(seed.prompt);
-      this.ledger.push(seed);
-      this.state.seeds = [...this.ledger];
-      this.recordTurn(batch, globalTurn, "seed", seed.prompt, result, undefined);
-      return;
-    }
-
-    if (phase === "consistency") {
-      const target = this.pickConsistencyTarget(globalTurn);
-      if (target) {
-        const result = await this.runAllAgents(target.prompt);
-        const swAnswer = result.stateweave.answer;
-        const check: ConsistencyCheck = {
-          originalTurn: target.turn,
-          reaskTurn: globalTurn,
-          prompt: target.prompt,
-          goldAnswer: target.goldAnswer,
-          originalAnswer: this.originalAnswerFor(target.turn),
-          newAnswer: swAnswer,
-          matchesOriginal: false,
-          matchesGold: await this.judgeScore(target.prompt, target.assertions, target.goldAnswer, swAnswer)
-        };
-        check.matchesOriginal = await this.judgeAgreement(target.prompt, this.originalAnswerFor(target.turn), swAnswer);
-        this.state.consistencyChecks = [...this.state.consistencyChecks, check];
-        this.recordTurn(batch, globalTurn, "consistency", target.prompt, result, undefined);
+    try {
+      if (phase === "seed") {
+        const seed = await this.generateSeed(globalTurn);
+        const result = await this.runAllAgents(seed.prompt);
+        this.ledger.push(seed);
+        this.state.seeds = [...this.ledger];
+        this.recordTurn(batch, globalTurn, "seed", seed.prompt, result, undefined);
         return;
       }
-    }
 
-    // probe
-    const probe = await this.generateProbe(globalTurn);
-    const result = await this.runAllAgents(probe.prompt);
-    const [swScore, naiveScore, windowedScore] = await Promise.all([
-      this.judgeScore(probe.prompt, probe.assertions, probe.goldAnswer, result.stateweave.answer),
-      this.judgeScore(probe.prompt, probe.assertions, probe.goldAnswer, result.naive.answer),
-      this.judgeScore(probe.prompt, probe.assertions, probe.goldAnswer, result.windowed.answer)
-    ]);
-    const scores = { stateweave: swScore, naive: naiveScore, windowed: windowedScore };
-    const probeRecord: ProbeRecord = { turn: globalTurn, prompt: probe.prompt, goldAnswer: probe.goldAnswer, assertions: probe.assertions, difficulty: probe.difficulty, dependsOnTurn: probe.dependsOnTurn, scores };
-    this.state.probes = [...this.state.probes, probeRecord];
-    this.updateQualitySeries();
-    this.recordTurn(batch, globalTurn, "probe", probe.prompt, result, scores);
+      if (phase === "consistency") {
+        const target = this.pickConsistencyTarget(globalTurn);
+        if (target) {
+          const result = await this.runAllAgents(target.prompt);
+          const swAnswer = result.stateweave.answer;
+          const check: ConsistencyCheck = {
+            originalTurn: target.turn,
+            reaskTurn: globalTurn,
+            prompt: target.prompt,
+            goldAnswer: target.goldAnswer,
+            originalAnswer: this.originalAnswerFor(target.turn),
+            newAnswer: swAnswer,
+            matchesOriginal: false,
+            matchesGold: await this.judgeScore(target.prompt, target.assertions, target.goldAnswer, swAnswer)
+          };
+          check.matchesOriginal = await this.judgeAgreement(target.prompt, this.originalAnswerFor(target.turn), swAnswer);
+          this.state.consistencyChecks = [...this.state.consistencyChecks, check];
+          this.recordTurn(batch, globalTurn, "consistency", target.prompt, result, undefined);
+          return;
+        }
+      }
+
+      // probe
+      const probe = await this.generateProbe(globalTurn);
+      const result = await this.runAllAgents(probe.prompt);
+      const [swScore, naiveScore, windowedScore] = await Promise.all([
+        this.judgeScore(probe.prompt, probe.assertions, probe.goldAnswer, result.stateweave.answer),
+        this.judgeScore(probe.prompt, probe.assertions, probe.goldAnswer, result.naive.answer),
+        this.judgeScore(probe.prompt, probe.assertions, probe.goldAnswer, result.windowed.answer)
+      ]);
+      const scores = { stateweave: swScore, naive: naiveScore, windowed: windowedScore };
+      const probeRecord: ProbeRecord = { turn: globalTurn, prompt: probe.prompt, goldAnswer: probe.goldAnswer, assertions: probe.assertions, difficulty: probe.difficulty, dependsOnTurn: probe.dependsOnTurn, scores };
+      this.state.probes = [...this.state.probes, probeRecord];
+      this.updateQualitySeries();
+      this.recordTurn(batch, globalTurn, "probe", probe.prompt, result, scores);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.state.message = `Turn ${globalTurn} skipped: ${message.slice(0, 120)}`;
+      await this.saveState();
+      // Clear the error after a few seconds so it doesn't persist.
+      setTimeout(() => { if (this.state.message === `Turn ${globalTurn} skipped: ${message.slice(0, 120)}`) this.state.message = undefined; }, 5000);
+    }
   }
 
   private originalAnswerFor(turn: number): string {
@@ -264,12 +273,15 @@ export class InfiniteHarness {
   }
 
   private async runAllAgents(prompt: string): Promise<{ stateweave: { answer: string; latencyMs: number }; naive: { answer: string; latencyMs: number; tokenEstimate: number }; windowed: { answer: string; latencyMs: number; tokenEstimate: number } }> {
-    const [sw, n, w] = await Promise.all([
-      (async () => { const start = Date.now(); const r = await this.agent.run({ objective: "Infinite harness probe", input: prompt }); return { answer: r.finalAnswer, latencyMs: Date.now() - start }; })(),
-      (async () => { const start = Date.now(); const r = await this.naive.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, tokenEstimate: r.tokenEstimate }; })(),
-      (async () => { const start = Date.now(); const r = await this.windowed.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, tokenEstimate: r.tokenEstimate }; })()
-    ]);
-    return { stateweave: sw, naive: n, windowed: w };
+    const sw = withTimeout((async () => { const start = Date.now(); const r = await this.agent.run({ objective: "Infinite harness probe", input: prompt }); return { answer: r.finalAnswer, latencyMs: Date.now() - start }; })(), CALL_TIMEOUT_MS, "SW agent");
+    const n = withTimeout((async () => { const start = Date.now(); const r = await this.naive.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, tokenEstimate: r.tokenEstimate }; })(), CALL_TIMEOUT_MS, "naive");
+    const w = withTimeout((async () => { const start = Date.now(); const r = await this.windowed.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, tokenEstimate: r.tokenEstimate }; })(), CALL_TIMEOUT_MS, "windowed");
+    const [swResult, nResult, wResult] = await Promise.allSettled([sw, n, w]);
+    return {
+      stateweave: swResult.status === "fulfilled" ? swResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS },
+      naive: nResult.status === "fulfilled" ? nResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS, tokenEstimate: 0 },
+      windowed: wResult.status === "fulfilled" ? wResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS, tokenEstimate: 0 }
+    };
   }
 
   private recordTurn(batch: number, globalTurn: number, phase: "seed" | "probe" | "consistency", prompt: string, result: { stateweave: { answer: string; latencyMs: number }; naive: { answer: string; latencyMs: number; tokenEstimate: number }; windowed: { answer: string; latencyMs: number; tokenEstimate: number } }, score: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore } | undefined): void {
@@ -326,7 +338,7 @@ export class InfiniteHarness {
       mode: "text"
     };
     try {
-      const out = await this.challenger.complete(input);
+      const out = await withTimeout(this.challenger.complete(input), CALL_TIMEOUT_MS, "seed gen");
       const parsed = extractJson(out.text) as { prompt?: string; facts?: string[] };
       if (parsed.prompt && Array.isArray(parsed.facts) && parsed.facts.length) {
         return { turn, prompt: String(parsed.prompt), facts: parsed.facts.map(String) };
@@ -351,7 +363,7 @@ export class InfiniteHarness {
       mode: "text"
     };
     try {
-      const out = await this.challenger.complete(input);
+      const out = await withTimeout(this.challenger.complete(input), CALL_TIMEOUT_MS, "probe gen");
       const parsed = extractJson(out.text) as { prompt?: string; goldAnswer?: string; assertions?: string[] };
       if (parsed.prompt && parsed.goldAnswer) {
         const stem = String(parsed.prompt).toLowerCase().slice(0, 40);
@@ -374,7 +386,7 @@ export class InfiniteHarness {
       mode: "text"
     };
     try {
-      const out = await this.challenger.complete(input);
+      const out = await withTimeout(this.challenger.complete(input), CALL_TIMEOUT_MS, "judge score");
       const parsed = extractJson(out.text) as { score?: string; reasoning?: string };
       const score = parsed.score === "pass" ? "pass" : parsed.score === "partial" ? "partial" : parsed.score === "fail" ? "fail" : "fail";
       return { score, reasoning: String(parsed.reasoning ?? score).slice(0, 200) };
@@ -390,7 +402,7 @@ export class InfiniteHarness {
       mode: "text"
     };
     try {
-      const out = await this.challenger.complete(input);
+      const out = await withTimeout(this.challenger.complete(input), CALL_TIMEOUT_MS, "judge agree");
       const parsed = extractJson(out.text) as { agree?: boolean };
       return Boolean(parsed.agree);
     } catch {
@@ -426,7 +438,7 @@ export class InfiniteHarness {
       verdict: swRate > Math.max(naiveRate, windowedRate) ? "StateWeave retained memory better under load." : "No clear quality advantage; context efficiency without quality is not enough."
     };
     try {
-      const out = await this.challenger.complete(input);
+      const out = await withTimeout(this.challenger.complete(input), CALL_TIMEOUT_MS, "final report");
       const parsed = extractJson(out.text) as Partial<InfiniteFinalReport>;
       report = { ...report, ...parsed, categoryBreakdown: diffBreakdown, driftInstances: report.driftInstances, generatedAt: report.generatedAt };
     } catch { /* keep computed fallback */ }
@@ -491,4 +503,11 @@ function extractJson(text: string): Record<string, unknown> {
   const end = candidate.lastIndexOf("}");
   if (start < 0 || end <= start) throw new Error("no JSON object found");
   return JSON.parse(candidate.slice(start, end + 1)) as Record<string, unknown>;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms))
+  ]);
 }
