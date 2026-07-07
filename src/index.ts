@@ -3,6 +3,7 @@ export * from "./core/graph.js";
 export * from "./core/input.js";
 export * from "./core/serialize.js";
 export * from "./core/applyOps.js";
+export * from "./core/projection.js";
 export * from "./core/validateOps.js";
 export * from "./core/visualize.js";
 export * from "./agent/stateweaveRunner.js";

@@ -233,6 +233,7 @@ function printOps(ops: GraphOp[]): void {
     else if (op.op === "add_edge") console.log(`${opLabel(op.op)} ${op.from} ${color.gray(op.type)} ${op.to}`);
     else if (op.op === "update_node") console.log(`${opLabel(op.op)} ${op.id} ${JSON.stringify(op.patch)}`);
     else if (op.op === "focus") console.log(`${opLabel(op.op)} ${op.nodeId ? `${op.nodeId} ` : ""}${op.currentFocus}`);
+    else if (op.op === "zoom") console.log(`${opLabel(op.op)} level ${op.level}`);
     else if (op.op === "call_tool") console.log(`${opLabel(op.op)} ${op.tool} ${JSON.stringify(op.args)}`);
     else if (op.op === "spawn_worker") console.log(`${opLabel(op.op)} ${op.id} focus=${op.focusNodeId ?? "auto"} ${op.objective}`);
     else console.log(`${opLabel(op.op)} ${op.answer}`);

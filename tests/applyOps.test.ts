@@ -29,6 +29,12 @@ it("rejects model-added semantic nodes that are disconnected from the graph", ()
   expect(() => applyOps(frame, [{ op: "add_node", node: { id: "hypothesis_1", type: "hypothesis", text: "Token is cleared early" } }])).toThrow(GraphOpsValidationError);
 });
 
+it("applies @zoom to set the vision level", () => {
+  const frame = createInitialGraphFrame({ objective: "Zoom", input: "See the map", availableActions: [] });
+  const next = applyOps(frame, [{ op: "zoom", level: 2 }]);
+  expect(next.frame.zoom).toBe(2);
+});
+
 it("rejects workers focused on missing nodes", () => {
   const frame = createInitialGraphFrame({ objective: "Work", input: "Plan", availableActions: [] });
   expect(() => applyOps(frame, [{ op: "spawn_worker", id: "missing", objective: "Do work", focusNodeId: "missing_node" }])).toThrow(GraphOpsValidationError);

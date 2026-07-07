@@ -43,6 +43,7 @@ export const graphOpSchema = z.discriminatedUnion("op", [
     })
   }),
   z.object({ op: z.literal("focus"), currentFocus: z.string().min(1), nodeId: z.string().min(1).optional() }),
+  z.object({ op: z.literal("zoom"), level: z.number().int().min(0).max(10) }),
   z.object({ op: z.literal("call_tool"), tool: z.string().min(1), args: z.record(z.unknown()) }),
   z.object({ op: z.literal("spawn_worker"), id: z.string().min(1), objective: z.string().min(1), focusNodeId: z.string().min(1).optional(), input: z.string().min(1).optional(), maxIterations: z.number().int().min(1).optional() }),
   z.object({ op: z.literal("final"), answer: z.string().min(1), artifactId: z.string().min(1).optional(), artifactIds: z.array(z.string().min(1)).optional() })
@@ -127,6 +128,14 @@ function parseSwx(raw: string): GraphOp[] {
     if (command === "@focus") {
       const focus = parseFocus(tokens.slice(1));
       if (focus.currentFocus) otherOps.push(focus);
+      continue;
+    }
+
+    if (command === "@zoom") {
+      const raw = tokens[1];
+      const level = raw !== undefined ? Number(raw) : NaN;
+      if (!Number.isFinite(level)) throw new Error(`Invalid SWX @zoom command: ${trimmed}`);
+      otherOps.push({ op: "zoom", level: Math.max(0, Math.min(10, Math.floor(level))) });
       continue;
     }
 

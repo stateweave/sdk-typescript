@@ -55,6 +55,10 @@ export function applyOps(frame: GraphFrame, ops: GraphOp[]): GraphFrame {
         applyFocus(next, op);
         break;
       }
+      case "zoom": {
+        next.frame.zoom = op.level;
+        break;
+      }
       case "call_tool":
         break;
       case "spawn_worker":

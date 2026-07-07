@@ -80,6 +80,12 @@ it("parses graph worker scheduler ops", () => {
   expect(ops).toContainEqual({ op: "spawn_worker", id: "logic", objective: "Build game logic", focusNodeId: "user_input_1" });
 });
 
+it("parses @zoom navigation ops", () => {
+  const ops = parseAndValidateOps(`SWX/1
+@zoom 3`);
+  expect(ops).toContainEqual({ op: "zoom", level: 3 });
+});
+
 it("parses multiline @tool args through block refs without creating artifact ops", () => {
   const ops = parseAndValidateOps(`SWX/1
 @edge system_root follows user_input_1

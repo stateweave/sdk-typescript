@@ -47,6 +47,7 @@ export type GraphFrame = {
     candidateFocusNodeIds?: string[];
     nextExpectedOutput: string;
     lastGraphOpsError?: string;
+    zoom?: number;
     activeConstraints: string[];
     availableActions: string[];
     nodeTypes?: string[];
@@ -59,6 +60,7 @@ export type GraphOp =
   | { op: "add_edge"; from: string; to: string; type: EdgeType }
   | { op: "update_node"; id: string; patch: Partial<GraphNode> }
   | { op: "focus"; currentFocus: string; nodeId?: string }
+  | { op: "zoom"; level: number }
   | { op: "call_tool"; tool: string; args: Record<string, unknown> }
   | { op: "spawn_worker"; id: string; objective: string; focusNodeId?: string; input?: string; maxIterations?: number }
   | { op: "final"; answer: string; artifactId?: string; artifactIds?: string[] };

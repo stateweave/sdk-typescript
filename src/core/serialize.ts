@@ -1,6 +1,8 @@
+import { projectGraph, type Cluster } from "./projection.js";
 import type { GraphFrame, GraphNode } from "./types.js";
 
 export function serializeGraphFrame(frame: GraphFrame): string {
+  const projection = projectGraph(frame.graph, { focusNodeId: frame.frame.focusNodeId, zoom: frame.frame.zoom });
   const lines: string[] = [
     "You are operating inside StateWeave.",
     "The graph is the runtime state; do not reconstruct this as provider messages[].",
@@ -12,6 +14,7 @@ export function serializeGraphFrame(frame: GraphFrame): string {
     "@edge <from> <type> <to>",
     "@update <id> status=resolved text=\"short update\"",
     "@focus \"short next focus\" OR @focus <node_id> \"short reason\"",
+    "@zoom <level>  (0 = tight focus, higher = see a wider map of topic clusters)",
     "@tool <tool_name> key=value multiline_arg_ref=block_id",
     "@worker <worker_id> objective=\"focused subtask\" focus=optional_node_id input=\"optional worker brief\" maxIterations=optional_number",
     "@final \"short human final answer\" artifact=optional_id artifacts=optional_id_1,optional_id_2",
@@ -36,9 +39,12 @@ export function serializeGraphFrame(frame: GraphFrame): string {
     "<<<final_answer:text/markdown",
     "Done — created the SVG artifact.",
     ">>>",
-    "<<<output_1:image/svg+xml",
-    "<svg>raw content here</svg>",
-    ">>>",
+    "",
+    "Peripheral Vision:",
+    "- The full StateGraph is append-only ground truth and is never compacted.",
+    "- You are shown three layers: <BIG_BRAIN> (every topic cluster as a map pin), <PERIPHERAL> (nearby topic summaries), <FOCUS> (detailed nodes and edges for the active region).",
+    "- Move your vision with @focus <node_id> and @zoom <level>. At higher zoom you see more clusters collapsed into map pins; at zoom 0 you see maximum local detail.",
+    "- Cluster ids (cluster_xxxx) are stable across turns. Treat them as named regions of the map you can travel to with @focus cluster_xxxx.",
     "",
     "Keep commands small so model attention stays on the user's task.",
     "Use @worker when independent graph regions or subtasks can run in parallel. Do not include @final in the same transaction as @worker; after workers merge back as worker_result nodes, synthesize one final answer.",
@@ -61,6 +67,7 @@ export function serializeGraphFrame(frame: GraphFrame): string {
     `objective: ${frame.frame.objective}`,
     `currentFocus: ${frame.frame.currentFocus}`,
     `focusNodeId: ${frame.frame.focusNodeId ?? "unknown"}`,
+    `zoom: ${frame.frame.zoom ?? 0}`,
     `latestInputNodeId: ${frame.frame.latestInputNodeId ?? latestNodeId(frame, "user_input") ?? "unknown"}`,
     `activeUserInputNodeId: ${frame.frame.activeUserInputNodeId ?? frame.frame.latestInputNodeId ?? "unknown"}`,
     `candidateFocusNodeIds: ${(frame.frame.candidateFocusNodeIds ?? ["system_root"]).join(", ")}`,
@@ -74,33 +81,46 @@ export function serializeGraphFrame(frame: GraphFrame): string {
     ...(frame.frame.nodeTypes?.length ? frame.frame.nodeTypes.map((type) => `- ${type}`) : ["- (none configured; choose semantic slugs from node meaning)"]),
     "</FRAME>",
     "",
-    "<FOCUS_POINTS>",
-    ...focusPointLines(frame),
-    "</FOCUS_POINTS>",
-    "",
-    "<GRAPH>"
+    "<BIG_BRAIN>",
+    ...bigBrainLines(projection.bigBrainClusters, projection.focusClusterIds),
+    "</BIG_BRAIN>",
+    ""
   ];
 
-  for (const node of frame.graph.nodes) {
-    lines.push(`node ${node.id} [${node.type}]: ${node.text}${nodeDataSummary(node)}`);
+  if (projection.peripheralClusters.length) {
+    lines.push("<PERIPHERAL>");
+    lines.push(...projection.peripheralClusters.map((cluster) => clusterPin(cluster)));
+    lines.push("</PERIPHERAL>", "");
   }
-  for (const edge of frame.graph.edges) {
-    lines.push(`edge ${edge.from} ${edge.type} ${edge.to}`);
+
+  lines.push("<FOCUS>");
+  if (projection.focusNodes.length) {
+    for (const node of projection.focusNodes) lines.push(`node ${node.id} [${node.type}]: ${node.text}${nodeDataSummary(node)}`);
+    lines.push(...projection.focusEdgeLines);
+  } else {
+    lines.push("(empty focus window — use @focus <node_id> or @zoom 3 to widen your vision)");
   }
-  lines.push("</GRAPH>");
+  lines.push("</FOCUS>");
 
   return lines.join("\n");
 }
 
-function focusPointLines(frame: GraphFrame): string[] {
-  const ids = frame.frame.candidateFocusNodeIds?.length ? frame.frame.candidateFocusNodeIds : ["system_root"];
-  return ids.map((id) => {
-    const node = frame.graph.nodes.find((item) => item.id === id);
-    if (!node) return `- ${id}`;
-    const active = id === frame.frame.activeUserInputNodeId ? " active-user-input" : "";
-    const focus = id === frame.frame.focusNodeId ? " focus" : "";
-    return `- ${node.id} [${node.type}]${active}${focus}: ${oneLine(node.text).slice(0, 240)}`;
+function bigBrainLines(clusters: Cluster[], focusClusterIds: string[]): string[] {
+  if (!clusters.length) return ["(no topics yet)"];
+  const focusSet = new Set(focusClusterIds);
+  return clusters.map((cluster) => {
+    const mark = focusSet.has(cluster.id) ? " *" : "";
+    return `- ${cluster.id}${mark} (${cluster.summary}) "${truncate(cluster.label, 70)}"`;
   });
+}
+
+function clusterPin(cluster: Cluster): string {
+  return `- ${cluster.id} (${cluster.summary}) "${truncate(cluster.label, 96)}"`;
+}
+
+function truncate(value: string, max: number): string {
+  const text = oneLine(value);
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
 function latestNodeId(frame: GraphFrame, type: GraphNode["type"]): string | undefined {
