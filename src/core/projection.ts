@@ -38,7 +38,7 @@ export type Projection = {
 };
 
 const DEFAULT_RADIUS = 4;
-const DEFAULT_BUDGET = 64;
+const DEFAULT_BUDGET = 48;
 const RETRIEVAL_BUDGET = 24;
 const RETRIEVAL_BUDGET_CHRONOLOGY = 32;
 const RETRIEVAL_BUDGET_CONFLICT = 30;
@@ -49,7 +49,11 @@ const RETRIEVAL_BUDGET_CONFLICT = 30;
 // reachable). Capped focus preserves retrieved answer-candidates, centers, and
 // relational context; the <BIG_BRAIN>/<PERIPHERAL>/<TIMELINE> layers still give
 // a full map of everything else.
-const FOCUS_NODE_CAP = 40;
+//
+// Keeping the cap tighter than the positional budget is critical for latency:
+// smaller focus windows keep the SWX prompt within LLM budget on long-context
+// probes while still giving the latest/found/retrieved region enough detail.
+const FOCUS_NODE_CAP = 28;
 
 export function clusterGraph(graph: StateGraph, adjacency: Map<string, string[]> = undirectedAdjacency(graph)): Cluster[] {
   const nodes = graph.nodes;
