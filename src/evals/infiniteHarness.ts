@@ -195,6 +195,9 @@ export class InfiniteHarness {
       const globalTurn = this.state.turnCount + 1;
       const phase = this.phaseFor(globalTurn, this.batchSize);
       await this.runTurn(batch, globalTurn, turn, phase);
+      // Persist after every turn so external watchers (worker push_state)
+      // see live, turn-by-turn progress instead of waiting for completion.
+      await this.saveState();
       onTurn?.(this.getState());
     }
 

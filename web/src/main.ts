@@ -474,7 +474,9 @@ const infiniteLiveBadge = element<HTMLElement>("infinite-live-badge");
 const infiniteMetrics = element<HTMLElement>("infinite-metrics");
 const infiniteTurns = element<HTMLElement>("infinite-turns");
 const infiniteClusters = element<HTMLElement>("infinite-clusters");
-let infinitePollTimer: ReturnType<typeof setInterval> | undefined;
+// infinitePollTimer removed — the top harness section is now driven solely by
+// pollSwLoop (which mirrors the worker's harnessSnapshot), so there is no
+// separate /api/infinite/state poller that could clobber it with stale data.
 const chat = element<HTMLElement>("chat");
 const form = element<HTMLFormElement>("composer");
 const input = element<HTMLTextAreaElement>("input");
@@ -795,7 +797,7 @@ function setActivePage(page: PageName, updateHash = true): void {
   if (updateHash) history.replaceState(null, "", isState ? location.pathname : isQuickstart ? "#quick-start" : isAb ? "#ab" : isInfinite ? "#infinite" : `#${suite.id}`);
   if (isMulti) void resumeStoredEvalRun();
   else stopBackgroundPoll();
-  if (isInfinite) { startInfinitePoll(); startSwLoopPoll(); } else { stopInfinitePoll(); stopSwLoopPoll(); }
+  if (isInfinite) { startSwLoopPoll(); } else { stopSwLoopPoll(); }
   if (isState) input.focus();
   else if (isAb) abInput.focus();
   else if (isMulti) multiStart.focus();
@@ -2952,36 +2954,16 @@ type InfiniteStateView = {
   turns: InfiniteTurn[];
   series: InfiniteSeriesPoint[];
   qualitySeries: InfiniteQualityPoint[];
+  probes?: { turn: number; difficulty: string }[];
   finalReport?: InfiniteFinalReport;
   reviews: InfiniteReview[];
   graphSnapshot?: { nodeCount: number; edgeCount: number; clusterCount: number; clusters: { id: string; label: string; nodeCount: number }[] };
   message?: string;
 };
 
-function startInfinitePoll(): void {
-  stopInfinitePoll();
-  void pollInfiniteState();
-  infinitePollTimer = setInterval(() => void pollInfiniteState(), 2000);
-}
-
-function stopInfinitePoll(): void {
-  if (infinitePollTimer !== undefined) clearInterval(infinitePollTimer);
-  infinitePollTimer = undefined;
-}
-
-async function pollInfiniteState(): Promise<void> {
-  try {
-    const response = await fetch(`${apiBase}/api/infinite/state`, { cache: "no-store" });
-    if (!response.ok) {
-      infiniteMetrics.innerHTML = `<p class="message error"><div>State request failed (${response.status}).</div></p>`;
-      return;
-    }
-    const data = await response.json();
-    renderInfiniteState(data as InfiniteStateView);
-  } catch (error) {
-    infiniteMetrics.innerHTML = `<p class="message error"><div>${escapeHtml(error instanceof Error ? error.message : String(error))}</div></p>`;
-  }
-}
+// startInfinitePoll / stopInfinitePoll / pollInfiniteState removed.
+// The autonomous worker is the only source of harness runs; its snapshot is
+// brokered through /api/sw-loop/state and mirrored by pollSwLoop below.
 
 function renderInfiniteState(state: InfiniteStateView): void {
   const running = state.status === "running" || state.status === "batch_done" || state.status === "reviewing" || state.status === "committed" || state.status === "reporting";
@@ -3037,12 +3019,26 @@ function renderInfiniteState(state: InfiniteStateView): void {
     ? clusters.map((c) => `<div class="infinite-cluster"><span class="cluster-id">${escapeHtml(c.id)}</span> <span class="cluster-nodes">${c.nodeCount}n</span> <span class="cluster-label">${escapeHtml(c.label)}</span></div>`).join("")
     : `<p class="muted-copy">No topics yet.</p>`;
 
-  if (!running) stopInfinitePoll();
+  // The top harness section no longer owns its own poller; pollSwLoop drives it,
+  // so there is nothing to stop here when a run finishes.
 }
 
 function scoreBadges(score: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore }): string {
   const chip = (label: string, s: ProbeScore) => `<span class="score-chip ${s.score}">${label} ${s.score}</span>`;
   return chip("SW", score.stateweave) + chip("naive", score.naive) + chip("win", score.windowed);
+}
+
+// Idle view for the top section when no harness run is active (loop between
+// iterations, or stopped). Keeps the live badge honest instead of showing stale
+// zeros from a completed run.
+function renderInfiniteIdle(reason: string): void {
+  if (infiniteLiveBadge) {
+    infiniteLiveBadge.textContent = reason || "idle";
+    infiniteLiveBadge.className = "infinite-live-badge idle";
+  }
+  infiniteMetrics.innerHTML = `<div class="infinite-metric"><span class="metric-label">Status</span><strong>${escapeHtml(reason || "idle")}</strong></div><div class="infinite-metric" style="grid-column: span 3"><span class="metric-label">Live mirror</span><strong>Waiting for the next harness run…</strong></div>`;
+  const reportEl = document.getElementById("infinite-report");
+  if (reportEl) reportEl.hidden = true;
 }
 
 function renderInfiniteReport(report: InfiniteFinalReport | undefined): void {
@@ -3166,7 +3162,7 @@ swLoopStopButton.addEventListener("click", async () => {
 function startSwLoopPoll(): void {
   stopSwLoopPoll();
   void pollSwLoop();
-  swLoopPollTimer = setInterval(() => void pollSwLoop(), 3000);
+  swLoopPollTimer = setInterval(() => void pollSwLoop(), 2000);
 }
 
 function stopSwLoopPoll(): void {
@@ -3180,10 +3176,13 @@ async function pollSwLoop(): Promise<void> {
     if (!response.ok) return;
     const data = await response.json() as SwLoopState & { harnessSnapshot?: InfiniteStateView };
     renderSwLoop(data);
-    // When the self-improve loop is in harness phase, mirror its live harness
-    // snapshot into the top harness section so the user sees streaming turns/charts.
-    if (data.harnessSnapshot && (data.harnessSnapshot.turns?.length || data.harnessSnapshot.series?.length || data.harnessSnapshot.status === "running")) {
+    // The top "Live iteration" section is a pure mirror of the autonomous loop.
+    // The worker streams its harness snapshot here; render it live so turns/charts
+    // fill in turn-by-turn. Fall back to an idle view when no run is active.
+    if (data.harnessSnapshot && (data.harnessSnapshot.turns?.length || data.harnessSnapshot.series?.length || data.harnessSnapshot.probes?.length || data.harnessSnapshot.status === "running")) {
       renderInfiniteState(data.harnessSnapshot);
+    } else if (data.status !== "running") {
+      renderInfiniteIdle(data.message || data.phase || "idle");
     }
   } catch { /* network blip */ }
 }
