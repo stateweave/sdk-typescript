@@ -58,6 +58,7 @@ export function serializeGraphFrame(frame: GraphFrame): string {
     "- For every other node, choose a concise lower_snake_case semantic type from the node meaning. Prefer configured semanticNodeTypes when they fit; create a new slug when they do not.",
     "- Mark outdated nodes stale/rejected with @update; connect contradictions, dependencies, and merges explicitly.",
     "- Use @focus <node_id> \"short reason\" whenever the active graph region should move.",
+    "- On conflict prompts, prefer `status=resolved`/`status=active` nodes and treat `status=stale`/`status=rejected` as superseded unless the user explicitly asks for historical context.",
     "Node type format: lowercase semantic slug, or one of the structural runtime types.",
     "Allowed edge types: follows, creates, supports, contradicts, explains, depends_on, addresses, validates, constrains, causes, relates_to.",
     "Allowed statuses: active, resolved, rejected, stale.",
@@ -220,13 +221,22 @@ function latestNodeId(frame: GraphFrame, type: GraphNode["type"]): string | unde
 }
 
 function nodeDataSummary(node: GraphNode): string {
-  if (!node.data) return "";
-  const parts = Object.entries(node.data).map(([key, value]) => {
-    if (key === "content" && typeof value === "string") {
-      return `contentLength=${value.length} contentPreview=${JSON.stringify(oneLine(value.slice(0, 360)))}`;
+  const parts: string[] = [];
+
+  if (node.status) {
+    parts.push(`status=${node.status}`);
+  }
+
+  if (node.data) {
+    for (const [key, value] of Object.entries(node.data)) {
+      if (key === "content" && typeof value === "string") {
+        parts.push(`contentLength=${value.length} contentPreview=${JSON.stringify(oneLine(value.slice(0, 360)))}`);
+      } else {
+        parts.push(`${key}=${JSON.stringify(value)}`);
+      }
     }
-    return `${key}=${JSON.stringify(value)}`;
-  });
+  }
+
   return parts.length ? ` data ${parts.join(" ")}` : "";
 }
 

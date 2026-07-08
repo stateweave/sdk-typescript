@@ -41,6 +41,7 @@ const DEFAULT_RADIUS = 4;
 const DEFAULT_BUDGET = 64;
 const RETRIEVAL_BUDGET = 24;
 const RETRIEVAL_BUDGET_CHRONOLOGY = 32;
+const RETRIEVAL_BUDGET_CONFLICT = 30;
 // Hard ceiling on the rendered <FOCUS> window. Positional BFS (budget) plus
 // retrieval plus per-retrieved cluster-member expansion can otherwise push a
 // mature graph's focus to 80+ nodes, bloating the prompt until the model hits
@@ -94,9 +95,14 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
     .map((node) => node.text)
     .join(" ");
   const chronologyMode = looksLikeChronology(activeNodeText);
-  const retrievalBudget = chronologyMode ? RETRIEVAL_BUDGET_CHRONOLOGY : RETRIEVAL_BUDGET;
+  const conflictMode = looksLikeConflict(activeNodeText);
+  const retrievalBudget = chronologyMode
+    ? RETRIEVAL_BUDGET_CHRONOLOGY
+    : conflictMode
+      ? RETRIEVAL_BUDGET_CONFLICT
+      : RETRIEVAL_BUDGET;
   const retrievedNodeIds = looksLikeQuestion(activeNodeText)
-    ? retrieveNodes(graph, clusters, activeNodeText, retrievalBudget, chronologyMode)
+    ? retrieveNodes(graph, clusters, activeNodeText, retrievalBudget, chronologyMode, conflictMode)
     : [];
 
   // Merge positional + retrieved into the final focus set.
@@ -211,7 +217,12 @@ function looksLikeChronology(text: string): boolean {
   return /\b(first|last|earlier|later|before|after|chronolog|then|sequence|initial|initially|final|oldest|newest|order)\b/i.test(text);
 }
 
-function retrieveNodes(graph: StateGraph, clusters: Cluster[], queryText: string, budget: number, chronologyMode = false): string[] {
+function looksLikeConflict(text: string): boolean {
+  if (!text) return false;
+  return /\b(actually|instead|conflict|contradict|correction|disagree|wrong|should be|did you mean|second[- ]guess|not right|not sure|revise|changed|override|revoke|decoy|true|false)\b/i.test(text);
+}
+
+function retrieveNodes(graph: StateGraph, clusters: Cluster[], queryText: string, budget: number, chronologyMode = false, conflictMode = false): string[] {
   const keywords = extractKeywords(queryText);
   if (!keywords.length) return [];
 
@@ -222,6 +233,7 @@ function retrieveNodes(graph: StateGraph, clusters: Cluster[], queryText: string
   }
   const userInputTextByNode = userInputContextByNode(graph, byId);
 
+  const contradictionMap = conflictMode ? contradictionNeighbors(graph) : undefined;
   const scored: Array<{ id: string; score: number }> = [];
   for (const node of graph.nodes) {
     if (node.type === "system" || node.type === "tool_call" || node.type === "tool_result") continue;
@@ -245,6 +257,11 @@ function retrieveNodes(graph: StateGraph, clusters: Cluster[], queryText: string
     }
     // Boost nodes that hold data (facts, artifacts, decisions carry the answers).
     if (node.type === "fact" || node.type === "artifact" || node.type === "decision" || node.type === "assistant_output") score += 1;
+    // Conflict probes should prefer current, supported context over stale data.
+    if (conflictMode) {
+      if (node.status === "stale" || node.status === "rejected") score -= 2;
+      else if (!node.status || node.status === "active" || node.status === "resolved") score += 1;
+    }
     // For chronology probes, surface user-input turn sources more reliably than
     // very recent noise so ordered questions can compare historical intent accurately.
     if (chronologyMode && node.type === "user_input") score += 2;
@@ -256,11 +273,12 @@ function retrieveNodes(graph: StateGraph, clusters: Cluster[], queryText: string
       ? createdAtOf(byId.get(a.id)) - createdAtOf(byId.get(b.id))
       : createdAtOf(byId.get(b.id)) - createdAtOf(byId.get(a.id))));
 
-  const selected = new Set<string>(
-    sorted
-      .slice(0, budget)
-      .map((s) => s.id)
-  );
+  const selected = new Set<string>();
+
+  for (const item of sorted) {
+    if (selected.size >= budget) break;
+    selected.add(item.id);
+  }
 
   // Ensure semantically relevant historical user_inputs are not starved by recency
   // bias: older turns should stay reachable when the probe references names/facts
@@ -271,7 +289,33 @@ function retrieveNodes(graph: StateGraph, clusters: Cluster[], queryText: string
     if (selected.size >= budget + 2) break;
   }
 
+  if (conflictMode && contradictionMap) {
+    for (const id of [...selected]) {
+      for (const neighbor of contradictionMap.get(id) ?? []) {
+        selected.add(neighbor);
+      }
+    }
+  }
+
   return [...selected];
+}
+
+function contradictionNeighbors(graph: StateGraph): Map<string, string[]> {
+  const neighbors = new Map<string, string[]>();
+  for (const edge of graph.edges) {
+    if (edge.type !== "contradicts") continue;
+    const fromNeighbors = neighbors.get(edge.from) ?? [];
+    if (!fromNeighbors.includes(edge.to)) {
+      fromNeighbors.push(edge.to);
+      neighbors.set(edge.from, fromNeighbors);
+    }
+    const toNeighbors = neighbors.get(edge.to) ?? [];
+    if (!toNeighbors.includes(edge.from)) {
+      toNeighbors.push(edge.from);
+      neighbors.set(edge.to, toNeighbors);
+    }
+  }
+  return neighbors;
 }
 
 function userInputContextByNode(graph: StateGraph, byId: Map<string, GraphNode>): Map<string, string> {
