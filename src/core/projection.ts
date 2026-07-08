@@ -40,6 +40,14 @@ export type Projection = {
 const DEFAULT_RADIUS = 4;
 const DEFAULT_BUDGET = 64;
 const RETRIEVAL_BUDGET = 24;
+// Hard ceiling on the rendered <FOCUS> window. Positional BFS (budget) plus
+// retrieval plus per-retrieved cluster-member expansion can otherwise push a
+// mature graph's focus to 80+ nodes, bloating the prompt until the model hits
+// wall-clock limits (a timeout reads as a recall miss even when the answer is
+// reachable). Capped focus preserves retrieved answer-candidates, centers, and
+// relational context; the <BIG_BRAIN>/<PERIPHERAL>/<TIMELINE> layers still give
+// a full map of everything else.
+const FOCUS_NODE_CAP = 40;
 
 export function clusterGraph(graph: StateGraph): Cluster[] {
   const nodes = graph.nodes;
@@ -108,23 +116,35 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
   // view so the relational sentence travels with the retrieved facts — the
   // graph-native equivalent of the prose that makes naive messages[] synthesize
   // well across a single turn.
+  const relationalNeighborIds = new Set<string>();
   const retrievalAdjacency = undirectedAdjacency(graph);
   for (const nodeId of retrievedNodeIds) {
     const node = byId.get(nodeId);
     if (!node || isStructural(node.type)) continue;
     for (const neighborId of retrievalAdjacency.get(nodeId) ?? []) {
       const neighbor = byId.get(neighborId);
-      if (neighbor?.type === "user_input") focusSet.add(neighborId);
+      if (neighbor?.type === "user_input") {
+        focusSet.add(neighborId);
+        relationalNeighborIds.add(neighborId);
+      }
     }
   }
 
-  const focusNodes = [...focusSet]
-    .map((id) => byId.get(id))
-    .filter((node): node is GraphNode => Boolean(node))
-    .sort(byCreatedAt);
+  const focusNodes = capFocusNodes(
+    [...focusSet]
+      .map((id) => byId.get(id))
+      .filter((node): node is GraphNode => Boolean(node)),
+    retrievedNodeIds,
+    new Set(centers),
+    relationalNeighborIds,
+    FOCUS_NODE_CAP
+  ).sort(byCreatedAt);
 
+  // Only render edges between nodes that survived the focus cap, so the detail
+  // window never references nodes the model cannot see.
+  const visibleNodeIds = new Set(focusNodes.map((node) => node.id));
   const focusEdgeLines = graph.edges
-    .filter((edge) => focusSet.has(edge.from) && focusSet.has(edge.to))
+    .filter((edge) => visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to))
     .map((edge) => `edge ${edge.from} ${edge.type} ${edge.to}`);
 
   const focusClusterIds = new Set(
@@ -219,6 +239,37 @@ function extractKeywords(text: string): string[] {
   const words = text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length > 2 && !stop.has(w));
   // Dedupe, prefer longer words (more specific), keep top 12.
   return [...new Set(words)].sort((a, b) => b.length - a.length).slice(0, 12);
+}
+
+// --- Focus cap: keep retrieved answer-candidates, centers, and relational
+// context first, then fill with the most recent positional nodes. Small graphs
+// (below the cap) pass through unchanged.
+function capFocusNodes(
+  nodes: GraphNode[],
+  retrievedNodeIds: string[],
+  centerSet: Set<string>,
+  relationalNeighborIds: Set<string>,
+  maxNodes: number
+): GraphNode[] {
+  if (nodes.length <= maxNodes) return nodes;
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const retained = new Set<string>();
+  // Centers (system_root, focus node, latest user/assistant) are structural
+  // anchors the model needs to write valid GraphOps — always retain them.
+  for (const id of centerSet) if (byId.has(id)) retained.add(id);
+  // Retrieved nodes hold the answer candidates.
+  for (const id of retrievedNodeIds) if (byId.has(id) && retained.size < maxNodes) retained.add(id);
+  // Relational context frames atomized facts for synthesis.
+  for (const id of relationalNeighborIds) if (byId.has(id) && retained.size < maxNodes) retained.add(id);
+  // Fill remaining slots with the newest positional nodes.
+  const rest = nodes
+    .filter((node) => !retained.has(node.id))
+    .sort((a, b) => createdAtOf(b) - createdAtOf(a));
+  for (const node of rest) {
+    if (retained.size >= maxNodes) break;
+    retained.add(node.id);
+  }
+  return [...retained].map((id) => byId.get(id)!);
 }
 
 // --- Clustering ---
