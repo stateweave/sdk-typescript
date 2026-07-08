@@ -7,6 +7,7 @@ const CANDIDATE_FOCUS_LIMIT = 24;
 const TIMELINE_LIMIT = 15;
 const TIMELINE_CHRONOLOGY_LIMIT = 30;
 const TIMELINE_CHRONOLOGY_NEIGHBORHOOD = 4;
+const TIMELINE_CHRONOLOGY_HEAD = 6;
 
 export function serializeGraphFrame(frame: GraphFrame): string {
   const projection = projectGraph(frame.graph, { focusNodeId: frame.frame.focusNodeId, zoom: frame.frame.zoom });
@@ -156,6 +157,9 @@ function buildTimelineNodes(
   const byId = new Map(visibleOrdered.map((node) => [node.id, node]));
   const indexById = new Map(visibleOrdered.map((node, index) => [node.id, index] as const));
   const selected = new Set<string>(recentNodes(visibleOrdered, () => true, TIMELINE_CHRONOLOGY_LIMIT).map((node) => node.id));
+  for (const node of visibleOrdered.slice(0, TIMELINE_CHRONOLOGY_HEAD)) {
+    selected.add(node.id);
+  }
 
   for (const nodeId of projection.retrievedNodeIds) {
     const index = indexById.get(nodeId);
