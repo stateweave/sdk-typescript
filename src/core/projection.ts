@@ -99,34 +99,55 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
   // Merge positional + retrieved into the final focus set.
   const focusSet = new Set<string>([...positionalFocus, ...retrievedNodeIds]);
 
-  // If retrieval found nodes in clusters NOT already in the positional focus,
-  // expand to include those clusters' seed + key members (so combine works).
-  for (const nodeId of retrievedNodeIds) {
-    const cluster = clusters.find((c) => c.nodeIds.includes(nodeId));
-    if (!cluster) continue;
-    for (const memberId of cluster.nodeIds.slice(0, 8)) focusSet.add(memberId);
-  }
-
-  // Relational context for synthesis/combine: atomized semantic facts (fact,
-  // artifact, decision, ...) carry only their bare value and lose the prose
-  // that explains HOW facts relate (e.g. "my favorite deep-sky target is the
-  // Orion Nebula", "my main scope is a Celestron NexStar 8SE"). Without that
-  // framing the model sees disconnected values and hedges instead of connecting
-  // equipment to target. Pull each retrieved fact's originating user_input into
-  // view so the relational sentence travels with the retrieved facts — the
-  // graph-native equivalent of the prose that makes naive messages[] synthesize
-  // well across a single turn.
-  const relationalNeighborIds = new Set<string>();
+  // Relational + sibling context for synthesis/combine. Atomized semantic
+  // facts (fact, artifact, decision, ...) carry only their bare value and drop
+  // both the framing prose and the OTHER facts that were stated alongside them
+  // in the same conversational turn. So when retrieval recalls ONE fact from a
+  // turn, combine probes that need that turn's sibling facts (e.g. "plan a
+  // party for my sister" needs BOTH the shellfish allergy AND the family pet
+  // from the same turn; "derive the reduction ratio" needs BOTH the native
+  // focal length AND the reducer) fail: the model sees the single recalled fact
+  // and hedges instead of synthesizing the turn as a whole. This is exactly the
+  // fragmentation naive messages[] avoids by keeping a turn's full prose
+  // together. It also bites retrieval itself: a recalled user_input (which
+  // scores on the framing nouns like "sister") is structural and was skipped,
+  // so its sibling facts were never co-located.
+  //
+  // Fix: for every retrieved node, pull in its originating user_input AND that
+  // user_input's other directly-connected semantic facts (the siblings) as
+  // distinct, co-visible focus nodes. This lets the model synthesize across
+  // co-occurring facts the way it would from a turn's prose. It replaces an
+  // earlier "first 8 oldest cluster members" expansion which, for a merged
+  // multi-topic cluster, just re-injected unrelated oldest facts and crowded
+  // out exactly the siblings combine needs.
   const retrievalAdjacency = undirectedAdjacency(graph);
+  const relationalNeighborIds = new Set<string>();
+  const expandOrigin = (originId: string): void => {
+    const origin = byId.get(originId);
+    if (!origin) return;
+    focusSet.add(originId);
+    relationalNeighborIds.add(originId);
+    for (const siblingId of retrievalAdjacency.get(originId) ?? []) {
+      const sibling = byId.get(siblingId);
+      if (!sibling || isStructural(sibling.type)) continue;
+      focusSet.add(siblingId);
+      relationalNeighborIds.add(siblingId);
+    }
+  };
   for (const nodeId of retrievedNodeIds) {
     const node = byId.get(nodeId);
-    if (!node || isStructural(node.type)) continue;
+    if (!node) continue;
+    if (node.type === "user_input") {
+      // A recalled user_input is its own origin; expand its sibling facts so
+      // the turn's full fact set is co-visible (it scores on framing nouns).
+      expandOrigin(nodeId);
+      continue;
+    }
+    if (isStructural(node.type)) continue;
+    // A recalled semantic fact: expand via its originating user_input(s).
     for (const neighborId of retrievalAdjacency.get(nodeId) ?? []) {
       const neighbor = byId.get(neighborId);
-      if (neighbor?.type === "user_input") {
-        focusSet.add(neighborId);
-        relationalNeighborIds.add(neighborId);
-      }
+      if (neighbor?.type === "user_input") expandOrigin(neighborId);
     }
   }
 
