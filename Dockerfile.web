@@ -8,6 +8,10 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY tsconfig.json tsconfig.build.json vite.web.config.ts ./
+# CACHEBUST changes per deploy to force BuildKit to invalidate the source/build
+# layers on the remote Docker host, which otherwise serves a stale cached image.
+ARG CACHEBUST=1
+RUN echo "cachebust=$CACHEBUST"
 COPY src ./src
 COPY web ./web
 
