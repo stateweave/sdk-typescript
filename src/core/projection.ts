@@ -240,10 +240,25 @@ function retrieveNodes(graph: StateGraph, clusters: Cluster[], queryText: string
     if (score > 0) scored.push({ id: node.id, score });
   }
 
-  return scored
-    .sort((a, b) => b.score - a.score || createdAtOf(byId.get(b.id)) - createdAtOf(byId.get(a.id)))
-    .slice(0, budget)
-    .map((s) => s.id);
+  const sorted = scored
+    .sort((a, b) => b.score - a.score || createdAtOf(byId.get(b.id)) - createdAtOf(byId.get(a.id)));
+
+  const selected = new Set<string>(
+    sorted
+      .slice(0, budget)
+      .map((s) => s.id)
+  );
+
+  // Ensure semantically relevant historical user_inputs are not starved by recency
+  // bias: older turns should stay reachable when the probe references names/facts
+  // embedded in user_input prose but their matching nodes rank outside the budget.
+  for (const item of sorted.slice(0, Math.min(6, sorted.length))) {
+    const node = byId.get(item.id);
+    if (node?.type === "user_input") selected.add(item.id);
+    if (selected.size >= budget + 2) break;
+  }
+
+  return [...selected];
 }
 
 function userInputContextByNode(graph: StateGraph, byId: Map<string, GraphNode>): Map<string, string> {
