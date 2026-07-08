@@ -104,10 +104,11 @@ export function serializeGraphFrame(frame: GraphFrame): string {
   lines.push("</FOCUS>");
 
   // Timeline: recent facts in creation order so chronology probes survive projection.
-  const timelineNodes = frame.graph.nodes
-    .filter((node) => node.type !== "system" && node.type !== "tool_call" && node.type !== "tool_result")
-    .sort((a, b) => (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0))
-    .slice(-TIMELINE_LIMIT);
+  const timelineNodes = recentNodes(
+    frame.graph.nodes,
+    (node) => node.type !== "system" && node.type !== "tool_call" && node.type !== "tool_result",
+    TIMELINE_LIMIT
+  );
   if (timelineNodes.length > 1) {
     lines.push("", "<TIMELINE>", "(most recent facts in creation order — use for chronology/sequence questions)");
     for (const node of timelineNodes) lines.push(`- ${node.id} [${node.type}]: ${truncate(node.text, 80)}`);
@@ -131,6 +132,15 @@ function bigBrainLines(clusters: Cluster[], focusClusterIds: string[], limit: nu
 
 function clusterPin(cluster: Cluster): string {
   return `- ${cluster.id} (${cluster.summary}) "${truncate(cluster.label, 96)}"`;
+}
+
+function recentNodes(nodes: GraphNode[], predicate: (node: GraphNode) => boolean, limit: number): GraphNode[] {
+  const selected: GraphNode[] = [];
+  for (let index = nodes.length - 1; index >= 0 && selected.length < limit; index--) {
+    const node = nodes[index];
+    if (node && predicate(node)) selected.push(node);
+  }
+  return selected.reverse();
 }
 
 function truncate(value: string, max: number): string {
