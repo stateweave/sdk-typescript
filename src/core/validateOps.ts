@@ -71,12 +71,13 @@ export function parseAndValidateOps(raw: string): GraphOp[] {
 
 function parseSwx(raw: string): GraphOp[] {
   const { commands, blocks } = extractBlocks(raw);
+  const commandLines = mergeContinuedQuotes(commands.split(/\r?\n/));
   const nodeOps: Extract<GraphOp, { op: "add_node" }>[] = [];
   const otherOps: GraphOp[] = [];
   const finalTargets: { command: "@final" | "@final_ref"; tokens: string[]; argText: string }[] = [];
   const toolArgBlockIds = new Set<string>();
 
-  for (const line of commands.split(/\r?\n/)) {
+  for (const line of commandLines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed === "SWX/1" || trimmed.startsWith("#")) continue;
     if (!trimmed.startsWith("@")) continue;
@@ -166,6 +167,38 @@ function parseSwx(raw: string): GraphOp[] {
   const parsed = graphOpsResponseSchema.parse({ ops: [...nodeOps, ...otherOps, ...finalOps] }).ops;
   if (!parsed.length) throw new Error("Model returned SWX/1 but no graph operations were found.");
   return parsed;
+}
+
+// A quoted @ command value may legitimately span multiple lines — most often a
+// structured @final answer whose header line ends with ":" and is followed by
+// bullets. Because commands are split per line, such continuation lines are
+// otherwise skipped (the body is silently dropped), truncating synthesis
+// answers. Re-join continuation lines while a quote stays open.
+function mergeContinuedQuotes(lines: string[]): string[] {
+  const merged: string[] = [];
+  for (let index = 0; index < lines.length; index++) {
+    let line = lines[index];
+    while (index + 1 < lines.length && openQuoteChar(line)) {
+      const next = lines[index + 1];
+      if (next.trim().startsWith("@") || next.trim().startsWith("<<<")) break;
+      index++;
+      line += "\n" + next;
+    }
+    merged.push(line);
+  }
+  return merged;
+}
+
+function openQuoteChar(line: string): string | undefined {
+  let quote: string | undefined;
+  for (let index = 0; index < line.length; index++) {
+    const char = line[index];
+    if (char === "\\" && index + 1 < line.length) { index++; continue; }
+    if (char !== '"' && char !== "'") continue;
+    if (quote === char) quote = undefined;
+    else if (!quote) quote = char;
+  }
+  return quote;
 }
 
 function extractBlocks(raw: string): { commands: string; blocks: SwxBlock[] } {

@@ -13,6 +13,18 @@ it("parses compact SWX graph operations", () => {
   ]);
 });
 
+it("captures multi-line @final answers instead of dropping the body", () => {
+  const ops = parseAndValidateOps(`SWX/1
+@final "These are two credentials at different layers:
+- Red badge grants Level 3 access.
+- Project Helios clearance is her lead-engineer role.
+Both reach Level 3 areas."`);
+  const final = ops.find((op) => op.op === "final") as { op: "final"; answer: string };
+  expect(final.answer).toContain("Level 3");
+  expect(final.answer).toContain("Project Helios");
+  expect(final.answer).toContain("lead-engineer role");
+});
+
 it("tolerates bracketed node type labels", () => {
   const ops = parseAndValidateOps(`SWX/1\n@node fact_1 [fact]: "User's name is Radi" status=active confidence=1.0\n@final "ok"`);
   expect(ops[0]).toEqual({ op: "add_node", node: { id: "fact_1", type: "fact", text: "User's name is Radi", status: "active", confidence: 1 } });
