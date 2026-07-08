@@ -158,23 +158,31 @@ function retrieveNodes(graph: StateGraph, clusters: Cluster[], queryText: string
   const keywords = extractKeywords(queryText);
   if (!keywords.length) return [];
 
-  // Topic context: match each node against its cluster seed label too. A fact's
-  // own label is often terse (e.g. "Celestron NexStar 8SE"), so keyword probes
-  // like "mirror diameter" miss it even though the originating topic ("I'm
-  // setting up my new telescope...") carries the query terms. Including the
-  // topic surface lets sparse-label facts surface when their topic matches.
-  const topicFor = new Map<string, string>();
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+
+  // Relational context: semantic facts are often atomized to a bare value
+  // ("68°F", "Wyeast 3787", "BR-0773") and drop the noun that frames them, so a
+  // concept probe ("fermentation temperature", "yeast strain") never matches the
+  // fact's own text. The framing lives in the fact's originating topic — the
+  // cluster's seed user_input. Match each node against its cluster's FULL seed
+  // text (not the 64-char label, which truncates the very concepts the probe
+  // names) so atomized facts surface when their topic is asked about. This is
+  // what lets the graph recall terse facts that windowed history would drop.
+  const clusterOf = new Map<string, Cluster>();
+  const fullSeedFor = new Map<string, string>();
   for (const cluster of clusters) {
-    const label = oneLine(cluster.label).toLowerCase();
-    for (const nodeId of cluster.nodeIds) topicFor.set(nodeId, label);
+    const seed = byId.get(cluster.seedId);
+    const seedText = seed ? oneLine(seed.text).toLowerCase() : oneLine(cluster.label).toLowerCase();
+    fullSeedFor.set(cluster.id, seedText);
+    for (const nodeId of cluster.nodeIds) clusterOf.set(nodeId, cluster);
   }
 
   const scored: Array<{ id: string; score: number }> = [];
   for (const node of graph.nodes) {
     if (node.type === "system" || node.type === "tool_call" || node.type === "tool_result") continue;
     const parts = [`${node.type} ${node.text}`.toLowerCase()];
-    const topic = topicFor.get(node.id);
-    if (topic) parts.push(topic);
+    const cluster = clusterOf.get(node.id);
+    if (cluster) parts.push(fullSeedFor.get(cluster.id) ?? "");
     const text = parts.join(" ");
     let score = 0;
     for (const kw of keywords) {
@@ -186,7 +194,7 @@ function retrieveNodes(graph: StateGraph, clusters: Cluster[], queryText: string
   }
 
   return scored
-    .sort((a, b) => b.score - a.score || createdAtOf(graph.nodes.find((n) => n.id === b.id)) - createdAtOf(graph.nodes.find((n) => n.id === a.id)))
+    .sort((a, b) => b.score - a.score || createdAtOf(byId.get(b.id)) - createdAtOf(byId.get(a.id)))
     .slice(0, budget)
     .map((s) => s.id);
 }
