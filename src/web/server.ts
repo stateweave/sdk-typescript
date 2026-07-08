@@ -105,6 +105,7 @@ let infiniteHarness: InfiniteHarness | undefined;
 const swLoopStatePath = path.resolve(process.env.STATEWEAVE_SW_LOOP_STATE ?? "/data/sw-loop-state.json");
 let swLoopControl: { action: "start" | "stop" | "none" } = { action: "none" };
 let swLoopState: Record<string, unknown> = {};
+let swLoopHarnessState: Record<string, unknown> = {};
 const defaultNodeTypes = ["intent", "constraint", "artifact", "decision", "fact", "hypothesis", "risk", "question", "wisdom"];
 const evalRuns = new Map<string, EvalRun>();
 const activeEvalRuns = new Set<string>();
@@ -212,6 +213,15 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     swLoopState = body;
     try { await writeFile(swLoopStatePath, JSON.stringify(body, null, 2)); } catch { /* non-critical */ }
     json(response, 200, { ok: true });
+    return;
+  }
+  if (url.pathname === "/api/sw-loop/harness" && request.method === "POST") {
+    swLoopHarnessState = (await readJson(request)) as Record<string, unknown>;
+    json(response, 200, { ok: true });
+    return;
+  }
+  if (url.pathname === "/api/sw-loop/harness" && request.method === "GET") {
+    json(response, 200, swLoopHarnessState);
     return;
   }
   if (url.pathname === "/api/sw-loop/state" && request.method === "GET") {
