@@ -5,10 +5,14 @@ const BIG_BRAIN_LIMIT = 20;
 const PERIPHERAL_CLUSTER_LIMIT = 12;
 const CANDIDATE_FOCUS_LIMIT = 24;
 const TIMELINE_LIMIT = 15;
+const TIMELINE_CHRONOLOGY_LIMIT = 30;
+const TIMELINE_CHRONOLOGY_NEIGHBORHOOD = 4;
 
 export function serializeGraphFrame(frame: GraphFrame): string {
   const projection = projectGraph(frame.graph, { focusNodeId: frame.frame.focusNodeId, zoom: frame.frame.zoom });
   const candidateFocusIds = unique((frame.frame.candidateFocusNodeIds ?? ["system_root"]).filter((value): value is string => Boolean(value)));
+  const activeUserInput = activeUserInputText(frame);
+  const chronologyMode = looksLikeChronology(activeUserInput);
   const lines: string[] = [
     "You are operating inside StateWeave.",
     "The graph is the runtime state; do not reconstruct this as provider messages[].",
@@ -102,14 +106,18 @@ export function serializeGraphFrame(frame: GraphFrame): string {
   lines.push("</FOCUS>");
 
   // Timeline: recent facts in creation order so chronology probes survive projection.
-  const timelineNodes = recentNodes(
+  const timelineNodes = buildTimelineNodes(
     frame.graph.nodes,
+    projection,
     (node) => node.type !== "system" && node.type !== "tool_call" && node.type !== "tool_result",
-    TIMELINE_LIMIT
+    chronologyMode
   );
   if (timelineNodes.length > 1) {
-    lines.push("", "<TIMELINE>", "(most recent facts in creation order — use for chronology/sequence questions)");
-    for (const node of timelineNodes) lines.push(`- ${node.id} [${node.type}]: ${truncate(node.text, 80)}`);
+    lines.push("", "<TIMELINE>", `(${chronologyMode ? "expanded" : "most recent"} facts in creation order — use for chronology/sequence questions)`);
+    timelineNodes.forEach((node, index) => {
+      const prefix = chronologyMode ? `${index + 1}. ` : "";
+      lines.push(`- ${prefix}${node.id} [${node.type}]: ${truncate(node.text, 80)}`);
+    });
     lines.push("</TIMELINE>");
   }
 
@@ -132,6 +140,35 @@ function clusterPin(cluster: Cluster): string {
   return `- ${cluster.id} (${cluster.summary}) "${truncate(cluster.label, 96)}"`;
 }
 
+function buildTimelineNodes(
+  nodes: GraphNode[],
+  projection: { retrievedNodeIds: string[] },
+  predicate: (node: GraphNode) => boolean,
+  chronologyMode: boolean
+): GraphNode[] {
+  const visibleNodes = nodes.filter(predicate);
+  const visibleOrdered = [...visibleNodes].sort((a, b) => createdAtOf(a) - createdAtOf(b));
+
+  if (!chronologyMode) {
+    return visibleOrdered.slice(-TIMELINE_LIMIT);
+  }
+
+  const byId = new Map(visibleOrdered.map((node) => [node.id, node]));
+  const indexById = new Map(visibleOrdered.map((node, index) => [node.id, index] as const));
+  const selected = new Set<string>(recentNodes(visibleOrdered, () => true, TIMELINE_CHRONOLOGY_LIMIT).map((node) => node.id));
+
+  for (const nodeId of projection.retrievedNodeIds) {
+    const index = indexById.get(nodeId);
+    if (index === undefined) continue;
+    for (let offset = -TIMELINE_CHRONOLOGY_NEIGHBORHOOD; offset <= TIMELINE_CHRONOLOGY_NEIGHBORHOOD; offset++) {
+      const neighbor = visibleOrdered[index + offset];
+      if (neighbor) selected.add(neighbor.id);
+    }
+  }
+
+  return [...selected].map((id) => byId.get(id)!).filter((node): node is GraphNode => Boolean(node)).sort((a, b) => createdAtOf(a) - createdAtOf(b));
+}
+
 function recentNodes(nodes: GraphNode[], predicate: (node: GraphNode) => boolean, limit: number): GraphNode[] {
   const selected: GraphNode[] = [];
   for (let index = nodes.length - 1; index >= 0 && selected.length < limit; index--) {
@@ -139,6 +176,24 @@ function recentNodes(nodes: GraphNode[], predicate: (node: GraphNode) => boolean
     if (node && predicate(node)) selected.push(node);
   }
   return selected.reverse();
+}
+
+function looksLikeChronology(text: string | undefined): boolean {
+  if (!text) return false;
+  return /\b(first|last|earlier|later|before|after|chronolog|then|sequence|initial|initially|final|oldest|newest)\b/i.test(text);
+}
+
+function activeUserInputText(frame: GraphFrame): string | undefined {
+  const activeId = frame.frame.activeUserInputNodeId ?? frame.frame.latestInputNodeId;
+  if (!activeId) return undefined;
+  const input = frame.graph.nodes.find((node) => node.id === activeId);
+  return input?.type === "user_input" ? input.text : undefined;
+}
+
+function createdAtOf(node: GraphNode | undefined): number {
+  if (!node) return Number.MAX_SAFE_INTEGER;
+  const time = Date.parse(node.createdAt);
+  return Number.isNaN(time) ? 0 : time;
 }
 
 function truncate(value: string, max: number): string {
