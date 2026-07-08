@@ -168,12 +168,20 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
     .filter((edge) => visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to))
     .map((edge) => `edge ${edge.from} ${edge.type} ${edge.to}`);
 
+  const nodeToClusterId = new Map<string, string>();
+  for (const cluster of clusters) {
+    for (const nodeId of cluster.nodeIds) nodeToClusterId.set(nodeId, cluster.id);
+  }
+
   const focusClusterIds = new Set(
-    clusters.filter((cluster) => cluster.nodeIds.some((id) => focusSet.has(id))).map((cluster) => cluster.id)
+    [...focusSet]
+      .map((nodeId) => nodeToClusterId.get(nodeId))
+      .filter((id): id is string => Boolean(id))
   );
 
+  const peripheralClusterIds = touchedPeripheralClusters(graph, nodeToClusterId, focusSet, focusClusterIds);
   const peripheralClusters = clusters
-    .filter((cluster) => !focusClusterIds.has(cluster.id) && clusterTouches(graph, cluster.nodeIds, focusSet))
+    .filter((cluster) => peripheralClusterIds.has(cluster.id))
     .sort((a, b) => b.nodeCount - a.nodeCount);
 
   const bigBrainClusters = [...clusters].sort((a, b) => createdAtOf(byId.get(a.seedId)) - createdAtOf(byId.get(b.seedId)));
@@ -335,16 +343,16 @@ function assignToNearestSeed(seeds: GraphNode[], adjacency: Map<string, string[]
   const bestRank = new Map<string, number>();
 
   for (const seed of seeds) {
-    queue.push({ id: seed.id, dist: 0, seed: seed.id, seedRank: seedRank.get(seed.id) ?? 0 });
+    const rank = seedRank.get(seed.id) ?? 0;
+    queue.push({ id: seed.id, dist: 0, seed: seed.id, seedRank: rank });
     bestDist.set(seed.id, 0);
-    bestRank.set(seed.id, seedRank.get(seed.id) ?? 0);
+    bestRank.set(seed.id, rank);
     assignment.set(seed.id, seed.id);
   }
 
-  queue.sort((a, b) => a.dist - b.dist || a.seedRank - b.seedRank);
-
-  while (queue.length) {
-    const current = queue.shift()!;
+  let index = 0;
+  while (index < queue.length) {
+    const current = queue[index++]!;
     const neighbors = adjacency.get(current.id) ?? [];
     for (const next of neighbors) {
       const dist = current.dist + 1;
@@ -431,10 +439,10 @@ function bfsBounded(graph: StateGraph, centers: string[], radius: number, budget
     queue.push({ id: center, dist: 0 });
   }
 
-  while (queue.length) {
+  let index = 0;
+  while (index < queue.length) {
     if (visited.size >= budget) break;
-    queue.sort((a, b) => a.dist - b.dist);
-    const current = queue.shift()!;
+    const current = queue[index++];
     if (current.dist >= radius) continue;
     for (const next of adjacency.get(current.id) ?? []) {
       if (visited.has(next)) continue;
@@ -461,8 +469,9 @@ function connectedComponent(graph: StateGraph, start: string, adjacency: Map<str
   const ids = new Set(graph.nodes.map((node) => node.id));
   const visited = new Set<string>();
   const queue = [start];
-  while (queue.length) {
-    const id = queue.shift();
+  let index = 0;
+  while (index < queue.length) {
+    const id = queue[index++];
     if (!id || visited.has(id) || !ids.has(id)) continue;
     visited.add(id);
     for (const next of adjacency.get(id) ?? []) if (!visited.has(next)) queue.push(next);
@@ -470,14 +479,23 @@ function connectedComponent(graph: StateGraph, start: string, adjacency: Map<str
   return visited;
 }
 
-function clusterTouches(graph: StateGraph, nodeIds: string[], focusSet: Set<string>): boolean {
-  const set = new Set(nodeIds);
+function touchedPeripheralClusters(graph: StateGraph, nodeToClusterId: Map<string, string>, focusSet: Set<string>, focusClusterIds: Set<string>): Set<string> {
+  const peripheral = new Set<string>();
+
   for (const edge of graph.edges) {
-    const inCluster = set.has(edge.from) || set.has(edge.to);
-    const touchesFocus = focusSet.has(edge.from) || focusSet.has(edge.to);
-    if (inCluster && touchesFocus) return true;
+    const fromCluster = nodeToClusterId.get(edge.from);
+    const toCluster = nodeToClusterId.get(edge.to);
+    if (!fromCluster || !toCluster || fromCluster === toCluster) continue;
+
+    if (focusSet.has(edge.from) && !focusClusterIds.has(toCluster)) {
+      peripheral.add(toCluster);
+    }
+    if (focusSet.has(edge.to) && !focusClusterIds.has(fromCluster)) {
+      peripheral.add(fromCluster);
+    }
   }
-  return false;
+
+  return peripheral;
 }
 
 function focusNodeIdResolved(graph: StateGraph, focus: ProjectionFocus): string | undefined {
