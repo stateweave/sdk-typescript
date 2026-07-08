@@ -2945,3 +2945,25 @@ label {
   margin: 6px 0 0;
   white-space: pre-wrap;
 }
+
+/* Infinite live badge (replaces manual controls) */
+.infinite-live-badge {
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.infinite-live-badge.live {
+  background: #dcfce7;
+  color: #166534;
+  animation: live-pulse 2s infinite;
+}
+.infinite-live-badge.idle {
+  background: #f1f5f9;
+  color: #64748b;
+}
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}

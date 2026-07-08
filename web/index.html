@@ -244,16 +244,11 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
         <section class="card infinite-shell" aria-label="Infinite harness">
           <div class="infinite-header">
             <div>
-              <p class="eyebrow">Adversarial self-improvement</p>
-              <h2>Infinite harness</h2>
-              <p class="muted-copy">A challenger agent with a fresh context window every batch fights a StateWeave agent whose graph never resets. Watch the graph grow, clusters form, and peripheral vision hold context across unlimited turns.</p>
+              <p class="eyebrow">Autonomous self-improvement loop</p>
+              <h2>Live iteration</h2>
+              <p class="muted-copy">This mirrors the current harness run from the autonomous loop below. No manual controls — the loop runs, scores, improves, and repeats.</p>
             </div>
-            <div class="infinite-controls">
-              <label class="infinite-field"><span>Batches</span><input id="infinite-batches" type="number" min="1" max="999" value="1" /></label>
-              <label class="infinite-field"><span>Batch size</span><input id="infinite-batch-size" type="number" min="1" max="100" value="25" /></label>
-              <button id="infinite-start" class="button" type="button">Start</button>
-              <button id="infinite-stop" class="button secondary" type="button" disabled>Stop</button>
-            </div>
+            <div id="infinite-live-badge" class="infinite-live-badge">waiting</div>
           </div>
           <div id="infinite-metrics" class="infinite-metrics"></div>
           <div class="infinite-chart-wrap">

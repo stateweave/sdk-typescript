@@ -470,10 +470,7 @@ const quickstartPage = element<HTMLElement>("quickstart-page");
 const abPage = element<HTMLElement>("ab-page");
 const multiPage = element<HTMLElement>("multi-page");
 const infinitePage = element<HTMLElement>("infinite-page");
-const infiniteStartButton = element<HTMLButtonElement>("infinite-start");
-const infiniteStopButton = element<HTMLButtonElement>("infinite-stop");
-const infiniteBatchesInput = element<HTMLInputElement>("infinite-batches");
-const infiniteBatchSizeInput = element<HTMLInputElement>("infinite-batch-size");
+const infiniteLiveBadge = element<HTMLElement>("infinite-live-badge");
 const infiniteMetrics = element<HTMLElement>("infinite-metrics");
 const infiniteTurns = element<HTMLElement>("infinite-turns");
 const infiniteClusters = element<HTMLElement>("infinite-clusters");
@@ -2961,32 +2958,8 @@ type InfiniteStateView = {
   message?: string;
 };
 
-infiniteStartButton.addEventListener("click", async () => {
-  const batches = Number(infiniteBatchesInput.value || "1");
-  const batchSize = Number(infiniteBatchSizeInput.value || "25");
-  infiniteStartButton.disabled = true;
-  infiniteMetrics.innerHTML = `<div class="infinite-metric"><span class="metric-label">Status</span><strong>starting…</strong></div>`;
-  try {
-    const response = await fetch(`${apiBase}/api/infinite/start`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batches, batchSize, selfImprove: false }) });
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      throw new Error(body.error ?? `Request failed (${response.status})`);
-    }
-    startInfinitePoll();
-  } catch (error) {
-    infiniteStartButton.disabled = false;
-    infiniteMetrics.innerHTML = `<p class="message error"><div>${escapeHtml(error instanceof Error ? error.message : String(error))}</div></p>`;
-  }
-});
-
-infiniteStopButton.addEventListener("click", async () => {
-  infiniteStopButton.disabled = true;
-  await fetch(`${apiBase}/api/infinite/stop`, { method: "POST" }).catch(() => undefined);
-});
-
 function startInfinitePoll(): void {
   stopInfinitePoll();
-  infiniteStopButton.disabled = false;
   void pollInfiniteState();
   infinitePollTimer = setInterval(() => void pollInfiniteState(), 2000);
 }
@@ -3012,8 +2985,10 @@ async function pollInfiniteState(): Promise<void> {
 
 function renderInfiniteState(state: InfiniteStateView): void {
   const running = state.status === "running" || state.status === "batch_done" || state.status === "reviewing" || state.status === "committed" || state.status === "reporting";
-  infiniteStartButton.disabled = running;
-  infiniteStopButton.disabled = !running;
+  if (infiniteLiveBadge) {
+    infiniteLiveBadge.textContent = running ? (state.turnCount > 0 ? `turn ${state.turnCount}` : "starting") : (state.status || "idle");
+    infiniteLiveBadge.className = `infinite-live-badge ${running ? "live" : "idle"}`;
+  }
 
   const snapshot = state.graphSnapshot;
   const lastTurn = state.turns.at(-1);
