@@ -59,7 +59,7 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
 
   for (let step = 1; step <= maxIterations; step++) {
     const stepStartedAt = new Date();
-    const frameBefore = cloneFrame(frame);
+    const frameBefore = frame;
     const prompt = serializeGraphFrame(frameBefore);
     const streamedTokens: string[] = [];
     const modelMetadata: Record<string, unknown>[] = [];
@@ -92,7 +92,7 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const frameAfter = cloneFrame(frame);
+      const frameAfter = frame;
       trace.push(traceStep({ step, startedAt: stepStartedAt, frameBefore, prompt, streamedTokens, modelMetadata, rawModelOutput, parsedOps, frameAfter, error: message }));
       const retryable = step < maxIterations;
       yield { type: "error", step, message, retryable };
@@ -105,7 +105,7 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
     const final = parsedOps.find((op): op is Extract<GraphOp, { op: "final" }> => op.op === "final");
     if (final) finalAnswer = final.answer;
 
-    const frameAfter = cloneFrame(frame);
+    const frameAfter = frame;
     trace.push(traceStep({ step, startedAt: stepStartedAt, frameBefore, prompt, streamedTokens, modelMetadata, rawModelOutput, parsedOps, frameAfter }));
     yield { type: "frame", step, phase: "after", frame: frameAfter };
     if (finalAnswer) break;
