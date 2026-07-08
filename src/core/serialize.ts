@@ -1,8 +1,14 @@
 import { projectGraph, type Cluster } from "./projection.js";
 import type { GraphFrame, GraphNode } from "./types.js";
 
+const BIG_BRAIN_LIMIT = 20;
+const PERIPHERAL_CLUSTER_LIMIT = 12;
+const CANDIDATE_FOCUS_LIMIT = 24;
+const TIMELINE_LIMIT = 15;
+
 export function serializeGraphFrame(frame: GraphFrame): string {
   const projection = projectGraph(frame.graph, { focusNodeId: frame.frame.focusNodeId, zoom: frame.frame.zoom });
+  const candidateFocusIds = unique((frame.frame.candidateFocusNodeIds ?? ["system_root"]).filter((value): value is string => Boolean(value)));
   const lines: string[] = [
     "You are operating inside StateWeave.",
     "The graph is the runtime state; do not reconstruct this as provider messages[].",
@@ -61,7 +67,7 @@ export function serializeGraphFrame(frame: GraphFrame): string {
     `zoom: ${frame.frame.zoom ?? 0}`,
     `latestInputNodeId: ${frame.frame.latestInputNodeId ?? latestNodeId(frame, "user_input") ?? "unknown"}`,
     `activeUserInputNodeId: ${frame.frame.activeUserInputNodeId ?? frame.frame.latestInputNodeId ?? "unknown"}`,
-    `candidateFocusNodeIds: ${(frame.frame.candidateFocusNodeIds ?? ["system_root"]).join(", ")}`,
+    `candidateFocusNodeIds: ${formatLimitedList(candidateFocusIds, CANDIDATE_FOCUS_LIMIT)}`,
     `nextExpectedOutput: ${frame.frame.nextExpectedOutput}`,
     ...(frame.frame.lastGraphOpsError ? [`lastGraphOpsError: ${frame.frame.lastGraphOpsError}`] : []),
     "activeConstraints:",
@@ -73,14 +79,18 @@ export function serializeGraphFrame(frame: GraphFrame): string {
     "</FRAME>",
     "",
     "<BIG_BRAIN>",
-    ...bigBrainLines(projection.bigBrainClusters, projection.focusClusterIds),
+    ...bigBrainLines(projection.bigBrainClusters, projection.focusClusterIds, BIG_BRAIN_LIMIT),
     "</BIG_BRAIN>",
     ""
   ];
 
   if (projection.peripheralClusters.length) {
     lines.push("<PERIPHERAL>");
-    lines.push(...projection.peripheralClusters.map((cluster) => clusterPin(cluster)));
+    const peripheral = projection.peripheralClusters.slice(0, PERIPHERAL_CLUSTER_LIMIT);
+    lines.push(...peripheral.map((cluster) => clusterPin(cluster)));
+    if (projection.peripheralClusters.length > PERIPHERAL_CLUSTER_LIMIT) {
+      lines.push(`... +${projection.peripheralClusters.length - PERIPHERAL_CLUSTER_LIMIT} peripheral cluster${projection.peripheralClusters.length - PERIPHERAL_CLUSTER_LIMIT === 1 ? "" : "s"} omitted`);
+    }
     lines.push("</PERIPHERAL>", "");
   }
 
@@ -97,7 +107,7 @@ export function serializeGraphFrame(frame: GraphFrame): string {
   const timelineNodes = frame.graph.nodes
     .filter((node) => node.type !== "system" && node.type !== "tool_call" && node.type !== "tool_result")
     .sort((a, b) => (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0))
-    .slice(-15);
+    .slice(-TIMELINE_LIMIT);
   if (timelineNodes.length > 1) {
     lines.push("", "<TIMELINE>", "(most recent facts in creation order — use for chronology/sequence questions)");
     for (const node of timelineNodes) lines.push(`- ${node.id} [${node.type}]: ${truncate(node.text, 80)}`);
@@ -107,10 +117,13 @@ export function serializeGraphFrame(frame: GraphFrame): string {
   return lines.join("\n");
 }
 
-function bigBrainLines(clusters: Cluster[], focusClusterIds: string[]): string[] {
+function bigBrainLines(clusters: Cluster[], focusClusterIds: string[], limit: number): string[] {
   if (!clusters.length) return ["(no topics yet)"];
   const focusSet = new Set(focusClusterIds);
-  return clusters.map((cluster) => {
+  const focused = clusters.filter((cluster) => focusSet.has(cluster.id));
+  const remaining = clusters.filter((cluster) => !focusSet.has(cluster.id));
+  const shown = [...focused, ...remaining].slice(0, Math.max(limit, focused.length));
+  return shown.map((cluster) => {
     const mark = focusSet.has(cluster.id) ? " *" : "";
     return `- ${cluster.id}${mark} (${cluster.summary}) "${truncate(cluster.label, 70)}"`;
   });
@@ -123,6 +136,16 @@ function clusterPin(cluster: Cluster): string {
 function truncate(value: string, max: number): string {
   const text = oneLine(value);
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function formatLimitedList(values: string[], limit: number): string {
+  const shown = values.slice(0, limit);
+  const omitted = values.length - shown.length;
+  return `${shown.join(", ")}${omitted > 0 ? ` ... +${omitted} more` : ""}`;
+}
+
+function unique<T>(values: T[]): T[] {
+  return [...new Set(values)];
 }
 
 function latestNodeId(frame: GraphFrame, type: GraphNode["type"]): string | undefined {
