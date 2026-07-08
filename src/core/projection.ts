@@ -40,6 +40,7 @@ export type Projection = {
 const DEFAULT_RADIUS = 4;
 const DEFAULT_BUDGET = 64;
 const RETRIEVAL_BUDGET = 24;
+const RETRIEVAL_BUDGET_CHRONOLOGY = 32;
 // Hard ceiling on the rendered <FOCUS> window. Positional BFS (budget) plus
 // retrieval plus per-retrieved cluster-member expansion can otherwise push a
 // mature graph's focus to 80+ nodes, bloating the prompt until the model hits
@@ -92,8 +93,10 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
     .filter((node): node is GraphNode => node !== undefined && node.type === "user_input")
     .map((node) => node.text)
     .join(" ");
+  const chronologyMode = looksLikeChronology(activeNodeText);
+  const retrievalBudget = chronologyMode ? RETRIEVAL_BUDGET_CHRONOLOGY : RETRIEVAL_BUDGET;
   const retrievedNodeIds = looksLikeQuestion(activeNodeText)
-    ? retrieveNodes(graph, clusters, activeNodeText, RETRIEVAL_BUDGET)
+    ? retrieveNodes(graph, clusters, activeNodeText, retrievalBudget, chronologyMode)
     : [];
 
   // Merge positional + retrieved into the final focus set.
@@ -203,7 +206,12 @@ function looksLikeQuestion(text: string): boolean {
     || /^(show|tell|give|find|retrieve|look up|what is)/.test(lower);
 }
 
-function retrieveNodes(graph: StateGraph, clusters: Cluster[], queryText: string, budget: number): string[] {
+function looksLikeChronology(text: string): boolean {
+  if (!text) return false;
+  return /\b(first|last|earlier|later|before|after|chronolog|then|sequence|initial|initially|final|oldest|newest|order)\b/i.test(text);
+}
+
+function retrieveNodes(graph: StateGraph, clusters: Cluster[], queryText: string, budget: number, chronologyMode = false): string[] {
   const keywords = extractKeywords(queryText);
   if (!keywords.length) return [];
 
@@ -237,11 +245,16 @@ function retrieveNodes(graph: StateGraph, clusters: Cluster[], queryText: string
     }
     // Boost nodes that hold data (facts, artifacts, decisions carry the answers).
     if (node.type === "fact" || node.type === "artifact" || node.type === "decision" || node.type === "assistant_output") score += 1;
+    // For chronology probes, surface user-input turn sources more reliably than
+    // very recent noise so ordered questions can compare historical intent accurately.
+    if (chronologyMode && node.type === "user_input") score += 2;
     if (score > 0) scored.push({ id: node.id, score });
   }
 
   const sorted = scored
-    .sort((a, b) => b.score - a.score || createdAtOf(byId.get(b.id)) - createdAtOf(byId.get(a.id)));
+    .sort((a, b) => b.score - a.score || (chronologyMode
+      ? createdAtOf(byId.get(a.id)) - createdAtOf(byId.get(b.id))
+      : createdAtOf(byId.get(b.id)) - createdAtOf(byId.get(a.id))));
 
   const selected = new Set<string>(
     sorted
@@ -322,9 +335,31 @@ function extractKeywords(text: string): string[] {
     "mentioned", "say", "said", "establish", "established", "plan", "planned", "specific",
     "exactly", "rule", "guideline"
   ]);
-  const words = text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length > 2 && !stop.has(w));
+  const rawWords = text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length > 2);
+  const words: string[] = [];
+  for (const word of rawWords) {
+    if (stop.has(word)) continue;
+    for (const variant of keywordForms(word)) {
+      if (!stop.has(variant)) words.push(variant);
+    }
+  }
   // Dedupe, prefer longer words (more specific), keep top 12.
   return [...new Set(words)].sort((a, b) => b.length - a.length).slice(0, 12);
+}
+
+function keywordForms(value: string): string[] {
+  const forms = new Set([value]);
+  if (value.length > 5 && value.endsWith("ing")) {
+    forms.add(value.slice(0, -3));
+  }
+  if (value.length > 4 && value.endsWith("ed")) {
+    forms.add(value.slice(0, -2));
+    forms.add(`${value.slice(0, -2)}e`);
+  }
+  if (value.length > 4 && value.endsWith("s")) {
+    forms.add(value.slice(0, -1));
+  }
+  return [...forms];
 }
 
 // --- Focus cap: keep retrieved answer-candidates, centers, and relational
