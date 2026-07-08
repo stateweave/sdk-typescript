@@ -52,7 +52,7 @@ export function createInitialGraphFrame(args: {
         ? "Return SWX/1 commands that attach the active user input to the right node, create semantic nodes with model-chosen types, and produce a human-readable final answer with @final or @final_ref."
         : "Return SWX/1 commands that create or update graph nodes, or wait for the next user input.",
       activeConstraints: constraints,
-      availableActions: ["add_node", "add_edge", "update_node", "focus", "zoom", "call_tool", "spawn_worker", "final", ...args.availableActions],
+      availableActions: ["add_node", "add_edge", "update_node", "focus", "zoom", "call_tool", "final", ...args.availableActions],
       nodeTypes: normalizeNodeTypes(args.nodeTypes ?? [])
     },
     graph: {
