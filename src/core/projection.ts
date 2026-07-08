@@ -51,12 +51,11 @@ const RETRIEVAL_BUDGET_CONFLICT = 30;
 // a full map of everything else.
 const FOCUS_NODE_CAP = 40;
 
-export function clusterGraph(graph: StateGraph): Cluster[] {
+export function clusterGraph(graph: StateGraph, adjacency: Map<string, string[]> = undirectedAdjacency(graph)): Cluster[] {
   const nodes = graph.nodes;
   if (!nodes.length) return [];
 
   const byId = new Map(nodes.map((node) => [node.id, node]));
-  const adjacency = undirectedAdjacency(graph);
 
   // Step 1: initial per-turn assignment via multi-source BFS from user_inputs.
   const rawClusters = initialTurnClusters(graph, adjacency, byId);
@@ -74,8 +73,9 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
   const zoom = Math.max(0, focus.zoom ?? 0);
   const radius = focus.radius ?? Math.max(1, DEFAULT_RADIUS - zoom);
   const budget = Math.max(8, (focus.budgetNodes ?? DEFAULT_BUDGET) - zoom * 8);
-  const clusters = clusterGraph(graph);
   const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+  const adjacency = undirectedAdjacency(graph);
+  const clusters = clusterGraph(graph, adjacency);
 
   const explicitFocus = focusNodeIdResolved(graph, focus);
   const centers = unique([
@@ -85,7 +85,7 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
   ].filter((id): id is string => typeof id === "string" && byId.has(id)));
 
   // Positional focus: BFS from the active centers.
-  const positionalFocus = bfsBounded(graph, centers, radius, budget);
+  const positionalFocus = bfsBounded(graph, centers, radius, budget, adjacency);
 
   // Retrieval focus: if the active node looks like a question, search ALL nodes
   // for keyword matches and pull them (and their clusters) into view.
@@ -102,7 +102,7 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
       ? RETRIEVAL_BUDGET_CONFLICT
       : RETRIEVAL_BUDGET;
   const retrievedNodeIds = looksLikeQuestion(activeNodeText)
-    ? retrieveNodes(graph, clusters, activeNodeText, retrievalBudget, chronologyMode, conflictMode)
+    ? retrieveNodes(graph, clusters, activeNodeText, retrievalBudget, chronologyMode, conflictMode, adjacency)
     : [];
 
   // Merge positional + retrieved into the final focus set.
@@ -129,7 +129,7 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
   // earlier "first 8 oldest cluster members" expansion which, for a merged
   // multi-topic cluster, just re-injected unrelated oldest facts and crowded
   // out exactly the siblings combine needs.
-  const retrievalAdjacency = undirectedAdjacency(graph);
+  const retrievalAdjacency = adjacency;
   const relationalNeighborIds = new Set<string>();
   const expandOrigin = (originId: string): void => {
     const origin = byId.get(originId);
@@ -222,7 +222,15 @@ function looksLikeConflict(text: string): boolean {
   return /\b(actually|instead|conflict|contradict|correction|disagree|wrong|should be|did you mean|second[- ]guess|not right|not sure|revise|changed|override|revoke|decoy|true|false)\b/i.test(text);
 }
 
-function retrieveNodes(graph: StateGraph, clusters: Cluster[], queryText: string, budget: number, chronologyMode = false, conflictMode = false): string[] {
+function retrieveNodes(
+  graph: StateGraph,
+  clusters: Cluster[],
+  queryText: string,
+  budget: number,
+  chronologyMode = false,
+  conflictMode = false,
+  adjacency: Map<string, string[]> = undirectedAdjacency(graph)
+): string[] {
   const keywords = extractKeywords(queryText);
   if (!keywords.length) return [];
 
@@ -231,7 +239,7 @@ function retrieveNodes(graph: StateGraph, clusters: Cluster[], queryText: string
   for (const cluster of clusters) {
     for (const nodeId of cluster.nodeIds) clusterLookup.set(nodeId, cluster);
   }
-  const userInputTextByNode = userInputContextByNode(graph, byId);
+  const userInputTextByNode = userInputContextByNode(graph, byId, adjacency);
 
   const contradictionMap = conflictMode ? contradictionNeighbors(graph) : undefined;
   const scored: Array<{ id: string; score: number }> = [];
@@ -318,9 +326,9 @@ function contradictionNeighbors(graph: StateGraph): Map<string, string[]> {
   return neighbors;
 }
 
-function userInputContextByNode(graph: StateGraph, byId: Map<string, GraphNode>): Map<string, string> {
-  const adjacency = undirectedAdjacency(graph);
-  const userInputs = graph.nodes.filter((node) => node.type === "user_input").sort(byCreatedAt);
+function userInputContextByNode(graph: StateGraph, byId: Map<string, GraphNode>, adjacency: Map<string, string[]> = undirectedAdjacency(graph)): Map<string, string> {
+  const nodeInputs = graph.nodes;
+  const userInputs = nodeInputs.filter((node) => node.type === "user_input").sort(byCreatedAt);
   const assignment = new Map<string, string>();
   const bestDist = new Map<string, number>();
   const bestRank = new Map<string, number>();
@@ -564,8 +572,7 @@ export function clusterId(nodeIds: string[]): string {
 
 // --- BFS / graph utilities ---
 
-function bfsBounded(graph: StateGraph, centers: string[], radius: number, budget: number): Set<string> {
-  const adjacency = undirectedAdjacency(graph);
+function bfsBounded(graph: StateGraph, centers: string[], radius: number, budget: number, adjacency: Map<string, string[]> = undirectedAdjacency(graph)): Set<string> {
   const visited = new Map<string, number>();
   const queue: Array<{ id: string; dist: number }> = [];
 
