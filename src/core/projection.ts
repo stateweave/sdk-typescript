@@ -208,30 +208,28 @@ function retrieveNodes(graph: StateGraph, clusters: Cluster[], queryText: string
   if (!keywords.length) return [];
 
   const byId = new Map(graph.nodes.map((node) => [node.id, node]));
-
-  // Relational context: semantic facts are often atomized to a bare value
-  // ("68°F", "Wyeast 3787", "BR-0773") and drop the noun that frames them, so a
-  // concept probe ("fermentation temperature", "yeast strain") never matches the
-  // fact's own text. The framing lives in the fact's originating topic — the
-  // cluster's seed user_input. Match each node against its cluster's FULL seed
-  // text (not the 64-char label, which truncates the very concepts the probe
-  // names) so atomized facts surface when their topic is asked about. This is
-  // what lets the graph recall terse facts that windowed history would drop.
-  const clusterOf = new Map<string, Cluster>();
-  const fullSeedFor = new Map<string, string>();
+  const clusterLookup = new Map<string, Cluster>();
   for (const cluster of clusters) {
-    const seed = byId.get(cluster.seedId);
-    const seedText = seed ? oneLine(seed.text).toLowerCase() : oneLine(cluster.label).toLowerCase();
-    fullSeedFor.set(cluster.id, seedText);
-    for (const nodeId of cluster.nodeIds) clusterOf.set(nodeId, cluster);
+    for (const nodeId of cluster.nodeIds) clusterLookup.set(nodeId, cluster);
   }
+  const userInputTextByNode = userInputContextByNode(graph, byId);
 
   const scored: Array<{ id: string; score: number }> = [];
   for (const node of graph.nodes) {
     if (node.type === "system" || node.type === "tool_call" || node.type === "tool_result") continue;
     const parts = [`${node.type} ${node.text}`.toLowerCase()];
-    const cluster = clusterOf.get(node.id);
-    if (cluster) parts.push(fullSeedFor.get(cluster.id) ?? "");
+    const userContext = userInputTextByNode.get(node.id);
+    if (userContext) parts.push(userContext);
+
+    // Also include the merged cluster seed as a fallback for nodes that have no
+    // direct user_input context (for backwards-compat with merged semantic
+    // clusters used by the current peripheral vision model).
+    const cluster = clusterLookup.get(node.id);
+    if (cluster) {
+      const seed = byId.get(cluster.seedId);
+      if (seed) parts.push(oneLine(seed.text).toLowerCase());
+    }
+
     const text = parts.join(" ");
     let score = 0;
     for (const kw of keywords) {
@@ -246,6 +244,50 @@ function retrieveNodes(graph: StateGraph, clusters: Cluster[], queryText: string
     .sort((a, b) => b.score - a.score || createdAtOf(byId.get(b.id)) - createdAtOf(byId.get(a.id)))
     .slice(0, budget)
     .map((s) => s.id);
+}
+
+function userInputContextByNode(graph: StateGraph, byId: Map<string, GraphNode>): Map<string, string> {
+  const adjacency = undirectedAdjacency(graph);
+  const userInputs = graph.nodes.filter((node) => node.type === "user_input").sort(byCreatedAt);
+  const assignment = new Map<string, string>();
+  const bestDist = new Map<string, number>();
+  const bestRank = new Map<string, number>();
+  const queue: Array<{ id: string; dist: number; source: string; rank: number }> = [];
+
+  userInputs.forEach((node, index) => {
+    assignment.set(node.id, node.id);
+    bestDist.set(node.id, 0);
+    bestRank.set(node.id, index);
+    queue.push({ id: node.id, dist: 0, source: node.id, rank: index });  });
+
+  let index = 0;
+  while (index < queue.length) {
+    const current = queue[index++];
+    if (!current) continue;
+    const neighbors = adjacency.get(current.id) ?? [];
+    for (const next of neighbors) {
+      const dist = current.dist + 1;
+      const prevDist = bestDist.get(next);
+      const prevRank = bestRank.get(next);
+      const nextRank = current.rank;
+
+      if (prevDist === undefined || dist < prevDist || (dist === prevDist && nextRank < (prevRank ?? Number.MAX_SAFE_INTEGER))) {
+        assignment.set(next, current.source);
+        bestDist.set(next, dist);
+        bestRank.set(next, nextRank);
+        queue.push({ id: next, dist, source: current.source, rank: nextRank });
+      }
+    }
+  }
+
+  const finalContext = new Map<string, string>();
+  for (const [nodeId, sourceId] of assignment) {
+    const sourceText = byId.get(sourceId)?.text;
+    if (!sourceText) continue;
+    finalContext.set(nodeId, oneLine(sourceText).toLowerCase());
+  }
+
+  return finalContext;
 }
 
 function extractKeywords(text: string): string[] {
