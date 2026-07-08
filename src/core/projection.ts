@@ -167,7 +167,8 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
     retrievedNodeIds,
     new Set(centers),
     relationalNeighborIds,
-    FOCUS_NODE_CAP
+    FOCUS_NODE_CAP,
+    chronologyMode
   ).sort(byCreatedAt);
 
   // Only render edges between nodes that survived the focus cap, so the detail
@@ -422,7 +423,8 @@ function capFocusNodes(
   retrievedNodeIds: string[],
   centerSet: Set<string>,
   relationalNeighborIds: Set<string>,
-  maxNodes: number
+  maxNodes: number,
+  chronologyMode = false
 ): GraphNode[] {
   if (nodes.length <= maxNodes) return nodes;
   const byId = new Map(nodes.map((node) => [node.id, node]));
@@ -434,10 +436,13 @@ function capFocusNodes(
   for (const id of retrievedNodeIds) if (byId.has(id) && retained.size < maxNodes) retained.add(id);
   // Relational context frames atomized facts for synthesis.
   for (const id of relationalNeighborIds) if (byId.has(id) && retained.size < maxNodes) retained.add(id);
-  // Fill remaining slots with the newest positional nodes.
+  // Fill remaining slots with the newest positional nodes, or oldest first for chronology probes.
+  const sortByNodeAge = chronologyMode
+    ? (a: GraphNode, b: GraphNode) => createdAtOf(a) - createdAtOf(b)
+    : (a: GraphNode, b: GraphNode) => createdAtOf(b) - createdAtOf(a);
   const rest = nodes
     .filter((node) => !retained.has(node.id))
-    .sort((a, b) => createdAtOf(b) - createdAtOf(a));
+    .sort(sortByNodeAge);
   for (const node of rest) {
     if (retained.size >= maxNodes) break;
     retained.add(node.id);
