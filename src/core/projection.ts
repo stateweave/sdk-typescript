@@ -99,6 +99,25 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
     for (const memberId of cluster.nodeIds.slice(0, 8)) focusSet.add(memberId);
   }
 
+  // Relational context for synthesis/combine: atomized semantic facts (fact,
+  // artifact, decision, ...) carry only their bare value and lose the prose
+  // that explains HOW facts relate (e.g. "my favorite deep-sky target is the
+  // Orion Nebula", "my main scope is a Celestron NexStar 8SE"). Without that
+  // framing the model sees disconnected values and hedges instead of connecting
+  // equipment to target. Pull each retrieved fact's originating user_input into
+  // view so the relational sentence travels with the retrieved facts — the
+  // graph-native equivalent of the prose that makes naive messages[] synthesize
+  // well across a single turn.
+  const retrievalAdjacency = undirectedAdjacency(graph);
+  for (const nodeId of retrievedNodeIds) {
+    const node = byId.get(nodeId);
+    if (!node || isStructural(node.type)) continue;
+    for (const neighborId of retrievalAdjacency.get(nodeId) ?? []) {
+      const neighbor = byId.get(neighborId);
+      if (neighbor?.type === "user_input") focusSet.add(neighborId);
+    }
+  }
+
   const focusNodes = [...focusSet]
     .map((id) => byId.get(id))
     .filter((node): node is GraphNode => Boolean(node))
@@ -122,6 +141,10 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
 }
 
 // --- Retrieval: deterministic keyword matching ---
+
+function isStructural(nodeType: string): boolean {
+  return nodeType === "system" || nodeType === "user_input" || nodeType === "assistant_output" || nodeType === "tool_call" || nodeType === "tool_result";
+}
 
 function looksLikeQuestion(text: string): boolean {
   if (!text || text.length < 8) return false;
