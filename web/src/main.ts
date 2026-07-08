@@ -3201,18 +3201,14 @@ function stopSwLoopPoll(): void {
 
 async function pollSwLoop(): Promise<void> {
   try {
-    const [loopRes, harnessRes] = await Promise.all([
-      fetch(`${apiBase}/api/sw-loop/state`, { cache: "no-store" }),
-      fetch(`${apiBase}/api/sw-loop/harness`, { cache: "no-store" })
-    ]);
-    if (loopRes.ok) renderSwLoop(await loopRes.json() as SwLoopState);
-    // When the self-improve loop is in harness phase, mirror its live state
-    // into the top harness section so the user sees streaming turns/charts.
-    if (harnessRes.ok) {
-      const harnessState = await harnessRes.json() as InfiniteStateView;
-      if (harnessState && (harnessState.turns?.length || harnessState.series?.length || harnessState.status === "running")) {
-        renderInfiniteState(harnessState);
-      }
+    const response = await fetch(`${apiBase}/api/sw-loop/state`, { cache: "no-store" });
+    if (!response.ok) return;
+    const data = await response.json() as SwLoopState & { harnessSnapshot?: InfiniteStateView };
+    renderSwLoop(data);
+    // When the self-improve loop is in harness phase, mirror its live harness
+    // snapshot into the top harness section so the user sees streaming turns/charts.
+    if (data.harnessSnapshot && (data.harnessSnapshot.turns?.length || data.harnessSnapshot.series?.length || data.harnessSnapshot.status === "running")) {
+      renderInfiniteState(data.harnessSnapshot);
     }
   } catch { /* network blip */ }
 }
