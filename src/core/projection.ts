@@ -131,32 +131,43 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
   // out exactly the siblings combine needs.
   const retrievalAdjacency = adjacency;
   const relationalNeighborIds = new Set<string>();
-  const expandOrigin = (originId: string): void => {
+  const shouldExposeNode = (node: GraphNode): boolean => node.type !== "system" && node.type !== "tool_call" && node.type !== "tool_result";
+
+  const expandFrom = (originId: string): void => {
     const origin = byId.get(originId);
     if (!origin) return;
     focusSet.add(originId);
     relationalNeighborIds.add(originId);
     for (const siblingId of retrievalAdjacency.get(originId) ?? []) {
       const sibling = byId.get(siblingId);
-      if (!sibling || isStructural(sibling.type)) continue;
+      if (!sibling || !shouldExposeNode(sibling)) continue;
       focusSet.add(siblingId);
       relationalNeighborIds.add(siblingId);
     }
   };
+
   for (const nodeId of retrievedNodeIds) {
     const node = byId.get(nodeId);
     if (!node) continue;
+
     if (node.type === "user_input") {
-      // A recalled user_input is its own origin; expand its sibling facts so
-      // the turn's full fact set is co-visible (it scores on framing nouns).
-      expandOrigin(nodeId);
+      // A recalled user_input is its own origin; expand its direct context so
+      // the turn's co-occurring nodes remain co-visible.
+      expandFrom(nodeId);
       continue;
     }
-    if (isStructural(node.type)) continue;
+
+    if (isStructural(node.type)) {
+      // A recalled structural node (rare) may still anchor useful context.
+      expandFrom(nodeId);
+      continue;
+    }
+
     // A recalled semantic fact: expand via its originating user_input(s).
     for (const neighborId of retrievalAdjacency.get(nodeId) ?? []) {
       const neighbor = byId.get(neighborId);
-      if (neighbor?.type === "user_input") expandOrigin(neighborId);
+      if (!neighbor || neighbor.type !== "user_input") continue;
+      expandFrom(neighborId);
     }
   }
 
