@@ -113,3 +113,35 @@ it("small graph still renders all nodes in focus", () => {
   expect(prompt).toContain("node system_root [system]");
   expect(prompt).toContain("node user_input_1 [user_input]");
 });
+
+it("chronology probes preserve intra-turn emission order despite identical timestamps", () => {
+  // Simulate a seed turn that atomized 3 facts in ONE GraphOps transaction:
+  // all three get identical createdAt (the real applyOps behavior). The gold
+  // answer for "which came first" is the order the facts were emitted.
+  let frame = createInitialGraphFrame({ objective: "Chrono", input: "Note: kiln is Olympic 2827HE, clay is 500lbs, glaze is cobalt.", availableActions: [] });
+  const sameTs = frame.graph.nodes[frame.graph.nodes.length - 1].createdAt; // identical for all
+  frame.graph.nodes.push({ id: "fact_kiln", type: "fact", text: "Kiln is Olympic 2827HE", status: "active", createdAt: sameTs });
+  frame.graph.nodes.push({ id: "fact_clay", type: "fact", text: "Clay delivery is 500lbs", status: "active", createdAt: sameTs });
+  frame.graph.nodes.push({ id: "fact_glaze", type: "fact", text: "Glaze is cobalt", status: "active", createdAt: sameTs });
+  for (const fid of ["fact_kiln", "fact_clay", "fact_glaze"]) {
+    frame.graph.edges.push({ id: `e_${fid}`, from: "user_input_1", to: fid, type: "addresses", createdAt: sameTs });
+  }
+  // Chronology probe: which came first, kiln or clay?
+  frame = appendInputToGraphFrame(frame, { objective: "Chrono", input: "Between the kiln model and the clay quantity, which came first in our conversation?" });
+
+  const prompt = serializeGraphFrame(frame);
+  // Chronology mode must annotate focus nodes with an explicit global rank so
+  // the model can compare ordering instead of treating tied timestamps as
+  // simultaneous. The kiln fact must carry a strictly lower rank than clay.
+  const focus = prompt.slice(prompt.indexOf("<FOCUS>"), prompt.indexOf("</FOCUS>"));
+  const kilnLine = focus.split("\n").find((line) => line.startsWith("node fact_kiln"));
+  const clayLine = focus.split("\n").find((line) => line.startsWith("node fact_clay"));
+  expect(kilnLine).toMatch(/#\d+/);
+  expect(clayLine).toMatch(/#\d+/);
+  const kilnRank = Number(kilnLine!.match(/#(\d+)/)![1]);
+  const clayRank = Number(clayLine!.match(/#(\d+)/)![1]);
+  expect(kilnRank).toBeLessThan(clayRank);
+  // The timeline must explain the rank semantics and list kiln before clay.
+  expect(prompt).toContain("LOWER # means established EARLIER");
+  expect(prompt.indexOf("fact_kiln")).toBeLessThan(prompt.indexOf("fact_clay"));
+});

@@ -60,9 +60,23 @@ export function serializeGraphFrame(frame: GraphFrame): string {
     lines.push("</PERIPHERAL>", "");
   }
 
+  // Stable global chronological rank over ALL non-system nodes, tie-broken by
+  // emission (array) order. This is the authoritative ordering signal: nodes
+  // emitted in the same GraphOps transaction share a createdAt timestamp, so raw
+  // timestamp ordering ties and would read as "simultaneous" — but their array
+  // index preserves the exact order the model wrote them, which is the real
+  // intra-turn chronology. Exposing this rank explicitly in <FOCUS> (for
+  // chronology probes) and <TIMELINE> lets the model answer "which came first"
+  // by comparing ranks instead of inferring it from an undifferentiated list.
+  const chronoRank = buildChronologicalRank(frame.graph.nodes);
+
   lines.push("<FOCUS>");
   if (projection.focusNodes.length) {
-    for (const node of projection.focusNodes) lines.push(`node ${node.id} [${node.type}]: ${node.text}${nodeDataSummary(node)}`);
+    for (const node of projection.focusNodes) {
+      const rank = chronoRank.get(node.id);
+      const rankTag = chronologyMode && rank !== undefined ? ` #${rank}` : "";
+      lines.push(`node ${node.id} [${node.type}]:${rankTag} ${node.text}${nodeDataSummary(node)}`);
+    }
     lines.push(...projection.focusEdgeLines);
   } else {
     lines.push("(empty focus window — use @focus <node_id> or @zoom 3 to widen your vision)");
@@ -77,15 +91,34 @@ export function serializeGraphFrame(frame: GraphFrame): string {
     chronologyMode
   );
   if (timelineNodes.length > 1) {
-    lines.push("", "<TIMELINE>", `(${chronologyMode ? "expanded" : "most recent"} facts in creation order — use for chronology/sequence questions)`);
-    timelineNodes.forEach((node, index) => {
-      const prefix = chronologyMode ? `${index + 1}. ` : "";
+    const header = chronologyMode
+      ? "expanded facts in STRICT creation order (ties broken by emission order). #N is the global chronological rank: a LOWER # means established EARLIER. For any 'which came first / before / after / sequence' question, compare these ranks directly and answer with the lowest-# fact first — never claim two facts were simultaneous just because they share a turn."
+      : "most recent facts in creation order — use for chronology/sequence questions";
+    lines.push("", "<TIMELINE>", `(${header})`);
+    timelineNodes.forEach((node) => {
+      const rank = chronoRank.get(node.id);
+      const prefix = chronologyMode && rank !== undefined ? `#${rank} ` : "";
       lines.push(`- ${prefix}${node.id} [${node.type}]: ${truncate(node.text, 80)}`);
     });
     lines.push("</TIMELINE>");
   }
 
   return lines.join("\n");
+}
+
+// Global chronological rank: 1-based, over non-system nodes, sorted by
+// (createdAt asc, original array index asc). The array-index tie-break is what
+// recovers intra-turn emission order when timestamps tie within one
+// GraphOps transaction — without it the model loses all ordering signal inside
+// a turn and chronology probes collapse to "same time".
+function buildChronologicalRank(nodes: GraphNode[]): Map<string, number> {
+  const ranked = nodes
+    .map((node, index) => ({ node, index }))
+    .filter((entry) => entry.node.type !== "system" && entry.node.type !== "tool_call" && entry.node.type !== "tool_result")
+    .sort((a, b) => createdAtOf(a.node) - createdAtOf(b.node) || a.index - b.index);
+  const rank = new Map<string, number>();
+  ranked.forEach((entry, position) => rank.set(entry.node.id, position + 1));
+  return rank;
 }
 
 function bigBrainLines(clusters: Cluster[], focusClusterIds: string[], limit: number): string[] {
@@ -110,8 +143,15 @@ function buildTimelineNodes(
   predicate: (node: GraphNode) => boolean,
   chronologyMode: boolean
 ): GraphNode[] {
+  // Tie-break by original array index so nodes that share a createdAt (the
+  // common case for facts atomized in one GraphOps transaction) keep their
+  // emission order instead of collapsing to an arbitrary / simultaneous order.
+  const originalIndex = new Map<string, number>();
+  nodes.forEach((node, index) => originalIndex.set(node.id, index));
+  const byChrono = (a: GraphNode, b: GraphNode) => createdAtOf(a) - createdAtOf(b) || (originalIndex.get(a.id) ?? 0) - (originalIndex.get(b.id) ?? 0);
+
   const visibleNodes = nodes.filter(predicate);
-  const visibleOrdered = [...visibleNodes].sort((a, b) => createdAtOf(a) - createdAtOf(b));
+  const visibleOrdered = [...visibleNodes].sort(byChrono);
 
   if (!chronologyMode) {
     return visibleOrdered.slice(-TIMELINE_LIMIT);
@@ -133,7 +173,7 @@ function buildTimelineNodes(
     }
   }
 
-  return [...selected].map((id) => byId.get(id)!).filter((node): node is GraphNode => Boolean(node)).sort((a, b) => createdAtOf(a) - createdAtOf(b));
+  return [...selected].map((id) => byId.get(id)!).filter((node): node is GraphNode => Boolean(node)).sort(byChrono);
 }
 
 function recentNodes(nodes: GraphNode[], predicate: (node: GraphNode) => boolean, limit: number): GraphNode[] {
