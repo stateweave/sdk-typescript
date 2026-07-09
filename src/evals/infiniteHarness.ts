@@ -1,10 +1,10 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import { Agent } from "../agent/stateweaveAgent.js";
 import { createModelFromEnv } from "../llm/factory.js";
 import type { Model, ModelInput } from "../llm/model.js";
 import { clusterGraph } from "../core/projection.js";
 import { serializeGraphFrame } from "../core/serialize.js";
+import { GraphMemoryAgent } from "./graphMemoryAgent.js";
 import { NaiveBaselineAgent } from "./naiveBaseline.js";
 
 const MAX_TURNS_KEPT = 60;
@@ -127,7 +127,7 @@ export class InfiniteHarness {
   private statePath: string;
   private challenger: Model;
   private agentModel: Model;
-  private agent: Agent;
+  private agent: GraphMemoryAgent;
   private naive: NaiveBaselineAgent;
   private windowed: NaiveBaselineAgent;
   private maxIterations: number;
@@ -144,7 +144,7 @@ export class InfiniteHarness {
     this.challenger = args.challengerModel ?? createModelFromEnv();
     this.agentModel = args.agentModel ?? createModelFromEnv();
     this.maxIterations = args.maxIterations ?? 3;
-    this.agent = new Agent({ model: this.agentModel, maxIterations: this.maxIterations, systemPrompt: agentSystemPrompt() });
+    this.agent = new GraphMemoryAgent({ model: this.agentModel, systemPrompt: agentSystemPrompt() });
     this.naive = new NaiveBaselineAgent({ model: this.agentModel, variant: "full", maxContextTokens: NAIVE_FULL_BUDGET_TOKENS });
     this.windowed = new NaiveBaselineAgent({ model: this.agentModel, variant: "windowed", maxContextTokens: WINDOWED_BUDGET_TOKENS });
     this.state = emptyState(this.batchSize, this.batchCount, this.selfImprove, modelName(this.challenger), modelName(this.agentModel));
@@ -282,7 +282,7 @@ export class InfiniteHarness {
   }
 
   private async runAllAgents(prompt: string): Promise<{ stateweave: { answer: string; latencyMs: number }; naive: { answer: string; latencyMs: number; tokenEstimate: number }; windowed: { answer: string; latencyMs: number; tokenEstimate: number } }> {
-    const sw = withTimeout((async () => { const start = Date.now(); const r = await this.agent.run({ objective: "Infinite harness probe", input: prompt }); return { answer: r.finalAnswer, latencyMs: Date.now() - start }; })(), CALL_TIMEOUT_MS, "SW agent");
+    const sw = withTimeout((async () => { const start = Date.now(); const r = await this.agent.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start }; })(), CALL_TIMEOUT_MS, "SW agent");
     const n = withTimeout((async () => { const start = Date.now(); const r = await this.naive.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, tokenEstimate: r.tokenEstimate }; })(), CALL_TIMEOUT_MS, "naive");
     const w = withTimeout((async () => { const start = Date.now(); const r = await this.windowed.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, tokenEstimate: r.tokenEstimate }; })(), CALL_TIMEOUT_MS, "windowed");
     const [swResult, nResult, wResult] = await Promise.allSettled([sw, n, w]);
