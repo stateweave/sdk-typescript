@@ -282,10 +282,11 @@ export class InfiniteHarness {
   }
 
   private async runAllAgents(prompt: string): Promise<{ stateweave: { answer: string; latencyMs: number }; naive: { answer: string; latencyMs: number; tokenEstimate: number }; windowed: { answer: string; latencyMs: number; tokenEstimate: number } }> {
-    const sw = withTimeout((async () => { const start = Date.now(); const r = await this.agent.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start }; })(), CALL_TIMEOUT_MS, "SW agent");
-    const n = withTimeout((async () => { const start = Date.now(); const r = await this.naive.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, tokenEstimate: r.tokenEstimate }; })(), CALL_TIMEOUT_MS, "naive");
-    const w = withTimeout((async () => { const start = Date.now(); const r = await this.windowed.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, tokenEstimate: r.tokenEstimate }; })(), CALL_TIMEOUT_MS, "windowed");
-    const [swResult, nResult, wResult] = await Promise.allSettled([sw, n, w]);
+    // Run agents SEQUENTIALLY (not Promise.allSettled) to cap peak memory on
+    // small VPS hosts. Each call is still individually guarded by withTimeout.
+    const swResult = await withTimeout((async () => { const start = Date.now(); const r = await this.agent.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start }; })(), CALL_TIMEOUT_MS, "SW agent").then(v => ({ status: "fulfilled" as const, value: v }), () => ({ status: "rejected" as const, reason: undefined }));
+    const nResult = await withTimeout((async () => { const start = Date.now(); const r = await this.naive.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, tokenEstimate: r.tokenEstimate }; })(), CALL_TIMEOUT_MS, "naive").then(v => ({ status: "fulfilled" as const, value: v }), () => ({ status: "rejected" as const, reason: undefined }));
+    const wResult = await withTimeout((async () => { const start = Date.now(); const r = await this.windowed.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, tokenEstimate: r.tokenEstimate }; })(), CALL_TIMEOUT_MS, "windowed").then(v => ({ status: "fulfilled" as const, value: v }), () => ({ status: "rejected" as const, reason: undefined }));
     return {
       stateweave: swResult.status === "fulfilled" ? swResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS },
       naive: nResult.status === "fulfilled" ? nResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS, tokenEstimate: 0 },
