@@ -12,6 +12,11 @@ const MAX_SERIES_KEPT = 5000;
 const SEED_INTERVAL = 6;
 const CONSISTENCY_EVERY = 20;
 const WINDOWED_BUDGET_TOKENS = 12000;
+// Naive baseline gets a realistic context budget: at long horizons the transcript
+// outgrows any real model's usable window and old facts are dropped. SW never
+// compacts (append-only graph + disposable projection), so this is the gap the
+// harness is designed to expose.
+const NAIVE_FULL_BUDGET_TOKENS = 32000;
 const CALL_TIMEOUT_MS = 90_000; // 90s hard limit per model call
 
 export type ProbeScore = { score: "pass" | "partial" | "fail"; reasoning: string };
@@ -139,7 +144,7 @@ export class InfiniteHarness {
     this.agentModel = args.agentModel ?? createModelFromEnv();
     this.maxIterations = args.maxIterations ?? 3;
     this.agent = new Agent({ model: this.agentModel, maxIterations: this.maxIterations, systemPrompt: agentSystemPrompt() });
-    this.naive = new NaiveBaselineAgent({ model: this.agentModel, variant: "full" });
+    this.naive = new NaiveBaselineAgent({ model: this.agentModel, variant: "full", maxContextTokens: NAIVE_FULL_BUDGET_TOKENS });
     this.windowed = new NaiveBaselineAgent({ model: this.agentModel, variant: "windowed", maxContextTokens: WINDOWED_BUDGET_TOKENS });
     this.state = emptyState(this.batchSize, this.batchCount, this.selfImprove, modelName(this.challenger), modelName(this.agentModel));
   }
