@@ -43,14 +43,14 @@ export function createInitialGraphFrame(args: {
   return {
     frame: {
       objective: args.objective,
-      currentFocus: input ? "Cortex focus is user_input_1. The model should weave this user input into the graph with GraphOps." : "Cortex focus is system_root. Append a user input or create semantic graph nodes with GraphOps.",
+      currentFocus: input ? "Cortex focus is user_input_1; weave it into the graph." : "Cortex focus is system_root; append input or create semantic nodes.",
       focusNodeId: input ? "user_input_1" : "system_root",
       latestInputNodeId: input ? "user_input_1" : undefined,
       activeUserInputNodeId: input ? "user_input_1" : undefined,
       candidateFocusNodeIds: input ? ["system_root", "user_input_1"] : ["system_root"],
       nextExpectedOutput: input
-        ? "Return SWX/1 commands that attach the active user input to the right node, create semantic nodes with model-chosen types, and produce a human-readable final answer with @final or @final_ref."
-        : "Return SWX/1 commands that create or update graph nodes, or wait for the next user input.",
+        ? "SWX/1: attach user_input to the right node, add semantic nodes if recording new facts, then @final/@final_ref with a human answer."
+        : "SWX/1: create/update nodes, or wait for input.",
       activeConstraints: constraints,
       availableActions: ["add_node", "add_edge", "update_node", "focus", "zoom", "call_tool", "final", ...args.availableActions],
       nodeTypes: normalizeNodeTypes(args.nodeTypes ?? [])
@@ -80,12 +80,12 @@ export function appendInputToGraphFrame(frame: GraphFrame, args: { objective: st
   next.graph.nodes.push({ id: inputId, type: "user_input", text: args.input, status: "active", confidence: 1, createdAt });
 
   next.frame.objective = args.objective;
-  next.frame.currentFocus = `Cortex focus is ${inputId}. This user_input is pending attachment: the model must decide whether it starts from system_root, continues a prior user/assistant node, updates an existing artifact/semantic node, or relates to another graph region.`;
+  next.frame.currentFocus = `Cortex focus is ${inputId}; this user_input is pending attachment — weave it in then answer.`;
   next.frame.focusNodeId = inputId;
   next.frame.latestInputNodeId = inputId;
   next.frame.activeUserInputNodeId = inputId;
   next.frame.candidateFocusNodeIds = candidateFocusNodeIds(next);
-  next.frame.nextExpectedOutput = "Return SWX/1 commands that first weave the active user_input into the graph with one or more meaningful edges, then create model-typed semantic/output nodes and produce a human-readable final answer with @final or @final_ref.";
+  next.frame.nextExpectedOutput = "SWX/1: weave user_input in with @edge, add semantic nodes only for new facts, then @final/@final_ref a human answer.";
   next.frame.activeConstraints = unique([...next.frame.activeConstraints, ...extractConstraints(args.input)]);
   return next;
 }
