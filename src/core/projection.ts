@@ -223,9 +223,14 @@ function isStructural(nodeType: string): boolean {
 function looksLikeQuestion(text: string): boolean {
   if (!text || text.length < 8) return false;
   const lower = text.toLowerCase();
-  return /\b(what|who|when|where|which|how|why|recall|what's|name the|identify|list|deadline|rule|code|password|pin|access|color|time|rate|length|amount|how much|how many)\b/.test(lower)
-    || lower.includes("?")
-    || /^(show|tell|give|find|retrieve|look up|what is)/.test(lower);
+  if (/\b(what|who|when|where|which|how|why|recall|what's|name the|identify|list|deadline|rule|code|password|pin|access|color|time|rate|length|amount|how much|how many)\b/.test(lower) || lower.includes("?") || /^(show|tell|give|find|retrieve|look up|what is)/.test(lower)) {
+    return true;
+  }
+  return looksLikeRecallPrompt(lower);
+}
+
+function looksLikeRecallPrompt(lowerText: string): boolean {
+  return /\b(between|again|earlier|previously|previous|mentioned|remember|recall|review|revisit|i'm trying|i am trying|trying to|i want to|i need to|earlier in|you mentioned|i mentioned|i remember|i know someone|reviewing)\b/.test(lowerText);
 }
 
 function looksLikeChronology(text: string): boolean {
