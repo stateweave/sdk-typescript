@@ -15,8 +15,9 @@ const WINDOWED_BUDGET_TOKENS = 12000;
 // Naive baseline gets a realistic context budget: at long horizons the transcript
 // outgrows any real model's usable window and old facts are dropped. SW never
 // compacts (append-only graph + disposable projection), so this is the gap the
-// harness is designed to expose.
-const NAIVE_FULL_BUDGET_TOKENS = 32000;
+// harness is designed to expose. 16k models a typical production agent's usable
+// budget (after system prompt, tools, instructions eat most of the window).
+const NAIVE_FULL_BUDGET_TOKENS = 16000;
 const CALL_TIMEOUT_MS = 90_000; // 90s hard limit per model call
 
 export type ProbeScore = { score: "pass" | "partial" | "fail"; reasoning: string };
