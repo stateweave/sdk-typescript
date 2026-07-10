@@ -38,17 +38,17 @@ export type Projection = {
 };
 
 const DEFAULT_RADIUS = 4;
-const DEFAULT_BUDGET = 384;
-const RETRIEVAL_BUDGET = 192;
+const DEFAULT_BUDGET = 256;
+const RETRIEVAL_BUDGET = 128;
 const RETRIEVAL_BUDGET_CHRONOLOGY = 320;
 const RETRIEVAL_BUDGET_CONFLICT = 256;
 // Modern models have a much larger reliable context region than the original
 // ~5k-token projection used here. Keep the view bounded, but spend more of that
 // region when a query needs historical evidence. These are node ceilings rather
 // than graph compaction: the append-only StateGraph remains complete.
-const FOCUS_NODE_CAP = 256;
-const FOCUS_NODE_CAP_CONFLICT = 320;
-const FOCUS_NODE_CAP_CHRONOLOGY = 384;
+const FOCUS_NODE_CAP = 160;
+const FOCUS_NODE_CAP_CONFLICT = 224;
+const FOCUS_NODE_CAP_CHRONOLOGY = 320;
 
 export function clusterGraph(graph: StateGraph, adjacency: Map<string, string[]> = undirectedAdjacency(graph)): Cluster[] {
   const nodes = graph.nodes;
@@ -59,10 +59,10 @@ export function clusterGraph(graph: StateGraph, adjacency: Map<string, string[]>
   // Step 1: initial per-turn assignment via multi-source BFS from user_inputs.
   const rawClusters = initialTurnClusters(graph, adjacency, byId);
 
-  // Step 2: topic-merge — combine clusters whose nodes share the same semantic
-  // domain (dominant non-structural node type). This prevents the telescope
-  // topic from being scattered across 15 turn-clusters.
-  const merged = mergeClustersByDomain(rawClusters, graph, byId);
+  // Step 2: entity merge — combine turn clusters only when they share a strong
+  // entity key such as component-006. Never merge unrelated tasks merely
+  // because they use the same semantic node type.
+  const merged = mergeClustersByEntity(rawClusters, graph, byId);
 
   return merged
     .sort((a, b) => createdAtOf(byId.get(a.seedId)) - createdAtOf(byId.get(b.seedId)));
@@ -77,10 +77,12 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
   const clusters = clusterGraph(graph, adjacency);
 
   const explicitFocus = focusNodeIdResolved(graph, focus);
+  const latestInput = latestUserInputId(graph);
   const centers = unique([
+    latestInput,
     explicitFocus,
     "system_root",
-    ...(explicitFocus ? [] : [latestUserInputId(graph), latestAssistantOutputId(graph)])
+    ...(explicitFocus ? [] : [latestAssistantOutputId(graph)])
   ].filter((id): id is string => typeof id === "string" && byId.has(id)));
 
   // Positional focus: BFS from the active centers.
@@ -88,11 +90,7 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
 
   // Retrieval focus: if the active node looks like a question, search ALL nodes
   // for keyword matches and pull them (and their clusters) into view.
-  const activeNodeText = centers
-    .map((id) => byId.get(id))
-    .filter((node): node is GraphNode => node !== undefined && node.type === "user_input")
-    .map((node) => node.text)
-    .join(" ");
+  const activeNodeText = latestInput && byId.get(latestInput)?.type === "user_input" ? byId.get(latestInput)!.text : "";
   const chronologyMode = looksLikeChronology(activeNodeText);
   const conflictMode = looksLikeConflict(activeNodeText);
   const retrievalBudget = chronologyMode
@@ -100,7 +98,9 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
     : conflictMode
       ? RETRIEVAL_BUDGET_CONFLICT
       : RETRIEVAL_BUDGET;
-  const retrievedNodeIds = looksLikeQuestion(activeNodeText)
+  // Imperative tasks still need retrieval: exact paths, symbols, and entity ids
+  // in "update X" are stronger signals than a trailing question mark.
+  const retrievedNodeIds = activeNodeText.length >= 3
     ? retrieveNodes(graph, clusters, activeNodeText, retrievalBudget, chronologyMode, conflictMode, adjacency)
     : [];
 
@@ -286,11 +286,11 @@ function retrieveNodes(
     }
     // Boost nodes that hold data (facts, artifacts, decisions carry the answers).
     if (node.type === "fact" || node.type === "artifact" || node.type === "decision" || node.type === "assistant_output") score += 1;
-    // Conflict probes should prefer current, supported context over stale data.
-    if (conflictMode) {
-      if (node.status === "stale" || node.status === "rejected") score -= 2;
-      else if (!node.status || node.status === "active" || node.status === "resolved") score += 1;
-    }
+    // Current canonical state always outranks stale/rejected history, not only
+    // when the query happens to contain conflict vocabulary.
+    if (node.status === "stale" || node.status === "rejected") score -= 4;
+    else if (node.data?.canonical === true && node.status === "active") score += 4;
+    else if (conflictMode && (!node.status || node.status === "active" || node.status === "resolved")) score += 1;
     // For chronology probes, surface user-input turn sources more reliably than
     // very recent noise so ordered questions can compare historical intent accurately.
     if (chronologyMode && node.type === "user_input") score += 2;
@@ -538,44 +538,32 @@ function assignToNearestSeed(seeds: GraphNode[], adjacency: Map<string, string[]
   }
 }
 
-function mergeClustersByDomain(rawClusters: RawCluster[], graph: StateGraph, byId: Map<string, GraphNode>): Cluster[] {
-  const built = rawClusters.map((rc) => buildCluster(graph, rc.seedId, rc.nodeIds.sort((a, b) => createdAtOf(byId.get(a)) - createdAtOf(byId.get(b))), byId));
-
-  // Group clusters by their dominant semantic type (excluding structural types).
-  // Clusters that share the same domain get merged into one topic.
-  const byDomain = new Map<string, Cluster[]>();
+function mergeClustersByEntity(rawClusters: RawCluster[], graph: StateGraph, byId: Map<string, GraphNode>): Cluster[] {
+  const built = rawClusters.map((cluster) => buildCluster(graph, cluster.seedId, cluster.nodeIds.sort((a, b) => createdAtOf(byId.get(a)) - createdAtOf(byId.get(b))), byId));
+  const groups = new Map<string, Cluster[]>();
   for (const cluster of built) {
-    const domain = semanticDomain(cluster.dominantType);
-    const bucket = byDomain.get(domain) ?? [];
-    bucket.push(cluster);
-    byDomain.set(domain, bucket);
+    const key = clusterEntityKey(cluster, byId) ?? `turn:${cluster.seedId}`;
+    const group = groups.get(key) ?? [];
+    group.push(cluster);
+    groups.set(key, group);
   }
-
-  const merged: Cluster[] = [];
-  for (const [, group] of byDomain) {
-    if (group.length === 1) {
-      merged.push(group[0]);
-      continue;
-    }
-    // Merge all clusters in the same domain into one.
-    const allNodeIds = group.flatMap((c) => c.nodeIds);
-    const seedId = group.sort((a, b) => createdAtOf(byId.get(a.seedId)) - createdAtOf(byId.get(b.seedId)))[0].seedId;
-    merged.push(buildCluster(graph, seedId, allNodeIds.sort((a, b) => createdAtOf(byId.get(a)) - createdAtOf(byId.get(b))), byId));
-  }
-
-  return merged;
+  return [...groups.values()].map((group) => {
+    if (group.length === 1) return group[0];
+    const ordered = [...group].sort((a, b) => createdAtOf(byId.get(a.seedId)) - createdAtOf(byId.get(b.seedId)));
+    const nodeIds = unique(ordered.flatMap((cluster) => cluster.nodeIds)).sort((a, b) => createdAtOf(byId.get(a)) - createdAtOf(byId.get(b)));
+    return buildCluster(graph, ordered[0].seedId, nodeIds, byId);
+  });
 }
 
-function semanticDomain(nodeType: string): string {
-  // Structural types stay separate (they're conversational spine).
-  // Semantic types merge by family so related facts cluster together.
-  if (nodeType === "user_input" || nodeType === "assistant_output" || nodeType === "system") return `structural_${nodeType}`;
-  if (nodeType === "tool_call" || nodeType === "tool_result") return "tools";
-  // All semantic types (fact, artifact, decision, hypothesis, etc.) merge into
-  // a shared "knowledge" domain UNLESS there are enough to form a distinct topic.
-  // For now, keep each semantic type as its own domain — this prevents merging
-  // unrelated facts while still grouping within a type.
-  return `semantic_${nodeType}`;
+function clusterEntityKey(cluster: Cluster, byId: Map<string, GraphNode>): string | undefined {
+  const text = cluster.nodeIds.map((id) => {
+    const node = byId.get(id);
+    return `${node?.text ?? ""} ${typeof node?.data?.path === "string" ? node.data.path : ""}`;
+  }).join(" ").toLowerCase();
+  const versionedEntity = text.match(/\b[a-z][a-z0-9]*(?:-[a-z0-9]+)*-\d+\b/)?.[0];
+  if (versionedEntity) return `entity:${versionedEntity}`;
+  const explicitPath = text.match(/\b(?:src|docs|tickets|incidents|audits)\/[a-z0-9_./-]+/)?.[0];
+  return explicitPath ? `path:${explicitPath.replace(/\.(?:json|js|ts|md)\b.*/, "")}` : undefined;
 }
 
 function buildCluster(graph: StateGraph, seedId: string, nodeIds: string[], byId: Map<string, GraphNode>): Cluster {

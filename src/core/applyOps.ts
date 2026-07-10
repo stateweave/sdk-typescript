@@ -81,40 +81,76 @@ export function applyOps(frame: GraphFrame, ops: GraphOp[]): GraphFrame {
     }
   }
 
+  autoConnectTransaction(frame, next, preNodeIds);
   validateGraphTransaction(frame, next, referenceErrors);
   delete next.frame.lastGraphOpsError;
   next.frame.candidateFocusNodeIds = candidateFocusNodeIds(next);
   return next;
 }
 
-export function addToolResult(graph: StateGraph, args: { tool: string; result: unknown; step: number }): StateGraph {
+export function addToolResult(graph: StateGraph, args: { tool: string; result: unknown; step: number; ok?: boolean }): StateGraph {
   const next = structuredClone(graph);
   const anchor = latestUserInput(next.nodes) ?? next.nodes.find((node) => node.id === "system_root") ?? next.nodes[0];
-  const callId = `tool_call_${args.step}_${next.nodes.length}`;
-  const resultId = `tool_result_${args.step}_${next.nodes.length + 1}`;
+  const callId = uniqueNodeId(next.nodes, `tool_call_${args.step}`);
+  const resultId = uniqueNodeId(next.nodes, `tool_result_${args.step}`);
   const createdAt = nowIso();
+  const ok = args.ok !== false;
   next.nodes.push(
     {
       id: callId,
       type: "tool_call",
       text: `Called ${args.tool}`,
       data: { tool: args.tool },
-      status: "resolved",
+      status: ok ? "resolved" : "rejected",
       createdAt
     },
     {
       id: resultId,
       type: "tool_result",
       text: typeof args.result === "string" ? args.result : JSON.stringify(args.result),
-      data: { tool: args.tool, result: args.result },
-      status: "active",
+      data: { tool: args.tool, result: args.result, ok },
+      status: ok ? "active" : "rejected",
       confidence: 1,
       createdAt
     }
   );
   if (anchor) addEdge(next, anchor.id, callId, "relates_to");
-  addEdge(next, resultId, callId, "explains");
+  addEdge(next, callId, resultId, ok ? "explains" : "contradicts");
+  if (ok) addVersionedFileState(next, resultId, args.result, createdAt);
   return next;
+}
+
+function autoConnectTransaction(frameBefore: GraphFrame, frameAfter: GraphFrame, preNodeIds: Set<string>): void {
+  const root = frameAfter.graph.nodes.find((node) => node.id === "system_root") ?? frameAfter.graph.nodes[0];
+  const latestInputId = frameBefore.frame.latestInputNodeId;
+  if (root && latestInputId && !frameAfter.graph.edges.some((edge) => edge.from === root.id && edge.to === latestInputId)) addEdge(frameAfter.graph, root.id, latestInputId, "follows");
+  const anchor = (latestInputId && frameAfter.graph.nodes.find((node) => node.id === latestInputId)) ?? root;
+  if (!anchor) return;
+  for (const node of frameAfter.graph.nodes) {
+    if (preNodeIds.has(node.id) || node.id === anchor.id || isReferenced(frameAfter.graph, node.id)) continue;
+    addEdge(frameAfter.graph, anchor.id, node.id, node.type === "assistant_output" ? "follows" : "relates_to");
+  }
+}
+
+function addVersionedFileState(graph: StateGraph, resultId: string, result: unknown, createdAt: string): void {
+  if (!result || typeof result !== "object") return;
+  const record = result as Record<string, unknown>;
+  const filePath = typeof record.file_path === "string" ? record.file_path : typeof record.path === "string" ? record.path : undefined;
+  const hash = typeof record.content_hash === "string" ? record.content_hash : undefined;
+  if (!filePath || !hash) return;
+  for (const node of graph.nodes) {
+    if (node.type === "file" && node.data?.path === filePath && node.status === "active") node.status = "stale";
+  }
+  const id = uniqueNodeId(graph.nodes, `file_state_${filePath}_${hash.slice(0, 10)}`.replace(/[^a-zA-Z0-9_]/g, "_"));
+  graph.nodes.push({ id, type: "file", text: `${filePath} current content version ${hash.slice(0, 12)}`, data: { path: filePath, contentHash: hash, canonical: true }, status: "active", confidence: 1, createdAt });
+  addEdge(graph, resultId, id, "validates");
+}
+
+function uniqueNodeId(nodes: GraphNode[], base: string): string {
+  if (!nodes.some((node) => node.id === base)) return base;
+  let suffix = 2;
+  while (nodes.some((node) => node.id === `${base}_${suffix}`)) suffix += 1;
+  return `${base}_${suffix}`;
 }
 
 function activeUserInput(frame: GraphFrame): GraphNode | undefined {
@@ -243,7 +279,7 @@ function candidateFocusNodeIds(frame: GraphFrame): string[] {
     frame.frame.activeUserInputNodeId,
     frame.frame.latestInputNodeId,
     frame.frame.focusNodeId,
-    ...frame.graph.nodes.filter((node) => node.type === "user_input").map((node) => node.id)
+    ...frame.graph.nodes.filter((node) => node.type === "user_input").slice(-12).map((node) => node.id)
   ].filter((id): id is string => Boolean(id) && frame.graph.nodes.some((node) => node.id === id)));
 }
 

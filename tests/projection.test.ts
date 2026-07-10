@@ -24,7 +24,7 @@ function buildConversation(turns: { input: string; answer: string }[]) {
   return frame;
 }
 
-it("clusters group related semantic nodes by domain", () => {
+it("clusters keep unrelated turns separate without a shared entity", () => {
   const frame = buildConversation([
     { input: "Fix login bug", answer: "Token was cleared early" },
     { input: "Draw an SVG", answer: "Here is a butterfly" },
@@ -32,9 +32,7 @@ it("clusters group related semantic nodes by domain", () => {
   ]);
 
   const clusters = clusterGraph(frame.graph);
-  // All hypotheses share the same domain, so they merge into one cluster.
-  // Structural nodes (user_input, assistant_output) stay in their own clusters.
-  expect(clusters.length).toBeGreaterThanOrEqual(1);
+  expect(clusters.length).toBeGreaterThanOrEqual(3);
   const labels = clusters.map((c) => c.label).join(" ");
   expect(labels).toContain("Fix login bug");
 });
@@ -84,6 +82,30 @@ it("retrieval pulls keyword-matched nodes into focus", () => {
   const projection = projectGraph(frame.graph, { focusNodeId: "user_input_2" });
   // Retrieval should find fact_1 by keyword match even though it's outside BFS radius.
   expect(projection.retrievedNodeIds).toContain("fact_1");
+});
+
+it("retrieves exact entities for imperative change requests", () => {
+  let frame = createInitialGraphFrame({ objective: "Maintain", input: "Create src/components/component-006.json", availableActions: [] });
+  frame.graph.nodes.push({ id: "file_component_006", type: "file", text: "src/components/component-006.json retryLimit 3", data: { path: "src/components/component-006.json" }, status: "active", createdAt: new Date(0).toISOString() });
+  frame.graph.edges.push({ id: "e_component", from: "user_input_1", to: "file_component_006", type: "creates", createdAt: "" });
+  frame = appendInputToGraphFrame(frame, { objective: "Maintain", input: "Update RETRY_LIMIT in src/components/component-006.json to 4." });
+
+  const projection = projectGraph(frame.graph, { focusNodeId: "assistant_output_missing" });
+  expect(projection.retrievedNodeIds).toContain("file_component_006");
+  expect(projection.focusNodes).toContainEqual(expect.objectContaining({ id: "user_input_2" }));
+});
+
+it("keeps unrelated entities in separate clusters", () => {
+  const frame = buildConversation([
+    { input: "Update component-001 manifest", answer: "Updated component-001" },
+    { input: "Update component-002 manifest", answer: "Updated component-002" },
+    { input: "Review component-001 module", answer: "Reviewed component-001" }
+  ]);
+  const clusters = clusterGraph(frame.graph);
+  const componentOne = clusters.find((cluster) => cluster.nodeIds.includes("user_input_1"));
+  const componentTwo = clusters.find((cluster) => cluster.nodeIds.includes("user_input_2"));
+  expect(componentOne?.id).not.toBe(componentTwo?.id);
+  expect(componentOne?.nodeIds).toContain("user_input_3");
 });
 
 it("peripheral clusters exist alongside focus clusters", () => {

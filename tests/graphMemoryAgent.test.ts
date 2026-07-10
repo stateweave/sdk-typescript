@@ -27,15 +27,16 @@ it("uses one call per turn and applies answer plus GraphOps to persistent graph 
   expect(frame.graph.edges.length).toBeGreaterThanOrEqual(4);
 });
 
-it("does not silently commit an invalid one-call graph transaction", async () => {
+it("automatically connects a minimal one-call final transaction", async () => {
   const model: Model = {
-    async complete() { return { text: 'SWX/1\n@final "Unconnected input"' }; },
+    async complete() { return { text: 'SWX/1\n@final "Connected input"' }; },
     async *stream(): AsyncIterable<ModelToken> { /* primitive uses complete */ }
   };
   const memory = new GraphMemoryAgent({ model });
   const result = await memory.run("Remember this fact.");
 
-  expect(result.transactionValid).toBe(false);
-  expect(result.answer).toContain("invalid StateWeave transaction");
-  expect(memory.getFrame().graph.nodes.some((node) => node.type === "assistant_output")).toBe(false);
+  expect(result.transactionValid).toBe(true);
+  expect(result.answer).toBe("Connected input");
+  expect(memory.getFrame().graph.nodes.some((node) => node.type === "assistant_output")).toBe(true);
+  expect(memory.getFrame().graph.edges).toContainEqual(expect.objectContaining({ from: "system_root", to: "user_input_1" }));
 });

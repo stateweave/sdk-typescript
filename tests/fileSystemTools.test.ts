@@ -21,6 +21,19 @@ it("provides workspace-scoped read, write, edit, and bash tools", async () => {
   }
 });
 
+it("rejects stale hash-guarded edits and returns current evidence", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-tools-hash-"));
+  try {
+    const tools = new Map(createFileSystemTools({ rootDir: root }).map((tool) => [tool.name, tool]));
+    await tools.get("write_file")?.execute({ file_path: "config.json", content: "{\"retryLimit\":3}" });
+    const first = await tools.get("read_file")?.execute({ file_path: "config.json" }) as { content_hash: string };
+    await tools.get("write_file")?.execute({ file_path: "config.json", content: "{\"retryLimit\":4}" });
+    await expect(tools.get("edit_file")?.execute({ file_path: "config.json", old_string: "4", new_string: "5", expected_hash: first.content_hash })).rejects.toThrow(/File version mismatch[\s\S]*Current file preview/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it("rejects non-allowlisted and shell-escape bash commands", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-tools-"));
   try {

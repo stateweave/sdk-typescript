@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -32,7 +33,9 @@ const readFileSchema = z.object({
 const writeFileSchema = z.object({
   file_path: z.string().min(1).optional(),
   path: z.string().min(1).optional(),
-  content: z.string()
+  content: z.string(),
+  expected_hash: z.string().min(8).optional(),
+  expectedHash: z.string().min(8).optional()
 }).superRefine(requireFilePath);
 
 const booleanArgSchema = z.preprocess((value) => {
@@ -49,7 +52,9 @@ const editFileSchema = z.object({
   new_string: z.string().optional(),
   newText: z.string().optional(),
   replace_all: booleanArgSchema,
-  replaceAll: booleanArgSchema
+  replaceAll: booleanArgSchema,
+  expected_hash: z.string().min(8).optional(),
+  expectedHash: z.string().min(8).optional()
 }).superRefine((args, context) => {
   requireFilePath(args, context);
   if (args.old_string === undefined && args.oldText === undefined) context.addIssue({ code: z.ZodIssueCode.custom, message: "old_string is required" });
@@ -75,7 +80,7 @@ export function createFileSystemTools(options: FileSystemToolsOptions = {}): Too
   return [
     {
       name: "read_file",
-      description: `Read a UTF-8 text file from the agent workspace (${rootDir}). Args: file_path, optional offset (0-indexed line), limit. Alias: path/startLine/maxLines.`,
+      description: `Read a UTF-8 text file from the agent workspace (${rootDir}). Returns content plus a SHA-256 content_hash for safe edits. Args: file_path, optional offset (0-indexed line), limit. Alias: path/startLine/maxLines.`,
       schema: readFileSchema,
       async execute(args: unknown) {
         const parsed = normalizeReadFileArgs(args);
@@ -83,33 +88,35 @@ export function createFileSystemTools(options: FileSystemToolsOptions = {}): Too
         const content = await readFile(filePath, "utf8");
         const lines = content.split(/\r?\n/);
         const limited = lines.slice(parsed.offset, parsed.offset + parsed.limit).join("\n");
-        return { path: parsed.filePath, file_path: parsed.filePath, offset: parsed.offset, limit: parsed.limit, content: limited };
+        return { path: parsed.filePath, file_path: parsed.filePath, offset: parsed.offset, limit: parsed.limit, content: limited, content_hash: contentHash(content) };
       }
     },
     {
       name: "write_file",
-      description: `Create or overwrite a UTF-8 text file inside the agent workspace (${rootDir}). Args: file_path, content. For multiline/SVG/HTML/code content in SWX, use content_ref=<block_id>. Alias: path.`,
+      description: `Create or overwrite a UTF-8 text file inside the agent workspace (${rootDir}). Args: file_path, content, optional expected_hash from read_file. For multiline/SVG/HTML/code content in SWX, use content_ref=<block_id>. Alias: path.`,
       schema: writeFileSchema,
       async execute(args: unknown) {
         const parsed = normalizeWriteFileArgs(args);
         const filePath = resolveWorkspacePath(rootDir, parsed.filePath);
+        await assertExpectedHash(filePath, parsed.expectedHash);
         await mkdir(path.dirname(filePath), { recursive: true });
         await writeFile(filePath, parsed.content, "utf8");
-        return { path: parsed.filePath, file_path: parsed.filePath, bytes: Buffer.byteLength(parsed.content), ok: true };
+        return { path: parsed.filePath, file_path: parsed.filePath, bytes: Buffer.byteLength(parsed.content), content_hash: contentHash(parsed.content), ok: true };
       }
     },
     {
       name: "edit_file",
-      description: `Edit one UTF-8 text file inside the agent workspace (${rootDir}) by exact replacement. Args: file_path, old_string, new_string, optional replace_all. old_string must match exactly and be unique unless replace_all=true. For multiline edits in SWX, use old_string_ref/new_string_ref blocks. Aliases: path/oldText/newText/replaceAll.`,
+      description: `Edit one UTF-8 text file inside the agent workspace (${rootDir}) by exact replacement. Args: file_path, old_string, new_string, optional replace_all and expected_hash from read_file. old_string must match exactly and be unique unless replace_all=true. For multiline edits in SWX, use old_string_ref/new_string_ref blocks. Aliases: path/oldText/newText/replaceAll.`,
       schema: editFileSchema,
       async execute(args: unknown) {
         const parsed = normalizeEditFileArgs(args);
         const filePath = resolveWorkspacePath(rootDir, parsed.filePath);
         const content = await readFile(filePath, "utf8");
+        assertContentHash(content, parsed.expectedHash, parsed.filePath);
         const replacement = replaceExact(content, parsed.oldString, parsed.newString, parsed.replaceAll);
-        if (typeof replacement === "string") throw new Error(replacement);
+        if (typeof replacement === "string") throw new Error(`${replacement}\nCurrent file preview:\n${filePreview(content)}`);
         await writeFile(filePath, replacement.content, "utf8");
-        return { path: parsed.filePath, file_path: parsed.filePath, replacements: replacement.occurrences, occurrences: replacement.occurrences, ok: true };
+        return { path: parsed.filePath, file_path: parsed.filePath, replacements: replacement.occurrences, occurrences: replacement.occurrences, content_hash: contentHash(replacement.content), ok: true };
       }
     },
     {
@@ -156,18 +163,19 @@ function normalizeReadFileArgs(args: unknown): { filePath: string; offset: numbe
   return { filePath: filePathFrom(parsed), offset, limit: parsed.limit ?? parsed.maxLines ?? defaultReadLimit };
 }
 
-function normalizeWriteFileArgs(args: unknown): { filePath: string; content: string } {
+function normalizeWriteFileArgs(args: unknown): { filePath: string; content: string; expectedHash?: string } {
   const parsed = writeFileSchema.parse(args);
-  return { filePath: filePathFrom(parsed), content: parsed.content };
+  return { filePath: filePathFrom(parsed), content: parsed.content, expectedHash: parsed.expected_hash ?? parsed.expectedHash };
 }
 
-function normalizeEditFileArgs(args: unknown): { filePath: string; oldString: string; newString: string; replaceAll: boolean } {
+function normalizeEditFileArgs(args: unknown): { filePath: string; oldString: string; newString: string; replaceAll: boolean; expectedHash?: string } {
   const parsed = editFileSchema.parse(args);
   return {
     filePath: filePathFrom(parsed),
     oldString: parsed.old_string ?? parsed.oldText ?? "",
     newString: parsed.new_string ?? parsed.newText ?? "",
-    replaceAll: parsed.replace_all ?? parsed.replaceAll ?? false
+    replaceAll: parsed.replace_all ?? parsed.replaceAll ?? false,
+    expectedHash: parsed.expected_hash ?? parsed.expectedHash
   };
 }
 
@@ -180,6 +188,28 @@ function filePathFrom(args: { file_path?: string; path?: string }): string {
   const filePath = args.file_path ?? args.path;
   if (!filePath) throw new Error("file_path is required.");
   return filePath;
+}
+
+function contentHash(content: string): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+async function assertExpectedHash(filePath: string, expectedHash: string | undefined): Promise<void> {
+  if (!expectedHash) return;
+  let content: string;
+  try { content = await readFile(filePath, "utf8"); }
+  catch { throw new Error(`File version mismatch: expected ${expectedHash}, but the file does not exist.`); }
+  assertContentHash(content, expectedHash, filePath);
+}
+
+function assertContentHash(content: string, expectedHash: string | undefined, filePath: string): void {
+  if (!expectedHash) return;
+  const currentHash = contentHash(content);
+  if (currentHash !== expectedHash) throw new Error(`File version mismatch for ${filePath}: expected ${expectedHash}, current ${currentHash}. Re-read the file before editing.\nCurrent file preview:\n${filePreview(content)}`);
+}
+
+function filePreview(content: string): string {
+  return content.split(/\r?\n/).slice(0, 20).map((line, index) => `${index + 1}: ${line}`).join("\n").slice(0, 4000);
 }
 
 function replaceExact(content: string, oldString: string, newString: string, replaceAll: boolean): { content: string; occurrences: number } | string {

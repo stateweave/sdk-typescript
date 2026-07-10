@@ -275,11 +275,10 @@ export class InfiniteAgentHarness {
     const latest = this.state.turns.at(-1);
     if (!latest) return;
     const previous = this.state.qualitySeries.at(-1);
-    const value = (score: AgentScore): number => score.score === "pass" ? 1 : score.score === "partial" ? 0.5 : 0;
     const stateweaveScored = (previous?.stateweaveScored ?? 0) + 1;
     const naiveScored = (previous?.naiveScored ?? 0) + 1;
-    const stateweaveTotal = (previous?.stateweavePassRate ?? 0) * (previous?.stateweaveScored ?? 0) + value(latest.score.stateweave);
-    const naiveTotal = (previous?.naivePassRate ?? 0) * (previous?.naiveScored ?? 0) + value(latest.score.naive);
+    const stateweaveTotal = (previous?.stateweavePassRate ?? 0) * (previous?.stateweaveScored ?? 0) + qualityValue(latest.score.stateweave);
+    const naiveTotal = (previous?.naivePassRate ?? 0) * (previous?.naiveScored ?? 0) + qualityValue(latest.score.naive);
     this.state.qualitySeries = [...this.state.qualitySeries, {
       turn: this.state.turnCount,
       stateweavePassRate: stateweaveTotal / stateweaveScored,
@@ -452,7 +451,7 @@ function taskForTurn(turn: number): HarnessTask {
         ["correct retry expression restored", text.includes("retryLimit: RETRY_LIMIT")],
         ["endpoint preserved", text.includes(`export const ENDPOINT = "${endpoint}";`)],
         ["answer identifies retry bug", /retry|off.?by.?one/i.test(answer)]
-      ]);
+      ], { critical: ["off-by-one removed", "correct retry expression restored"] });
     }
   };
 
@@ -468,7 +467,7 @@ function taskForTurn(turn: number): HarnessTask {
         ["manifest retry updated", manifest?.retryLimit === retryLimit + 1],
         ["module retry updated", module.includes(`export const RETRY_LIMIT = ${retryLimit + 1};`)],
         ["owner and endpoint preserved", manifest?.owner === owner && manifest?.endpoint === endpoint]
-      ]);
+      ], { critical: ["status activated", "manifest retry updated", "module retry updated"] });
     }
   };
 
@@ -568,9 +567,15 @@ function expectedModule(endpoint: string, retryLimit: number): string {
   return `export const ENDPOINT = "${endpoint}";\nexport const RETRY_LIMIT = ${retryLimit};\n\nexport function buildRequest(payload) {\n  return { endpoint: ENDPOINT, payload, retryLimit: RETRY_LIMIT };\n}\n`;
 }
 
-function scoreChecks(checks: Array<[string, boolean]>): AgentScore {
-  const passed = checks.filter(([, ok]) => ok).length;
-  return { score: passed === checks.length ? "pass" : passed > 0 ? "partial" : "fail", passed, total: checks.length, details: checks.filter(([, ok]) => !ok).map(([label]) => label) };
+export function qualityValue(score: AgentScore): number {
+  return score.total > 0 ? score.passed / score.total : 0;
+}
+
+function scoreChecks(checks: Array<[string, boolean]>, options: { critical?: string[] } = {}): AgentScore {
+  const failed = checks.filter(([, ok]) => !ok).map(([label]) => label);
+  const passed = checks.length - failed.length;
+  const criticalFailure = failed.some((label) => options.critical?.includes(label));
+  return { score: passed === checks.length ? "pass" : criticalFailure || passed === 0 ? "fail" : "partial", passed, total: checks.length, details: failed };
 }
 
 async function jsonFile(root: string, relativePath: string): Promise<Record<string, unknown> | undefined> {

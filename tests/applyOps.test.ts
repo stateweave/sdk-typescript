@@ -24,9 +24,10 @@ it("moves cortex focus to an explicit user input node", () => {
   expect(next.frame.candidateFocusNodeIds).toContain("user_input_1");
 });
 
-it("rejects model-added semantic nodes that are disconnected from the graph", () => {
+it("automatically connects model-added semantic nodes to the active input", () => {
   const frame = createInitialGraphFrame({ objective: "Fix login", input: "Login fails", availableActions: [] });
-  expect(() => applyOps(frame, [{ op: "add_node", node: { id: "hypothesis_1", type: "hypothesis", text: "Token is cleared early" } }])).toThrow(GraphOpsValidationError);
+  const next = applyOps(frame, [{ op: "add_node", node: { id: "hypothesis_1", type: "hypothesis", text: "Token is cleared early" } }]);
+  expect(next.graph.edges).toContainEqual(expect.objectContaining({ from: "user_input_1", to: "hypothesis_1", type: "relates_to" }));
 });
 
 it("applies @zoom to set the vision level", () => {
@@ -40,10 +41,11 @@ it("rejects workers focused on missing nodes", () => {
   expect(() => applyOps(frame, [{ op: "spawn_worker", id: "missing", objective: "Do work", focusNodeId: "missing_node" }])).toThrow(GraphOpsValidationError);
 });
 
-it("rejects a second-turn answer when the pending user input was not woven into the existing graph", () => {
+it("automatically weaves a pending second-turn input into the existing graph", () => {
   const first = createInitialGraphFrame({ objective: "Draw SVG", input: "Create a butterfly", availableActions: [] });
   const frame = appendInputToGraphFrame(first, { objective: "Draw SVG", input: "Create a house" });
-  expect(() => applyOps(frame, [{ op: "final", answer: "Here is a house." }])).toThrow(/pending latest user input user_input_2 is disconnected/);
+  const next = applyOps(frame, [{ op: "final", answer: "Here is a house." }]);
+  expect(next.graph.edges).toContainEqual(expect.objectContaining({ from: "system_root", to: "user_input_2", type: "follows" }));
 });
 
 it("accepts connected second-turn artifact output after the pending input is attached", () => {
@@ -111,10 +113,12 @@ it("links multiple final artifact refs from the assistant output", () => {
   expect(next.graph.edges).toContainEqual(expect.objectContaining({ from: "assistant_output_1", to: "tetris", type: "creates" }));
 });
 
-it("adds deterministic tool call and result nodes to the same graph", () => {
+it("adds deterministic tool evidence and versions canonical file state", () => {
   const frame = createInitialGraphFrame({ objective: "Fix login", input: "Login fails", availableActions: [] });
-  const graph = addToolResult(frame.graph, { tool: "read_mock_file", result: "auth summary", step: 1 });
+  let graph = addToolResult(frame.graph, { tool: "read_file", result: { file_path: "config.json", content_hash: "aaaaaaaaaaaaaaaa" }, step: 1 });
+  graph = addToolResult(graph, { tool: "edit_file", result: { file_path: "config.json", content_hash: "bbbbbbbbbbbbbbbb" }, step: 2 });
   expect(graph.nodes.some((node) => node.type === "tool_call")).toBe(true);
-  expect(graph.nodes.some((node) => node.type === "tool_result" && node.text === "auth summary")).toBe(true);
+  expect(graph.nodes.filter((node) => node.type === "file" && node.status === "stale")).toHaveLength(1);
+  expect(graph.nodes).toContainEqual(expect.objectContaining({ type: "file", status: "active", data: expect.objectContaining({ path: "config.json", contentHash: "bbbbbbbbbbbbbbbb", canonical: true }) }));
   expect(graph.edges.some((edge) => edge.from === "user_input_1" && edge.to.startsWith("tool_call_") && edge.type === "relates_to")).toBe(true);
 });

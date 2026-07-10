@@ -36,7 +36,7 @@ it("serializes configured semantic node type hints", () => {
   expect(prompt).toContain("semanticNodeTypes:\n- intent\n- constraint\n- artifact");
 });
 
-it("appends new input as a pending cortex node for model attachment", () => {
+it("appends new input as the active cortex node for deterministic attachment", () => {
   const frame = createInitialGraphFrame({ objective: "Remember my name", input: "Hi my name is Radi.", availableActions: [] });
   const next = appendInputToGraphFrame(frame, { objective: "What is my name?", input: "What is my name?" });
   expect(next.frame.objective).toBe("What is my name?");
@@ -44,7 +44,7 @@ it("appends new input as a pending cortex node for model attachment", () => {
   expect(next.graph.nodes.some((node) => node.text === "Hi my name is Radi.")).toBe(true);
   expect(next.graph.nodes.some((node) => node.text === "What is my name?")).toBe(true);
   expect(next.graph.edges.some((edge) => edge.from === "user_input_1" && edge.to === "user_input_2")).toBe(false);
-  expect(next.frame.currentFocus).toMatch(/pending attachment/i);
+  expect(next.frame.currentFocus).toMatch(/attach this user_input structurally/i);
 });
 
 it("does not hard-code fresh branch attachment before the model weaves the input", () => {

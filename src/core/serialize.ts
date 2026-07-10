@@ -3,8 +3,8 @@ import type { GraphFrame, GraphNode } from "./types.js";
 
 const BIG_BRAIN_LIMIT = 64;
 const PERIPHERAL_CLUSTER_LIMIT = 24;
-const CANDIDATE_FOCUS_LIMIT = 48;
-const TIMELINE_LIMIT = 48;
+const CANDIDATE_FOCUS_LIMIT = 24;
+const TIMELINE_LIMIT = 32;
 const TIMELINE_CHRONOLOGY_LIMIT = 96;
 const TIMELINE_CHRONOLOGY_NEIGHBORHOOD = 12;
 const TIMELINE_CHRONOLOGY_HEAD = 16;
@@ -20,10 +20,10 @@ export function serializeGraphFrame(frame: GraphFrame): string {
     "",
     "Commands: @node <id> <type> \"label\" status=active confidence=0.8 mime=text/plain | @edge <from> <type> <to> | @update <id> status=resolved text=\"update\" | @focus \"next focus\"|<node_id> \"reason\" | @zoom <level> (0=tight, higher=wider map) | @tool <name> key=value multiline_arg_ref=block_id | @final \"human answer\" artifact=id artifacts=a,b | @final_ref <block_id> artifact=id artifacts=a,b",
     "Raw blocks (<<<block_id:mime ... >>>) hold multiline content/artifacts; reference via *_ref or @final_ref. Final answer is always human-readable text, never just a node id.",
-    "Observation tool loop: read_file and bash_command must be the ONLY tool in their transaction and MUST NOT be combined with @final. Call one observation tool, stop, inspect its tool_result in the next GraphFrame, then decide the next tool or final answer. Never claim to have read or checked data before its tool_result exists.",
+    "Evidence tool loop: every read_file, write_file, edit_file, or bash_command call must be the ONLY tool in its transaction and MUST NOT be combined with @final or @worker. Call one tool, stop, inspect its typed tool_result in the next GraphFrame, then decide the next operation. Failed mutations are recorded as rejected tool_result nodes and do not commit proposed semantic GraphOps. Never claim a change or check succeeded without successful tool evidence.",
     "Structural node types: system, user_input, assistant_output, tool_call, tool_result; all others are lower_snake_case semantic slugs (prefer configured semanticNodeTypes). Edge types: follows, creates, supports, contradicts, explains, depends_on, addresses, validates, constrains, causes, relates_to. Statuses: active, resolved, rejected, stale.",
     "Peripheral Vision: the StateGraph is append-only ground truth, never compacted. Layers: <BIG_BRAIN> (topic cluster map pins), <PERIPHERAL> (nearby cluster summaries), <FOCUS> (detailed nodes/edges for the active region), <TIMELINE> (recent facts in creation order). Cluster ids (cluster_xxxx) are stable; travel with @focus cluster_xxxx or widen with @zoom.",
-    "Cortex: the StateGraph is non-linear working memory, not a transcript. The latest user_input is pending attachment. EVERY transaction must connect it to a node that already existed before this turn: use @edge system_root follows <latestInputNodeId> for a fresh topic, or connect a relevant prior node to it for continuation. Connecting the input only to new nodes is invalid because that leaves the new region disconnected. Then connect every new semantic node and return @final. Mark outdated nodes stale/rejected via @update and connect contradictions/dependencies/merges explicitly; on conflicts prefer resolved/active over stale/rejected.",
+    "Cortex: the StateGraph is non-linear working memory, not a transcript. StateWeave deterministically connects the latest user_input, tool evidence, new semantic nodes, and final output to the active task; do not spend output rebuilding structural bookkeeping. Add semantic edges only when they convey a meaningful dependency, contradiction, validation, or decision. Mark outdated facts stale/rejected via @update; on conflicts prefer active canonical file-state nodes and successful tool_result evidence over stale/rejected claims.",
     "Every completed turn must include exactly one @final or @final_ref with a human-readable answer. The @final text is the ONLY thing a human/grader reads — write it like a direct answer to a person, lead with the recalled fact itself (e.g. 'Your NexStar 8SE is stored in bay #3.'), never with graph references, hedging, or meta commentary. CRITICAL: the @final answer must NEVER contain internal node ids or graph labels (user_input_N, assistant_output_N, cluster_xxxx, node_..., system_root) — those are SDK bookkeeping; citing them reads as evasive/hallucinated and fails recall even when you retrieved the right fact. Reference nodes only in @node/@edge/@focus ops, never in @final. Be terse: if the user only asks to recall or answer a factual question, emit just SWX/1 and a single @final line with the direct answer — add @node/@edge only when you are actually recording a new fact or weaving a new user_input. Shorter output is better.",
     "",
     "Current GraphFrame:",

@@ -10,41 +10,27 @@ import type { StateWeaveStreamEvent } from "../src/core/types.js";
 import type { Model, ModelInput, ModelOutput, ModelToken } from "../src/llm/model.js";
 import { createFileSystemTools } from "../src/tools/fileSystemTools.js";
 
-it("retries rejected GraphOps and commits the corrected transaction", async () => {
+it("automatically connects pending inputs and model-added nodes", async () => {
   const firstFrame = applyOps(
     createInitialGraphFrame({ objective: "Draw SVG", input: "Create a butterfly", availableActions: [] }),
     [{ op: "final", answer: "Butterfly done." }]
   );
-  const model = new SequenceModel([
-    [
-      "SWX/1",
-      "@node house_svg svg_artifact \"House SVG\" mime=image/svg+xml",
-      "@final house_svg",
-      "<<<house_svg:image/svg+xml",
-      "<svg><rect width=\"10\" height=\"10\" /></svg>",
-      ">>>"
-    ].join("\n"),
-    [
-      "SWX/1",
-      "@edge system_root follows user_input_2",
-      "@node house_svg svg_artifact \"House SVG\" mime=image/svg+xml",
-      "@final house_svg",
-      "<<<house_svg:image/svg+xml",
-      "<svg><rect width=\"10\" height=\"10\" /></svg>",
-      ">>>"
-    ].join("\n")
-  ]);
+  const model = new SequenceModel([[
+    "SWX/1",
+    "@node house_svg svg_artifact \"House SVG\" mime=image/svg+xml",
+    "@final house_svg",
+    "<<<house_svg:image/svg+xml",
+    "<svg><rect width=\"10\" height=\"10\" /></svg>",
+    ">>>"
+  ].join("\n")]);
 
-  const result = await runStateWeave({ model, tools: [], maxIterations: 2 }, "Create a house", { frame: firstFrame });
+  const result = await runStateWeave({ model, tools: [], maxIterations: 1 }, "Create a house", { frame: firstFrame });
 
-  expect(result.metadata.retryCount).toBe(1);
+  expect(result.metadata.retryCount).toBe(0);
   expect(result.metadata.status).toBe("done");
   expect(result.frame.graph).toEqual(result.graph);
   expect(result.metadata.tools).toEqual([]);
-  expect(result.trace).toHaveLength(2);
-  expect(result.trace[0].durationMs).toBeGreaterThanOrEqual(0);
-  expect(result.trace[0].error).toMatch(/pending latest user input user_input_2 is disconnected/);
-  expect(result.trace[1].frameBefore.frame.lastGraphOpsError).toMatch(/GraphOps rejected/);
+  expect(result.trace).toHaveLength(1);
   expect(result.graph.edges).toContainEqual(expect.objectContaining({ from: "system_root", to: "user_input_2", type: "follows" }));
   expect(result.graph.edges).toContainEqual(expect.objectContaining({ from: "assistant_output_2", to: "house_svg", type: "creates" }));
 });
@@ -86,6 +72,28 @@ it("runs workspace write/edit tools end to end with SWX block-ref args", async (
   }
 });
 
+it("records failed mutations as rejected evidence without committing proposed semantic ops", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-failed-mutation-"));
+  try {
+    const tools = createFileSystemTools({ rootDir: root });
+    await tools.find((tool) => tool.name === "write_file")?.execute({ file_path: "config.txt", content: "retryLimit=3" });
+    const model = new SequenceModel([
+      "SWX/1\n@node false_claim decision \"retry updated\"\n@tool edit_file file_path=config.txt old_string=retryLimit: new_string=retryLimit=4",
+      "SWX/1\n@tool edit_file file_path=config.txt old_string=retryLimit=3 new_string=retryLimit=4",
+      "SWX/1\n@final \"Updated config.txt to retryLimit=4.\""
+    ]);
+
+    const result = await runStateWeave({ model, tools, maxIterations: 3 }, "Fix file config.txt by updating retryLimit to 4");
+
+    expect(await readFile(path.join(root, "config.txt"), "utf8")).toBe("retryLimit=4");
+    expect(result.graph.nodes).not.toContainEqual(expect.objectContaining({ id: "false_claim" }));
+    expect(result.graph.nodes).toContainEqual(expect.objectContaining({ type: "tool_result", status: "rejected" }));
+    expect(result.graph.nodes).toContainEqual(expect.objectContaining({ type: "file", status: "active", data: expect.objectContaining({ path: "config.txt", canonical: true }) }));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it("forces read and bash observations into a separate model iteration", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-observation-loop-"));
   try {
@@ -94,13 +102,14 @@ it("forces read and bash observations into a separate model iteration", async ()
     const model = new SequenceModel([
       "SWX/1\n@edge system_root follows user_input_1\n@tool read_file file_path=source.txt\n@final \"I read it.\"",
       "SWX/1\n@edge system_root follows user_input_1\n@tool read_file file_path=source.txt",
-      "SWX/1\n@tool write_file file_path=copy.txt content=observed_value\n@final \"Copied the observed value.\""
+      "SWX/1\n@tool write_file file_path=copy.txt content=observed_value",
+      "SWX/1\n@final \"Copied the observed value.\""
     ]);
 
-    const result = await runStateWeave({ model, tools, maxIterations: 3 }, "Read source and make a copy");
+    const result = await runStateWeave({ model, tools, maxIterations: 4 }, "Read source and make a copy");
 
     expect(result.metadata.retryCount).toBe(1);
-    expect(result.trace[0].error).toMatch(/observation steps/);
+    expect(result.trace[0].error).toMatch(/evidence-producing and isolated/);
     expect(result.trace[1].parsedOps).toContainEqual(expect.objectContaining({ op: "call_tool", tool: "read_file" }));
     expect(result.finalAnswer).toBe("Copied the observed value.");
     expect(await readFile(path.join(root, "copy.txt"), "utf8")).toBe("observed_value");
@@ -115,27 +124,30 @@ it("returns long final_ref answers with multiple artifact refs end to end", asyn
     const model = new SequenceModel([
       [
         "SWX/1",
-        "@edge system_root follows user_input_1",
         "@node snake artifact \"Snake HTML\" mime=text/html",
         "@node index_page artifact \"Game index\" mime=text/html",
-        "@edge user_input_1 creates snake",
-        "@edge user_input_1 creates index_page",
         "@tool write_file file_path=snake.html content_ref=snake_html",
-        "@tool write_file file_path=index.html content_ref=index_html",
-        "@final_ref final_answer artifacts=snake,index_page",
         "<<<snake_html:text/html",
         "<html>Snake</html>",
-        ">>>",
+        ">>>"
+      ].join("\n"),
+      [
+        "SWX/1",
+        "@tool write_file file_path=index.html content_ref=index_html",
         "<<<index_html:text/html",
         "<html><a href=\"snake.html\">Snake</a></html>",
-        ">>>",
+        ">>>"
+      ].join("\n"),
+      [
+        "SWX/1",
+        "@final_ref final_answer artifacts=snake,index_page",
         "<<<final_answer:text/markdown",
         "Created the game files:\n- snake.html\n- index.html",
         ">>>"
       ].join("\n")
     ]);
 
-    const result = await runStateWeave({ model, tools: createFileSystemTools({ rootDir: root }), maxIterations: 1 }, "Create one game and index");
+    const result = await runStateWeave({ model, tools: createFileSystemTools({ rootDir: root }), maxIterations: 3 }, "Create one game and index files");
 
     expect(result.finalAnswer).toBe("Created the game files:\n- snake.html\n- index.html");
     expect(result.graph.nodes).not.toContainEqual(expect.objectContaining({ id: "final_answer" }));

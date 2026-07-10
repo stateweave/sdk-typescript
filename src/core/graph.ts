@@ -80,12 +80,12 @@ export function appendInputToGraphFrame(frame: GraphFrame, args: { objective: st
   next.graph.nodes.push({ id: inputId, type: "user_input", text: args.input, status: "active", confidence: 1, createdAt });
 
   next.frame.objective = args.objective;
-  next.frame.currentFocus = `Cortex focus is ${inputId}; this user_input is pending attachment — weave it in then answer.`;
+  next.frame.currentFocus = `Cortex focus is ${inputId}; StateWeave will attach this user_input structurally while the model handles task semantics and evidence.`;
   next.frame.focusNodeId = inputId;
   next.frame.latestInputNodeId = inputId;
   next.frame.activeUserInputNodeId = inputId;
   next.frame.candidateFocusNodeIds = candidateFocusNodeIds(next);
-  next.frame.nextExpectedOutput = "SWX/1: weave user_input in with @edge, add semantic nodes only for new facts, then @final/@final_ref a human answer.";
+  next.frame.nextExpectedOutput = "SWX/1: use one evidence tool per transaction when needed, add semantic nodes only for durable new facts, then return a supported @final/@final_ref answer.";
   next.frame.activeConstraints = unique([...next.frame.activeConstraints, ...extractConstraints(args.input)]);
   return next;
 }
@@ -100,7 +100,8 @@ function candidateFocusNodeIds(frame: GraphFrame): string[] {
     frame.frame.activeUserInputNodeId,
     frame.frame.latestInputNodeId,
     frame.frame.focusNodeId,
-    ...frame.graph.nodes.map((node) => node.id)
+    ...frame.graph.nodes.filter((node) => node.type === "file" && node.status === "active").slice(-8).map((node) => node.id),
+    ...frame.graph.nodes.filter((node) => node.type === "user_input" || node.type === "assistant_output").slice(-12).map((node) => node.id)
   ].filter((id): id is string => Boolean(id) && frame.graph.nodes.some((node) => node.id === id)));
 }
 
