@@ -2967,8 +2967,9 @@ type InfiniteStateView = {
 
 function renderInfiniteState(state: InfiniteStateView): void {
   const running = state.status === "running" || state.status === "batch_done" || state.status === "reviewing" || state.status === "committed" || state.status === "reporting";
+  const totalTurns = Math.max(state.batchSize * state.batchCount, state.batchSize, state.turnCount);
   if (infiniteLiveBadge) {
-    infiniteLiveBadge.textContent = running ? (state.turnCount > 0 ? `turn ${state.turnCount}` : "starting") : (state.status || "idle");
+    infiniteLiveBadge.textContent = running ? (state.turnCount > 0 ? `turn ${state.turnCount} / ${totalTurns}` : `starting · 0 / ${totalTurns}`) : (state.status || "idle");
     infiniteLiveBadge.className = `infinite-live-badge ${running ? "live" : "idle"}`;
   }
 
@@ -2983,7 +2984,7 @@ function renderInfiniteState(state: InfiniteStateView): void {
   const invalidTransactions = state.turns.filter((turn) => turn.transactionValid === false).length;
   infiniteMetrics.innerHTML = `
     <div class="infinite-metric"><span class="metric-label">Status</span><strong>${escapeHtml(state.status)}</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Turns</span><strong>${state.turnCount}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Turns completed</span><strong>${state.turnCount} / ${totalTurns}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Probes scored</span><strong>${state.qualitySeries.at(-1)?.stateweaveScored ?? 0}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Nodes / edges</span><strong>${snapshot?.nodeCount ?? 0} / ${snapshot?.edgeCount ?? 0}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Graph transactions</span><strong>${invalidTransactions ? `${invalidTransactions} invalid` : "valid"}</strong></div>
