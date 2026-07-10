@@ -3041,11 +3041,11 @@ function renderInfiniteChart(series: InfiniteSeriesPoint[]): void {
   drawLineChart(canvas, series, {
     sw: (p) => p.stateweaveTokens,
     baseline: (p) => p.baselineTokens,
-    yLabel: "tokens", yMax: "auto", emptyText: "Waiting for the first agent task…"
+    yLabel: "tokens", yMax: "auto", emptyText: "Waiting for the first agent task…", zeroIsMissing: true
   });
 }
 
-function drawLineChart<T extends { turn: number }>(canvas: HTMLCanvasElement, series: T[], lines: { sw: (p: T) => number; baseline: (p: T) => number; yLabel: string; yMax: number | "auto"; emptyText: string }): void {
+function drawLineChart<T extends { turn: number }>(canvas: HTMLCanvasElement, series: T[], lines: { sw: (p: T) => number; baseline: (p: T) => number; yLabel: string; yMax: number | "auto"; emptyText: string; zeroIsMissing?: boolean }): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   const dpr = window.devicePixelRatio || 1;
@@ -3064,7 +3064,7 @@ function drawLineChart<T extends { turn: number }>(canvas: HTMLCanvasElement, se
   }
   const turns = series.map((p) => p.turn);
   const maxTurn = Math.max(...turns, 1);
-  const allVals = series.flatMap((p) => [lines.sw(p), lines.baseline(p)]);
+  const allVals = series.flatMap((p) => [lines.sw(p), lines.baseline(p)]).filter((value) => Number.isFinite(value) && (!lines.zeroIsMissing || value > 0));
   const maxVal = Math.max(...allVals, 1);
   const niceMax = lines.yMax === "auto" ? Math.ceil(maxVal / 1000) * 1000 || 1000 : lines.yMax;
   const ySteps = 4;
@@ -3083,12 +3083,23 @@ function drawLineChart<T extends { turn: number }>(canvas: HTMLCanvasElement, se
   const yFor = (v: number) => padT + plotH - (Math.min(v, niceMax) / niceMax) * plotH;
   const drawLine = (color: string, fn: (p: T) => number, width: number) => {
     ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath();
-    series.forEach((p, i) => { const x = xFor(p.turn), y = yFor(fn(p)); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }); ctx.stroke();
+    let drawing = false;
+    for (const point of series) {
+      const value = fn(point);
+      if (!Number.isFinite(value) || (lines.zeroIsMissing && value <= 0)) { drawing = false; continue; }
+      const x = xFor(point.turn), y = yFor(value);
+      drawing ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      drawing = true;
+    }
+    ctx.stroke();
   };
   drawLine("#f97316", lines.baseline, 2);
   drawLine("#6366f1", lines.sw, 2.5);
   const last = series[series.length - 1];
-  const dot = (color: string, value: number) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(xFor(last.turn), yFor(value), 3.5, 0, Math.PI * 2); ctx.fill(); };
+  const dot = (color: string, value: number) => {
+    if (!Number.isFinite(value) || (lines.zeroIsMissing && value <= 0)) return;
+    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(xFor(last.turn), yFor(value), 3.5, 0, Math.PI * 2); ctx.fill();
+  };
   dot("#f97316", lines.baseline(last)); dot("#6366f1", lines.sw(last));
 }
 

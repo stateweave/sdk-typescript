@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { StateWeaveAgent } from "../agent/stateweaveAgent.js";
+import { StateWeaveRunError } from "../agent/stateweaveRunner.js";
 import { clusterGraph } from "../core/projection.js";
 import type { AgentResult, GraphFrame, TraceStep } from "../core/types.js";
 import { createModelFromEnv } from "../llm/factory.js";
@@ -317,17 +318,25 @@ async function captureStateWeaveTurn(agent: StateWeaveAgent, prompt: string): Pr
     };
   } catch (error) {
     const answer = `(agent error: ${error instanceof Error ? error.message : String(error)})`;
-    const frame = agent.getFrame();
+    const trace = error instanceof StateWeaveRunError ? error.trace : [];
+    const usage = traceUsage(trace);
+    // A failed run has still consumed model context and may have completed useful
+    // graph/tool operations. StateWeaveAgent only commits final results, so keep
+    // the last valid partial frame here instead of discarding the whole run.
+    const partialFrame = trace.at(-1)?.frameAfter ?? agent.getFrame();
+    if (partialFrame) agent.resetFrame(partialFrame);
+    const frame = partialFrame ?? agent.getFrame();
+    const latencyMs = Date.now() - startedAt;
     return {
       answer,
-      contextTokens: 0,
-      totalInputTokens: 0,
-      outputTokens: 0,
-      tokenCountSource: "estimated",
-      modelCalls: 0,
-      toolCalls: 0,
-      latencyMs: Date.now() - startedAt,
-      result: { finalAnswer: answer, frame: frame!, graph: frame?.graph ?? { nodes: [], edges: [] }, trace: [], metadata: { runId: "error", tools: [], startedAt: new Date(startedAt).toISOString(), completedAt: new Date().toISOString(), durationMs: Date.now() - startedAt, maxIterations: MAX_AGENT_ITERATIONS, stepCount: 0, retryCount: 0, status: "error" } }
+      contextTokens: usage.contextTokens,
+      totalInputTokens: usage.totalInputTokens,
+      outputTokens: usage.outputTokens,
+      tokenCountSource: usage.tokenCountSource,
+      modelCalls: trace.length,
+      toolCalls: trace.flatMap((step) => step.parsedOps).filter((op) => op.op === "call_tool").length,
+      latencyMs,
+      result: { finalAnswer: answer, frame: frame!, graph: frame?.graph ?? { nodes: [], edges: [] }, trace, metadata: error instanceof StateWeaveRunError ? error.metadata : { runId: "error", tools: [], startedAt: new Date(startedAt).toISOString(), completedAt: new Date().toISOString(), durationMs: latencyMs, maxIterations: MAX_AGENT_ITERATIONS, stepCount: trace.length, retryCount: 0, status: "error" } }
     };
   }
 }
