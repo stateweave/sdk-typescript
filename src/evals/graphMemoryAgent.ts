@@ -2,6 +2,7 @@ import type { Model, ModelInput } from "../llm/model.js";
 import type { GraphFrame } from "../core/types.js";
 import { applyOps } from "../core/applyOps.js";
 import { createInitialGraphFrame, appendInputToGraphFrame, cloneFrame } from "../core/graph.js";
+import { projectGraph } from "../core/projection.js";
 import { serializeGraphFrame } from "../core/serialize.js";
 import { parseAndValidateOps } from "../core/validateOps.js";
 import { estimateStateWeaveTokens } from "../llm/tokenizer.js";
@@ -14,6 +15,9 @@ export type GraphMemoryResult = {
   edgeCount: number;
   transactionValid: boolean;
   transactionError?: string;
+  retrievedNodeIds: string[];
+  focusNodeIds: string[];
+  retrievedEvidence: Array<{ id: string; type: string; text: string }>;
 };
 
 // Pure StateWeave memory primitive: exactly one model call, no tools and no
@@ -49,6 +53,12 @@ export class GraphMemoryAgent {
     const startedAt = Date.now();
     this.frame = appendInputToGraphFrame(this.frame, { objective: "Answer the user's question.", input: prompt });
 
+    const projection = projectGraph(this.frame.graph, { focusNodeId: this.frame.frame.focusNodeId, zoom: this.frame.frame.zoom });
+    const retrievedSet = new Set(projection.retrievedNodeIds);
+    const retrievedEvidence = projection.focusNodes
+      .filter((node) => retrievedSet.has(node.id))
+      .slice(0, 16)
+      .map((node) => ({ id: node.id, type: node.type, text: node.text.slice(0, 240) }));
     const serialized = serializeGraphFrame(this.frame);
     const input: ModelInput = {
       prompt: serialized,
@@ -69,7 +79,10 @@ export class GraphMemoryAgent {
         latencyMs: Date.now() - startedAt,
         nodeCount: this.frame.graph.nodes.length,
         edgeCount: this.frame.graph.edges.length,
-        transactionValid: true
+        transactionValid: true,
+        retrievedNodeIds: projection.retrievedNodeIds,
+        focusNodeIds: projection.focusNodes.map((node) => node.id),
+        retrievedEvidence
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -80,7 +93,10 @@ export class GraphMemoryAgent {
         nodeCount: this.frame.graph.nodes.length,
         edgeCount: this.frame.graph.edges.length,
         transactionValid: false,
-        transactionError: message
+        transactionError: message,
+        retrievedNodeIds: projection.retrievedNodeIds,
+        focusNodeIds: projection.focusNodes.map((node) => node.id),
+        retrievedEvidence
       };
     }
   }

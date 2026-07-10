@@ -1,13 +1,13 @@
 import { projectGraph, type Cluster } from "./projection.js";
 import type { GraphFrame, GraphNode } from "./types.js";
 
-const BIG_BRAIN_LIMIT = 20;
-const PERIPHERAL_CLUSTER_LIMIT = 12;
-const CANDIDATE_FOCUS_LIMIT = 24;
-const TIMELINE_LIMIT = 15;
-const TIMELINE_CHRONOLOGY_LIMIT = 30;
-const TIMELINE_CHRONOLOGY_NEIGHBORHOOD = 4;
-const TIMELINE_CHRONOLOGY_HEAD = 6;
+const BIG_BRAIN_LIMIT = 64;
+const PERIPHERAL_CLUSTER_LIMIT = 24;
+const CANDIDATE_FOCUS_LIMIT = 48;
+const TIMELINE_LIMIT = 24;
+const TIMELINE_CHRONOLOGY_LIMIT = 64;
+const TIMELINE_CHRONOLOGY_NEIGHBORHOOD = 8;
+const TIMELINE_CHRONOLOGY_HEAD = 12;
 
 export function serializeGraphFrame(frame: GraphFrame): string {
   const projection = projectGraph(frame.graph, { focusNodeId: frame.frame.focusNodeId, zoom: frame.frame.zoom });

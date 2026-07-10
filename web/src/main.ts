@@ -2939,7 +2939,7 @@ type ProbeScore = { score: "pass" | "partial" | "fail"; reasoning: string };
 type InfiniteSeriesPoint = { turn: number; stateweaveTokens: number; baselineTokens: number; windowedTokens: number; stateweaveNodes: number; stateweaveClusters: number; stateweaveLatencyMs: number; baselineLatencyMs: number; windowedLatencyMs: number };
 type InfiniteQualityPoint = { turn: number; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; stateweaveScored: number; naiveScored: number; windowedScored: number };
 type InfiniteReview = { batch: number; findings: string; filesChanged: string[]; testsPassed: boolean; commit?: string; error?: string };
-type InfiniteFinalReport = { generatedAt: string; summary: string; strengths: string[]; weaknesses: string[]; categoryBreakdown: { difficulty: string; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; count: number }[]; driftInstances: { turn: number; description: string }[]; verdict: string };
+type InfiniteFinalReport = { generatedAt: string; summary: string; strengths: string[]; weaknesses: string[]; categoryBreakdown: { difficulty: string; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; count: number }[]; driftInstances: { turn: number; description: string }[]; verdict: string; contextAssessment?: string; recommendedSdkFocus?: string };
 type InfiniteStateView = {
   status: string;
   batchSize: number;
@@ -2956,6 +2956,8 @@ type InfiniteStateView = {
   qualitySeries: InfiniteQualityPoint[];
   probes?: { turn: number; difficulty: string }[];
   finalReport?: InfiniteFinalReport;
+  validTransactions?: number;
+  invalidTransactions?: number;
   reviews: InfiniteReview[];
   graphSnapshot?: { nodeCount: number; edgeCount: number; clusterCount: number; clusters: { id: string; label: string; nodeCount: number }[] };
   message?: string;
@@ -2978,25 +2980,23 @@ function renderInfiniteState(state: InfiniteStateView): void {
   const swTokens = lastTurn?.promptTokenEstimate ?? 0;
   const baselineTokens = lastTurn?.baselineTokenEstimate ?? 0;
   const windowedTokens = lastTurn?.windowedTokenEstimate ?? 0;
-  const avgLatency = state.turns.length ? Math.round(state.turns.reduce((sum, t) => sum + t.latencyMs, 0) / state.turns.length) : 0;
-  const tokenDelta = baselineTokens > 0 ? Math.round((1 - swTokens / baselineTokens) * 100) : 0;
   const lastQ = state.qualitySeries.at(-1);
-  const invalidTransactions = state.turns.filter((turn) => turn.transactionValid === false).length;
+  const invalidTransactions = state.invalidTransactions ?? state.turns.filter((turn) => turn.transactionValid === false).length;
+  const validTransactions = state.validTransactions ?? Math.max(0, state.turnCount - invalidTransactions);
   infiniteMetrics.innerHTML = `
-    <div class="infinite-metric"><span class="metric-label">Status</span><strong>${escapeHtml(state.status)}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Turns completed</span><strong>${state.turnCount} / ${totalTurns}</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Probes scored</span><strong>${state.qualitySeries.at(-1)?.stateweaveScored ?? 0}</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Nodes / edges</span><strong>${snapshot?.nodeCount ?? 0} / ${snapshot?.edgeCount ?? 0}</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Graph transactions</span><strong>${invalidTransactions ? `${invalidTransactions} invalid` : "valid"}</strong></div>
-    <div class="infinite-metric sw-metric"><span class="metric-label">SW context</span><strong>${swTokens.toLocaleString()} tok</strong></div>
-    <div class="infinite-metric baseline-metric"><span class="metric-label">Naive context</span><strong>${baselineTokens.toLocaleString()} tok</strong></div>
-    <div class="infinite-metric windowed-metric"><span class="metric-label">Windowed context</span><strong>${windowedTokens.toLocaleString()} tok</strong></div>
-    <div class="infinite-metric ${tokenDelta > 0 ? "sw-metric" : ""}"><span class="metric-label">SW saves</span><strong>${tokenDelta > 0 ? `${tokenDelta}%` : "—"}</strong></div>
-    <div class="infinite-metric sw-metric"><span class="metric-label">SW pass-rate</span><strong>${lastQ ? `${Math.round(lastQ.stateweavePassRate * 100)}%` : "—"}</strong></div>
-    <div class="infinite-metric baseline-metric"><span class="metric-label">Naive pass-rate</span><strong>${lastQ ? `${Math.round(lastQ.naivePassRate * 100)}%` : "—"}</strong></div>
-    <div class="infinite-metric windowed-metric"><span class="metric-label">Windowed pass-rate</span><strong>${lastQ ? `${Math.round(lastQ.windowedPassRate * 100)}%` : "—"}</strong></div>`;
+    <div class="infinite-metric"><span class="metric-label">Scored probes</span><strong>${lastQ?.stateweaveScored ?? 0}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Graph integrity</span><strong>${validTransactions} valid / ${invalidTransactions} invalid</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Graph size</span><strong>${snapshot?.nodeCount ?? 0} nodes / ${snapshot?.edgeCount ?? 0} edges</strong></div>
+    <div class="infinite-metric sw-metric"><span class="metric-label">SW projection</span><strong>${swTokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric baseline-metric"><span class="metric-label">Naive transcript</span><strong>${baselineTokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric windowed-metric"><span class="metric-label">32k window</span><strong>${windowedTokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric sw-metric"><span class="metric-label">SW quality</span><strong>${lastQ ? `${(lastQ.stateweavePassRate * 100).toFixed(1)}%` : "—"}</strong></div>
+    <div class="infinite-metric baseline-metric"><span class="metric-label">Naive quality</span><strong>${lastQ ? `${(lastQ.naivePassRate * 100).toFixed(1)}%` : "—"}</strong></div>
+    <div class="infinite-metric windowed-metric"><span class="metric-label">Window quality</span><strong>${lastQ ? `${(lastQ.windowedPassRate * 100).toFixed(1)}%` : "—"}</strong></div>`;
 
   if (state.message) infiniteMetrics.insertAdjacentHTML("beforeend", `<p class="message error"><div>${escapeHtml(state.message)}</div></p>`);
+  renderInfiniteExecutive(state, totalTurns, swTokens, baselineTokens, windowedTokens, validTransactions, invalidTransactions, lastQ);
 
   renderInfiniteChart(state.series);
   renderInfiniteQualityChart(state.qualitySeries);
@@ -3025,6 +3025,40 @@ function renderInfiniteState(state: InfiniteStateView): void {
   // so there is nothing to stop here when a run finishes.
 }
 
+function renderInfiniteExecutive(
+  state: InfiniteStateView,
+  totalTurns: number,
+  swTokens: number,
+  baselineTokens: number,
+  windowedTokens: number,
+  validTransactions: number,
+  invalidTransactions: number,
+  quality: InfiniteQualityPoint | undefined
+): void {
+  const target = document.getElementById("infinite-executive-live");
+  if (!target) return;
+  const swQuality = quality ? quality.stateweavePassRate * 100 : undefined;
+  const naiveQuality = quality ? quality.naivePassRate * 100 : undefined;
+  const windowQuality = quality ? quality.windowedPassRate * 100 : undefined;
+  const strongestBaseline = Math.max(naiveQuality ?? 0, windowQuality ?? 0);
+  const qualityGap = swQuality === undefined ? undefined : swQuality - strongestBaseline;
+  const verdict = qualityGap === undefined
+    ? "Waiting for scored probes."
+    : qualityGap >= 2
+      ? `StateWeave currently leads the strongest baseline by ${qualityGap.toFixed(1)} points.`
+      : qualityGap <= -2
+        ? `StateWeave currently trails the strongest baseline by ${Math.abs(qualityGap).toFixed(1)} points; this iteration must diagnose and improve retrieval.`
+        : `StateWeave is currently within ${Math.abs(qualityGap).toFixed(1)} points of the strongest baseline.`;
+  const contextComparison = baselineTokens > 0
+    ? `The graph projection uses ${swTokens.toLocaleString()} tokens versus ${baselineTokens.toLocaleString()} for naive and ${windowedTokens.toLocaleString()} for the 32k window.`
+    : "Context measurements will appear after the first completed turn.";
+  const integrity = invalidTransactions
+    ? `${invalidTransactions} of ${validTransactions + invalidTransactions} graph transactions were invalid.`
+    : `All ${validTransactions} completed graph transactions are valid.`;
+  target.className = `infinite-executive-live ${qualityGap !== undefined && qualityGap < -2 ? "warn" : ""}`;
+  target.innerHTML = `<h3>Executive snapshot</h3><p><strong>T${state.turnCount} / ${totalTurns}:</strong> ${escapeHtml(verdict)} ${escapeHtml(contextComparison)} ${escapeHtml(integrity)}</p>`;
+}
+
 function scoreBadges(score: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore }): string {
   const chip = (label: string, s: ProbeScore) => `<span class="score-chip ${s.score}">${label} ${s.score}</span>`;
   return chip("SW", score.stateweave) + chip("naive", score.naive) + chip("win", score.windowed);
@@ -3041,6 +3075,8 @@ function renderInfiniteIdle(reason: string): void {
   infiniteMetrics.innerHTML = `<div class="infinite-metric"><span class="metric-label">Status</span><strong>${escapeHtml(reason || "idle")}</strong></div><div class="infinite-metric" style="grid-column: span 3"><span class="metric-label">Live mirror</span><strong>Waiting for the next harness run…</strong></div>`;
   const reportEl = document.getElementById("infinite-report");
   if (reportEl) reportEl.hidden = true;
+  const executiveEl = document.getElementById("infinite-executive-live");
+  if (executiveEl) executiveEl.innerHTML = `<h3>Executive snapshot</h3><p>${escapeHtml(reason || "Waiting for the next run.")}</p>`;
 }
 
 function renderInfiniteReport(report: InfiniteFinalReport | undefined): void {
@@ -3053,6 +3089,8 @@ function renderInfiniteReport(report: InfiniteFinalReport | undefined): void {
     <div class="report-header"><h3>Executive assessment</h3><small>by the challenger · ${escapeHtml(report.generatedAt)}</small></div>
     <p class="report-summary">${escapeHtml(report.summary)}</p>
     <p class="report-verdict"><strong>Verdict:</strong> ${escapeHtml(report.verdict)}</p>
+    ${report.contextAssessment ? `<p class="report-summary"><strong>Context assessment:</strong> ${escapeHtml(report.contextAssessment)}</p>` : ""}
+    ${report.recommendedSdkFocus ? `<p class="report-summary"><strong>Recommended SDK focus:</strong> ${escapeHtml(report.recommendedSdkFocus)}</p>` : ""}
     ${cats}${drift}
     <div class="report-cols"><div><h4>Strengths</h4><ul>${(report.strengths ?? []).map((s) => `<li>${escapeHtml(s)}</li>`).join("") || "<li>—</li>"}</ul></div><div><h4>Weaknesses</h4><ul>${(report.weaknesses ?? []).map((s) => `<li>${escapeHtml(s)}</li>`).join("") || "<li>—</li>"}</ul></div></div>`;
 }

@@ -251,10 +251,11 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
             <div id="infinite-live-badge" class="infinite-live-badge">waiting</div>
           </div>
           <div id="infinite-metrics" class="infinite-metrics"></div>
+          <div id="infinite-executive-live" class="infinite-executive-live"></div>
           <div class="infinite-chart-wrap">
             <div class="infinite-chart-header">
-              <h3>Context window: StateWeave vs baselines</h3>
-              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave <span class="legend-dot baseline"></span>Naive messages[] <span class="legend-dot windowed"></span>Windowed</div>
+              <h3>Context usage: adaptive graph vs strong baselines</h3>
+              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave adaptive projection <span class="legend-dot baseline"></span>Naive up to 96k <span class="legend-dot windowed"></span>Windowed 32k</div>
             </div>
             <canvas id="infinite-chart" class="infinite-chart" width="800" height="220"></canvas>
           </div>

@@ -2754,6 +2754,33 @@ label {
 }
 
 /* Infinite chart */
+.infinite-executive-live {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid #bbf7d0;
+  border-left: 4px solid #10b981;
+  border-radius: 10px;
+  background: #f0fdf4;
+}
+
+.infinite-executive-live.warn {
+  border-color: #fed7aa;
+  border-left-color: #f97316;
+  background: #fff7ed;
+}
+
+.infinite-executive-live h3 {
+  margin: 0 0 5px;
+  font-size: 0.86rem;
+}
+
+.infinite-executive-live p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 .infinite-chart-wrap {
   border: 1px solid var(--border);
   border-radius: 12px;

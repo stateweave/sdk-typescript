@@ -11,13 +11,11 @@ const MAX_TURNS_KEPT = 60;
 const MAX_SERIES_KEPT = 5000;
 const SEED_INTERVAL = 6;
 const CONSISTENCY_EVERY = 20;
-const WINDOWED_BUDGET_TOKENS = 12000;
-// Naive baseline gets a realistic context budget: at long horizons the transcript
-// outgrows any real model's usable window and old facts are dropped. SW never
-// compacts (append-only graph + disposable projection), so this is the gap the
-// harness is designed to expose. 16k models a typical production agent's usable
-// budget (after system prompt, tools, instructions eat most of the window).
-const NAIVE_FULL_BUDGET_TOKENS = 16000;
+// Strong baselines for modern long-context models. The naive contender may use
+// nearly the full 100k smart-context region; the bounded window gets 32k. This
+// avoids manufacturing an early StateWeave win with obsolete 12k/16k limits.
+const WINDOWED_BUDGET_TOKENS = 32000;
+const NAIVE_FULL_BUDGET_TOKENS = 96000;
 const CALL_TIMEOUT_MS = 90_000; // 90s hard limit per model call
 
 export type ProbeScore = { score: "pass" | "partial" | "fail"; reasoning: string };
@@ -32,6 +30,13 @@ export type ProbeRecord = {
   difficulty: string;
   dependsOnTurn: number;
   scores: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore };
+  stateweaveDiagnostics: {
+    answer: string;
+    transactionValid: boolean;
+    transactionError?: string;
+    retrievedNodeIds: string[];
+    retrievedEvidence: Array<{ id: string; type: string; text: string }>;
+  };
 };
 
 export type ConsistencyCheck = {
@@ -74,6 +79,7 @@ export type InfiniteTurnRecord = {
   windowedLatencyMs: number;
   transactionValid: boolean;
   transactionError?: string;
+  retrievedNodeCount: number;
   score?: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore };
 };
 
@@ -85,6 +91,8 @@ export type InfiniteFinalReport = {
   categoryBreakdown: { difficulty: string; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; count: number }[];
   driftInstances: { turn: number; description: string }[];
   verdict: string;
+  contextAssessment: string;
+  recommendedSdkFocus: string;
 };
 
 export type InfiniteStatus = "idle" | "running" | "batch_done" | "reviewing" | "committed" | "failed" | "stopped" | "reporting";
@@ -106,6 +114,8 @@ export type InfiniteState = {
   seeds: SeedRecord[];
   probes: ProbeRecord[];
   consistencyChecks: ConsistencyCheck[];
+  validTransactions: number;
+  invalidTransactions: number;
   reviews: Array<{ batch: number; findings: string; filesChanged: string[]; testsPassed: boolean }>;
   finalReport?: InfiniteFinalReport;
   graphSnapshot?: { nodeCount: number; edgeCount: number; clusterCount: number; clusters: { id: string; label: string; nodeCount: number }[] };
@@ -277,7 +287,22 @@ export class InfiniteHarness {
         this.judgeScore(probe.prompt, probe.assertions, probe.goldAnswer, result.windowed.answer)
       ]);
       const scores = { stateweave: swScore, naive: naiveScore, windowed: windowedScore };
-      const probeRecord: ProbeRecord = { turn: globalTurn, prompt: probe.prompt, goldAnswer: probe.goldAnswer, assertions: probe.assertions, difficulty: probe.difficulty, dependsOnTurn: probe.dependsOnTurn, scores };
+      const probeRecord: ProbeRecord = {
+        turn: globalTurn,
+        prompt: probe.prompt,
+        goldAnswer: probe.goldAnswer,
+        assertions: probe.assertions,
+        difficulty: probe.difficulty,
+        dependsOnTurn: probe.dependsOnTurn,
+        scores,
+        stateweaveDiagnostics: {
+          answer: result.stateweave.answer,
+          transactionValid: result.stateweave.transactionValid,
+          ...(result.stateweave.transactionError ? { transactionError: result.stateweave.transactionError } : {}),
+          retrievedNodeIds: result.stateweave.retrievedNodeIds,
+          retrievedEvidence: result.stateweave.retrievedEvidence
+        }
+      };
       this.state.probes = [...this.state.probes, probeRecord];
       this.updateQualitySeries();
       this.recordTurn(batch, globalTurn, "probe", probe.prompt, result, scores);
@@ -313,20 +338,20 @@ export class InfiniteHarness {
     return this.state.turns.find((t) => t.turn === turn)?.answer ?? "";
   }
 
-  private async runAllAgents(prompt: string): Promise<{ stateweave: { answer: string; latencyMs: number; transactionValid: boolean; transactionError?: string }; naive: { answer: string; latencyMs: number; tokenEstimate: number }; windowed: { answer: string; latencyMs: number; tokenEstimate: number } }> {
+  private async runAllAgents(prompt: string): Promise<{ stateweave: { answer: string; latencyMs: number; transactionValid: boolean; transactionError?: string; retrievedNodeIds: string[]; retrievedEvidence: Array<{ id: string; type: string; text: string }> }; naive: { answer: string; latencyMs: number; tokenEstimate: number }; windowed: { answer: string; latencyMs: number; tokenEstimate: number } }> {
     // Run agents SEQUENTIALLY (not Promise.allSettled) to cap peak memory on
     // small VPS hosts. Each call is still individually guarded by withTimeout.
-    const swResult = await withTimeout((async () => { const start = Date.now(); const r = await this.agent.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, transactionValid: r.transactionValid, transactionError: r.transactionError }; })(), CALL_TIMEOUT_MS, "SW agent").then(v => ({ status: "fulfilled" as const, value: v }), () => ({ status: "rejected" as const, reason: undefined }));
+    const swResult = await withTimeout((async () => { const start = Date.now(); const r = await this.agent.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, transactionValid: r.transactionValid, transactionError: r.transactionError, retrievedNodeIds: r.retrievedNodeIds, retrievedEvidence: r.retrievedEvidence }; })(), CALL_TIMEOUT_MS, "SW agent").then(v => ({ status: "fulfilled" as const, value: v }), () => ({ status: "rejected" as const, reason: undefined }));
     const nResult = await withTimeout((async () => { const start = Date.now(); const r = await this.naive.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, tokenEstimate: r.tokenEstimate }; })(), CALL_TIMEOUT_MS, "naive").then(v => ({ status: "fulfilled" as const, value: v }), () => ({ status: "rejected" as const, reason: undefined }));
     const wResult = await withTimeout((async () => { const start = Date.now(); const r = await this.windowed.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, tokenEstimate: r.tokenEstimate }; })(), CALL_TIMEOUT_MS, "windowed").then(v => ({ status: "fulfilled" as const, value: v }), () => ({ status: "rejected" as const, reason: undefined }));
     return {
-      stateweave: swResult.status === "fulfilled" ? swResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS, transactionValid: false, transactionError: "timeout" },
+      stateweave: swResult.status === "fulfilled" ? swResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS, transactionValid: false, transactionError: "timeout", retrievedNodeIds: [], retrievedEvidence: [] },
       naive: nResult.status === "fulfilled" ? nResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS, tokenEstimate: 0 },
       windowed: wResult.status === "fulfilled" ? wResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS, tokenEstimate: 0 }
     };
   }
 
-  private recordTurn(batch: number, globalTurn: number, phase: "seed" | "probe" | "consistency", prompt: string, result: { stateweave: { answer: string; latencyMs: number; transactionValid: boolean; transactionError?: string }; naive: { answer: string; latencyMs: number; tokenEstimate: number }; windowed: { answer: string; latencyMs: number; tokenEstimate: number } }, score: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore } | undefined): void {
+  private recordTurn(batch: number, globalTurn: number, phase: "seed" | "probe" | "consistency", prompt: string, result: { stateweave: { answer: string; latencyMs: number; transactionValid: boolean; transactionError?: string; retrievedNodeIds: string[]; retrievedEvidence: Array<{ id: string; type: string; text: string }> }; naive: { answer: string; latencyMs: number; tokenEstimate: number }; windowed: { answer: string; latencyMs: number; tokenEstimate: number } }, score: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore } | undefined): void {
     const frame = this.agent.getFrame();
     const swTokens = frame ? Math.round(serializeGraphFrame(frame).length / 4) : 0;
     const clusters = frame ? clusterGraph(frame.graph) : [];
@@ -347,8 +372,11 @@ export class InfiniteHarness {
       windowedLatencyMs: result.windowed.latencyMs,
       transactionValid: result.stateweave.transactionValid,
       ...(result.stateweave.transactionError ? { transactionError: result.stateweave.transactionError } : {}),
+      retrievedNodeCount: result.stateweave.retrievedNodeIds.length,
       score
     };
+    if (result.stateweave.transactionValid) this.state.validTransactions += 1;
+    else this.state.invalidTransactions += 1;
     this.state.turns = [...this.state.turns, record].slice(-MAX_TURNS_KEPT);
     this.state.series = [...this.state.series, {
       turn: globalTurn, stateweaveTokens: swTokens, baselineTokens: result.naive.tokenEstimate, windowedTokens: result.windowed.tokenEstimate,
@@ -399,24 +427,39 @@ export class InfiniteHarness {
       this.state.seeds = [...this.ledger];
       eligible.push(seed);
     }
-    const target = eligible[Math.floor(Math.random() * eligible.length)];
-    const difficulty = pickDifficulty(turn);
-    const fact = target.facts[Math.floor(Math.random() * target.facts.length)];
+    const difficulty = pickDifficulty(turn, eligible.length);
+    const targetIndex = turn % eligible.length;
+    const target = eligible[targetIndex];
+    const secondary = eligible.length > 1 ? eligible[(targetIndex + Math.max(1, Math.floor(eligible.length / 2))) % eligible.length] : target;
+    const fact = target.facts[turn % target.facts.length];
+    const secondFact = secondary.facts[(turn + 1) % secondary.facts.length];
+    const source = difficulty === "combine"
+      ? `Fact A from turn ${target.turn}: "${fact}". Fact B from turn ${secondary.turn}: "${secondFact}".`
+      : difficulty === "chronology"
+        ? `Earlier candidate from turn ${Math.min(target.turn, secondary.turn)}: "${target.turn <= secondary.turn ? fact : secondFact}". Later candidate from turn ${Math.max(target.turn, secondary.turn)}: "${target.turn <= secondary.turn ? secondFact : fact}".`
+        : `Fact from turn ${target.turn}: "${fact}".`;
     const input: ModelInput = {
-      prompt: `You are probing recall of a fact planted at turn ${target.turn}. The planted fact is: "${fact}" (from seed: "${target.prompt.slice(0, 120)}"). Difficulty: ${difficulty} (${difficultyHint(difficulty)}). Output ONLY JSON:\n{"prompt":"<a question the agent must answer>","goldAnswer":"<correct answer>","assertions":["<key phrase the answer must contain>"]}\nDo NOT repeat the fact verbatim in the prompt. Make it require recall.`,
+      prompt: `Create one adversarial ${difficulty} memory probe. ${source}\n${difficultyHint(difficulty)}\nOutput ONLY JSON:\n{"prompt":"<natural question shown to the memory systems>","goldAnswer":"<complete correct answer>","assertions":["<independently required assertion>"]}\nThe prompt must paraphrase rather than quote the source facts. The gold and assertions must be objectively derivable only from the supplied source facts. For conflict, put one plausible wrong decoy in the QUESTION but require the stored fact as truth. For combine, require both supplied facts. For chronology, ask which supplied fact was established first and include both in the gold.`,
       mode: "text"
     };
     try {
       const out = await withTimeout(this.challenger.complete(input), CALL_TIMEOUT_MS, "probe gen");
       const parsed = extractJson(out.text) as { prompt?: string; goldAnswer?: string; assertions?: string[] };
       if (parsed.prompt && parsed.goldAnswer) {
-        const stem = String(parsed.prompt).toLowerCase().slice(0, 40);
-        if (this.askedProbeStems.has(stem)) return this.generateProbe(turn);
+        const stem = String(parsed.prompt).toLowerCase().replace(/\s+/g, " ").slice(0, 60);
+        if (this.askedProbeStems.has(stem)) return this.generateProbe(turn + 1);
         this.askedProbeStems.add(stem);
-        return { prompt: String(parsed.prompt), goldAnswer: String(parsed.goldAnswer), assertions: Array.isArray(parsed.assertions) ? parsed.assertions.map(String) : [String(parsed.goldAnswer)], difficulty, dependsOnTurn: target.turn };
+        return { prompt: String(parsed.prompt), goldAnswer: String(parsed.goldAnswer), assertions: Array.isArray(parsed.assertions) ? parsed.assertions.map(String) : [String(parsed.goldAnswer)], difficulty, dependsOnTurn: Math.min(target.turn, secondary.turn) };
       }
     } catch { /* fall through */ }
-    return { prompt: `Recall: what was established as "${fact}"?`, goldAnswer: fact, assertions: [fact], difficulty, dependsOnTurn: target.turn };
+    const fallbackPrompt = difficulty === "combine"
+      ? `How do the earlier details about ${fact} and ${secondFact} fit together?`
+      : difficulty === "chronology"
+        ? `Which was established first: ${fact} or ${secondFact}?`
+        : difficulty === "conflict"
+          ? `Someone suggested the stored detail was different. What was the original correct value for ${fact.split("=")[0]}?`
+          : `What earlier detail corresponds to ${fact.split("=")[0]}?`;
+    return { prompt: fallbackPrompt, goldAnswer: difficulty === "combine" || difficulty === "chronology" ? `${fact}; ${secondFact}` : fact, assertions: difficulty === "combine" || difficulty === "chronology" ? [fact, secondFact] : [fact], difficulty, dependsOnTurn: Math.min(target.turn, secondary.turn) };
   }
 
   private pickConsistencyTarget(turn: number): ProbeRecord | undefined {
@@ -469,8 +512,18 @@ export class InfiniteHarness {
       return { difficulty: d, count: subset.length, stateweavePassRate: rate(subset.map((p) => p.scores.stateweave)), naivePassRate: rate(subset.map((p) => p.scores.naive)), windowedPassRate: rate(subset.map((p) => p.scores.windowed)) };
     });
 
+    const lastContext = this.state.series.at(-1);
+    const failedDiagnostics = probes
+      .filter((probe) => probe.scores.stateweave.score !== "pass")
+      .slice(0, 8)
+      .map((probe) => {
+        const evidence = probe.stateweaveDiagnostics.retrievedEvidence.map((item) => `${item.type}:${item.text.slice(0, 80)}`).join(" | ") || "none";
+        return `- ${probe.difficulty} T${probe.turn}: judge=${probe.scores.stateweave.reasoning}; answer=${probe.stateweaveDiagnostics.answer.slice(0, 120)}; retrieved=${evidence}`;
+      })
+      .join("\n");
     const input: ModelInput = {
-      prompt: `You are the lead interviewer who just completed a ${this.state.turnCount}-turn adversarial interview of a memory system called StateWeave, compared against a naive messages[] baseline and a sliding-window baseline.\n\nResults across ${probes.length} scored recall probes:\n- StateWeave pass rate: ${swRate}%\n- Naive messages[] pass rate: ${naiveRate}%\n- Windowed messages[] pass rate: ${windowedRate}%\n\nConsistency checks: ${this.state.consistencyChecks.length} (${drifts.length} failed to match gold on re-ask).\n\nCategory breakdown:\n${diffBreakdown.map((d) => `- ${d.difficulty}: SW ${d.stateweavePassRate}%, naive ${d.naivePassRate}%, windowed ${d.windowedPassRate}% (${d.count} probes)`).join("\n")}\n\nGraph state: ${this.state.graphSnapshot?.nodeCount ?? 0} nodes, ${this.state.graphSnapshot?.clusterCount ?? 0} clusters.\n\nWrite a direct executive assessment as JSON:\n{"summary":"2-3 sentence verdict","strengths":["..."],"weaknesses":["..."],"verdict":"one punchy line"}\nBe specific and honest. If StateWeave is not clearly better on quality, say so.`,
+      prompt: `You are the lead interviewer who just completed a ${this.state.turnCount}-turn adversarial interview of StateWeave against a naive transcript (up to 96k tokens) and a 32k sliding window.\n\nResults across ${probes.length} scored probes:\n- StateWeave: ${swRate}%\n- Naive: ${naiveRate}%\n- Windowed: ${windowedRate}%\n\nConsistency: ${this.state.consistencyChecks.length} checks, ${drifts.length} failed re-asks. Graph integrity: ${this.state.validTransactions} valid / ${this.state.invalidTransactions} invalid transactions.\nContext at the final turn: StateWeave ${lastContext?.stateweaveTokens ?? 0} tokens, naive ${lastContext?.baselineTokens ?? 0}, windowed ${lastContext?.windowedTokens ?? 0}.\n\nCategory breakdown:\n${diffBreakdown.map((d) => `- ${d.difficulty}: SW ${d.stateweavePassRate}%, naive ${d.naivePassRate}%, windowed ${d.windowedPassRate}% (${d.count})`).join("\n")}\n\nRepresentative StateWeave failures with actual retrieval evidence:\n${failedDiagnostics || "(none)"}\n\nGraph: ${this.state.graphSnapshot?.nodeCount ?? 0} nodes, ${this.state.graphSnapshot?.edgeCount ?? 0} edges, ${this.state.graphSnapshot?.clusterCount ?? 0} clusters.\n\nWrite concise executive JSON:\n{"summary":"2-3 sentence evidence-based result","strengths":["..."],"weaknesses":["..."],"verdict":"one line","contextAssessment":"whether the projection budget is too small, sufficient, or wasteful based on quality and evidence","recommendedSdkFocus":"one structural core SDK area to improve next and why"}\nBe honest. Distinguish retrieval misses (evidence absent) from reasoning/presentation misses (correct evidence present).`,
+
       mode: "text"
     };
     let report: InfiniteFinalReport = {
@@ -479,7 +532,9 @@ export class InfiniteHarness {
       strengths: [], weaknesses: [],
       categoryBreakdown: diffBreakdown,
       driftInstances: drifts.map((c) => ({ turn: c.reaskTurn, description: `Re-ask of turn ${c.originalTurn} did not match gold: "${c.prompt.slice(0, 80)}"` })),
-      verdict: swRate > Math.max(naiveRate, windowedRate) ? "StateWeave retained memory better under load." : "No clear quality advantage; context efficiency without quality is not enough."
+      verdict: swRate > Math.max(naiveRate, windowedRate) ? "StateWeave retained memory better under load." : "No clear quality advantage; context efficiency without quality is not enough.",
+      contextAssessment: `Final context: StateWeave ${lastContext?.stateweaveTokens ?? 0} tokens, naive ${lastContext?.baselineTokens ?? 0}, windowed ${lastContext?.windowedTokens ?? 0}.`,
+      recommendedSdkFocus: "Inspect failed-probe retrieval evidence and fix the highest-count structural failure mode."
     };
     try {
       const out = await withTimeout(this.challenger.complete(input), CALL_TIMEOUT_MS, "final report");
@@ -492,7 +547,7 @@ export class InfiniteHarness {
 
 function emptyState(batchSize: number, batchCount: number, selfImprove: boolean, challengerModel: string, agentModel: string): InfiniteState {
   const now = new Date().toISOString();
-  return { status: "idle", batchSize, batchCount, turnCount: 0, startedAt: now, updatedAt: now, currentBatch: 0, challengerModel, agentModel, selfImprove, turns: [], series: [], qualitySeries: [], seeds: [], probes: [], consistencyChecks: [], reviews: [] };
+  return { status: "idle", batchSize, batchCount, turnCount: 0, startedAt: now, updatedAt: now, currentBatch: 0, challengerModel, agentModel, selfImprove, turns: [], series: [], qualitySeries: [], seeds: [], probes: [], consistencyChecks: [], validTransactions: 0, invalidTransactions: 0, reviews: [] };
 }
 
 function graphSnapshot(graph: { nodes: { id: string; type: string; text: string }[]; edges: unknown[] } | undefined, clusters: ReturnType<typeof clusterGraph>): InfiniteState["graphSnapshot"] | undefined {
@@ -505,19 +560,17 @@ function modelName(model: Model): string {
   return config?.model ?? model.constructor.name;
 }
 
-function pickDifficulty(turn: number): string {
-  const ramp = Math.min(4, Math.floor(turn / 12));
-  const labels = ["recall", "recall", "combine", "conflict", "chronology"];
-  const pool = labels.slice(0, ramp + 2);
-  return pool[Math.floor(Math.random() * pool.length)];
+function pickDifficulty(turn: number, eligibleSeedCount: number): string {
+  if (eligibleSeedCount < 2 || turn < 10) return "recall";
+  return ["recall", "combine", "conflict", "chronology"][turn % 4];
 }
 
 function difficultyHint(difficulty: string): string {
   switch (difficulty) {
     case "recall": return "ask for a single planted fact";
-    case "combine": return "ask how two facts relate";
-    case "conflict": return "present a contradicting decoy and ask for the true fact";
-    case "chronology": return "ask which fact came first";
+    case "combine": return "Require both facts in one synthesis answer; neither fact alone can pass.";
+    case "conflict": return "Include a plausible contradictory decoy in the question and require the stored fact as truth.";
+    case "chronology": return "Require the two facts and identify which was established earlier from their source turns.";
     default: return "test recall of a planted fact";
   }
 }

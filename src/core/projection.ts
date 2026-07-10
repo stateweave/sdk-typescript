@@ -38,15 +38,23 @@ export type Projection = {
 };
 
 const DEFAULT_RADIUS = 4;
-const DEFAULT_BUDGET = 64;
-const RETRIEVAL_BUDGET = 24;
+const DEFAULT_BUDGET = 96;
+const RETRIEVAL_BUDGET = 48;
+const RETRIEVAL_BUDGET_CHRONOLOGY = 72;
+const RETRIEVAL_BUDGET_CONFLICT = 64;
+// Modern models have a much larger reliable context region than the original
+// ~5k-token projection used here. Keep the view bounded, but spend more of that
+// region when a query needs historical evidence. These are node ceilings rather
+// than graph compaction: the append-only StateGraph remains complete.
+const FOCUS_NODE_CAP = 64;
+const FOCUS_NODE_CAP_CONFLICT = 80;
+const FOCUS_NODE_CAP_CHRONOLOGY = 96;
 
-export function clusterGraph(graph: StateGraph): Cluster[] {
+export function clusterGraph(graph: StateGraph, adjacency: Map<string, string[]> = undirectedAdjacency(graph)): Cluster[] {
   const nodes = graph.nodes;
   if (!nodes.length) return [];
 
   const byId = new Map(nodes.map((node) => [node.id, node]));
-  const adjacency = undirectedAdjacency(graph);
 
   // Step 1: initial per-turn assignment via multi-source BFS from user_inputs.
   const rawClusters = initialTurnClusters(graph, adjacency, byId);
@@ -64,8 +72,9 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
   const zoom = Math.max(0, focus.zoom ?? 0);
   const radius = focus.radius ?? Math.max(1, DEFAULT_RADIUS - zoom);
   const budget = Math.max(8, (focus.budgetNodes ?? DEFAULT_BUDGET) - zoom * 8);
-  const clusters = clusterGraph(graph);
   const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+  const adjacency = undirectedAdjacency(graph);
+  const clusters = clusterGraph(graph, adjacency);
 
   const explicitFocus = focusNodeIdResolved(graph, focus);
   const centers = unique([
@@ -75,7 +84,7 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
   ].filter((id): id is string => typeof id === "string" && byId.has(id)));
 
   // Positional focus: BFS from the active centers.
-  const positionalFocus = bfsBounded(graph, centers, radius, budget);
+  const positionalFocus = bfsBounded(graph, centers, radius, budget, adjacency);
 
   // Retrieval focus: if the active node looks like a question, search ALL nodes
   // for keyword matches and pull them (and their clusters) into view.
@@ -84,36 +93,120 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
     .filter((node): node is GraphNode => node !== undefined && node.type === "user_input")
     .map((node) => node.text)
     .join(" ");
+  const chronologyMode = looksLikeChronology(activeNodeText);
+  const conflictMode = looksLikeConflict(activeNodeText);
+  const retrievalBudget = chronologyMode
+    ? RETRIEVAL_BUDGET_CHRONOLOGY
+    : conflictMode
+      ? RETRIEVAL_BUDGET_CONFLICT
+      : RETRIEVAL_BUDGET;
   const retrievedNodeIds = looksLikeQuestion(activeNodeText)
-    ? retrieveNodes(graph, activeNodeText, RETRIEVAL_BUDGET)
+    ? retrieveNodes(graph, clusters, activeNodeText, retrievalBudget, chronologyMode, conflictMode, adjacency)
     : [];
 
   // Merge positional + retrieved into the final focus set.
   const focusSet = new Set<string>([...positionalFocus, ...retrievedNodeIds]);
 
-  // If retrieval found nodes in clusters NOT already in the positional focus,
-  // expand to include those clusters' seed + key members (so combine works).
+  // Relational + sibling context for synthesis/combine. Atomized semantic
+  // facts (fact, artifact, decision, ...) carry only their bare value and drop
+  // both the framing prose and the OTHER facts that were stated alongside them
+  // in the same conversational turn. So when retrieval recalls ONE fact from a
+  // turn, combine probes that need that turn's sibling facts (e.g. "plan a
+  // party for my sister" needs BOTH the shellfish allergy AND the family pet
+  // from the same turn; "derive the reduction ratio" needs BOTH the native
+  // focal length AND the reducer) fail: the model sees the single recalled fact
+  // and hedges instead of synthesizing the turn as a whole. This is exactly the
+  // fragmentation naive messages[] avoids by keeping a turn's full prose
+  // together. It also bites retrieval itself: a recalled user_input (which
+  // scores on the framing nouns like "sister") is structural and was skipped,
+  // so its sibling facts were never co-located.
+  //
+  // Fix: for every retrieved node, pull in its originating user_input AND that
+  // user_input's other directly-connected semantic facts (the siblings) as
+  // distinct, co-visible focus nodes. This lets the model synthesize across
+  // co-occurring facts the way it would from a turn's prose. It replaces an
+  // earlier "first 8 oldest cluster members" expansion which, for a merged
+  // multi-topic cluster, just re-injected unrelated oldest facts and crowded
+  // out exactly the siblings combine needs.
+  const retrievalAdjacency = adjacency;
+  const relationalNeighborIds = new Set<string>();
+  const shouldExposeNode = (node: GraphNode): boolean => node.type !== "system" && node.type !== "tool_call" && node.type !== "tool_result";
+
+  const expandFrom = (originId: string): void => {
+    const origin = byId.get(originId);
+    if (!origin) return;
+    focusSet.add(originId);
+    relationalNeighborIds.add(originId);
+    for (const siblingId of retrievalAdjacency.get(originId) ?? []) {
+      const sibling = byId.get(siblingId);
+      if (!sibling || !shouldExposeNode(sibling)) continue;
+      focusSet.add(siblingId);
+      relationalNeighborIds.add(siblingId);
+    }
+  };
+
   for (const nodeId of retrievedNodeIds) {
-    const cluster = clusters.find((c) => c.nodeIds.includes(nodeId));
-    if (!cluster) continue;
-    for (const memberId of cluster.nodeIds.slice(0, 8)) focusSet.add(memberId);
+    const node = byId.get(nodeId);
+    if (!node) continue;
+
+    if (node.type === "user_input") {
+      // A recalled user_input is its own origin; expand its direct context so
+      // the turn's co-occurring nodes remain co-visible.
+      expandFrom(nodeId);
+      continue;
+    }
+
+    if (isStructural(node.type)) {
+      // A recalled structural node (rare) may still anchor useful context.
+      expandFrom(nodeId);
+      continue;
+    }
+
+    // A recalled semantic fact: expand via its originating user_input(s).
+    for (const neighborId of retrievalAdjacency.get(nodeId) ?? []) {
+      const neighbor = byId.get(neighborId);
+      if (!neighbor || neighbor.type !== "user_input") continue;
+      expandFrom(neighborId);
+    }
   }
 
-  const focusNodes = [...focusSet]
-    .map((id) => byId.get(id))
-    .filter((node): node is GraphNode => Boolean(node))
-    .sort(byCreatedAt);
+  const focusNodeCap = chronologyMode
+    ? FOCUS_NODE_CAP_CHRONOLOGY
+    : conflictMode
+      ? FOCUS_NODE_CAP_CONFLICT
+      : FOCUS_NODE_CAP;
+  const focusNodes = capFocusNodes(
+    [...focusSet]
+      .map((id) => byId.get(id))
+      .filter((node): node is GraphNode => Boolean(node)),
+    retrievedNodeIds,
+    new Set(centers),
+    relationalNeighborIds,
+    focusNodeCap,
+    chronologyMode
+  ).sort(byCreatedAt);
 
+  // Only render edges between nodes that survived the focus cap, so the detail
+  // window never references nodes the model cannot see.
+  const visibleNodeIds = new Set(focusNodes.map((node) => node.id));
   const focusEdgeLines = graph.edges
-    .filter((edge) => focusSet.has(edge.from) && focusSet.has(edge.to))
+    .filter((edge) => visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to))
     .map((edge) => `edge ${edge.from} ${edge.type} ${edge.to}`);
 
+  const nodeToClusterId = new Map<string, string>();
+  for (const cluster of clusters) {
+    for (const nodeId of cluster.nodeIds) nodeToClusterId.set(nodeId, cluster.id);
+  }
+
   const focusClusterIds = new Set(
-    clusters.filter((cluster) => cluster.nodeIds.some((id) => focusSet.has(id))).map((cluster) => cluster.id)
+    [...focusSet]
+      .map((nodeId) => nodeToClusterId.get(nodeId))
+      .filter((id): id is string => Boolean(id))
   );
 
+  const peripheralClusterIds = touchedPeripheralClusters(graph, nodeToClusterId, focusSet, focusClusterIds);
   const peripheralClusters = clusters
-    .filter((cluster) => !focusClusterIds.has(cluster.id) && clusterTouches(graph, cluster.nodeIds, focusSet))
+    .filter((cluster) => peripheralClusterIds.has(cluster.id))
     .sort((a, b) => b.nodeCount - a.nodeCount);
 
   const bigBrainClusters = [...clusters].sort((a, b) => createdAtOf(byId.get(a.seedId)) - createdAtOf(byId.get(b.seedId)));
@@ -123,35 +216,179 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
 
 // --- Retrieval: deterministic keyword matching ---
 
+function isStructural(nodeType: string): boolean {
+  return nodeType === "system" || nodeType === "user_input" || nodeType === "assistant_output" || nodeType === "tool_call" || nodeType === "tool_result";
+}
+
 function looksLikeQuestion(text: string): boolean {
   if (!text || text.length < 8) return false;
   const lower = text.toLowerCase();
-  return /\b(what|who|when|where|which|how|why|recall|what's|name the|identify|list|deadline|rule|code|password|pin|access|color|time|rate|length|amount|how much|how many)\b/.test(lower)
-    || lower.includes("?")
-    || /^(show|tell|give|find|retrieve|look up|what is)/.test(lower);
+  if (/\b(what|who|when|where|which|how|why|recall|what's|name the|identify|list|deadline|rule|code|password|pin|access|color|time|rate|length|amount|how much|how many)\b/.test(lower) || lower.includes("?") || /^(show|tell|give|find|retrieve|look up|what is)/.test(lower)) {
+    return true;
+  }
+  return looksLikeRecallPrompt(lower);
 }
 
-function retrieveNodes(graph: StateGraph, queryText: string, budget: number): string[] {
+function looksLikeRecallPrompt(lowerText: string): boolean {
+  return /\b(between|again|earlier|previously|previous|mentioned|remember|recall|review|revisit|i'm trying|i am trying|trying to|i want to|i need to|earlier in|you mentioned|i mentioned|i remember|i know someone|reviewing)\b/.test(lowerText);
+}
+
+function looksLikeChronology(text: string): boolean {
+  if (!text) return false;
+  return /\b(first|last|earlier|later|before|after|chronolog|then|sequence|initial|initially|final|oldest|newest|order)\b/i.test(text);
+}
+
+function looksLikeConflict(text: string): boolean {
+  if (!text) return false;
+  return /\b(actually|instead|conflict|contradict|correction|disagree|wrong|should be|did you mean|second[- ]guess|not right|not sure|revise|changed|override|revoke|decoy|true|false)\b/i.test(text);
+}
+
+function retrieveNodes(
+  graph: StateGraph,
+  clusters: Cluster[],
+  queryText: string,
+  budget: number,
+  chronologyMode = false,
+  conflictMode = false,
+  adjacency: Map<string, string[]> = undirectedAdjacency(graph)
+): string[] {
   const keywords = extractKeywords(queryText);
   if (!keywords.length) return [];
 
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+  const clusterLookup = new Map<string, Cluster>();
+  for (const cluster of clusters) {
+    for (const nodeId of cluster.nodeIds) clusterLookup.set(nodeId, cluster);
+  }
+  const userInputTextByNode = userInputContextByNode(graph, byId, adjacency);
+
+  const contradictionMap = conflictMode ? contradictionNeighbors(graph) : undefined;
   const scored: Array<{ id: string; score: number }> = [];
   for (const node of graph.nodes) {
     if (node.type === "system" || node.type === "tool_call" || node.type === "tool_result") continue;
-    const text = `${node.type} ${node.text}`.toLowerCase();
+    const parts = [`${node.type} ${node.text}`.toLowerCase()];
+    const userContext = userInputTextByNode.get(node.id);
+    if (userContext) parts.push(userContext);
+
+    // Also include the merged cluster seed as a fallback for nodes that have no
+    // direct user_input context (for backwards-compat with merged semantic
+    // clusters used by the current peripheral vision model).
+    const cluster = clusterLookup.get(node.id);
+    if (cluster) {
+      const seed = byId.get(cluster.seedId);
+      if (seed) parts.push(oneLine(seed.text).toLowerCase());
+    }
+
+    const text = parts.join(" ");
     let score = 0;
     for (const kw of keywords) {
       if (text.includes(kw)) score += kw.length > 4 ? 3 : 2;
     }
     // Boost nodes that hold data (facts, artifacts, decisions carry the answers).
     if (node.type === "fact" || node.type === "artifact" || node.type === "decision" || node.type === "assistant_output") score += 1;
+    // Conflict probes should prefer current, supported context over stale data.
+    if (conflictMode) {
+      if (node.status === "stale" || node.status === "rejected") score -= 2;
+      else if (!node.status || node.status === "active" || node.status === "resolved") score += 1;
+    }
+    // For chronology probes, surface user-input turn sources more reliably than
+    // very recent noise so ordered questions can compare historical intent accurately.
+    if (chronologyMode && node.type === "user_input") score += 2;
     if (score > 0) scored.push({ id: node.id, score });
   }
 
-  return scored
-    .sort((a, b) => b.score - a.score || createdAtOf(graph.nodes.find((n) => n.id === b.id)) - createdAtOf(graph.nodes.find((n) => n.id === a.id)))
-    .slice(0, budget)
-    .map((s) => s.id);
+  const sorted = scored
+    .sort((a, b) => b.score - a.score || (chronologyMode
+      ? createdAtOf(byId.get(a.id)) - createdAtOf(byId.get(b.id))
+      : createdAtOf(byId.get(b.id)) - createdAtOf(byId.get(a.id))));
+
+  const selected = new Set<string>();
+
+  for (const item of sorted) {
+    if (selected.size >= budget) break;
+    selected.add(item.id);
+  }
+
+  // Ensure semantically relevant historical user_inputs are not starved by recency
+  // bias: older turns should stay reachable when the probe references names/facts
+  // embedded in user_input prose but their matching nodes rank outside the budget.
+  for (const item of sorted.slice(0, Math.min(6, sorted.length))) {
+    const node = byId.get(item.id);
+    if (node?.type === "user_input") selected.add(item.id);
+    if (selected.size >= budget + 2) break;
+  }
+
+  if (conflictMode && contradictionMap) {
+    for (const id of [...selected]) {
+      for (const neighbor of contradictionMap.get(id) ?? []) {
+        selected.add(neighbor);
+      }
+    }
+  }
+
+  return [...selected];
+}
+
+function contradictionNeighbors(graph: StateGraph): Map<string, string[]> {
+  const neighbors = new Map<string, string[]>();
+  for (const edge of graph.edges) {
+    if (edge.type !== "contradicts") continue;
+    const fromNeighbors = neighbors.get(edge.from) ?? [];
+    if (!fromNeighbors.includes(edge.to)) {
+      fromNeighbors.push(edge.to);
+      neighbors.set(edge.from, fromNeighbors);
+    }
+    const toNeighbors = neighbors.get(edge.to) ?? [];
+    if (!toNeighbors.includes(edge.from)) {
+      toNeighbors.push(edge.from);
+      neighbors.set(edge.to, toNeighbors);
+    }
+  }
+  return neighbors;
+}
+
+function userInputContextByNode(graph: StateGraph, byId: Map<string, GraphNode>, adjacency: Map<string, string[]> = undirectedAdjacency(graph)): Map<string, string> {
+  const nodeInputs = graph.nodes;
+  const userInputs = nodeInputs.filter((node) => node.type === "user_input").sort(byCreatedAt);
+  const assignment = new Map<string, string>();
+  const bestDist = new Map<string, number>();
+  const bestRank = new Map<string, number>();
+  const queue: Array<{ id: string; dist: number; source: string; rank: number }> = [];
+
+  userInputs.forEach((node, index) => {
+    assignment.set(node.id, node.id);
+    bestDist.set(node.id, 0);
+    bestRank.set(node.id, index);
+    queue.push({ id: node.id, dist: 0, source: node.id, rank: index });  });
+
+  let index = 0;
+  while (index < queue.length) {
+    const current = queue[index++];
+    if (!current) continue;
+    const neighbors = adjacency.get(current.id) ?? [];
+    for (const next of neighbors) {
+      const dist = current.dist + 1;
+      const prevDist = bestDist.get(next);
+      const prevRank = bestRank.get(next);
+      const nextRank = current.rank;
+
+      if (prevDist === undefined || dist < prevDist || (dist === prevDist && nextRank < (prevRank ?? Number.MAX_SAFE_INTEGER))) {
+        assignment.set(next, current.source);
+        bestDist.set(next, dist);
+        bestRank.set(next, nextRank);
+        queue.push({ id: next, dist, source: current.source, rank: nextRank });
+      }
+    }
+  }
+
+  const finalContext = new Map<string, string>();
+  for (const [nodeId, sourceId] of assignment) {
+    const sourceText = byId.get(sourceId)?.text;
+    if (!sourceText) continue;
+    finalContext.set(nodeId, oneLine(sourceText).toLowerCase());
+  }
+
+  return finalContext;
 }
 
 function extractKeywords(text: string): string[] {
@@ -171,9 +408,66 @@ function extractKeywords(text: string): string[] {
     "mentioned", "say", "said", "establish", "established", "plan", "planned", "specific",
     "exactly", "rule", "guideline"
   ]);
-  const words = text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length > 2 && !stop.has(w));
+  const rawWords = text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length > 2);
+  const words: string[] = [];
+  for (const word of rawWords) {
+    if (stop.has(word)) continue;
+    for (const variant of keywordForms(word)) {
+      if (!stop.has(variant)) words.push(variant);
+    }
+  }
   // Dedupe, prefer longer words (more specific), keep top 12.
   return [...new Set(words)].sort((a, b) => b.length - a.length).slice(0, 12);
+}
+
+function keywordForms(value: string): string[] {
+  const forms = new Set([value]);
+  if (value.length > 5 && value.endsWith("ing")) {
+    forms.add(value.slice(0, -3));
+  }
+  if (value.length > 4 && value.endsWith("ed")) {
+    forms.add(value.slice(0, -2));
+    forms.add(`${value.slice(0, -2)}e`);
+  }
+  if (value.length > 4 && value.endsWith("s")) {
+    forms.add(value.slice(0, -1));
+  }
+  return [...forms];
+}
+
+// --- Focus cap: keep retrieved answer-candidates, centers, and relational
+// context first, then fill with the most recent positional nodes. Small graphs
+// (below the cap) pass through unchanged.
+function capFocusNodes(
+  nodes: GraphNode[],
+  retrievedNodeIds: string[],
+  centerSet: Set<string>,
+  relationalNeighborIds: Set<string>,
+  maxNodes: number,
+  chronologyMode = false
+): GraphNode[] {
+  if (nodes.length <= maxNodes) return nodes;
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const retained = new Set<string>();
+  // Centers (system_root, focus node, latest user/assistant) are structural
+  // anchors the model needs to write valid GraphOps — always retain them.
+  for (const id of centerSet) if (byId.has(id)) retained.add(id);
+  // Retrieved nodes hold the answer candidates.
+  for (const id of retrievedNodeIds) if (byId.has(id) && retained.size < maxNodes) retained.add(id);
+  // Relational context frames atomized facts for synthesis.
+  for (const id of relationalNeighborIds) if (byId.has(id) && retained.size < maxNodes) retained.add(id);
+  // Fill remaining slots with the newest positional nodes, or oldest first for chronology probes.
+  const sortByNodeAge = chronologyMode
+    ? (a: GraphNode, b: GraphNode) => createdAtOf(a) - createdAtOf(b)
+    : (a: GraphNode, b: GraphNode) => createdAtOf(b) - createdAtOf(a);
+  const rest = nodes
+    .filter((node) => !retained.has(node.id))
+    .sort(sortByNodeAge);
+  for (const node of rest) {
+    if (retained.size >= maxNodes) break;
+    retained.add(node.id);
+  }
+  return [...retained].map((id) => byId.get(id)!);
 }
 
 // --- Clustering ---
@@ -218,16 +512,16 @@ function assignToNearestSeed(seeds: GraphNode[], adjacency: Map<string, string[]
   const bestRank = new Map<string, number>();
 
   for (const seed of seeds) {
-    queue.push({ id: seed.id, dist: 0, seed: seed.id, seedRank: seedRank.get(seed.id) ?? 0 });
+    const rank = seedRank.get(seed.id) ?? 0;
+    queue.push({ id: seed.id, dist: 0, seed: seed.id, seedRank: rank });
     bestDist.set(seed.id, 0);
-    bestRank.set(seed.id, seedRank.get(seed.id) ?? 0);
+    bestRank.set(seed.id, rank);
     assignment.set(seed.id, seed.id);
   }
 
-  queue.sort((a, b) => a.dist - b.dist || a.seedRank - b.seedRank);
-
-  while (queue.length) {
-    const current = queue.shift()!;
+  let index = 0;
+  while (index < queue.length) {
+    const current = queue[index++]!;
     const neighbors = adjacency.get(current.id) ?? [];
     for (const next of neighbors) {
       const dist = current.dist + 1;
@@ -303,8 +597,7 @@ export function clusterId(nodeIds: string[]): string {
 
 // --- BFS / graph utilities ---
 
-function bfsBounded(graph: StateGraph, centers: string[], radius: number, budget: number): Set<string> {
-  const adjacency = undirectedAdjacency(graph);
+function bfsBounded(graph: StateGraph, centers: string[], radius: number, budget: number, adjacency: Map<string, string[]> = undirectedAdjacency(graph)): Set<string> {
   const visited = new Map<string, number>();
   const queue: Array<{ id: string; dist: number }> = [];
 
@@ -314,10 +607,10 @@ function bfsBounded(graph: StateGraph, centers: string[], radius: number, budget
     queue.push({ id: center, dist: 0 });
   }
 
-  while (queue.length) {
+  let index = 0;
+  while (index < queue.length) {
     if (visited.size >= budget) break;
-    queue.sort((a, b) => a.dist - b.dist);
-    const current = queue.shift()!;
+    const current = queue[index++];
     if (current.dist >= radius) continue;
     for (const next of adjacency.get(current.id) ?? []) {
       if (visited.has(next)) continue;
@@ -344,8 +637,9 @@ function connectedComponent(graph: StateGraph, start: string, adjacency: Map<str
   const ids = new Set(graph.nodes.map((node) => node.id));
   const visited = new Set<string>();
   const queue = [start];
-  while (queue.length) {
-    const id = queue.shift();
+  let index = 0;
+  while (index < queue.length) {
+    const id = queue[index++];
     if (!id || visited.has(id) || !ids.has(id)) continue;
     visited.add(id);
     for (const next of adjacency.get(id) ?? []) if (!visited.has(next)) queue.push(next);
@@ -353,14 +647,23 @@ function connectedComponent(graph: StateGraph, start: string, adjacency: Map<str
   return visited;
 }
 
-function clusterTouches(graph: StateGraph, nodeIds: string[], focusSet: Set<string>): boolean {
-  const set = new Set(nodeIds);
+function touchedPeripheralClusters(graph: StateGraph, nodeToClusterId: Map<string, string>, focusSet: Set<string>, focusClusterIds: Set<string>): Set<string> {
+  const peripheral = new Set<string>();
+
   for (const edge of graph.edges) {
-    const inCluster = set.has(edge.from) || set.has(edge.to);
-    const touchesFocus = focusSet.has(edge.from) || focusSet.has(edge.to);
-    if (inCluster && touchesFocus) return true;
+    const fromCluster = nodeToClusterId.get(edge.from);
+    const toCluster = nodeToClusterId.get(edge.to);
+    if (!fromCluster || !toCluster || fromCluster === toCluster) continue;
+
+    if (focusSet.has(edge.from) && !focusClusterIds.has(toCluster)) {
+      peripheral.add(toCluster);
+    }
+    if (focusSet.has(edge.to) && !focusClusterIds.has(fromCluster)) {
+      peripheral.add(fromCluster);
+    }
   }
-  return false;
+
+  return peripheral;
 }
 
 function focusNodeIdResolved(graph: StateGraph, focus: ProjectionFocus): string | undefined {

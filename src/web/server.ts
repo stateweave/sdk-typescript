@@ -431,7 +431,7 @@ async function infiniteStateRoute(response: ServerResponse): Promise<void> {
     const raw = await readFile(infiniteStatePath, "utf8");
     json(response, 200, JSON.parse(raw) as InfiniteState);
   } catch {
-    json(response, 200, { status: "idle", batchSize: 50, batchCount: 1, turnCount: 0, startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), currentBatch: 0, challengerModel: "unknown", agentModel: "unknown", selfImprove: false, turns: [], series: [], qualitySeries: [], seeds: [], probes: [], consistencyChecks: [], reviews: [] } satisfies InfiniteState);
+    json(response, 200, { status: "idle", batchSize: 50, batchCount: 1, turnCount: 0, startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), currentBatch: 0, challengerModel: "unknown", agentModel: "unknown", selfImprove: false, turns: [], series: [], qualitySeries: [], seeds: [], probes: [], consistencyChecks: [], validTransactions: 0, invalidTransactions: 0, reviews: [] } satisfies InfiniteState);
   }
 }
 
