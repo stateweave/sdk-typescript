@@ -86,6 +86,29 @@ it("runs workspace write/edit tools end to end with SWX block-ref args", async (
   }
 });
 
+it("forces read and bash observations into a separate model iteration", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-observation-loop-"));
+  try {
+    const tools = createFileSystemTools({ rootDir: root });
+    await tools.find((tool) => tool.name === "write_file")?.execute({ file_path: "source.txt", content: "observed value" });
+    const model = new SequenceModel([
+      "SWX/1\n@edge system_root follows user_input_1\n@tool read_file file_path=source.txt\n@final \"I read it.\"",
+      "SWX/1\n@edge system_root follows user_input_1\n@tool read_file file_path=source.txt",
+      "SWX/1\n@tool write_file file_path=copy.txt content=observed_value\n@final \"Copied the observed value.\""
+    ]);
+
+    const result = await runStateWeave({ model, tools, maxIterations: 3 }, "Read source and make a copy");
+
+    expect(result.metadata.retryCount).toBe(1);
+    expect(result.trace[0].error).toMatch(/observation steps/);
+    expect(result.trace[1].parsedOps).toContainEqual(expect.objectContaining({ op: "call_tool", tool: "read_file" }));
+    expect(result.finalAnswer).toBe("Copied the observed value.");
+    expect(await readFile(path.join(root, "copy.txt"), "utf8")).toBe("observed_value");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it("returns long final_ref answers with multiple artifact refs end to end", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-final-ref-"));
   try {

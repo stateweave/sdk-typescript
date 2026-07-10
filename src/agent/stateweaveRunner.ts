@@ -80,6 +80,7 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
     try {
       parsedOps = parseAndValidateOps(rawModelOutput);
       if (hasWorkers(parsedOps) && parsedOps.some((op) => op.op === "final")) throw new Error("GraphOps cannot include @worker and @final in the same transaction; spawn workers first, then synthesize a final answer after worker results merge.");
+      validateObservationToolTransaction(parsedOps);
       frame = applyOps(frame, parsedOps);
       yield { type: "ops", step, ops: parsedOps };
       frame = await runToolOps(frame, parsedOps, tools, step);
@@ -214,6 +215,15 @@ type WorkerExecution = { plan: WorkerPlan; baseFrame: GraphFrame; result?: Agent
 
 function hasWorkers(ops: GraphOp[]): boolean {
   return ops.some((op) => op.op === "spawn_worker");
+}
+
+function validateObservationToolTransaction(ops: GraphOp[]): void {
+  const observationCalls = ops.filter((op): op is Extract<GraphOp, { op: "call_tool" }> => op.op === "call_tool" && (op.tool === "read_file" || op.tool === "bash_command"));
+  if (!observationCalls.length) return;
+  const otherToolCalls = ops.filter((op) => op.op === "call_tool").length - observationCalls.length;
+  if (ops.some((op) => op.op === "final") || otherToolCalls > 0 || observationCalls.length > 1) {
+    throw new Error("read_file and bash_command are observation steps: call exactly one in a transaction without other tools or @final, then use its tool_result in the next iteration.");
+  }
 }
 
 function workerOps(ops: GraphOp[]): Extract<GraphOp, { op: "spawn_worker" }>[] {
