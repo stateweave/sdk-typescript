@@ -1,7 +1,9 @@
 import type { Model, ModelInput } from "../llm/model.js";
 import type { GraphFrame } from "../core/types.js";
+import { applyOps } from "../core/applyOps.js";
 import { createInitialGraphFrame, appendInputToGraphFrame, cloneFrame } from "../core/graph.js";
 import { serializeGraphFrame } from "../core/serialize.js";
+import { parseAndValidateOps } from "../core/validateOps.js";
 import { estimateStateWeaveTokens } from "../llm/tokenizer.js";
 
 export type GraphMemoryResult = {
@@ -9,13 +11,15 @@ export type GraphMemoryResult = {
   tokenEstimate: number;
   latencyMs: number;
   nodeCount: number;
+  edgeCount: number;
+  transactionValid: boolean;
+  transactionError?: string;
 };
 
-// Pure StateWeave memory substrate — no tools, no agent loop, no GraphOps.
-// One model call per turn: project the graph → serialize → model → append answer.
-// This is the fair comparison against naive messages[]: both do exactly one call,
-// both face the same task. The only difference is the memory representation
-// (append-only graph + disposable projection vs growing message transcript).
+// Pure StateWeave memory primitive: exactly one model call, no tools and no
+// agent loop. The completion contains both the human answer and GraphOps. The
+// SDK parses and applies that transaction so future projections use a real
+// semantic graph rather than an assistant transcript disguised as one.
 export class GraphMemoryAgent {
   private model: Model;
   private systemPrompt: string;
@@ -46,34 +50,33 @@ export class GraphMemoryAgent {
     this.frame = appendInputToGraphFrame(this.frame, { objective: "Answer the user's question.", input: prompt });
 
     const serialized = serializeGraphFrame(this.frame);
-    const input: ModelInput = { prompt: serialized, mode: "text" };
+    const input: ModelInput = { prompt: serialized, frame: this.frame, mode: "graph_ops" };
     const output = await this.model.complete(input);
-    const answer = output.text.trim();
 
-    // Append the answer as an assistant_output node — append-only ground truth.
-    const assistantId = `assistant_output_${this.nextAssistantId()}`;
-    this.frame.graph.nodes.push({
-      id: assistantId,
-      type: "assistant_output",
-      text: answer,
-      status: "active",
-      confidence: 1,
-      createdAt: new Date().toISOString()
-    });
-
-    return {
-      answer,
-      tokenEstimate: estimateStateWeaveTokens(serialized).estimatedTokens,
-      latencyMs: Date.now() - startedAt,
-      nodeCount: this.frame.graph.nodes.length
-    };
-  }
-
-  private nextAssistantId(): number {
-    const max = this.frame.graph.nodes
-      .filter((n) => n.id.startsWith("assistant_output_"))
-      .map((n) => Number(n.id.replace("assistant_output_", "")))
-      .reduce((a, b) => Math.max(a, b), 0);
-    return max + 1;
+    try {
+      const ops = parseAndValidateOps(output.text);
+      const final = ops.find((op): op is Extract<(typeof ops)[number], { op: "final" }> => op.op === "final");
+      if (!final) throw new Error("SWX transaction did not include @final or @final_ref");
+      this.frame = applyOps(this.frame, ops);
+      return {
+        answer: final.answer,
+        tokenEstimate: estimateStateWeaveTokens(serialized).estimatedTokens,
+        latencyMs: Date.now() - startedAt,
+        nodeCount: this.frame.graph.nodes.length,
+        edgeCount: this.frame.graph.edges.length,
+        transactionValid: true
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        answer: `(invalid StateWeave transaction: ${message})`,
+        tokenEstimate: estimateStateWeaveTokens(serialized).estimatedTokens,
+        latencyMs: Date.now() - startedAt,
+        nodeCount: this.frame.graph.nodes.length,
+        edgeCount: this.frame.graph.edges.length,
+        transactionValid: false,
+        transactionError: message
+      };
+    }
   }
 }

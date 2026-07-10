@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { appendFile, readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { createModelFromEnv } from "../llm/factory.js";
 import type { Model, ModelInput } from "../llm/model.js";
@@ -72,6 +72,8 @@ export type InfiniteTurnRecord = {
   latencyMs: number;
   baselineLatencyMs: number;
   windowedLatencyMs: number;
+  transactionValid: boolean;
+  transactionError?: string;
   score?: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore };
 };
 
@@ -110,6 +112,13 @@ export type InfiniteState = {
   message?: string;
 };
 
+export type InfiniteReplayTurn = {
+  turn: number;
+  phase: "seed" | "probe" | "consistency";
+  prompt: string;
+  probe?: Pick<ProbeRecord, "goldAnswer" | "assertions" | "difficulty" | "dependsOnTurn"> & { baselineScore: ProbeScore };
+};
+
 export type InfiniteHarnessArgs = {
   batches?: number;
   batchSize?: number;
@@ -131,6 +140,7 @@ export class InfiniteHarness {
   private naive: NaiveBaselineAgent;
   private windowed: NaiveBaselineAgent;
   private maxIterations: number;
+  private replayPath: string;
   private state: InfiniteState;
   private ledger: SeedRecord[] = [];
   private askedProbeStems: Set<string> = new Set();
@@ -144,6 +154,7 @@ export class InfiniteHarness {
     this.challenger = args.challengerModel ?? createModelFromEnv();
     this.agentModel = args.agentModel ?? createModelFromEnv();
     this.maxIterations = args.maxIterations ?? 3;
+    this.replayPath = `${this.statePath}.replay.jsonl`;
     this.agent = new GraphMemoryAgent({ model: this.agentModel, systemPrompt: agentSystemPrompt() });
     this.naive = new NaiveBaselineAgent({ model: this.agentModel, variant: "full", maxContextTokens: NAIVE_FULL_BUDGET_TOKENS });
     this.windowed = new NaiveBaselineAgent({ model: this.agentModel, variant: "windowed", maxContextTokens: WINDOWED_BUDGET_TOKENS });
@@ -176,6 +187,7 @@ export class InfiniteHarness {
     this.running = true;
     this.state.status = "running";
     this.state.startedAt = new Date().toISOString();
+    await writeFile(this.replayPath, "");
     await this.saveState();
 
     for (let batch = this.state.currentBatch + 1; batch <= this.batchCount && this.running; batch++) {
@@ -201,6 +213,7 @@ export class InfiniteHarness {
       const globalTurn = this.state.turnCount + 1;
       const phase = this.phaseFor(globalTurn, this.batchSize);
       await this.runTurn(batch, globalTurn, turn, phase);
+      await this.appendReplayTurn(globalTurn, phase);
       // Persist after every turn so external watchers (worker push_state)
       // see live, turn-by-turn progress instead of waiting for completion.
       await this.saveState();
@@ -277,24 +290,43 @@ export class InfiniteHarness {
     }
   }
 
+  private async appendReplayTurn(turn: number, phase: "seed" | "probe" | "consistency"): Promise<void> {
+    const record = this.state.turns.find((item) => item.turn === turn);
+    if (!record) return;
+    const probe = this.state.probes.find((item) => item.turn === turn);
+    const replay: InfiniteReplayTurn = {
+      turn,
+      phase,
+      prompt: record.prompt,
+      ...(probe ? { probe: {
+        goldAnswer: probe.goldAnswer,
+        assertions: probe.assertions,
+        difficulty: probe.difficulty,
+        dependsOnTurn: probe.dependsOnTurn,
+        baselineScore: probe.scores.stateweave
+      } } : {})
+    };
+    await appendFile(this.replayPath, `${JSON.stringify(replay)}\n`);
+  }
+
   private originalAnswerFor(turn: number): string {
     return this.state.turns.find((t) => t.turn === turn)?.answer ?? "";
   }
 
-  private async runAllAgents(prompt: string): Promise<{ stateweave: { answer: string; latencyMs: number }; naive: { answer: string; latencyMs: number; tokenEstimate: number }; windowed: { answer: string; latencyMs: number; tokenEstimate: number } }> {
+  private async runAllAgents(prompt: string): Promise<{ stateweave: { answer: string; latencyMs: number; transactionValid: boolean; transactionError?: string }; naive: { answer: string; latencyMs: number; tokenEstimate: number }; windowed: { answer: string; latencyMs: number; tokenEstimate: number } }> {
     // Run agents SEQUENTIALLY (not Promise.allSettled) to cap peak memory on
     // small VPS hosts. Each call is still individually guarded by withTimeout.
-    const swResult = await withTimeout((async () => { const start = Date.now(); const r = await this.agent.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start }; })(), CALL_TIMEOUT_MS, "SW agent").then(v => ({ status: "fulfilled" as const, value: v }), () => ({ status: "rejected" as const, reason: undefined }));
+    const swResult = await withTimeout((async () => { const start = Date.now(); const r = await this.agent.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, transactionValid: r.transactionValid, transactionError: r.transactionError }; })(), CALL_TIMEOUT_MS, "SW agent").then(v => ({ status: "fulfilled" as const, value: v }), () => ({ status: "rejected" as const, reason: undefined }));
     const nResult = await withTimeout((async () => { const start = Date.now(); const r = await this.naive.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, tokenEstimate: r.tokenEstimate }; })(), CALL_TIMEOUT_MS, "naive").then(v => ({ status: "fulfilled" as const, value: v }), () => ({ status: "rejected" as const, reason: undefined }));
     const wResult = await withTimeout((async () => { const start = Date.now(); const r = await this.windowed.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, tokenEstimate: r.tokenEstimate }; })(), CALL_TIMEOUT_MS, "windowed").then(v => ({ status: "fulfilled" as const, value: v }), () => ({ status: "rejected" as const, reason: undefined }));
     return {
-      stateweave: swResult.status === "fulfilled" ? swResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS },
+      stateweave: swResult.status === "fulfilled" ? swResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS, transactionValid: false, transactionError: "timeout" },
       naive: nResult.status === "fulfilled" ? nResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS, tokenEstimate: 0 },
       windowed: wResult.status === "fulfilled" ? wResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS, tokenEstimate: 0 }
     };
   }
 
-  private recordTurn(batch: number, globalTurn: number, phase: "seed" | "probe" | "consistency", prompt: string, result: { stateweave: { answer: string; latencyMs: number }; naive: { answer: string; latencyMs: number; tokenEstimate: number }; windowed: { answer: string; latencyMs: number; tokenEstimate: number } }, score: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore } | undefined): void {
+  private recordTurn(batch: number, globalTurn: number, phase: "seed" | "probe" | "consistency", prompt: string, result: { stateweave: { answer: string; latencyMs: number; transactionValid: boolean; transactionError?: string }; naive: { answer: string; latencyMs: number; tokenEstimate: number }; windowed: { answer: string; latencyMs: number; tokenEstimate: number } }, score: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore } | undefined): void {
     const frame = this.agent.getFrame();
     const swTokens = frame ? Math.round(serializeGraphFrame(frame).length / 4) : 0;
     const clusters = frame ? clusterGraph(frame.graph) : [];
@@ -313,6 +345,8 @@ export class InfiniteHarness {
       latencyMs: result.stateweave.latencyMs,
       baselineLatencyMs: result.naive.latencyMs,
       windowedLatencyMs: result.windowed.latencyMs,
+      transactionValid: result.stateweave.transactionValid,
+      ...(result.stateweave.transactionError ? { transactionError: result.stateweave.transactionError } : {}),
       score
     };
     this.state.turns = [...this.state.turns, record].slice(-MAX_TURNS_KEPT);
@@ -497,10 +531,11 @@ function fallbackSeed(turn: number): SeedRecord {
   return { turn, ...bank[turn % bank.length] };
 }
 
-function agentSystemPrompt(): string {
+export function agentSystemPrompt(): string {
   return [
     "You are a StateWeave agent under adversarial memory testing.",
     "Your StateGraph is persistent working memory that never resets — use it to remember every fact across all turns.",
+    "In the same SWX completion, record every new durable fact as a concise semantic node and connect it to the current user_input; connect related facts/entities when useful. For recall-only questions, reuse existing facts instead of duplicating them.",
     "Answer concretely and precisely. When asked to recall a fact, retrieve it from your graph memory and state it directly.",
     "Never guess. If you cannot recall, say so."
   ].join(" ");
