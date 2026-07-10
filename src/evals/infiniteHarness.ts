@@ -89,6 +89,7 @@ export type InfiniteFinalReport = {
   strengths: string[];
   weaknesses: string[];
   categoryBreakdown: { difficulty: string; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; count: number }[];
+  ageBreakdown: { age: string; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; count: number }[];
   driftInstances: { turn: number; description: string }[];
   verdict: string;
   contextAssessment: string;
@@ -447,7 +448,6 @@ export class InfiniteHarness {
       const parsed = extractJson(out.text) as { prompt?: string; goldAnswer?: string; assertions?: string[] };
       if (parsed.prompt && parsed.goldAnswer) {
         const stem = String(parsed.prompt).toLowerCase().replace(/\s+/g, " ").slice(0, 60);
-        if (this.askedProbeStems.has(stem)) return this.generateProbe(turn + 1);
         this.askedProbeStems.add(stem);
         return { prompt: String(parsed.prompt), goldAnswer: String(parsed.goldAnswer), assertions: Array.isArray(parsed.assertions) ? parsed.assertions.map(String) : [String(parsed.goldAnswer)], difficulty, dependsOnTurn: Math.min(target.turn, secondary.turn) };
       }
@@ -521,8 +521,17 @@ export class InfiniteHarness {
         return `- ${probe.difficulty} T${probe.turn}: judge=${probe.scores.stateweave.reasoning}; answer=${probe.stateweaveDiagnostics.answer.slice(0, 120)}; retrieved=${evidence}`;
       })
       .join("\n");
+    const ageBuckets = [
+      { age: "0-24 turns", min: 0, max: 24 },
+      { age: "25-99 turns", min: 25, max: 99 },
+      { age: "100-499 turns", min: 100, max: 499 },
+      { age: "500+ turns", min: 500, max: Number.POSITIVE_INFINITY }
+    ].map((bucket) => {
+      const subset = probes.filter((probe) => probe.turn - probe.dependsOnTurn >= bucket.min && probe.turn - probe.dependsOnTurn <= bucket.max);
+      return { age: bucket.age, count: subset.length, stateweavePassRate: rate(subset.map((probe) => probe.scores.stateweave)), naivePassRate: rate(subset.map((probe) => probe.scores.naive)), windowedPassRate: rate(subset.map((probe) => probe.scores.windowed)) };
+    }).filter((bucket) => bucket.count > 0);
     const input: ModelInput = {
-      prompt: `You are the lead interviewer who just completed a ${this.state.turnCount}-turn adversarial interview of StateWeave against a naive transcript (up to 96k tokens) and a 32k sliding window.\n\nResults across ${probes.length} scored probes:\n- StateWeave: ${swRate}%\n- Naive: ${naiveRate}%\n- Windowed: ${windowedRate}%\n\nConsistency: ${this.state.consistencyChecks.length} checks, ${drifts.length} failed re-asks. Graph integrity: ${this.state.validTransactions} valid / ${this.state.invalidTransactions} invalid transactions.\nContext at the final turn: StateWeave ${lastContext?.stateweaveTokens ?? 0} tokens, naive ${lastContext?.baselineTokens ?? 0}, windowed ${lastContext?.windowedTokens ?? 0}.\n\nCategory breakdown:\n${diffBreakdown.map((d) => `- ${d.difficulty}: SW ${d.stateweavePassRate}%, naive ${d.naivePassRate}%, windowed ${d.windowedPassRate}% (${d.count})`).join("\n")}\n\nRepresentative StateWeave failures with actual retrieval evidence:\n${failedDiagnostics || "(none)"}\n\nGraph: ${this.state.graphSnapshot?.nodeCount ?? 0} nodes, ${this.state.graphSnapshot?.edgeCount ?? 0} edges, ${this.state.graphSnapshot?.clusterCount ?? 0} clusters.\n\nWrite concise executive JSON:\n{"summary":"2-3 sentence evidence-based result","strengths":["..."],"weaknesses":["..."],"verdict":"one line","contextAssessment":"whether the projection budget is too small, sufficient, or wasteful based on quality and evidence","recommendedSdkFocus":"one structural core SDK area to improve next and why"}\nBe honest. Distinguish retrieval misses (evidence absent) from reasoning/presentation misses (correct evidence present).`,
+      prompt: `You are the lead interviewer who just completed a ${this.state.turnCount}-turn adversarial interview of StateWeave against a naive transcript (up to 96k tokens) and a 32k sliding window.\n\nResults across ${probes.length} scored probes:\n- StateWeave: ${swRate}%\n- Naive: ${naiveRate}%\n- Windowed: ${windowedRate}%\n\nConsistency: ${this.state.consistencyChecks.length} checks, ${drifts.length} failed re-asks. Graph integrity: ${this.state.validTransactions} valid / ${this.state.invalidTransactions} invalid transactions.\nContext at the final turn: StateWeave ${lastContext?.stateweaveTokens ?? 0} tokens, naive ${lastContext?.baselineTokens ?? 0}, windowed ${lastContext?.windowedTokens ?? 0}.\n\nCategory breakdown:\n${diffBreakdown.map((d) => `- ${d.difficulty}: SW ${d.stateweavePassRate}%, naive ${d.naivePassRate}%, windowed ${d.windowedPassRate}% (${d.count})`).join("\n")}\nAge/retention breakdown:\n${ageBuckets.map((d) => `- ${d.age}: SW ${d.stateweavePassRate}%, naive ${d.naivePassRate}%, windowed ${d.windowedPassRate}% (${d.count})`).join("\n")}\n\nRepresentative StateWeave failures with actual retrieval evidence:\n${failedDiagnostics || "(none)"}\n\nGraph: ${this.state.graphSnapshot?.nodeCount ?? 0} nodes, ${this.state.graphSnapshot?.edgeCount ?? 0} edges, ${this.state.graphSnapshot?.clusterCount ?? 0} clusters.\n\nWrite concise executive JSON:\n{"summary":"2-3 sentence evidence-based result","strengths":["..."],"weaknesses":["..."],"verdict":"one line","contextAssessment":"whether the projection budget is too small, sufficient, or wasteful based on quality and evidence","recommendedSdkFocus":"one structural core SDK area to improve next and why"}\nBe honest. Distinguish retrieval misses (evidence absent) from reasoning/presentation misses (correct evidence present).`,
 
       mode: "text"
     };
@@ -531,6 +540,7 @@ export class InfiniteHarness {
       summary: `StateWeave: ${swRate}% pass vs naive ${naiveRate}% vs windowed ${windowedRate}% across ${probes.length} probes.`,
       strengths: [], weaknesses: [],
       categoryBreakdown: diffBreakdown,
+      ageBreakdown: ageBuckets,
       driftInstances: drifts.map((c) => ({ turn: c.reaskTurn, description: `Re-ask of turn ${c.originalTurn} did not match gold: "${c.prompt.slice(0, 80)}"` })),
       verdict: swRate > Math.max(naiveRate, windowedRate) ? "StateWeave retained memory better under load." : "No clear quality advantage; context efficiency without quality is not enough.",
       contextAssessment: `Final context: StateWeave ${lastContext?.stateweaveTokens ?? 0} tokens, naive ${lastContext?.baselineTokens ?? 0}, windowed ${lastContext?.windowedTokens ?? 0}.`,
@@ -539,7 +549,7 @@ export class InfiniteHarness {
     try {
       const out = await withTimeout(this.challenger.complete(input), CALL_TIMEOUT_MS, "final report");
       const parsed = extractJson(out.text) as Partial<InfiniteFinalReport>;
-      report = { ...report, ...parsed, categoryBreakdown: diffBreakdown, driftInstances: report.driftInstances, generatedAt: report.generatedAt };
+      report = { ...report, ...parsed, categoryBreakdown: diffBreakdown, ageBreakdown: ageBuckets, driftInstances: report.driftInstances, generatedAt: report.generatedAt };
     } catch { /* keep computed fallback */ }
     this.state.finalReport = report;
   }

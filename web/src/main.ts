@@ -2939,7 +2939,7 @@ type ProbeScore = { score: "pass" | "partial" | "fail"; reasoning: string };
 type InfiniteSeriesPoint = { turn: number; stateweaveTokens: number; baselineTokens: number; windowedTokens: number; stateweaveNodes: number; stateweaveClusters: number; stateweaveLatencyMs: number; baselineLatencyMs: number; windowedLatencyMs: number };
 type InfiniteQualityPoint = { turn: number; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; stateweaveScored: number; naiveScored: number; windowedScored: number };
 type InfiniteReview = { batch: number; findings: string; filesChanged: string[]; testsPassed: boolean; commit?: string; error?: string };
-type InfiniteFinalReport = { generatedAt: string; summary: string; strengths: string[]; weaknesses: string[]; categoryBreakdown: { difficulty: string; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; count: number }[]; driftInstances: { turn: number; description: string }[]; verdict: string; contextAssessment?: string; recommendedSdkFocus?: string };
+type InfiniteFinalReport = { generatedAt: string; summary: string; strengths: string[]; weaknesses: string[]; categoryBreakdown: { difficulty: string; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; count: number }[]; ageBreakdown?: { age: string; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; count: number }[]; driftInstances: { turn: number; description: string }[]; verdict: string; contextAssessment?: string; recommendedSdkFocus?: string };
 type InfiniteStateView = {
   status: string;
   batchSize: number;
@@ -2954,7 +2954,7 @@ type InfiniteStateView = {
   turns: InfiniteTurn[];
   series: InfiniteSeriesPoint[];
   qualitySeries: InfiniteQualityPoint[];
-  probes?: { turn: number; difficulty: string }[];
+  probes?: { turn: number; difficulty: string; dependsOnTurn: number; scores: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore } }[];
   finalReport?: InfiniteFinalReport;
   validTransactions?: number;
   invalidTransactions?: number;
@@ -2983,9 +2983,10 @@ function renderInfiniteState(state: InfiniteStateView): void {
   const lastQ = state.qualitySeries.at(-1);
   const invalidTransactions = state.invalidTransactions ?? state.turns.filter((turn) => turn.transactionValid === false).length;
   const validTransactions = state.validTransactions ?? Math.max(0, state.turnCount - invalidTransactions);
+  const oldestProbeAge = Math.max(0, ...(state.probes ?? []).map((probe) => probe.turn - probe.dependsOnTurn));
   infiniteMetrics.innerHTML = `
     <div class="infinite-metric"><span class="metric-label">Turns completed</span><strong>${state.turnCount} / ${totalTurns}</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Scored probes</span><strong>${lastQ?.stateweaveScored ?? 0}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Memory probes</span><strong>${lastQ?.stateweaveScored ?? 0} scored · oldest ${oldestProbeAge} turns</strong></div>
     <div class="infinite-metric"><span class="metric-label">Graph integrity</span><strong>${validTransactions} valid / ${invalidTransactions} invalid</strong></div>
     <div class="infinite-metric"><span class="metric-label">Graph size</span><strong>${snapshot?.nodeCount ?? 0} nodes / ${snapshot?.edgeCount ?? 0} edges</strong></div>
     <div class="infinite-metric sw-metric"><span class="metric-label">SW projection</span><strong>${swTokens.toLocaleString()} tok</strong></div>
@@ -2996,7 +2997,7 @@ function renderInfiniteState(state: InfiniteStateView): void {
     <div class="infinite-metric windowed-metric"><span class="metric-label">Window quality</span><strong>${lastQ ? `${(lastQ.windowedPassRate * 100).toFixed(1)}%` : "—"}</strong></div>`;
 
   if (state.message) infiniteMetrics.insertAdjacentHTML("beforeend", `<p class="message error"><div>${escapeHtml(state.message)}</div></p>`);
-  renderInfiniteExecutive(state, totalTurns, swTokens, baselineTokens, windowedTokens, validTransactions, invalidTransactions, lastQ);
+  renderInfiniteExecutive(state, totalTurns, swTokens, baselineTokens, windowedTokens, validTransactions, invalidTransactions, lastQ, oldestProbeAge);
 
   renderInfiniteChart(state.series);
   renderInfiniteQualityChart(state.qualitySeries);
@@ -3033,7 +3034,8 @@ function renderInfiniteExecutive(
   windowedTokens: number,
   validTransactions: number,
   invalidTransactions: number,
-  quality: InfiniteQualityPoint | undefined
+  quality: InfiniteQualityPoint | undefined,
+  oldestProbeAge: number
 ): void {
   const target = document.getElementById("infinite-executive-live");
   if (!target) return;
@@ -3050,7 +3052,7 @@ function renderInfiniteExecutive(
         ? `StateWeave currently trails the strongest baseline by ${Math.abs(qualityGap).toFixed(1)} points; this iteration must diagnose and improve retrieval.`
         : `StateWeave is currently within ${Math.abs(qualityGap).toFixed(1)} points of the strongest baseline.`;
   const contextComparison = baselineTokens > 0
-    ? `The graph projection uses ${swTokens.toLocaleString()} tokens versus ${baselineTokens.toLocaleString()} for naive and ${windowedTokens.toLocaleString()} for the 32k window.`
+    ? `The graph projection uses ${swTokens.toLocaleString()} tokens versus ${baselineTokens.toLocaleString()} for naive and ${windowedTokens.toLocaleString()} for the 32k window; the oldest scored memory is ${oldestProbeAge} turns old.`
     : "Context measurements will appear after the first completed turn.";
   const integrity = invalidTransactions
     ? `${invalidTransactions} of ${validTransactions + invalidTransactions} graph transactions were invalid.`
@@ -3084,6 +3086,7 @@ function renderInfiniteReport(report: InfiniteFinalReport | undefined): void {
   if (!el || !report) { if (el) el.hidden = true; return; }
   el.hidden = false;
   const cats = report.categoryBreakdown?.length ? `<table class="report-table"><thead><tr><th>Difficulty</th><th>Count</th><th>StateWeave</th><th>Naive</th><th>Windowed</th></tr></thead><tbody>${report.categoryBreakdown.map((c) => `<tr><td>${escapeHtml(c.difficulty)}</td><td>${c.count}</td><td class="sw-cell">${c.stateweavePassRate}%</td><td>${c.naivePassRate}%</td><td>${c.windowedPassRate}%</td></tr>`).join("")}</tbody></table>` : "";
+  const ages = report.ageBreakdown?.length ? `<h4>Retention by fact age</h4><table class="report-table"><thead><tr><th>Fact age</th><th>Count</th><th>StateWeave</th><th>Naive</th><th>Windowed</th></tr></thead><tbody>${report.ageBreakdown.map((c) => `<tr><td>${escapeHtml(c.age)}</td><td>${c.count}</td><td class="sw-cell">${c.stateweavePassRate}%</td><td>${c.naivePassRate}%</td><td>${c.windowedPassRate}%</td></tr>`).join("")}</tbody></table>` : "";
   const drift = report.driftInstances?.length ? `<div class="callout warn"><strong>Drift detected on re-ask:</strong><ul>${report.driftInstances.map((d) => `<li>T${d.turn}: ${escapeHtml(d.description)}</li>`).join("")}</ul></div>` : "";
   el.innerHTML = `
     <div class="report-header"><h3>Executive assessment</h3><small>by the challenger · ${escapeHtml(report.generatedAt)}</small></div>
@@ -3091,7 +3094,7 @@ function renderInfiniteReport(report: InfiniteFinalReport | undefined): void {
     <p class="report-verdict"><strong>Verdict:</strong> ${escapeHtml(report.verdict)}</p>
     ${report.contextAssessment ? `<p class="report-summary"><strong>Context assessment:</strong> ${escapeHtml(report.contextAssessment)}</p>` : ""}
     ${report.recommendedSdkFocus ? `<p class="report-summary"><strong>Recommended SDK focus:</strong> ${escapeHtml(report.recommendedSdkFocus)}</p>` : ""}
-    ${cats}${drift}
+    ${cats}${ages}${drift}
     <div class="report-cols"><div><h4>Strengths</h4><ul>${(report.strengths ?? []).map((s) => `<li>${escapeHtml(s)}</li>`).join("") || "<li>—</li>"}</ul></div><div><h4>Weaknesses</h4><ul>${(report.weaknesses ?? []).map((s) => `<li>${escapeHtml(s)}</li>`).join("") || "<li>—</li>"}</ul></div></div>`;
 }
 
@@ -3250,11 +3253,11 @@ function renderSwLoop(state: SwLoopState): void {
     <div class="infinite-metric"><span class="metric-label">Heartbeat</span><strong>${Number.isFinite(heartbeatAgeMs) ? `${Math.max(0, Math.round(heartbeatAgeMs / 1000))}s ago` : "—"}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Iteration</span><strong>${state.iteration || 0}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Phase</span><strong style="color:${phaseColors[phase] || "#64748b"}">${escapeHtml(phase)}</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Last SW score</span><strong>${lastIter?.swPassRate ? lastIter.swPassRate + "%" : "—"}</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Last vs naive</span><strong>${lastIter ? `${lastIter.swPassRate}% / ${lastIter.naivePassRate}%` : "—"}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Last baseline comparison</span><strong>${lastIter ? `SW ${lastIter.swPassRate}% / naive ${lastIter.naivePassRate}%` : "—"}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Matched replay</span><strong>${validation ? `${validation.baselineScore}% → ${validation.candidateScore}%` : "—"}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Replay progress</span><strong>${validationProgress}</strong></div>
     <div class="infinite-metric" style="grid-column: span 2"><span class="metric-label">Message</span><strong style="font-size:0.82rem">${escapeHtml(state.message || "")}</strong></div>
+    ${validation?.categories?.length ? `<details class="sw-loop-detail" ${phase === "validating" ? "open" : ""}><summary>Matched replay by category · ${validation.validTransactions} valid / ${validation.invalidTransactions} invalid transactions</summary><pre>${escapeHtml(validation.categories.map((category) => `${category.difficulty}: ${category.baselineScore}% → ${category.candidateScore}% (${category.count})`).join("\n"))}</pre></details>` : ""}
     ${state.assessment ? `<details class="sw-loop-detail"><summary>Challenger feedback</summary><pre>${escapeHtml(state.assessment)}</pre></details>` : ""}
     ${state.optimizerLogTail ? `<details class="sw-loop-detail" ${phase === "improving" ? "open" : ""}><summary>Pi coding-agent stream</summary><pre>${escapeHtml(state.optimizerLogTail)}</pre></details>` : ""}`;
 

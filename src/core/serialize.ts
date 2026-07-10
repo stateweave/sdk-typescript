@@ -4,10 +4,10 @@ import type { GraphFrame, GraphNode } from "./types.js";
 const BIG_BRAIN_LIMIT = 64;
 const PERIPHERAL_CLUSTER_LIMIT = 24;
 const CANDIDATE_FOCUS_LIMIT = 48;
-const TIMELINE_LIMIT = 24;
-const TIMELINE_CHRONOLOGY_LIMIT = 64;
-const TIMELINE_CHRONOLOGY_NEIGHBORHOOD = 8;
-const TIMELINE_CHRONOLOGY_HEAD = 12;
+const TIMELINE_LIMIT = 48;
+const TIMELINE_CHRONOLOGY_LIMIT = 96;
+const TIMELINE_CHRONOLOGY_NEIGHBORHOOD = 12;
+const TIMELINE_CHRONOLOGY_HEAD = 16;
 
 export function serializeGraphFrame(frame: GraphFrame): string {
   const projection = projectGraph(frame.graph, { focusNodeId: frame.frame.focusNodeId, zoom: frame.frame.zoom });
