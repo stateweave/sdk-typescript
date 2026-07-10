@@ -2820,6 +2820,7 @@ label {
 }
 
 .legend-dot.sw { background: #6366f1; }
+.legend-dot.candidate { background: #10b981; }
 .legend-dot.baseline { background: #f97316; }
 
 .infinite-chart {

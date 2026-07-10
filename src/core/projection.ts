@@ -38,17 +38,17 @@ export type Projection = {
 };
 
 const DEFAULT_RADIUS = 4;
-const DEFAULT_BUDGET = 96;
-const RETRIEVAL_BUDGET = 48;
-const RETRIEVAL_BUDGET_CHRONOLOGY = 72;
-const RETRIEVAL_BUDGET_CONFLICT = 64;
+const DEFAULT_BUDGET = 384;
+const RETRIEVAL_BUDGET = 192;
+const RETRIEVAL_BUDGET_CHRONOLOGY = 320;
+const RETRIEVAL_BUDGET_CONFLICT = 256;
 // Modern models have a much larger reliable context region than the original
 // ~5k-token projection used here. Keep the view bounded, but spend more of that
 // region when a query needs historical evidence. These are node ceilings rather
 // than graph compaction: the append-only StateGraph remains complete.
-const FOCUS_NODE_CAP = 64;
-const FOCUS_NODE_CAP_CONFLICT = 80;
-const FOCUS_NODE_CAP_CHRONOLOGY = 96;
+const FOCUS_NODE_CAP = 256;
+const FOCUS_NODE_CAP_CONFLICT = 320;
+const FOCUS_NODE_CAP_CHRONOLOGY = 384;
 
 export function clusterGraph(graph: StateGraph, adjacency: Map<string, string[]> = undirectedAdjacency(graph)): Cluster[] {
   const nodes = graph.nodes;

@@ -123,8 +123,8 @@ it("uses a larger but bounded focus window for modern long-context models", () =
   frame = appendInputToGraphFrame(frame, { objective: "Recall", input: "List the telescope observations and shared azure filter codes." });
 
   const projection = projectGraph(frame.graph, { focusNodeId: frame.frame.latestInputNodeId });
-  expect(projection.focusNodes.length).toBeGreaterThan(28);
-  expect(projection.focusNodes.length).toBeLessThanOrEqual(64);
+  expect(projection.focusNodes.length).toBeGreaterThan(64);
+  expect(projection.focusNodes.length).toBeLessThanOrEqual(256);
 });
 
 it("chronology probes preserve intra-turn emission order despite identical timestamps", () => {
