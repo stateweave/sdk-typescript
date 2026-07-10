@@ -32,8 +32,18 @@ export type ModelToken =
       metadata: ModelStreamMetadata;
     };
 
+export type ModelUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  uncachedInputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+};
+
 export type ModelOutput = {
   text: string;
+  usage?: ModelUsage;
 };
 
 export type Model = {

@@ -6,6 +6,9 @@ export type NaiveMessage = { role: "system" | "user" | "assistant"; content: str
 export type NaiveTurnResult = {
   answer: string;
   tokenEstimate: number;
+  outputTokenCount: number;
+  tokenCountSource: "provider" | "estimated";
+  cacheReadInputTokens: number;
   latencyMs: number;
   messageCount: number;
 };
@@ -51,7 +54,10 @@ export class NaiveBaselineAgent {
 
     return {
       answer,
-      tokenEstimate: estimateStateWeaveTokens(serializeMessages(this.messages)).estimatedTokens,
+      tokenEstimate: output.usage?.inputTokens ?? estimateStateWeaveTokens(serialized).estimatedTokens,
+      outputTokenCount: output.usage?.outputTokens ?? estimateStateWeaveTokens(answer).estimatedTokens,
+      tokenCountSource: output.usage ? "provider" : "estimated",
+      cacheReadInputTokens: output.usage?.cacheReadInputTokens ?? 0,
       latencyMs: Date.now() - startedAt,
       messageCount: this.messages.length
     };

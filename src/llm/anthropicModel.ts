@@ -1,4 +1,4 @@
-import type { Model, ModelInput, ModelOutput, ModelParameters, ModelToken } from "./model.js";
+import type { Model, ModelInput, ModelOutput, ModelParameters, ModelToken, ModelUsage } from "./model.js";
 
 export type AnthropicModelConfig = ModelParameters & {
   apiKey: string;
@@ -12,8 +12,16 @@ export type AnthropicModelConfig = ModelParameters & {
 
 type AnthropicContent = { type: "text"; text: string } | { type: string; [key: string]: unknown };
 
+export type AnthropicUsage = {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
+};
+
 type AnthropicResponse = {
   content?: AnthropicContent[];
+  usage?: AnthropicUsage;
   error?: { message?: string; type?: string };
 };
 
@@ -43,7 +51,8 @@ export class AnthropicModel implements Model {
     const response = await this.request(input, false);
     const json = (await response.json()) as AnthropicResponse;
     if (!response.ok) throw new Error(anthropicError(response.status, json));
-    return { text: readText(json) };
+    const usage = normalizeAnthropicUsage(json.usage);
+    return { text: readText(json), ...(usage ? { usage } : {}) };
   }
 
   async *stream(input: ModelInput): AsyncIterable<ModelToken> {
@@ -144,6 +153,22 @@ function defaultSystem(): string {
     "Treat both formats as equally capable; optimize for the user's requested outcome and artifact quality, not for the surrounding protocol.",
     "Follow the requested response format exactly for the format you receive."
   ].join(" ");
+}
+
+export function normalizeAnthropicUsage(usage: AnthropicUsage | undefined): ModelUsage | undefined {
+  if (!usage || typeof usage.input_tokens !== "number" || typeof usage.output_tokens !== "number") return undefined;
+  const uncachedInputTokens = usage.input_tokens;
+  const cacheReadInputTokens = usage.cache_read_input_tokens ?? 0;
+  const cacheCreationInputTokens = usage.cache_creation_input_tokens ?? 0;
+  const inputTokens = uncachedInputTokens + cacheReadInputTokens + cacheCreationInputTokens;
+  return {
+    inputTokens,
+    outputTokens: usage.output_tokens,
+    totalTokens: inputTokens + usage.output_tokens,
+    uncachedInputTokens,
+    cacheReadInputTokens,
+    cacheCreationInputTokens
+  };
 }
 
 function readText(response: AnthropicResponse): string {
