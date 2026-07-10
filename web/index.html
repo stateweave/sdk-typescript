@@ -241,65 +241,47 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
       </main>
 
       <main id="infinite-page" class="page infinite-page" hidden>
-        <section class="card infinite-shell" aria-label="Infinite harness">
+        <section class="card infinite-shell" aria-label="Infinite agent harness">
           <div class="infinite-header">
             <div>
-              <p class="eyebrow">Autonomous self-improvement loop</p>
-              <h2>Live iteration</h2>
-              <p class="muted-copy">This mirrors the current harness run from the autonomous loop below. No manual controls — the loop runs, scores, improves, and repeats.</p>
+              <p class="eyebrow">Long-horizon agent benchmark</p>
+              <h2>Infinite agent</h2>
+              <p class="muted-copy">Two isolated coding agents receive the same evolving filesystem tasks and the same read, write, edit, and allowlisted bash tools. The naive agent carries a transcript up to 96k tokens; StateWeave carries an append-only graph with a bounded projection.</p>
             </div>
             <div id="infinite-live-badge" class="infinite-live-badge">waiting</div>
           </div>
+          <div class="infinite-controls" style="margin-bottom: 14px;">
+            <button id="sw-loop-start" class="button" type="button">Start agent</button>
+            <button id="sw-loop-stop" class="button secondary" type="button" disabled>Stop agent</button>
+          </div>
+          <div id="sw-loop-status" class="sw-loop-status"></div>
           <div id="infinite-metrics" class="infinite-metrics"></div>
           <div id="infinite-executive-live" class="infinite-executive-live"></div>
           <div class="infinite-chart-wrap">
             <div class="infinite-chart-header">
-              <h3>Provider-reported input tokens</h3>
-              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave adaptive projection <span class="legend-dot baseline"></span>Naive up to 96k <span class="legend-dot windowed"></span>Windowed 32k</div>
+              <h3>Context sent on the latest model call</h3>
+              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave adaptive projection <span class="legend-dot baseline"></span>Naive transcript up to 96k</div>
             </div>
             <canvas id="infinite-chart" class="infinite-chart" width="800" height="220"></canvas>
           </div>
           <div class="infinite-chart-wrap">
             <div class="infinite-chart-header">
-              <h3>Quality: cumulative recall pass-rate</h3>
-              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave <span class="legend-dot baseline"></span>Naive <span class="legend-dot windowed"></span>Windowed</div>
+              <h3>Quality: cumulative task pass-rate</h3>
+              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave agent <span class="legend-dot baseline"></span>Naive agent</div>
             </div>
             <canvas id="infinite-quality-chart" class="infinite-chart" width="800" height="220"></canvas>
           </div>
           <div id="infinite-report" class="infinite-report" hidden></div>
           <div class="infinite-body">
             <section class="infinite-panel">
-              <h3>Live turns</h3>
-              <div id="infinite-turns" class="infinite-turns"><p class="muted-copy">No run yet.</p></div>
+              <h3>Live filesystem tasks</h3>
+              <div id="infinite-turns" class="infinite-turns"><p class="muted-copy">Waiting for the first task.</p></div>
             </section>
             <section class="infinite-panel">
-              <h3>Graph map (big brain)</h3>
-              <div id="infinite-clusters" class="infinite-clusters"><p class="muted-copy">No topics yet.</p></div>
+              <h3>StateWeave graph map</h3>
+              <div id="infinite-clusters" class="infinite-clusters"><p class="muted-copy">No graph topics yet.</p></div>
             </section>
           </div>
-        </section>
-
-        <section class="card infinite-shell" aria-label="Self-improvement loop" style="margin-top: 20px;">
-          <div class="infinite-header">
-            <div>
-              <p class="eyebrow">Autonomous SDK self-improvement</p>
-              <h2>Self-improve loop</h2>
-              <p class="muted-copy">Runs the harness, feeds the assessment to X-Agent, which fixes the SDK, runs tests, commits, and loops. Each iteration escalates the turn count to find new edge cases.</p>
-            </div>
-            <div class="infinite-controls">
-              <button id="sw-loop-start" class="button" type="button">Start loop</button>
-              <button id="sw-loop-stop" class="button secondary" type="button" disabled>Stop loop</button>
-            </div>
-          </div>
-          <div id="sw-loop-status" class="sw-loop-status"></div>
-          <div class="infinite-chart-wrap">
-            <div class="infinite-chart-header">
-              <h3>Matched improvement across iterations</h3>
-              <div class="infinite-legend"><span class="legend-dot sw"></span>Pre-candidate replay <span class="legend-dot candidate"></span>Candidate replay <span class="legend-dot baseline"></span>Naive baseline</div>
-            </div>
-            <canvas id="sw-loop-chart" class="infinite-chart" width="800" height="200"></canvas>
-          </div>
-          <div id="sw-loop-iterations" class="sw-loop-iterations"><p class="muted-copy">No iterations yet. Click Start loop.</p></div>
         </section>
       </main>
     </div>

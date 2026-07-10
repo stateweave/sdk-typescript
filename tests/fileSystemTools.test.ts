@@ -21,6 +21,21 @@ it("provides workspace-scoped read, write, edit, and bash tools", async () => {
   }
 });
 
+it("rejects non-allowlisted and shell-escape bash commands", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-tools-"));
+  try {
+    const bash = createFileSystemTools({ rootDir: root }).find((tool) => tool.name === "bash_command");
+    await expect(bash?.execute({ command: "curl https://example.com" })).rejects.toThrow(/not allowlisted/);
+    await expect(bash?.execute({ command: "git status" })).rejects.toThrow(/not allowlisted/);
+    await expect(bash?.execute({ command: "ls $(pwd)" })).rejects.toThrow(/unsafe shell syntax/);
+    await expect(bash?.execute({ command: "find . -delete" })).rejects.toThrow(/stateful find/);
+    await expect(bash?.execute({ command: "node -e 'process.exit()'" })).rejects.toThrow(/limited/);
+    await expect(bash?.execute({ command: "pwd && ls" })).resolves.toMatchObject({ exitCode: 0 });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it("rejects file paths outside the workspace", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-tools-"));
   try {

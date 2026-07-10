@@ -12,11 +12,13 @@ export type FileSystemToolsOptions = {
   rootDir?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  allowedBashCommands?: string[];
 };
 
 const defaultTimeoutMs = 10_000;
 const defaultMaxOutputBytes = 64_000;
 const defaultReadLimit = 500;
+const defaultAllowedBashCommands = ["pwd", "ls", "find", "rg", "grep", "head", "tail", "wc", "sort", "uniq", "diff", "cmp", "node"];
 
 const readFileSchema = z.object({
   file_path: z.string().min(1).optional(),
@@ -68,6 +70,7 @@ export function createFileSystemTools(options: FileSystemToolsOptions = {}): Too
   const rootDir = path.resolve(options.rootDir ?? process.env.STATEWEAVE_WORKSPACE_DIR ?? path.join(process.cwd(), ".stateweave", "workspace"));
   const timeoutMs = options.timeoutMs ?? numberEnv(process.env.STATEWEAVE_TOOL_TIMEOUT_MS) ?? defaultTimeoutMs;
   const maxOutputBytes = options.maxOutputBytes ?? numberEnv(process.env.STATEWEAVE_TOOL_MAX_OUTPUT_BYTES) ?? defaultMaxOutputBytes;
+  const allowedBashCommands = new Set(options.allowedBashCommands ?? defaultAllowedBashCommands);
 
   return [
     {
@@ -111,10 +114,11 @@ export function createFileSystemTools(options: FileSystemToolsOptions = {}): Too
     },
     {
       name: "bash_command",
-      description: `Run a bash command in the agent workspace (${rootDir}) with a timeout and restricted environment. Args: command, optional timeout_ms. Alias: timeoutMs.`,
+      description: `Run a read-only, allowlisted shell command in the agent workspace (${rootDir}). Allowed commands: ${[...allowedBashCommands].join(", ")}. Shell expansion, redirects, pipes, command substitution, absolute paths, and parent traversal are blocked. node is limited to --check. Args: command, optional timeout_ms. Alias: timeoutMs.`,
       schema: bashCommandSchema,
       async execute(args: unknown) {
         const parsed = normalizeBashCommandArgs(args);
+        validateBashCommand(parsed.command, allowedBashCommands);
         await mkdir(rootDir, { recursive: true });
         try {
           const result = await execFileAsync("bash", ["-lc", parsed.command], {
@@ -200,6 +204,94 @@ function safeToolEnv(rootDir: string): NodeJS.ProcessEnv {
     HOME: rootDir,
     LANG: "C.UTF-8"
   };
+}
+
+function validateBashCommand(command: string, allowedCommands: Set<string>): void {
+  if (/[\n\r\0`$<>|;]/.test(command)) throw new Error("bash_command rejected unsafe shell syntax.");
+  const tokens = shellTokens(command);
+  const segments: string[][] = [[]];
+  for (const token of tokens) {
+    if (token === "&&") {
+      if (!segments.at(-1)?.length) throw new Error("bash_command rejected an empty command segment.");
+      segments.push([]);
+      continue;
+    }
+    if (token === "&" || token === "||") throw new Error(`bash_command rejected shell operator: ${token}`);
+    segments.at(-1)?.push(token);
+  }
+  if (!segments.at(-1)?.length) throw new Error("bash_command rejected an empty command segment.");
+
+  for (const segment of segments) validateCommandSegment(segment, allowedCommands);
+}
+
+function validateCommandSegment(segment: string[], allowedCommands: Set<string>): void {
+  const command = segment[0];
+  if (!command || command.includes("/") || !allowedCommands.has(command)) throw new Error(`bash_command is not allowlisted: ${command ?? "(empty)"}`);
+  const args = segment.slice(1);
+  for (const arg of args) {
+    if (path.isAbsolute(arg) || arg.split(/[\\/]+/).includes("..")) throw new Error(`bash_command rejected path outside the workspace: ${arg}`);
+  }
+
+  if (command === "pwd" && args.length) throw new Error("pwd does not accept arguments in bash_command.");
+  if (command === "node" && (args.length !== 2 || args[0] !== "--check" || args[1].startsWith("-"))) {
+    throw new Error("node is limited to: node --check <relative-file>.");
+  }
+  if (command === "find" && args.some((arg) => /^-(?:delete|exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls)$/.test(arg))) {
+    throw new Error("bash_command rejected a stateful find action.");
+  }
+  if ((command === "rg" || command === "grep") && args.some((arg) => /^--(?:pre|hostname-bin)(?:=|$)/.test(arg))) {
+    throw new Error(`bash_command rejected executable ${command} preprocessing.`);
+  }
+  if (command === "sort" && args.some((arg) => arg === "-o" || arg.startsWith("--output"))) throw new Error("bash_command rejected sort output redirection.");
+}
+
+function shellTokens(command: string): string[] {
+  const tokens: string[] = [];
+  let current = "";
+  let quote: "'" | '"' | undefined;
+  let escaped = false;
+  const flush = (): void => {
+    if (current) tokens.push(current);
+    current = "";
+  };
+
+  for (let index = 0; index < command.length; index++) {
+    const character = command[index];
+    if (escaped) {
+      current += character;
+      escaped = false;
+      continue;
+    }
+    if (character === "\\" && quote !== "'") {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (character === quote) quote = undefined;
+      else current += character;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      continue;
+    }
+    if (/\s/.test(character)) {
+      flush();
+      continue;
+    }
+    if (character === "&") {
+      flush();
+      if (command[index + 1] === "&") {
+        tokens.push("&&");
+        index += 1;
+      } else tokens.push("&");
+      continue;
+    }
+    current += character;
+  }
+  if (quote || escaped) throw new Error("bash_command rejected an unterminated quote or escape.");
+  flush();
+  return tokens;
 }
 
 function numberEnv(value: string | undefined): number | undefined {
