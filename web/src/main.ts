@@ -2934,9 +2934,9 @@ function escapeAttribute(value: string): string {
 
 // --- Infinite harness ---
 
-type InfiniteTurn = { batch: number; turn: number; phase: "seed" | "probe" | "consistency"; prompt: string; answer: string; baselineAnswer: string; windowedAnswer: string; nodeCount: number; edgeCount: number; clusterCount: number; promptTokenEstimate: number; baselineTokenEstimate: number; windowedTokenEstimate: number; latencyMs: number; baselineLatencyMs: number; windowedLatencyMs: number; transactionValid?: boolean; transactionError?: string; score?: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore } };
+type InfiniteTurn = { batch: number; turn: number; phase: "seed" | "probe" | "consistency"; prompt: string; answer: string; baselineAnswer: string; windowedAnswer: string; nodeCount: number; edgeCount: number; clusterCount: number; promptTokenEstimate: number; baselineTokenEstimate: number; windowedTokenEstimate: number; outputTokenCount?: number; baselineOutputTokenCount?: number; windowedOutputTokenCount?: number; tokenCountSource?: "provider" | "estimated"; baselineTokenCountSource?: "provider" | "estimated"; windowedTokenCountSource?: "provider" | "estimated"; cacheReadInputTokens?: number; latencyMs: number; baselineLatencyMs: number; windowedLatencyMs: number; transactionValid?: boolean; transactionError?: string; score?: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore } };
 type ProbeScore = { score: "pass" | "partial" | "fail"; reasoning: string };
-type InfiniteSeriesPoint = { turn: number; stateweaveTokens: number; baselineTokens: number; windowedTokens: number; stateweaveNodes: number; stateweaveClusters: number; stateweaveLatencyMs: number; baselineLatencyMs: number; windowedLatencyMs: number };
+type InfiniteSeriesPoint = { turn: number; stateweaveTokens: number; baselineTokens: number; windowedTokens: number; stateweaveOutputTokens?: number; baselineOutputTokens?: number; windowedOutputTokens?: number; stateweaveNodes: number; stateweaveClusters: number; stateweaveLatencyMs: number; baselineLatencyMs: number; windowedLatencyMs: number };
 type InfiniteQualityPoint = { turn: number; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; stateweaveScored: number; naiveScored: number; windowedScored: number };
 type InfiniteReview = { batch: number; findings: string; filesChanged: string[]; testsPassed: boolean; commit?: string; error?: string };
 type InfiniteFinalReport = { generatedAt: string; summary: string; strengths: string[]; weaknesses: string[]; categoryBreakdown: { difficulty: string; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; count: number }[]; ageBreakdown?: { age: string; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; count: number }[]; driftInstances: { turn: number; description: string }[]; verdict: string; contextAssessment?: string; recommendedSdkFocus?: string };
@@ -2989,15 +2989,15 @@ function renderInfiniteState(state: InfiniteStateView): void {
     <div class="infinite-metric"><span class="metric-label">Memory probes</span><strong>${lastQ?.stateweaveScored ?? 0} scored · oldest ${oldestProbeAge} turns</strong></div>
     <div class="infinite-metric"><span class="metric-label">Graph integrity</span><strong>${validTransactions} valid / ${invalidTransactions} invalid</strong></div>
     <div class="infinite-metric"><span class="metric-label">Graph size</span><strong>${snapshot?.nodeCount ?? 0} nodes / ${snapshot?.edgeCount ?? 0} edges</strong></div>
-    <div class="infinite-metric sw-metric"><span class="metric-label">SW projection</span><strong>${swTokens.toLocaleString()} tok</strong></div>
-    <div class="infinite-metric baseline-metric"><span class="metric-label">Naive transcript</span><strong>${baselineTokens.toLocaleString()} tok</strong></div>
-    <div class="infinite-metric windowed-metric"><span class="metric-label">32k window</span><strong>${windowedTokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric sw-metric"><span class="metric-label">SW provider input</span><strong>${swTokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric baseline-metric"><span class="metric-label">Naive provider input</span><strong>${baselineTokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric windowed-metric"><span class="metric-label">Window provider input</span><strong>${windowedTokens.toLocaleString()} tok</strong></div>
     <div class="infinite-metric sw-metric"><span class="metric-label">SW quality</span><strong>${lastQ ? `${(lastQ.stateweavePassRate * 100).toFixed(1)}%` : "—"}</strong></div>
     <div class="infinite-metric baseline-metric"><span class="metric-label">Naive quality</span><strong>${lastQ ? `${(lastQ.naivePassRate * 100).toFixed(1)}%` : "—"}</strong></div>
     <div class="infinite-metric windowed-metric"><span class="metric-label">Window quality</span><strong>${lastQ ? `${(lastQ.windowedPassRate * 100).toFixed(1)}%` : "—"}</strong></div>`;
 
   if (state.message) infiniteMetrics.insertAdjacentHTML("beforeend", `<p class="message error"><div>${escapeHtml(state.message)}</div></p>`);
-  renderInfiniteExecutive(state, totalTurns, swTokens, baselineTokens, windowedTokens, validTransactions, invalidTransactions, lastQ, oldestProbeAge);
+  renderInfiniteExecutive(state, totalTurns, swTokens, baselineTokens, windowedTokens, validTransactions, invalidTransactions, lastQ, oldestProbeAge, lastTurn?.tokenCountSource ?? "estimated");
 
   renderInfiniteChart(state.series);
   renderInfiniteQualityChart(state.qualitySeries);
@@ -3009,7 +3009,7 @@ function renderInfiniteState(state: InfiniteStateView): void {
         const badges = t.score ? scoreBadges(t.score) : (t.phase === "seed" ? `<span class="phase-badge seed">seed</span>` : `<span class="phase-badge consistency">consistency</span>`);
         return `
       <article class="infinite-turn">
-        <header><span class="turn-badge">T${t.turn}</span> ${badges} ${t.transactionValid === false ? `<span class="score-chip fail">invalid GraphOps</span>` : ""} <small>${t.nodeCount}n/${t.edgeCount}e · SW ${t.promptTokenEstimate.toLocaleString()}tok / naive ${t.baselineTokenEstimate.toLocaleString()}tok / win ${t.windowedTokenEstimate.toLocaleString()}tok</small></header>
+        <header><span class="turn-badge">T${t.turn}</span> ${badges} ${t.transactionValid === false ? `<span class="score-chip fail">invalid GraphOps</span>` : ""} <small>${t.nodeCount}n/${t.edgeCount}e · SW ${t.promptTokenEstimate.toLocaleString()}in/${(t.outputTokenCount ?? 0).toLocaleString()}out · naive ${t.baselineTokenEstimate.toLocaleString()}in · win ${t.windowedTokenEstimate.toLocaleString()}in · ${t.tokenCountSource ?? "estimated"}</small></header>
         <p class="turn-prompt"><strong>Probe:</strong> ${escapeHtml(t.prompt.slice(0, 180))}</p>
         <p class="turn-answer"><strong>SW:</strong> ${escapeHtml(t.answer.slice(0, 200))}</p>
         <p class="turn-answer baseline"><strong>Naive:</strong> ${escapeHtml(t.baselineAnswer.slice(0, 160))}</p>
@@ -3035,7 +3035,8 @@ function renderInfiniteExecutive(
   validTransactions: number,
   invalidTransactions: number,
   quality: InfiniteQualityPoint | undefined,
-  oldestProbeAge: number
+  oldestProbeAge: number,
+  tokenCountSource: "provider" | "estimated"
 ): void {
   const target = document.getElementById("infinite-executive-live");
   if (!target) return;
@@ -3052,7 +3053,7 @@ function renderInfiniteExecutive(
         ? `StateWeave currently trails the strongest baseline by ${Math.abs(qualityGap).toFixed(1)} points; this iteration must diagnose and improve retrieval.`
         : `StateWeave is currently within ${Math.abs(qualityGap).toFixed(1)} points of the strongest baseline.`;
   const contextComparison = baselineTokens > 0
-    ? `The graph projection uses ${swTokens.toLocaleString()} tokens versus ${baselineTokens.toLocaleString()} for naive and ${windowedTokens.toLocaleString()} for the 32k window; the oldest scored memory is ${oldestProbeAge} turns old.`
+    ? `${tokenCountSource === "provider" ? "Provider usage reports" : "Fallback estimation reports"} ${swTokens.toLocaleString()} StateWeave input tokens versus ${baselineTokens.toLocaleString()} for naive and ${windowedTokens.toLocaleString()} for the 32k window; the oldest scored memory is ${oldestProbeAge} turns old.`
     : "Context measurements will appear after the first completed turn.";
   const integrity = invalidTransactions
     ? `${invalidTransactions} of ${validTransactions + invalidTransactions} graph transactions were invalid.`

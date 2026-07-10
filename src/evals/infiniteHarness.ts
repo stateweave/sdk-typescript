@@ -3,7 +3,6 @@ import path from "node:path";
 import { createModelFromEnv } from "../llm/factory.js";
 import type { Model, ModelInput } from "../llm/model.js";
 import { clusterGraph } from "../core/projection.js";
-import { serializeGraphFrame } from "../core/serialize.js";
 import { GraphMemoryAgent } from "./graphMemoryAgent.js";
 import { NaiveBaselineAgent } from "./naiveBaseline.js";
 
@@ -34,6 +33,9 @@ export type ProbeRecord = {
     answer: string;
     transactionValid: boolean;
     transactionError?: string;
+    inputTokens: number;
+    outputTokens: number;
+    tokenCountSource: "provider" | "estimated";
     retrievedNodeIds: string[];
     retrievedEvidence: Array<{ id: string; type: string; text: string }>;
   };
@@ -74,6 +76,15 @@ export type InfiniteTurnRecord = {
   promptTokenEstimate: number;
   baselineTokenEstimate: number;
   windowedTokenEstimate: number;
+  outputTokenCount: number;
+  baselineOutputTokenCount: number;
+  windowedOutputTokenCount: number;
+  tokenCountSource: "provider" | "estimated";
+  baselineTokenCountSource: "provider" | "estimated";
+  windowedTokenCountSource: "provider" | "estimated";
+  cacheReadInputTokens: number;
+  baselineCacheReadInputTokens: number;
+  windowedCacheReadInputTokens: number;
   latencyMs: number;
   baselineLatencyMs: number;
   windowedLatencyMs: number;
@@ -110,7 +121,7 @@ export type InfiniteState = {
   agentModel: string;
   selfImprove: boolean;
   turns: InfiniteTurnRecord[];
-  series: Array<{ turn: number; stateweaveTokens: number; baselineTokens: number; windowedTokens: number; stateweaveNodes: number; stateweaveClusters: number; stateweaveLatencyMs: number; baselineLatencyMs: number; windowedLatencyMs: number }>;
+  series: Array<{ turn: number; stateweaveTokens: number; baselineTokens: number; windowedTokens: number; stateweaveOutputTokens: number; baselineOutputTokens: number; windowedOutputTokens: number; stateweaveNodes: number; stateweaveClusters: number; stateweaveLatencyMs: number; baselineLatencyMs: number; windowedLatencyMs: number }>;
   qualitySeries: QualityPoint[];
   seeds: SeedRecord[];
   probes: ProbeRecord[];
@@ -300,6 +311,9 @@ export class InfiniteHarness {
           answer: result.stateweave.answer,
           transactionValid: result.stateweave.transactionValid,
           ...(result.stateweave.transactionError ? { transactionError: result.stateweave.transactionError } : {}),
+          inputTokens: result.stateweave.tokenEstimate,
+          outputTokens: result.stateweave.outputTokenCount,
+          tokenCountSource: result.stateweave.tokenCountSource,
           retrievedNodeIds: result.stateweave.retrievedNodeIds,
           retrievedEvidence: result.stateweave.retrievedEvidence
         }
@@ -339,22 +353,30 @@ export class InfiniteHarness {
     return this.state.turns.find((t) => t.turn === turn)?.answer ?? "";
   }
 
-  private async runAllAgents(prompt: string): Promise<{ stateweave: { answer: string; latencyMs: number; transactionValid: boolean; transactionError?: string; retrievedNodeIds: string[]; retrievedEvidence: Array<{ id: string; type: string; text: string }> }; naive: { answer: string; latencyMs: number; tokenEstimate: number }; windowed: { answer: string; latencyMs: number; tokenEstimate: number } }> {
+  private async runAllAgents(prompt: string): Promise<{
+    stateweave: { answer: string; latencyMs: number; tokenEstimate: number; outputTokenCount: number; tokenCountSource: "provider" | "estimated"; cacheReadInputTokens: number; transactionValid: boolean; transactionError?: string; retrievedNodeIds: string[]; retrievedEvidence: Array<{ id: string; type: string; text: string }> };
+    naive: { answer: string; latencyMs: number; tokenEstimate: number; outputTokenCount: number; tokenCountSource: "provider" | "estimated"; cacheReadInputTokens: number };
+    windowed: { answer: string; latencyMs: number; tokenEstimate: number; outputTokenCount: number; tokenCountSource: "provider" | "estimated"; cacheReadInputTokens: number };
+  }> {
     // Run agents SEQUENTIALLY (not Promise.allSettled) to cap peak memory on
     // small VPS hosts. Each call is still individually guarded by withTimeout.
-    const swResult = await withTimeout((async () => { const start = Date.now(); const r = await this.agent.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, transactionValid: r.transactionValid, transactionError: r.transactionError, retrievedNodeIds: r.retrievedNodeIds, retrievedEvidence: r.retrievedEvidence }; })(), CALL_TIMEOUT_MS, "SW agent").then(v => ({ status: "fulfilled" as const, value: v }), () => ({ status: "rejected" as const, reason: undefined }));
-    const nResult = await withTimeout((async () => { const start = Date.now(); const r = await this.naive.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, tokenEstimate: r.tokenEstimate }; })(), CALL_TIMEOUT_MS, "naive").then(v => ({ status: "fulfilled" as const, value: v }), () => ({ status: "rejected" as const, reason: undefined }));
-    const wResult = await withTimeout((async () => { const start = Date.now(); const r = await this.windowed.run(prompt); return { answer: r.answer, latencyMs: Date.now() - start, tokenEstimate: r.tokenEstimate }; })(), CALL_TIMEOUT_MS, "windowed").then(v => ({ status: "fulfilled" as const, value: v }), () => ({ status: "rejected" as const, reason: undefined }));
+    const swResult = await withTimeout((async () => { const start = Date.now(); const r = await this.agent.run(prompt); return { ...r, latencyMs: Date.now() - start }; })(), CALL_TIMEOUT_MS, "SW agent").then(v => ({ status: "fulfilled" as const, value: v }), () => ({ status: "rejected" as const, reason: undefined }));
+    const nResult = await withTimeout((async () => { const start = Date.now(); const r = await this.naive.run(prompt); return { ...r, latencyMs: Date.now() - start }; })(), CALL_TIMEOUT_MS, "naive").then(v => ({ status: "fulfilled" as const, value: v }), () => ({ status: "rejected" as const, reason: undefined }));
+    const wResult = await withTimeout((async () => { const start = Date.now(); const r = await this.windowed.run(prompt); return { ...r, latencyMs: Date.now() - start }; })(), CALL_TIMEOUT_MS, "windowed").then(v => ({ status: "fulfilled" as const, value: v }), () => ({ status: "rejected" as const, reason: undefined }));
     return {
-      stateweave: swResult.status === "fulfilled" ? swResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS, transactionValid: false, transactionError: "timeout", retrievedNodeIds: [], retrievedEvidence: [] },
-      naive: nResult.status === "fulfilled" ? nResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS, tokenEstimate: 0 },
-      windowed: wResult.status === "fulfilled" ? wResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS, tokenEstimate: 0 }
+      stateweave: swResult.status === "fulfilled" ? swResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS, tokenEstimate: 0, outputTokenCount: 0, tokenCountSource: "estimated", cacheReadInputTokens: 0, transactionValid: false, transactionError: "timeout", retrievedNodeIds: [], retrievedEvidence: [] },
+      naive: nResult.status === "fulfilled" ? nResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS, tokenEstimate: 0, outputTokenCount: 0, tokenCountSource: "estimated", cacheReadInputTokens: 0 },
+      windowed: wResult.status === "fulfilled" ? wResult.value : { answer: "(timeout)", latencyMs: CALL_TIMEOUT_MS, tokenEstimate: 0, outputTokenCount: 0, tokenCountSource: "estimated", cacheReadInputTokens: 0 }
     };
   }
 
-  private recordTurn(batch: number, globalTurn: number, phase: "seed" | "probe" | "consistency", prompt: string, result: { stateweave: { answer: string; latencyMs: number; transactionValid: boolean; transactionError?: string; retrievedNodeIds: string[]; retrievedEvidence: Array<{ id: string; type: string; text: string }> }; naive: { answer: string; latencyMs: number; tokenEstimate: number }; windowed: { answer: string; latencyMs: number; tokenEstimate: number } }, score: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore } | undefined): void {
+  private recordTurn(batch: number, globalTurn: number, phase: "seed" | "probe" | "consistency", prompt: string, result: {
+    stateweave: { answer: string; latencyMs: number; tokenEstimate: number; outputTokenCount: number; tokenCountSource: "provider" | "estimated"; cacheReadInputTokens: number; transactionValid: boolean; transactionError?: string; retrievedNodeIds: string[]; retrievedEvidence: Array<{ id: string; type: string; text: string }> };
+    naive: { answer: string; latencyMs: number; tokenEstimate: number; outputTokenCount: number; tokenCountSource: "provider" | "estimated"; cacheReadInputTokens: number };
+    windowed: { answer: string; latencyMs: number; tokenEstimate: number; outputTokenCount: number; tokenCountSource: "provider" | "estimated"; cacheReadInputTokens: number };
+  }, score: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore } | undefined): void {
     const frame = this.agent.getFrame();
-    const swTokens = frame ? Math.round(serializeGraphFrame(frame).length / 4) : 0;
+    const swTokens = result.stateweave.tokenEstimate;
     const clusters = frame ? clusterGraph(frame.graph) : [];
     this.state.turnCount = globalTurn;
     const record: InfiniteTurnRecord = {
@@ -368,6 +390,15 @@ export class InfiniteHarness {
       promptTokenEstimate: swTokens,
       baselineTokenEstimate: result.naive.tokenEstimate,
       windowedTokenEstimate: result.windowed.tokenEstimate,
+      outputTokenCount: result.stateweave.outputTokenCount,
+      baselineOutputTokenCount: result.naive.outputTokenCount,
+      windowedOutputTokenCount: result.windowed.outputTokenCount,
+      tokenCountSource: result.stateweave.tokenCountSource,
+      baselineTokenCountSource: result.naive.tokenCountSource,
+      windowedTokenCountSource: result.windowed.tokenCountSource,
+      cacheReadInputTokens: result.stateweave.cacheReadInputTokens,
+      baselineCacheReadInputTokens: result.naive.cacheReadInputTokens,
+      windowedCacheReadInputTokens: result.windowed.cacheReadInputTokens,
       latencyMs: result.stateweave.latencyMs,
       baselineLatencyMs: result.naive.latencyMs,
       windowedLatencyMs: result.windowed.latencyMs,
@@ -381,6 +412,7 @@ export class InfiniteHarness {
     this.state.turns = [...this.state.turns, record].slice(-MAX_TURNS_KEPT);
     this.state.series = [...this.state.series, {
       turn: globalTurn, stateweaveTokens: swTokens, baselineTokens: result.naive.tokenEstimate, windowedTokens: result.windowed.tokenEstimate,
+      stateweaveOutputTokens: result.stateweave.outputTokenCount, baselineOutputTokens: result.naive.outputTokenCount, windowedOutputTokens: result.windowed.outputTokenCount,
       stateweaveNodes: frame?.graph.nodes.length ?? 0, stateweaveClusters: clusters.length,
       stateweaveLatencyMs: result.stateweave.latencyMs, baselineLatencyMs: result.naive.latencyMs, windowedLatencyMs: result.windowed.latencyMs
     }].slice(-MAX_SERIES_KEPT);
