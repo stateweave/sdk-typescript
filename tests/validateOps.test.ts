@@ -114,6 +114,16 @@ with detail
   ]);
 });
 
+it("preserves unquoted multi-token tool values until the next named argument", () => {
+  const ops = parseAndValidateOps(`SWX/1
+@tool edit_file file_path=config.js old_string=retryLimit: RETRY_LIMIT + 1 new_string=retryLimit: RETRY_LIMIT
+@tool bash_command command=node --check config.js timeout_ms=1000`);
+  expect(ops).toEqual([
+    { op: "call_tool", tool: "edit_file", args: { file_path: "config.js", old_string: "retryLimit: RETRY_LIMIT + 1", new_string: "retryLimit: RETRY_LIMIT" } },
+    { op: "call_tool", tool: "bash_command", args: { command: "node --check config.js", timeout_ms: 1000 } }
+  ]);
+});
+
 it("parses long final answer blocks with optional multiple artifact refs", () => {
   const ops = parseAndValidateOps(`SWX/1
 @node game_1 artifact "Snake" mime=text/html

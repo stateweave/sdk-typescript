@@ -328,7 +328,7 @@ function parseWorker(tokens: string[], raw: string): Extract<GraphOp, { op: "spa
 }
 
 function parseToolArgs(tokens: string[], blocks: SwxBlock[]): { args: Record<string, unknown>; blockIds: Set<string> } {
-  const attrs = parseAttrs(tokens);
+  const attrs = parseToolAttrs(tokens);
   const blocksById = new Map(blocks.map((block) => [block.id, block]));
   const blockIds = new Set<string>();
 
@@ -345,6 +345,15 @@ function parseToolArgs(tokens: string[], blocks: SwxBlock[]): { args: Record<str
   }
 
   return { args: attrs, blockIds };
+}
+
+function parseToolAttrs(tokens: string[]): Record<string, unknown> {
+  const grouped: string[] = [];
+  for (const token of tokens) {
+    if (isAttrToken(token) || !grouped.length) grouped.push(token);
+    else grouped[grouped.length - 1] += ` ${token}`;
+  }
+  return parseAttrs(grouped);
 }
 
 function parseAttrs(tokens: string[]): Record<string, unknown> {
