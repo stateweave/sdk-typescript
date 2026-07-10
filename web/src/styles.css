@@ -2915,6 +2915,32 @@ label {
   overflow-y: auto;
 }
 
+.sw-loop-detail {
+  grid-column: 1 / -1;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.sw-loop-detail summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.sw-loop-detail pre {
+  max-height: 288px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  white-space: pre-wrap;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
 .sw-loop-iter {
   padding: 12px 14px;
   border: 1px solid var(--border);
