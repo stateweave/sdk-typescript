@@ -50,7 +50,12 @@ export class GraphMemoryAgent {
     this.frame = appendInputToGraphFrame(this.frame, { objective: "Answer the user's question.", input: prompt });
 
     const serialized = serializeGraphFrame(this.frame);
-    const input: ModelInput = { prompt: serialized, frame: this.frame, mode: "graph_ops" };
+    const input: ModelInput = {
+      prompt: serialized,
+      frame: this.frame,
+      mode: "graph_ops",
+      system: "You are the StateWeave one-call graph-memory primitive. Return one valid SWX/1 transaction. Before creating facts or answering, connect the latest pending user_input to a node that existed before this turn; use @edge system_root follows <latest user_input id> for a fresh topic. Then connect every new node and include exactly one direct @final answer. Never return prose outside SWX/1."
+    };
     const output = await this.model.complete(input);
 
     try {
