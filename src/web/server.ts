@@ -100,6 +100,12 @@ const agentTools = createDefaultTools({ rootDir: workspaceDir });
 
 const infiniteStatePath = path.resolve(process.env.STATEWEAVE_INFINITE_STATE ?? "/data/infinite-state.json");
 let infiniteHarness: InfiniteHarness | undefined;
+
+// Self-improvement loop: the VPS worker pushes state here and polls for commands.
+const swLoopStatePath = path.resolve(process.env.STATEWEAVE_SW_LOOP_STATE ?? "/data/sw-loop-state.json");
+let swLoopControl: { action: "start" | "stop" | "none" } = { action: "none" };
+let swLoopState: Record<string, unknown> = {};
+let swLoopHarnessState: Record<string, unknown> = {};
 const defaultNodeTypes = ["intent", "constraint", "artifact", "decision", "fact", "hypothesis", "risk", "question", "wisdom"];
 const evalRuns = new Map<string, EvalRun>();
 const activeEvalRuns = new Set<string>();
@@ -187,6 +193,41 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
 
   if (url.pathname === "/api/infinite/state" && request.method === "GET") {
     await infiniteStateRoute(response);
+    return;
+  }
+
+  // Self-improvement loop control + state (broker between WebUI and VPS worker)
+  if (url.pathname === "/api/sw-loop/control" && request.method === "POST") {
+    const body = (await readJson(request)) as { action?: string };
+    if (body.action === "start" || body.action === "stop") swLoopControl = { action: body.action };
+    json(response, 200, { ok: true, control: swLoopControl });
+    return;
+  }
+  if (url.pathname === "/api/sw-loop/control" && request.method === "GET") {
+    json(response, 200, swLoopControl);
+    swLoopControl = { action: "none" }; // consume the flag after read
+    return;
+  }
+  if (url.pathname === "/api/sw-loop/update" && request.method === "POST") {
+    const body = (await readJson(request)) as Record<string, unknown>;
+    swLoopState = body;
+    try { await writeFile(swLoopStatePath, JSON.stringify(body, null, 2)); } catch { /* non-critical */ }
+    json(response, 200, { ok: true });
+    return;
+  }
+  if (url.pathname === "/api/sw-loop/harness" && request.method === "POST") {
+    swLoopHarnessState = (await readJson(request)) as Record<string, unknown>;
+    json(response, 200, { ok: true });
+    return;
+  }
+  if (url.pathname === "/api/sw-loop/harness" && request.method === "GET") {
+    json(response, 200, swLoopHarnessState);
+    return;
+  }
+  if (url.pathname === "/api/sw-loop/state" && request.method === "GET") {
+    let persisted: Record<string, unknown> = {};
+    try { persisted = JSON.parse(await readFile(swLoopStatePath, "utf8")); } catch { /* fresh */ }
+    json(response, 200, Object.keys(swLoopState).length ? swLoopState : persisted);
     return;
   }
 
@@ -390,7 +431,7 @@ async function infiniteStateRoute(response: ServerResponse): Promise<void> {
     const raw = await readFile(infiniteStatePath, "utf8");
     json(response, 200, JSON.parse(raw) as InfiniteState);
   } catch {
-    json(response, 200, { status: "idle", batchSize: 50, batchCount: 1, turnCount: 0, startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), currentBatch: 0, challengerModel: "unknown", agentModel: "unknown", selfImprove: false, turns: [], series: [], qualitySeries: [], seeds: [], probes: [], consistencyChecks: [], reviews: [] } satisfies InfiniteState);
+    json(response, 200, { status: "idle", batchSize: 50, batchCount: 1, turnCount: 0, startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), currentBatch: 0, challengerModel: "unknown", agentModel: "unknown", selfImprove: false, turns: [], series: [], qualitySeries: [], seeds: [], probes: [], consistencyChecks: [], validTransactions: 0, invalidTransactions: 0, reviews: [] } satisfies InfiniteState);
   }
 }
 

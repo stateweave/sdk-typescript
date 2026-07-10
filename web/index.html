@@ -244,22 +244,18 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
         <section class="card infinite-shell" aria-label="Infinite harness">
           <div class="infinite-header">
             <div>
-              <p class="eyebrow">Adversarial self-improvement</p>
-              <h2>Infinite harness</h2>
-              <p class="muted-copy">A challenger agent with a fresh context window every batch fights a StateWeave agent whose graph never resets. Watch the graph grow, clusters form, and peripheral vision hold context across unlimited turns.</p>
+              <p class="eyebrow">Autonomous self-improvement loop</p>
+              <h2>Live iteration</h2>
+              <p class="muted-copy">This mirrors the current harness run from the autonomous loop below. No manual controls — the loop runs, scores, improves, and repeats.</p>
             </div>
-            <div class="infinite-controls">
-              <label class="infinite-field"><span>Batches</span><input id="infinite-batches" type="number" min="1" max="999" value="1" /></label>
-              <label class="infinite-field"><span>Batch size</span><input id="infinite-batch-size" type="number" min="1" max="100" value="25" /></label>
-              <button id="infinite-start" class="button" type="button">Start</button>
-              <button id="infinite-stop" class="button secondary" type="button" disabled>Stop</button>
-            </div>
+            <div id="infinite-live-badge" class="infinite-live-badge">waiting</div>
           </div>
           <div id="infinite-metrics" class="infinite-metrics"></div>
+          <div id="infinite-executive-live" class="infinite-executive-live"></div>
           <div class="infinite-chart-wrap">
             <div class="infinite-chart-header">
-              <h3>Context window: StateWeave vs baselines</h3>
-              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave <span class="legend-dot baseline"></span>Naive messages[] <span class="legend-dot windowed"></span>Windowed</div>
+              <h3>Context usage: adaptive graph vs strong baselines</h3>
+              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave adaptive projection <span class="legend-dot baseline"></span>Naive up to 96k <span class="legend-dot windowed"></span>Windowed 32k</div>
             </div>
             <canvas id="infinite-chart" class="infinite-chart" width="800" height="220"></canvas>
           </div>
@@ -281,6 +277,29 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
               <div id="infinite-clusters" class="infinite-clusters"><p class="muted-copy">No topics yet.</p></div>
             </section>
           </div>
+        </section>
+
+        <section class="card infinite-shell" aria-label="Self-improvement loop" style="margin-top: 20px;">
+          <div class="infinite-header">
+            <div>
+              <p class="eyebrow">Autonomous SDK self-improvement</p>
+              <h2>Self-improve loop</h2>
+              <p class="muted-copy">Runs the harness, feeds the assessment to X-Agent, which fixes the SDK, runs tests, commits, and loops. Each iteration escalates the turn count to find new edge cases.</p>
+            </div>
+            <div class="infinite-controls">
+              <button id="sw-loop-start" class="button" type="button">Start loop</button>
+              <button id="sw-loop-stop" class="button secondary" type="button" disabled>Stop loop</button>
+            </div>
+          </div>
+          <div id="sw-loop-status" class="sw-loop-status"></div>
+          <div class="infinite-chart-wrap">
+            <div class="infinite-chart-header">
+              <h3>SW pass-rate trend across iterations</h3>
+              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave <span class="legend-dot baseline"></span>Naive baseline</div>
+            </div>
+            <canvas id="sw-loop-chart" class="infinite-chart" width="800" height="200"></canvas>
+          </div>
+          <div id="sw-loop-iterations" class="sw-loop-iterations"><p class="muted-copy">No iterations yet. Click Start loop.</p></div>
         </section>
       </main>
     </div>

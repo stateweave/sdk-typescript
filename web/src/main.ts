@@ -470,14 +470,13 @@ const quickstartPage = element<HTMLElement>("quickstart-page");
 const abPage = element<HTMLElement>("ab-page");
 const multiPage = element<HTMLElement>("multi-page");
 const infinitePage = element<HTMLElement>("infinite-page");
-const infiniteStartButton = element<HTMLButtonElement>("infinite-start");
-const infiniteStopButton = element<HTMLButtonElement>("infinite-stop");
-const infiniteBatchesInput = element<HTMLInputElement>("infinite-batches");
-const infiniteBatchSizeInput = element<HTMLInputElement>("infinite-batch-size");
+const infiniteLiveBadge = element<HTMLElement>("infinite-live-badge");
 const infiniteMetrics = element<HTMLElement>("infinite-metrics");
 const infiniteTurns = element<HTMLElement>("infinite-turns");
 const infiniteClusters = element<HTMLElement>("infinite-clusters");
-let infinitePollTimer: ReturnType<typeof setInterval> | undefined;
+// infinitePollTimer removed — the top harness section is now driven solely by
+// pollSwLoop (which mirrors the worker's harnessSnapshot), so there is no
+// separate /api/infinite/state poller that could clobber it with stale data.
 const chat = element<HTMLElement>("chat");
 const form = element<HTMLFormElement>("composer");
 const input = element<HTMLTextAreaElement>("input");
@@ -798,8 +797,7 @@ function setActivePage(page: PageName, updateHash = true): void {
   if (updateHash) history.replaceState(null, "", isState ? location.pathname : isQuickstart ? "#quick-start" : isAb ? "#ab" : isInfinite ? "#infinite" : `#${suite.id}`);
   if (isMulti) void resumeStoredEvalRun();
   else stopBackgroundPoll();
-  if (isInfinite) startInfinitePoll();
-  else stopInfinitePoll();
+  if (isInfinite) { startSwLoopPoll(); } else { stopSwLoopPoll(); }
   if (isState) input.focus();
   else if (isAb) abInput.focus();
   else if (isMulti) multiStart.focus();
@@ -2936,12 +2934,12 @@ function escapeAttribute(value: string): string {
 
 // --- Infinite harness ---
 
-type InfiniteTurn = { batch: number; turn: number; phase: "seed" | "probe" | "consistency"; prompt: string; answer: string; baselineAnswer: string; windowedAnswer: string; nodeCount: number; edgeCount: number; clusterCount: number; promptTokenEstimate: number; baselineTokenEstimate: number; windowedTokenEstimate: number; latencyMs: number; baselineLatencyMs: number; windowedLatencyMs: number; score?: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore } };
+type InfiniteTurn = { batch: number; turn: number; phase: "seed" | "probe" | "consistency"; prompt: string; answer: string; baselineAnswer: string; windowedAnswer: string; nodeCount: number; edgeCount: number; clusterCount: number; promptTokenEstimate: number; baselineTokenEstimate: number; windowedTokenEstimate: number; latencyMs: number; baselineLatencyMs: number; windowedLatencyMs: number; transactionValid?: boolean; transactionError?: string; score?: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore } };
 type ProbeScore = { score: "pass" | "partial" | "fail"; reasoning: string };
 type InfiniteSeriesPoint = { turn: number; stateweaveTokens: number; baselineTokens: number; windowedTokens: number; stateweaveNodes: number; stateweaveClusters: number; stateweaveLatencyMs: number; baselineLatencyMs: number; windowedLatencyMs: number };
 type InfiniteQualityPoint = { turn: number; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; stateweaveScored: number; naiveScored: number; windowedScored: number };
 type InfiniteReview = { batch: number; findings: string; filesChanged: string[]; testsPassed: boolean; commit?: string; error?: string };
-type InfiniteFinalReport = { generatedAt: string; summary: string; strengths: string[]; weaknesses: string[]; categoryBreakdown: { difficulty: string; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; count: number }[]; driftInstances: { turn: number; description: string }[]; verdict: string };
+type InfiniteFinalReport = { generatedAt: string; summary: string; strengths: string[]; weaknesses: string[]; categoryBreakdown: { difficulty: string; stateweavePassRate: number; naivePassRate: number; windowedPassRate: number; count: number }[]; driftInstances: { turn: number; description: string }[]; verdict: string; contextAssessment?: string; recommendedSdkFocus?: string };
 type InfiniteStateView = {
   status: string;
   batchSize: number;
@@ -2956,89 +2954,49 @@ type InfiniteStateView = {
   turns: InfiniteTurn[];
   series: InfiniteSeriesPoint[];
   qualitySeries: InfiniteQualityPoint[];
+  probes?: { turn: number; difficulty: string }[];
   finalReport?: InfiniteFinalReport;
+  validTransactions?: number;
+  invalidTransactions?: number;
   reviews: InfiniteReview[];
   graphSnapshot?: { nodeCount: number; edgeCount: number; clusterCount: number; clusters: { id: string; label: string; nodeCount: number }[] };
   message?: string;
 };
 
-infiniteStartButton.addEventListener("click", async () => {
-  const batches = Number(infiniteBatchesInput.value || "1");
-  const batchSize = Number(infiniteBatchSizeInput.value || "25");
-  infiniteStartButton.disabled = true;
-  infiniteMetrics.innerHTML = `<div class="infinite-metric"><span class="metric-label">Status</span><strong>starting…</strong></div>`;
-  try {
-    const response = await fetch(`${apiBase}/api/infinite/start`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ batches, batchSize, selfImprove: false }) });
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      throw new Error(body.error ?? `Request failed (${response.status})`);
-    }
-    startInfinitePoll();
-  } catch (error) {
-    infiniteStartButton.disabled = false;
-    infiniteMetrics.innerHTML = `<p class="message error"><div>${escapeHtml(error instanceof Error ? error.message : String(error))}</div></p>`;
-  }
-});
-
-infiniteStopButton.addEventListener("click", async () => {
-  infiniteStopButton.disabled = true;
-  await fetch(`${apiBase}/api/infinite/stop`, { method: "POST" }).catch(() => undefined);
-});
-
-function startInfinitePoll(): void {
-  stopInfinitePoll();
-  infiniteStopButton.disabled = false;
-  void pollInfiniteState();
-  infinitePollTimer = setInterval(() => void pollInfiniteState(), 2000);
-}
-
-function stopInfinitePoll(): void {
-  if (infinitePollTimer !== undefined) clearInterval(infinitePollTimer);
-  infinitePollTimer = undefined;
-}
-
-async function pollInfiniteState(): Promise<void> {
-  try {
-    const response = await fetch(`${apiBase}/api/infinite/state`, { cache: "no-store" });
-    if (!response.ok) {
-      infiniteMetrics.innerHTML = `<p class="message error"><div>State request failed (${response.status}).</div></p>`;
-      return;
-    }
-    const data = await response.json();
-    renderInfiniteState(data as InfiniteStateView);
-  } catch (error) {
-    infiniteMetrics.innerHTML = `<p class="message error"><div>${escapeHtml(error instanceof Error ? error.message : String(error))}</div></p>`;
-  }
-}
+// startInfinitePoll / stopInfinitePoll / pollInfiniteState removed.
+// The autonomous worker is the only source of harness runs; its snapshot is
+// brokered through /api/sw-loop/state and mirrored by pollSwLoop below.
 
 function renderInfiniteState(state: InfiniteStateView): void {
   const running = state.status === "running" || state.status === "batch_done" || state.status === "reviewing" || state.status === "committed" || state.status === "reporting";
-  infiniteStartButton.disabled = running;
-  infiniteStopButton.disabled = !running;
+  const totalTurns = Math.max(state.batchSize * state.batchCount, state.batchSize, state.turnCount);
+  if (infiniteLiveBadge) {
+    infiniteLiveBadge.textContent = running ? (state.turnCount > 0 ? `turn ${state.turnCount} / ${totalTurns}` : `starting · 0 / ${totalTurns}`) : (state.status || "idle");
+    infiniteLiveBadge.className = `infinite-live-badge ${running ? "live" : "idle"}`;
+  }
 
   const snapshot = state.graphSnapshot;
   const lastTurn = state.turns.at(-1);
   const swTokens = lastTurn?.promptTokenEstimate ?? 0;
   const baselineTokens = lastTurn?.baselineTokenEstimate ?? 0;
   const windowedTokens = lastTurn?.windowedTokenEstimate ?? 0;
-  const avgLatency = state.turns.length ? Math.round(state.turns.reduce((sum, t) => sum + t.latencyMs, 0) / state.turns.length) : 0;
-  const tokenDelta = baselineTokens > 0 ? Math.round((1 - swTokens / baselineTokens) * 100) : 0;
   const lastQ = state.qualitySeries.at(-1);
+  const invalidTransactions = state.invalidTransactions ?? state.turns.filter((turn) => turn.transactionValid === false).length;
+  const validTransactions = state.validTransactions ?? Math.max(0, state.turnCount - invalidTransactions);
   infiniteMetrics.innerHTML = `
-    <div class="infinite-metric"><span class="metric-label">Status</span><strong>${escapeHtml(state.status)}</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Turns</span><strong>${state.turnCount}</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Probes scored</span><strong>${state.qualitySeries.at(-1)?.stateweaveScored ?? 0}</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Nodes</span><strong>${snapshot?.nodeCount ?? 0}</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Clusters</span><strong>${snapshot?.clusterCount ?? 0}</strong></div>
-    <div class="infinite-metric sw-metric"><span class="metric-label">SW context</span><strong>${swTokens.toLocaleString()} tok</strong></div>
-    <div class="infinite-metric baseline-metric"><span class="metric-label">Naive context</span><strong>${baselineTokens.toLocaleString()} tok</strong></div>
-    <div class="infinite-metric windowed-metric"><span class="metric-label">Windowed context</span><strong>${windowedTokens.toLocaleString()} tok</strong></div>
-    <div class="infinite-metric ${tokenDelta > 0 ? "sw-metric" : ""}"><span class="metric-label">SW saves</span><strong>${tokenDelta > 0 ? `${tokenDelta}%` : "—"}</strong></div>
-    <div class="infinite-metric sw-metric"><span class="metric-label">SW pass-rate</span><strong>${lastQ ? `${Math.round(lastQ.stateweavePassRate * 100)}%` : "—"}</strong></div>
-    <div class="infinite-metric baseline-metric"><span class="metric-label">Naive pass-rate</span><strong>${lastQ ? `${Math.round(lastQ.naivePassRate * 100)}%` : "—"}</strong></div>
-    <div class="infinite-metric windowed-metric"><span class="metric-label">Windowed pass-rate</span><strong>${lastQ ? `${Math.round(lastQ.windowedPassRate * 100)}%` : "—"}</strong></div>`;
+    <div class="infinite-metric"><span class="metric-label">Turns completed</span><strong>${state.turnCount} / ${totalTurns}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Scored probes</span><strong>${lastQ?.stateweaveScored ?? 0}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Graph integrity</span><strong>${validTransactions} valid / ${invalidTransactions} invalid</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Graph size</span><strong>${snapshot?.nodeCount ?? 0} nodes / ${snapshot?.edgeCount ?? 0} edges</strong></div>
+    <div class="infinite-metric sw-metric"><span class="metric-label">SW projection</span><strong>${swTokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric baseline-metric"><span class="metric-label">Naive transcript</span><strong>${baselineTokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric windowed-metric"><span class="metric-label">32k window</span><strong>${windowedTokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric sw-metric"><span class="metric-label">SW quality</span><strong>${lastQ ? `${(lastQ.stateweavePassRate * 100).toFixed(1)}%` : "—"}</strong></div>
+    <div class="infinite-metric baseline-metric"><span class="metric-label">Naive quality</span><strong>${lastQ ? `${(lastQ.naivePassRate * 100).toFixed(1)}%` : "—"}</strong></div>
+    <div class="infinite-metric windowed-metric"><span class="metric-label">Window quality</span><strong>${lastQ ? `${(lastQ.windowedPassRate * 100).toFixed(1)}%` : "—"}</strong></div>`;
 
   if (state.message) infiniteMetrics.insertAdjacentHTML("beforeend", `<p class="message error"><div>${escapeHtml(state.message)}</div></p>`);
+  renderInfiniteExecutive(state, totalTurns, swTokens, baselineTokens, windowedTokens, validTransactions, invalidTransactions, lastQ);
 
   renderInfiniteChart(state.series);
   renderInfiniteQualityChart(state.qualitySeries);
@@ -3050,7 +3008,7 @@ function renderInfiniteState(state: InfiniteStateView): void {
         const badges = t.score ? scoreBadges(t.score) : (t.phase === "seed" ? `<span class="phase-badge seed">seed</span>` : `<span class="phase-badge consistency">consistency</span>`);
         return `
       <article class="infinite-turn">
-        <header><span class="turn-badge">T${t.turn}</span> ${badges} <small>${t.nodeCount}n · SW ${t.promptTokenEstimate.toLocaleString()}tok / naive ${t.baselineTokenEstimate.toLocaleString()}tok / win ${t.windowedTokenEstimate.toLocaleString()}tok</small></header>
+        <header><span class="turn-badge">T${t.turn}</span> ${badges} ${t.transactionValid === false ? `<span class="score-chip fail">invalid GraphOps</span>` : ""} <small>${t.nodeCount}n/${t.edgeCount}e · SW ${t.promptTokenEstimate.toLocaleString()}tok / naive ${t.baselineTokenEstimate.toLocaleString()}tok / win ${t.windowedTokenEstimate.toLocaleString()}tok</small></header>
         <p class="turn-prompt"><strong>Probe:</strong> ${escapeHtml(t.prompt.slice(0, 180))}</p>
         <p class="turn-answer"><strong>SW:</strong> ${escapeHtml(t.answer.slice(0, 200))}</p>
         <p class="turn-answer baseline"><strong>Naive:</strong> ${escapeHtml(t.baselineAnswer.slice(0, 160))}</p>
@@ -3063,12 +3021,62 @@ function renderInfiniteState(state: InfiniteStateView): void {
     ? clusters.map((c) => `<div class="infinite-cluster"><span class="cluster-id">${escapeHtml(c.id)}</span> <span class="cluster-nodes">${c.nodeCount}n</span> <span class="cluster-label">${escapeHtml(c.label)}</span></div>`).join("")
     : `<p class="muted-copy">No topics yet.</p>`;
 
-  if (!running) stopInfinitePoll();
+  // The top harness section no longer owns its own poller; pollSwLoop drives it,
+  // so there is nothing to stop here when a run finishes.
+}
+
+function renderInfiniteExecutive(
+  state: InfiniteStateView,
+  totalTurns: number,
+  swTokens: number,
+  baselineTokens: number,
+  windowedTokens: number,
+  validTransactions: number,
+  invalidTransactions: number,
+  quality: InfiniteQualityPoint | undefined
+): void {
+  const target = document.getElementById("infinite-executive-live");
+  if (!target) return;
+  const swQuality = quality ? quality.stateweavePassRate * 100 : undefined;
+  const naiveQuality = quality ? quality.naivePassRate * 100 : undefined;
+  const windowQuality = quality ? quality.windowedPassRate * 100 : undefined;
+  const strongestBaseline = Math.max(naiveQuality ?? 0, windowQuality ?? 0);
+  const qualityGap = swQuality === undefined ? undefined : swQuality - strongestBaseline;
+  const verdict = qualityGap === undefined
+    ? "Waiting for scored probes."
+    : qualityGap >= 2
+      ? `StateWeave currently leads the strongest baseline by ${qualityGap.toFixed(1)} points.`
+      : qualityGap <= -2
+        ? `StateWeave currently trails the strongest baseline by ${Math.abs(qualityGap).toFixed(1)} points; this iteration must diagnose and improve retrieval.`
+        : `StateWeave is currently within ${Math.abs(qualityGap).toFixed(1)} points of the strongest baseline.`;
+  const contextComparison = baselineTokens > 0
+    ? `The graph projection uses ${swTokens.toLocaleString()} tokens versus ${baselineTokens.toLocaleString()} for naive and ${windowedTokens.toLocaleString()} for the 32k window.`
+    : "Context measurements will appear after the first completed turn.";
+  const integrity = invalidTransactions
+    ? `${invalidTransactions} of ${validTransactions + invalidTransactions} graph transactions were invalid.`
+    : `All ${validTransactions} completed graph transactions are valid.`;
+  target.className = `infinite-executive-live ${qualityGap !== undefined && qualityGap < -2 ? "warn" : ""}`;
+  target.innerHTML = `<h3>Executive snapshot</h3><p><strong>T${state.turnCount} / ${totalTurns}:</strong> ${escapeHtml(verdict)} ${escapeHtml(contextComparison)} ${escapeHtml(integrity)}</p>`;
 }
 
 function scoreBadges(score: { stateweave: ProbeScore; naive: ProbeScore; windowed: ProbeScore }): string {
   const chip = (label: string, s: ProbeScore) => `<span class="score-chip ${s.score}">${label} ${s.score}</span>`;
   return chip("SW", score.stateweave) + chip("naive", score.naive) + chip("win", score.windowed);
+}
+
+// Idle view for the top section when no harness run is active (loop between
+// iterations, or stopped). Keeps the live badge honest instead of showing stale
+// zeros from a completed run.
+function renderInfiniteIdle(reason: string): void {
+  if (infiniteLiveBadge) {
+    infiniteLiveBadge.textContent = reason || "idle";
+    infiniteLiveBadge.className = "infinite-live-badge idle";
+  }
+  infiniteMetrics.innerHTML = `<div class="infinite-metric"><span class="metric-label">Status</span><strong>${escapeHtml(reason || "idle")}</strong></div><div class="infinite-metric" style="grid-column: span 3"><span class="metric-label">Live mirror</span><strong>Waiting for the next harness run…</strong></div>`;
+  const reportEl = document.getElementById("infinite-report");
+  if (reportEl) reportEl.hidden = true;
+  const executiveEl = document.getElementById("infinite-executive-live");
+  if (executiveEl) executiveEl.innerHTML = `<h3>Executive snapshot</h3><p>${escapeHtml(reason || "Waiting for the next run.")}</p>`;
 }
 
 function renderInfiniteReport(report: InfiniteFinalReport | undefined): void {
@@ -3081,6 +3089,8 @@ function renderInfiniteReport(report: InfiniteFinalReport | undefined): void {
     <div class="report-header"><h3>Executive assessment</h3><small>by the challenger · ${escapeHtml(report.generatedAt)}</small></div>
     <p class="report-summary">${escapeHtml(report.summary)}</p>
     <p class="report-verdict"><strong>Verdict:</strong> ${escapeHtml(report.verdict)}</p>
+    ${report.contextAssessment ? `<p class="report-summary"><strong>Context assessment:</strong> ${escapeHtml(report.contextAssessment)}</p>` : ""}
+    ${report.recommendedSdkFocus ? `<p class="report-summary"><strong>Recommended SDK focus:</strong> ${escapeHtml(report.recommendedSdkFocus)}</p>` : ""}
     ${cats}${drift}
     <div class="report-cols"><div><h4>Strengths</h4><ul>${(report.strengths ?? []).map((s) => `<li>${escapeHtml(s)}</li>`).join("") || "<li>—</li>"}</ul></div><div><h4>Weaknesses</h4><ul>${(report.weaknesses ?? []).map((s) => `<li>${escapeHtml(s)}</li>`).join("") || "<li>—</li>"}</ul></div></div>`;
 }
@@ -3154,3 +3164,159 @@ function drawLineChart<T extends { turn: number }>(canvas: HTMLCanvasElement, se
   const dot = (color: string, v: number) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(xFor(last.turn), yFor(v), 3.5, 0, Math.PI * 2); ctx.fill(); };
   dot("#f97316", lines.baseline(last)); dot("#0ea5e9", lines.windowed(last)); dot("#6366f1", lines.sw(last));
 }
+
+// --- Self-improvement loop ---
+
+type SwLoopIteration = { iteration: number; turns: number; swPassRate: string; naivePassRate: string; windowedPassRate?: string; replayBaseline?: string; candidatePassRate?: string; accepted?: boolean; commit: string; shipped: string; diffstat: string; timestamp: string };
+type SwLoopValidation = { status: string; turnCount: number; totalTurns: number; scoredProbes: number; baselineScore: number; candidateScore: number; validTransactions: number; invalidTransactions: number; categories?: { difficulty: string; baselineScore: number; candidateScore: number; count: number }[]; message?: string };
+type SwLoopState = {
+  status: string;
+  iteration: number;
+  phase: string;
+  message: string;
+  updatedAt?: string;
+  iterations: SwLoopIteration[];
+  assessment?: string;
+  optimizerLogTail?: string;
+  validationSnapshot?: SwLoopValidation;
+};
+
+const swLoopStartButton = element<HTMLButtonElement>("sw-loop-start");
+const swLoopStopButton = element<HTMLButtonElement>("sw-loop-stop");
+const swLoopStatus = element<HTMLElement>("sw-loop-status");
+const swLoopIterations = element<HTMLElement>("sw-loop-iterations");
+let swLoopPollTimer: ReturnType<typeof setInterval> | undefined;
+
+swLoopStartButton.addEventListener("click", async () => {
+  swLoopStartButton.disabled = true;
+  try {
+    await fetch(`${apiBase}/api/sw-loop/control`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "start" }) });
+    swLoopStatus.innerHTML = `<p class="muted-copy">Start signal sent. The VPS worker will pick it up within a few seconds…</p>`;
+    startSwLoopPoll();
+  } catch (error) {
+    swLoopStartButton.disabled = false;
+    swLoopStatus.innerHTML = `<p class="message error"><div>${escapeHtml(error instanceof Error ? error.message : String(error))}</div></p>`;
+  }
+});
+
+swLoopStopButton.addEventListener("click", async () => {
+  swLoopStopButton.disabled = true;
+  await fetch(`${apiBase}/api/sw-loop/control`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "stop" }) }).catch(() => undefined);
+});
+
+function startSwLoopPoll(): void {
+  stopSwLoopPoll();
+  void pollSwLoop();
+  swLoopPollTimer = setInterval(() => void pollSwLoop(), 2000);
+}
+
+function stopSwLoopPoll(): void {
+  if (swLoopPollTimer !== undefined) clearInterval(swLoopPollTimer);
+  swLoopPollTimer = undefined;
+}
+
+async function pollSwLoop(): Promise<void> {
+  try {
+    const response = await fetch(`${apiBase}/api/sw-loop/state`, { cache: "no-store" });
+    if (!response.ok) return;
+    const data = await response.json() as SwLoopState & { harnessSnapshot?: InfiniteStateView };
+    renderSwLoop(data);
+    // The top "Live iteration" section is a pure mirror of the autonomous loop.
+    // The worker streams its harness snapshot here; render it live so turns/charts
+    // fill in turn-by-turn. Fall back to an idle view when no run is active.
+    if (data.harnessSnapshot && (data.harnessSnapshot.turns?.length || data.harnessSnapshot.series?.length || data.harnessSnapshot.probes?.length || data.harnessSnapshot.status === "running")) {
+      renderInfiniteState(data.harnessSnapshot);
+    } else if (data.status !== "running") {
+      renderInfiniteIdle(data.message || data.phase || "idle");
+    }
+  } catch { /* network blip */ }
+}
+
+function renderSwLoop(state: SwLoopState): void {
+  const heartbeatAgeMs = state.updatedAt ? Date.now() - Date.parse(state.updatedAt) : Number.POSITIVE_INFINITY;
+  const stale = state.status === "running" && heartbeatAgeMs > 30_000;
+  const running = state.status === "running" && !stale;
+  swLoopStartButton.disabled = running;
+  swLoopStopButton.disabled = !running;
+
+  const phaseColors: Record<string, string> = { building: "#6366f1", harness: "#0ea5e9", feedback: "#8b5cf6", improving: "#f59e0b", testing: "#06b6d4", validating: "#2563eb", accepted: "#10b981", rejected: "#ef4444", error: "#ef4444", waiting: "#64748b" };
+  const phase = state.phase || "idle";
+  const iters = state.iterations || [];
+  const lastIter = iters[iters.length - 1];
+  const validation = state.validationSnapshot;
+  const validationProgress = validation ? `${validation.turnCount}/${validation.totalTurns}` : "—";
+  swLoopStatus.innerHTML = `
+    <div class="infinite-metric"><span class="metric-label">Loop status</span><strong>${stale ? "stale / worker offline" : escapeHtml(state.status || "idle")}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Heartbeat</span><strong>${Number.isFinite(heartbeatAgeMs) ? `${Math.max(0, Math.round(heartbeatAgeMs / 1000))}s ago` : "—"}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Iteration</span><strong>${state.iteration || 0}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Phase</span><strong style="color:${phaseColors[phase] || "#64748b"}">${escapeHtml(phase)}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Last SW score</span><strong>${lastIter?.swPassRate ? lastIter.swPassRate + "%" : "—"}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Last vs naive</span><strong>${lastIter ? `${lastIter.swPassRate}% / ${lastIter.naivePassRate}%` : "—"}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Matched replay</span><strong>${validation ? `${validation.baselineScore}% → ${validation.candidateScore}%` : "—"}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Replay progress</span><strong>${validationProgress}</strong></div>
+    <div class="infinite-metric" style="grid-column: span 2"><span class="metric-label">Message</span><strong style="font-size:0.82rem">${escapeHtml(state.message || "")}</strong></div>
+    ${state.assessment ? `<details class="sw-loop-detail"><summary>Challenger feedback</summary><pre>${escapeHtml(state.assessment)}</pre></details>` : ""}
+    ${state.optimizerLogTail ? `<details class="sw-loop-detail" ${phase === "improving" ? "open" : ""}><summary>Pi coding-agent stream</summary><pre>${escapeHtml(state.optimizerLogTail)}</pre></details>` : ""}`;
+
+  renderSwLoopChart(iters);
+
+  swLoopIterations.innerHTML = iters.length
+    ? [...iters].reverse().map((it) => `
+      <article class="sw-loop-iter">
+        <header>
+          <span class="turn-badge">#${it.iteration}</span>
+          <small>${it.turns} turns · ${escapeHtml(it.timestamp)}</small>
+          <span class="score-chip ${it.accepted ? "pass" : "fail"}">${it.accepted ? "accepted" : "rejected"}</span>
+          <span class="score-chip ${Number(it.swPassRate) >= Number(it.naivePassRate) ? "pass" : "partial"}">baseline SW ${it.swPassRate}% / naive ${it.naivePassRate}%</span>
+          ${it.candidatePassRate ? `<span class="score-chip ${it.accepted ? "pass" : "fail"}">replay ${it.replayBaseline ?? it.swPassRate}% → ${it.candidatePassRate}%</span>` : ""}
+          ${it.commit && it.commit !== "none" && it.commit !== "reverted" ? `<code class="iter-commit">${escapeHtml(it.commit)}</code>` : ""}
+        </header>
+        <p class="turn-answer"><strong>Decision:</strong> ${escapeHtml(it.shipped)}</p>
+        ${it.diffstat ? `<pre class="iter-diffstat">${escapeHtml(it.diffstat)}</pre>` : ""}
+      </article>`).join("")
+    : `<p class="muted-copy">No iterations yet.</p>`;
+}
+
+function renderSwLoopChart(iters: SwLoopIteration[]): void {
+  const canvas = document.getElementById("sw-loop-chart") as HTMLCanvasElement | null;
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth || 800, cssH = canvas.clientHeight || 200;
+  canvas.width = cssW * dpr; canvas.height = cssH * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+  const padL = 50, padR = 16, padT = 12, padB = 28;
+  const plotW = cssW - padL - padR, plotH = cssH - padT - padB;
+  ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+  if (iters.length < 1) {
+    ctx.fillStyle = "#94a3b8"; ctx.font = "13px ui-sans-serif, system-ui, sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("No iterations yet. Start the loop to see the trend.", cssW / 2, cssH / 2); return;
+  }
+  const maxIter = Math.max(...iters.map((i) => i.iteration), 1);
+  const allVals = iters.flatMap((i) => [Number(i.swPassRate), Number(i.naivePassRate), Number(i.candidatePassRate ?? i.swPassRate)]).filter((v) => !isNaN(v));
+  const niceMax = Math.max(100, Math.ceil(Math.max(...allVals, 1) / 10) * 10);
+  ctx.textAlign = "right";
+  for (let i = 0; i <= 4; i++) {
+    const value = (niceMax / 4) * i;
+    const y = padT + plotH - (plotH / 4) * i;
+    ctx.strokeStyle = "rgba(148,163,184,0.12)"; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(cssW - padR, y); ctx.stroke();
+    ctx.fillStyle = "#64748b"; ctx.fillText(`${Math.round(value)}%`, padL - 8, y + 4);
+  }
+  ctx.textAlign = "center";
+  for (let i = 0; i <= maxIter; i++) { const x = padL + (plotW / maxIter) * i; ctx.fillText(`#${i}`, x, cssH - padB + 18); }
+  const xFor = (iter: number) => padL + (plotW / maxIter) * iter;
+  const yFor = (v: number) => padT + plotH - (Math.min(v, niceMax) / niceMax) * plotH;
+  const drawLine = (color: string, fn: (i: SwLoopIteration) => number, width: number) => {
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath();
+    iters.forEach((it, idx) => { const x = xFor(it.iteration), y = yFor(fn(it)); idx === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }); ctx.stroke();
+    iters.forEach((it) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(xFor(it.iteration), yFor(fn(it)), 3, 0, Math.PI * 2); ctx.fill(); });
+  };
+  drawLine("#f97316", (i) => Number(i.naivePassRate), 2);
+  drawLine("#6366f1", (i) => Number(i.replayBaseline ?? i.swPassRate), 2);
+  drawLine("#10b981", (i) => Number(i.candidatePassRate ?? i.swPassRate), 2.5);
+}
+
+// Start polling loop state when the Infinite page is active
+if (activePage === "infinite") startSwLoopPoll();

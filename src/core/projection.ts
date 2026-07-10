@@ -38,22 +38,17 @@ export type Projection = {
 };
 
 const DEFAULT_RADIUS = 4;
-const DEFAULT_BUDGET = 48;
-const RETRIEVAL_BUDGET = 24;
-const RETRIEVAL_BUDGET_CHRONOLOGY = 32;
-const RETRIEVAL_BUDGET_CONFLICT = 30;
-// Hard ceiling on the rendered <FOCUS> window. Positional BFS (budget) plus
-// retrieval plus per-retrieved cluster-member expansion can otherwise push a
-// mature graph's focus to 80+ nodes, bloating the prompt until the model hits
-// wall-clock limits (a timeout reads as a recall miss even when the answer is
-// reachable). Capped focus preserves retrieved answer-candidates, centers, and
-// relational context; the <BIG_BRAIN>/<PERIPHERAL>/<TIMELINE> layers still give
-// a full map of everything else.
-//
-// Keeping the cap tighter than the positional budget is critical for latency:
-// smaller focus windows keep the SWX prompt within LLM budget on long-context
-// probes while still giving the latest/found/retrieved region enough detail.
-const FOCUS_NODE_CAP = 28;
+const DEFAULT_BUDGET = 96;
+const RETRIEVAL_BUDGET = 48;
+const RETRIEVAL_BUDGET_CHRONOLOGY = 72;
+const RETRIEVAL_BUDGET_CONFLICT = 64;
+// Modern models have a much larger reliable context region than the original
+// ~5k-token projection used here. Keep the view bounded, but spend more of that
+// region when a query needs historical evidence. These are node ceilings rather
+// than graph compaction: the append-only StateGraph remains complete.
+const FOCUS_NODE_CAP = 64;
+const FOCUS_NODE_CAP_CONFLICT = 80;
+const FOCUS_NODE_CAP_CHRONOLOGY = 96;
 
 export function clusterGraph(graph: StateGraph, adjacency: Map<string, string[]> = undirectedAdjacency(graph)): Cluster[] {
   const nodes = graph.nodes;
@@ -175,6 +170,11 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
     }
   }
 
+  const focusNodeCap = chronologyMode
+    ? FOCUS_NODE_CAP_CHRONOLOGY
+    : conflictMode
+      ? FOCUS_NODE_CAP_CONFLICT
+      : FOCUS_NODE_CAP;
   const focusNodes = capFocusNodes(
     [...focusSet]
       .map((id) => byId.get(id))
@@ -182,7 +182,7 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
     retrievedNodeIds,
     new Set(centers),
     relationalNeighborIds,
-    FOCUS_NODE_CAP,
+    focusNodeCap,
     chronologyMode
   ).sort(byCreatedAt);
 

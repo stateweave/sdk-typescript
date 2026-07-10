@@ -114,6 +114,19 @@ it("small graph still renders all nodes in focus", () => {
   expect(prompt).toContain("node user_input_1 [user_input]");
 });
 
+it("uses a larger but bounded focus window for modern long-context models", () => {
+  const turns = Array.from({ length: 45 }, (_, index) => ({
+    input: `Telescope observation ${index + 1} uses shared filter code azure-${index + 1}`,
+    answer: `Recorded telescope filter azure-${index + 1}`
+  }));
+  let frame = buildConversation(turns);
+  frame = appendInputToGraphFrame(frame, { objective: "Recall", input: "List the telescope observations and shared azure filter codes." });
+
+  const projection = projectGraph(frame.graph, { focusNodeId: frame.frame.latestInputNodeId });
+  expect(projection.focusNodes.length).toBeGreaterThan(28);
+  expect(projection.focusNodes.length).toBeLessThanOrEqual(64);
+});
+
 it("chronology probes preserve intra-turn emission order despite identical timestamps", () => {
   // Simulate a seed turn that atomized 3 facts in ONE GraphOps transaction:
   // all three get identical createdAt (the real applyOps behavior). The gold
