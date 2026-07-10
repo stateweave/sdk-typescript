@@ -113,8 +113,9 @@ export function createFileSystemTools(options: FileSystemToolsOptions = {}): Too
         const filePath = resolveWorkspacePath(rootDir, parsed.filePath);
         const content = await readFile(filePath, "utf8");
         assertContentHash(content, parsed.expectedHash, parsed.filePath);
+        if (parsed.oldString === parsed.newString) throw new Error(`Refusing a no-op edit: old_string and new_string are identical. Quote complete one-line values or use old_string_ref/new_string_ref blocks.\nCurrent file preview:\n${filePreview(content)}`);
         const replacement = replaceExact(content, parsed.oldString, parsed.newString, parsed.replaceAll);
-        if (typeof replacement === "string") throw new Error(`${replacement}\nCurrent file preview:\n${filePreview(content)}`);
+        if (typeof replacement === "string") throw new Error(`${replacement}\nQuote complete one-line values or use old_string_ref/new_string_ref blocks.\nCurrent file preview:\n${filePreview(content)}`);
         await writeFile(filePath, replacement.content, "utf8");
         return { path: parsed.filePath, file_path: parsed.filePath, replacements: replacement.occurrences, occurrences: replacement.occurrences, content_hash: contentHash(replacement.content), ok: true };
       }

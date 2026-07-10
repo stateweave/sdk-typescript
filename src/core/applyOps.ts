@@ -107,7 +107,7 @@ export function addToolResult(graph: StateGraph, args: { tool: string; result: u
     {
       id: resultId,
       type: "tool_result",
-      text: typeof args.result === "string" ? args.result : JSON.stringify(args.result),
+      text: toolResultSummary(args.tool, args.result, ok),
       data: { tool: args.tool, result: args.result, ok },
       status: ok ? "active" : "rejected",
       confidence: 1,
@@ -138,12 +138,31 @@ function addVersionedFileState(graph: StateGraph, resultId: string, result: unkn
   const filePath = typeof record.file_path === "string" ? record.file_path : typeof record.path === "string" ? record.path : undefined;
   const hash = typeof record.content_hash === "string" ? record.content_hash : undefined;
   if (!filePath || !hash) return;
+  const current = graph.nodes.find((node) => node.type === "file" && node.data?.path === filePath && node.data?.contentHash === hash && node.status === "active");
+  if (current) {
+    addEdge(graph, resultId, current.id, "validates");
+    return;
+  }
   for (const node of graph.nodes) {
     if (node.type === "file" && node.data?.path === filePath && node.status === "active") node.status = "stale";
   }
   const id = uniqueNodeId(graph.nodes, `file_state_${filePath}_${hash.slice(0, 10)}`.replace(/[^a-zA-Z0-9_]/g, "_"));
   graph.nodes.push({ id, type: "file", text: `${filePath} current content version ${hash.slice(0, 12)}`, data: { path: filePath, contentHash: hash, canonical: true }, status: "active", confidence: 1, createdAt });
   addEdge(graph, resultId, id, "validates");
+}
+
+function toolResultSummary(tool: string, result: unknown, ok: boolean): string {
+  if (!ok) {
+    const error = result && typeof result === "object" && typeof (result as Record<string, unknown>).error === "string" ? (result as Record<string, unknown>).error as string : "unknown error";
+    return `${tool} failed: ${error.slice(0, 500)}`;
+  }
+  if (!result || typeof result !== "object") return `${tool} succeeded`;
+  const record = result as Record<string, unknown>;
+  const filePath = typeof record.file_path === "string" ? record.file_path : typeof record.path === "string" ? record.path : undefined;
+  const hash = typeof record.content_hash === "string" ? record.content_hash.slice(0, 12) : undefined;
+  if (filePath) return `${tool} succeeded for ${filePath}${hash ? ` at ${hash}` : ""}`;
+  if (tool === "bash_command") return `bash_command completed with exit code ${String(record.exitCode ?? "unknown")}`;
+  return `${tool} succeeded`;
 }
 
 function uniqueNodeId(nodes: GraphNode[], base: string): string {

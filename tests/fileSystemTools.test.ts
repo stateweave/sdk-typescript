@@ -9,6 +9,7 @@ it("provides workspace-scoped read, write, edit, and bash tools", async () => {
   try {
     const tools = new Map(createFileSystemTools({ rootDir: root }).map((tool) => [tool.name, tool]));
     await tools.get("write_file")?.execute({ file_path: "notes/todo.txt", content: "one\none\nthree" });
+    await expect(tools.get("edit_file")?.execute({ file_path: "notes/todo.txt", old_string: "one", new_string: "one" })).rejects.toThrow(/Refusing a no-op edit/);
     await expect(tools.get("edit_file")?.execute({ file_path: "notes/todo.txt", old_string: "one", new_string: "two" })).rejects.toThrow(/replace_all=true/);
     await tools.get("edit_file")?.execute({ file_path: "notes/todo.txt", old_string: "one", new_string: "two", replace_all: true });
     const read = await tools.get("read_file")?.execute({ file_path: "notes/todo.txt", offset: 0, limit: 2 });

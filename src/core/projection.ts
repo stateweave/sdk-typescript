@@ -85,8 +85,10 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
     ...(explicitFocus ? [] : [latestAssistantOutputId(graph)])
   ].filter((id): id is string => typeof id === "string" && byId.has(id)));
 
-  // Positional focus: BFS from the active centers.
-  const positionalFocus = bfsBounded(graph, centers, radius, budget, adjacency);
+  // Positional focus must not traverse the system_root hub: every turn attaches
+  // there, so an undirected BFS through it degenerates into the whole history.
+  const positionalCenters = centers.filter((id) => id !== "system_root");
+  const positionalFocus = bfsBounded(graph, positionalCenters, radius, budget, withoutSystemHub(adjacency));
 
   // Retrieval focus: if the active node looks like a question, search ALL nodes
   // for keyword matches and pull them (and their clusters) into view.
@@ -105,7 +107,7 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
     : [];
 
   // Merge positional + retrieved into the final focus set.
-  const focusSet = new Set<string>([...positionalFocus, ...retrievedNodeIds]);
+  const focusSet = new Set<string>(["system_root", ...positionalFocus, ...retrievedNodeIds]);
 
   // Relational + sibling context for synthesis/combine. Atomized semantic
   // facts (fact, artifact, decision, ...) carry only their bare value and drop
@@ -254,6 +256,7 @@ function retrieveNodes(
 ): string[] {
   const keywords = extractKeywords(queryText);
   if (!keywords.length) return [];
+  const entityKeys = strongEntityKeys(queryText);
 
   const byId = new Map(graph.nodes.map((node) => [node.id, node]));
   const clusterLookup = new Map<string, Cluster>();
@@ -279,7 +282,10 @@ function retrieveNodes(
       if (seed) parts.push(oneLine(seed.text).toLowerCase());
     }
 
+    const ownEntityKeys = strongEntityKeys(parts[0]);
+    if (entityKeys.length && ownEntityKeys.length && !entityKeys.some((key) => parts[0].includes(key))) continue;
     const text = parts.join(" ");
+    if (entityKeys.length && !entityKeys.some((key) => text.includes(key))) continue;
     let score = 0;
     for (const kw of keywords) {
       if (text.includes(kw)) score += kw.length > 4 ? 3 : 2;
@@ -389,6 +395,13 @@ function userInputContextByNode(graph: StateGraph, byId: Map<string, GraphNode>,
   }
 
   return finalContext;
+}
+
+function strongEntityKeys(text: string): string[] {
+  const lower = text.toLowerCase();
+  const ids = lower.match(/\b[a-z][a-z0-9]*(?:-[a-z0-9]+)*-\d+\b/g) ?? [];
+  const paths = lower.match(/\b(?:[a-z0-9_.-]+\/)+[a-z0-9_.-]+\.(?:js|ts|json|md|txt|html|css|svg)\b/g) ?? [];
+  return unique([...ids, ...paths]);
 }
 
 function extractKeywords(text: string): string[] {
@@ -609,6 +622,12 @@ function bfsBounded(graph: StateGraph, centers: string[], radius: number, budget
   }
 
   return new Set(visited.keys());
+}
+
+function withoutSystemHub(adjacency: Map<string, string[]>): Map<string, string[]> {
+  const next = new Map<string, string[]>();
+  for (const [id, neighbors] of adjacency) next.set(id, id === "system_root" ? [] : neighbors.filter((neighbor) => neighbor !== "system_root"));
+  return next;
 }
 
 function undirectedAdjacency(graph: StateGraph): Map<string, string[]> {

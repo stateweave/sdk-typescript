@@ -87,12 +87,15 @@ it("retrieval pulls keyword-matched nodes into focus", () => {
 it("retrieves exact entities for imperative change requests", () => {
   let frame = createInitialGraphFrame({ objective: "Maintain", input: "Create src/components/component-006.json", availableActions: [] });
   frame.graph.nodes.push({ id: "file_component_006", type: "file", text: "src/components/component-006.json retryLimit 3", data: { path: "src/components/component-006.json" }, status: "active", createdAt: new Date(0).toISOString() });
+  frame.graph.nodes.push({ id: "unrelated_file", type: "file", text: "src/components/component-999.json retryLimit 9", data: { path: "src/components/component-999.json" }, status: "active", createdAt: new Date(0).toISOString() });
   frame.graph.edges.push({ id: "e_component", from: "user_input_1", to: "file_component_006", type: "creates", createdAt: "" });
+  frame.graph.edges.push({ id: "e_unrelated", from: "system_root", to: "unrelated_file", type: "relates_to", createdAt: "" });
   frame = appendInputToGraphFrame(frame, { objective: "Maintain", input: "Update RETRY_LIMIT in src/components/component-006.json to 4." });
 
   const projection = projectGraph(frame.graph, { focusNodeId: "assistant_output_missing" });
   expect(projection.retrievedNodeIds).toContain("file_component_006");
   expect(projection.focusNodes).toContainEqual(expect.objectContaining({ id: "user_input_2" }));
+  expect(projection.focusNodes).not.toContainEqual(expect.objectContaining({ id: "unrelated_file" }));
 });
 
 it("keeps unrelated entities in separate clusters", () => {
