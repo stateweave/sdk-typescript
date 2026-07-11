@@ -200,6 +200,15 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     return;
   }
 
+  const infiniteAgentTurnMatch = url.pathname.match(/^\/api\/infinite-agent\/turns\/(\d+)$/);
+  if (infiniteAgentTurnMatch && request.method === "GET") {
+    await infiniteAgentReady;
+    const turn = await infiniteAgentHarness.getTurn(Number(infiniteAgentTurnMatch[1]));
+    if (turn) json(response, 200, turn);
+    else json(response, 404, { error: "Turn is not available in the archive." });
+    return;
+  }
+
   const evalRunMatch = url.pathname.match(/^\/api\/stateweave\/eval-runs\/([^/]+)(?:\/([^/]+))?$/);
   if (evalRunMatch) {
     await evalRunsReady;

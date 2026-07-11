@@ -473,6 +473,10 @@ const infinitePage = element<HTMLElement>("infinite-page");
 const infiniteLiveBadge = element<HTMLElement>("infinite-live-badge");
 const infiniteMetrics = element<HTMLElement>("infinite-metrics");
 const infiniteTurns = element<HTMLElement>("infinite-turns");
+const infiniteTurnNumber = element<HTMLInputElement>("infinite-turn-number");
+const infiniteTurnOpen = element<HTMLButtonElement>("infinite-turn-open");
+const infiniteTurnLatest = element<HTMLButtonElement>("infinite-turn-latest");
+const infiniteTurnDetail = element<HTMLElement>("infinite-turn-detail");
 const infiniteClusters = element<HTMLElement>("infinite-clusters");
 // The Infinite tab polls the server-owned agent harness through one state endpoint.
 const chat = element<HTMLElement>("chat");
@@ -2932,7 +2936,7 @@ function escapeAttribute(value: string): string {
 
 // --- Infinite harness ---
 
-type ProbeScore = { score: "pass" | "partial" | "fail"; passed: number; total: number; details: string[] };
+type ProbeScore = { score: "pass" | "partial" | "fail"; passed: number; total: number; details: string[]; checks?: Array<{ label: string; passed: boolean }> };
 type InfiniteTurn = { turn: number; phase: string; taskKind: string; prompt: string; answer: string; baselineAnswer: string; nodeCount: number; edgeCount: number; clusterCount: number; promptTokenEstimate: number; baselineTokenEstimate: number; totalInputTokens: number; baselineTotalInputTokens: number; outputTokenCount: number; baselineOutputTokenCount: number; latencyMs: number; baselineLatencyMs: number; modelCalls: number; baselineModelCalls: number; toolCalls: number; baselineToolCalls: number; transactionValid: boolean; score: { stateweave: ProbeScore; naive: ProbeScore } };
 type InfiniteSeriesPoint = { turn: number; stateweaveTokens: number; baselineTokens: number; stateweaveTotalInputTokens: number; baselineTotalInputTokens: number; stateweaveOutputTokens: number; baselineOutputTokens: number; stateweaveNodes: number; stateweaveClusters: number; stateweaveLatencyMs: number; baselineLatencyMs: number; stateweaveToolCalls: number; baselineToolCalls: number };
 type InfiniteQualityPoint = { turn: number; stateweavePassRate: number; naivePassRate: number; stateweaveScored: number; naiveScored: number };
@@ -2956,12 +2960,16 @@ type InfiniteStateView = {
   tools: string[];
   security: { bashPolicy: string; isolatedWorkspaces: boolean };
   workspace: { stateweaveFiles: number; naiveFiles: number };
+  naiveContextLimit: number;
+  turnArchive: { firstTurn: number; lastTurn: number; count: number };
   message?: string;
 };
 
 // The server-side harness owns the persistent workspaces and resumes after deploys.
+let latestInfiniteState: InfiniteStateView | undefined;
 
 function renderInfiniteState(state: InfiniteStateView): void {
+  latestInfiniteState = state;
   const running = state.status === "running";
   if (infiniteLiveBadge) {
     infiniteLiveBadge.textContent = running ? `turn ${state.turnCount} · running` : (state.status || "idle");
@@ -2979,7 +2987,7 @@ function renderInfiniteState(state: InfiniteStateView): void {
     <div class="infinite-metric"><span class="metric-label">Graph integrity</span><strong>${state.validTransactions} valid / ${state.invalidTransactions} invalid</strong></div>
     <div class="infinite-metric"><span class="metric-label">Isolated workspaces</span><strong>${state.workspace.stateweaveFiles} SW / ${state.workspace.naiveFiles} naive files</strong></div>
     <div class="infinite-metric sw-metric"><span class="metric-label">SW latest context</span><strong>${swTokens.toLocaleString()} tok</strong></div>
-    <div class="infinite-metric baseline-metric"><span class="metric-label">Naive latest context</span><strong>${baselineTokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric baseline-metric"><span class="metric-label">Naive latest context · ${(state.naiveContextLimit / 1000).toFixed(0)}k cap</span><strong>${baselineTokens.toLocaleString()} tok</strong></div>
     <div class="infinite-metric"><span class="metric-label">Latest tool calls</span><strong>${lastTurn ? `${lastTurn.toolCalls} SW / ${lastTurn.baselineToolCalls} naive` : "—"}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Graph size</span><strong>${snapshot?.nodeCount ?? 0} nodes / ${snapshot?.edgeCount ?? 0} edges</strong></div>
     <div class="infinite-metric sw-metric"><span class="metric-label">SW task quality</span><strong>${quality ? `${(quality.stateweavePassRate * 100).toFixed(1)}%` : "—"}</strong></div>
@@ -2989,16 +2997,25 @@ function renderInfiniteState(state: InfiniteStateView): void {
   renderInfiniteChart(state.series);
   renderInfiniteQualityChart(state.qualitySeries);
 
-  const turns = [...state.turns].reverse().slice(0, 20);
+  infiniteTurnNumber.max = String(state.turnCount);
+  infiniteTurnNumber.placeholder = state.turnArchive.firstTurn
+    ? `${state.turnArchive.firstTurn}–${state.turnArchive.lastTurn}`
+    : "No archived turns";
+  const turns = [...state.turns].reverse();
   infiniteTurns.innerHTML = turns.length
     ? turns.map((turn) => `
-      <article class="infinite-turn">
-        <header><span class="turn-badge">T${turn.turn}</span> <span class="phase-badge seed">${escapeHtml(turn.taskKind)}</span> ${scoreBadges(turn.score)} ${turn.transactionValid ? "" : `<span class="score-chip fail">agent error</span>`}<small>${turn.nodeCount}n/${turn.edgeCount}e · SW ${turn.promptTokenEstimate.toLocaleString()} ctx / ${turn.toolCalls} tools / ${turn.modelCalls} calls · naive ${turn.baselineTokenEstimate.toLocaleString()} ctx / ${turn.baselineToolCalls} tools / ${turn.baselineModelCalls} calls</small></header>
-        <p class="turn-prompt"><strong>Task:</strong> ${escapeHtml(turn.prompt.slice(0, 240))}</p>
-        <p class="turn-answer"><strong>StateWeave:</strong> ${escapeHtml(turn.answer.slice(0, 260))}</p>
-        <p class="turn-answer baseline"><strong>Naive:</strong> ${escapeHtml(turn.baselineAnswer.slice(0, 220))}</p>
-      </article>`).join("")
+      <button class="infinite-turn" type="button" data-infinite-turn="${turn.turn}">
+        <header><span class="turn-badge">T${turn.turn}</span> <span class="phase-badge seed">${escapeHtml(turn.taskKind)}</span> ${scoreBadges(turn.score)} ${turn.transactionValid ? "" : `<span class="score-chip fail">agent error</span>`}</header>
+        <small>${turn.nodeCount}n/${turn.edgeCount}e · SW ${turn.promptTokenEstimate.toLocaleString()} ctx / ${turn.toolCalls} tools / ${turn.modelCalls} calls · naive ${turn.baselineTokenEstimate.toLocaleString()} ctx / ${turn.baselineToolCalls} tools / ${turn.baselineModelCalls} calls</small>
+        <span class="turn-preview">${escapeHtml(oneLine(turn.prompt).slice(0, 180))}</span>
+      </button>`).join("")
     : `<p class="muted-copy">Waiting for the first filesystem task…</p>`;
+  for (const button of infiniteTurns.querySelectorAll<HTMLButtonElement>("[data-infinite-turn]")) {
+    button.addEventListener("click", () => {
+      const turn = state.turns.find((item) => item.turn === Number(button.dataset.infiniteTurn));
+      if (turn) renderInfiniteTurnDetail(turn);
+    });
+  }
 
   const clusters = snapshot?.clusters ?? [];
   infiniteClusters.innerHTML = `${state.nodeTypes.map((type) => `<div class="infinite-cluster"><span class="cluster-id">${escapeHtml(type)}</span> <span class="cluster-label">${escapeHtml(state.nodeTypeRationales[type] ?? "")}</span></div>`).join("")}${clusters.length ? clusters.map((cluster) => `<div class="infinite-cluster"><span class="cluster-id">${escapeHtml(cluster.id)}</span> <span class="cluster-nodes">${cluster.nodeCount}n</span> <span class="cluster-label">${escapeHtml(cluster.label)}</span></div>`).join("") : ""}`;
@@ -3021,8 +3038,36 @@ function renderInfiniteExecutive(state: InfiniteStateView, swTokens: number, bas
 }
 
 function scoreBadges(score: { stateweave: ProbeScore; naive: ProbeScore }): string {
-  const chip = (label: string, value: ProbeScore) => `<span class="score-chip ${value.score}" title="${escapeAttribute(value.details.join(", "))}">${label} ${value.score} ${value.passed}/${value.total}</span>`;
+  const chip = (label: string, value: ProbeScore) => `<span class="score-chip ${value.score}" title="${escapeAttribute(value.details.length ? `Failed: ${value.details.join(", ")}` : "All checks passed")}">${label} ${value.score} ${value.passed}/${value.total}</span>`;
   return chip("SW", score.stateweave) + chip("naive", score.naive);
+}
+
+function renderInfiniteTurnDetail(turn: InfiniteTurn): void {
+  infiniteTurnNumber.value = String(turn.turn);
+  const judgment = (label: string, score: ProbeScore) => {
+    const checks = score.checks?.length
+      ? score.checks
+      : [
+          ...score.details.map((detail) => ({ label: detail, passed: false })),
+          ...(score.passed ? [{ label: `${score.passed} other check${score.passed === 1 ? "" : "s"} passed (legacy turn; labels were not archived)`, passed: true }] : [])
+        ];
+    return `<section class="turn-judgment ${score.score}">
+      <h4>${escapeHtml(label)} judgment <span class="score-chip ${score.score}">${score.score} ${score.passed}/${score.total}</span></h4>
+      <p>${score.details.length ? "The deterministic verifier found the failures below." : "All deterministic workspace checks passed."}</p>
+      <ul>${checks.map((check) => `<li class="${check.passed ? "passed" : "failed"}">${check.passed ? "✓" : "✕"} ${escapeHtml(check.label)}</li>`).join("")}</ul>
+    </section>`;
+  };
+  infiniteTurnDetail.innerHTML = `
+    <article class="turn-inspection">
+      <header><span class="turn-badge">T${turn.turn}</span><span class="phase-badge seed">${escapeHtml(turn.taskKind)}</span>${turn.transactionValid ? "" : `<span class="score-chip fail">invalid transaction</span>`}</header>
+      <section><h4>Question / task</h4><pre>${escapeHtml(turn.prompt)}</pre></section>
+      <div class="turn-answer-grid">
+        <section class="turn-response stateweave"><h4>StateWeave answer</h4><pre>${escapeHtml(turn.answer || "(empty answer)")}</pre></section>
+        <section class="turn-response naive"><h4>Naive answer</h4><pre>${escapeHtml(turn.baselineAnswer || "(empty answer)")}</pre></section>
+      </div>
+      <div class="turn-judgment-grid">${judgment("StateWeave", turn.score.stateweave)}${judgment("Naive", turn.score.naive)}</div>
+      <footer>StateWeave: ${turn.promptTokenEstimate.toLocaleString()} context tokens, ${turn.totalInputTokens.toLocaleString()} total input, ${turn.latencyMs.toLocaleString()}ms, ${turn.toolCalls} tool calls. Naive: ${turn.baselineTokenEstimate.toLocaleString()} context tokens, ${turn.baselineTotalInputTokens.toLocaleString()} total input, ${turn.baselineLatencyMs.toLocaleString()}ms, ${turn.baselineToolCalls} tool calls.</footer>
+    </article>`;
 }
 
 function renderInfiniteQualityChart(series: InfiniteQualityPoint[]): void {
@@ -3109,6 +3154,35 @@ const swLoopStartButton = element<HTMLButtonElement>("sw-loop-start");
 const swLoopStopButton = element<HTMLButtonElement>("sw-loop-stop");
 const swLoopStatus = element<HTMLElement>("sw-loop-status");
 let swLoopPollTimer: ReturnType<typeof setInterval> | undefined;
+
+async function openInfiniteTurn(turnNumber: number): Promise<void> {
+  if (!Number.isInteger(turnNumber) || turnNumber < 1) {
+    infiniteTurnDetail.innerHTML = `<p class="message error">Enter a valid positive turn number.</p>`;
+    return;
+  }
+  const recent = latestInfiniteState?.turns.find((turn) => turn.turn === turnNumber);
+  if (recent) {
+    renderInfiniteTurnDetail(recent);
+    return;
+  }
+  infiniteTurnDetail.innerHTML = `<p class="muted-copy">Loading T${turnNumber}…</p>`;
+  try {
+    const response = await fetch(`${apiBase}/api/infinite-agent/turns/${turnNumber}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(response.status === 404 ? `T${turnNumber} is not available. The durable archive currently starts at T${latestInfiniteState?.turnArchive.firstTurn || "—"}.` : `Turn lookup failed (${response.status}).`);
+    renderInfiniteTurnDetail(await response.json() as InfiniteTurn);
+  } catch (error) {
+    infiniteTurnDetail.innerHTML = `<p class="message error">${escapeHtml(error instanceof Error ? error.message : String(error))}</p>`;
+  }
+}
+
+infiniteTurnOpen.addEventListener("click", () => void openInfiniteTurn(Number(infiniteTurnNumber.value)));
+infiniteTurnLatest.addEventListener("click", () => {
+  const latest = latestInfiniteState?.turnCount ?? 0;
+  if (latest) void openInfiniteTurn(latest);
+});
+infiniteTurnNumber.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") void openInfiniteTurn(Number(infiniteTurnNumber.value));
+});
 
 swLoopStartButton.addEventListener("click", async () => {
   swLoopStartButton.disabled = true;

@@ -246,7 +246,7 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
             <div>
               <p class="eyebrow">Long-horizon agent benchmark</p>
               <h2>Infinite agent</h2>
-              <p class="muted-copy">Two isolated coding agents receive the same evolving filesystem tasks and the same read, write, edit, and allowlisted bash tools. The naive agent carries a transcript up to 96k tokens; StateWeave carries an append-only graph with a bounded projection.</p>
+              <p class="muted-copy">Two isolated coding agents receive the same evolving filesystem tasks and the same read, write, edit, and allowlisted bash tools. The stronger naive challenger carries a transcript up to 200k tokens; StateWeave carries an append-only graph with a bounded projection.</p>
             </div>
             <div id="infinite-live-badge" class="infinite-live-badge">waiting</div>
           </div>
@@ -260,7 +260,7 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
           <div class="infinite-chart-wrap">
             <div class="infinite-chart-header">
               <h3>Context sent on the latest model call</h3>
-              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave adaptive projection <span class="legend-dot baseline"></span>Naive transcript up to 96k</div>
+              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave adaptive projection <span class="legend-dot baseline"></span>Naive transcript up to 200k</div>
             </div>
             <canvas id="infinite-chart" class="infinite-chart" width="800" height="220"></canvas>
           </div>
@@ -274,7 +274,15 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
           <div id="infinite-report" class="infinite-report" hidden></div>
           <div class="infinite-body">
             <section class="infinite-panel">
-              <h3>Live filesystem tasks</h3>
+              <h3>Turn inspector</h3>
+              <div class="infinite-turn-picker">
+                <label for="infinite-turn-number">Turn</label>
+                <input id="infinite-turn-number" type="number" min="1" step="1" inputmode="numeric" placeholder="Turn #">
+                <button id="infinite-turn-open" class="button secondary" type="button">Open</button>
+                <button id="infinite-turn-latest" class="button secondary" type="button">Latest</button>
+              </div>
+              <div id="infinite-turn-detail" class="infinite-turn-detail"><p class="muted-copy">Select any archived turn to inspect the full task, both answers, and every grading check.</p></div>
+              <h3 class="infinite-recent-heading">Recent turns</h3>
               <div id="infinite-turns" class="infinite-turns"><p class="muted-copy">Waiting for the first task.</p></div>
             </section>
             <section class="infinite-panel">
