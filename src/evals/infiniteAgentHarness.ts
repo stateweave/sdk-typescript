@@ -15,6 +15,11 @@ const MAX_SERIES_KEPT = 5000;
 const MAX_AGENT_ITERATIONS = 12;
 const NAIVE_COMPACTION_THRESHOLD = 250_000;
 const NAIVE_RETAIN_MESSAGES = 6;
+const EXPERIMENT_VERSION = 2;
+const DEFAULT_EXPERIMENT_SEED = 20260711;
+const PREREGISTERED_TARGET_TURNS = 800;
+const TASKS_PER_BLOCK = 8;
+const RESAMPLE_COUNT = 20_000;
 
 export const infiniteAgentNodeTypes = ["task", "file", "symbol", "decision", "constraint", "test_result"] as const;
 export const infiniteAgentNodeTypeRationales: Record<(typeof infiniteAgentNodeTypes)[number], string> = {
@@ -51,6 +56,8 @@ export type InfiniteAgentTurn = {
   baselineToolCalls: number;
   baselineCompactions: number;
   transactionValid: boolean;
+  executionOrder: "stateweave-first" | "native-first";
+  block: number;
   score: { stateweave: AgentScore; naive: AgentScore };
 };
 export type InfiniteAgentSeriesPoint = {
@@ -70,6 +77,32 @@ export type InfiniteAgentSeriesPoint = {
   baselineCompactions: number;
 };
 export type InfiniteAgentQualityPoint = { turn: number; stateweavePassRate: number; naivePassRate: number; stateweaveScored: number; naiveScored: number };
+export type InfiniteAgentBlock = { block: number; turns: number; stateweaveQuality: number; nativeQuality: number; difference: number };
+export type InfiniteAgentEvidence = {
+  unit: "eight-turn component block";
+  blocks: number;
+  stateweaveMean: number;
+  nativeMean: number;
+  meanDifference: number;
+  confidenceLow: number;
+  confidenceHigh: number;
+  permutationPValue: number;
+  wins: number;
+  ties: number;
+  losses: number;
+  signTestPValue: number;
+  resamples: number;
+};
+export type InfiniteExperimentDesign = {
+  version: number;
+  seed: number;
+  targetTurns: number;
+  tasksPerBlock: number;
+  primaryOutcome: string;
+  executionOrder: string;
+  stoppingRule: string;
+  analysisPlan: string;
+};
 export type InfiniteAgentState = {
   experiment: "infinite-agent";
   status: "idle" | "running" | "stopped" | "failed";
@@ -78,10 +111,13 @@ export type InfiniteAgentState = {
   startedAt: string;
   updatedAt: string;
   agentModel: string;
-  currentTask?: { kind: string; prompt: string };
+  design: InfiniteExperimentDesign;
+  currentTask?: { kind: string; prompt: string; executionOrder?: "stateweave-first" | "native-first" };
   turns: InfiniteAgentTurn[];
   series: InfiniteAgentSeriesPoint[];
   qualitySeries: InfiniteAgentQualityPoint[];
+  blocks: InfiniteAgentBlock[];
+  evidence?: InfiniteAgentEvidence;
   validTransactions: number;
   invalidTransactions: number;
   graphSnapshot?: { nodeCount: number; edgeCount: number; clusterCount: number; clusters: { id: string; label: string; nodeCount: number }[] };
@@ -120,6 +156,7 @@ export class InfiniteAgentHarness {
   private readonly framePath: string;
   private readonly messagesPath: string;
   private readonly turnsDir: string;
+  private readonly modelFramePath: string;
   private readonly stateweaveWorkspace: string;
   private readonly naiveWorkspace: string;
   private readonly model: Model;
@@ -135,6 +172,7 @@ export class InfiniteAgentHarness {
     this.framePath = path.join(root, "stateweave-frame.json");
     this.messagesPath = path.join(root, "naive-messages.json");
     this.turnsDir = path.join(root, "turns");
+    this.modelFramePath = path.join(root, "latest-model-frame.json");
     this.stateweaveWorkspace = path.join(root, "workspaces", "stateweave");
     this.naiveWorkspace = path.join(root, "workspaces", "naive");
     this.model = args.model ?? createModelFromEnv();
@@ -150,11 +188,21 @@ export class InfiniteAgentHarness {
     return readJson<InfiniteAgentTurn>(this.turnPath(turn));
   }
 
+  async getGraphView(): Promise<{ persistent: GraphFrame | undefined; modelFacing: GraphFrame | undefined }> {
+    return {
+      persistent: structuredClone(this.stateweave?.getFrame()),
+      modelFacing: await readJson<GraphFrame>(this.modelFramePath)
+    };
+  }
+
   async initialize(): Promise<void> {
     await mkdir(this.stateweaveWorkspace, { recursive: true });
     await mkdir(this.naiveWorkspace, { recursive: true });
     await mkdir(this.turnsDir, { recursive: true });
     this.state = await readJson<InfiniteAgentState>(this.statePath) ?? this.state;
+    this.state.design ??= experimentDesign();
+    this.state.blocks ??= [];
+    this.state.evidence = analyzeBlocks(this.state.blocks, this.state.design.seed);
     this.state.naiveContextLimit = NAIVE_COMPACTION_THRESHOLD;
     const strategyChanged = this.state.naiveStrategy?.kind !== "summary-compaction"
       || this.state.naiveStrategy.thresholdTokens !== NAIVE_COMPACTION_THRESHOLD
@@ -229,16 +277,28 @@ export class InfiniteAgentHarness {
 
   private async runTurn(turn: number): Promise<void> {
     if (!this.stateweave || !this.naive) return;
-    const task = taskForTurn(turn);
-    this.state.currentTask = { kind: task.kind, prompt: task.prompt };
-    this.state.message = `Running T${turn}: ${task.kind}`;
+    const task = taskForTurn(turn, this.state.design.seed);
+    const executionOrder = orderForTurn(turn, this.state.design.seed);
+    this.state.currentTask = { kind: task.kind, prompt: task.prompt, executionOrder };
+    this.state.message = `Running T${turn}: ${task.kind} · ${executionOrder}`;
     await Promise.all([task.prepare(this.stateweaveWorkspace), task.prepare(this.naiveWorkspace)]);
     await this.save();
 
-    const sw = await captureStateWeaveTurn(this.stateweave, task.prompt);
-    if (isAgentError(sw.answer)) throw new Error(`T${turn} was not scored because the StateWeave provider call failed. Restart the harness to retry the same turn.`);
-    const naive = await captureNaiveTurn(this.naive, task.prompt);
-    if (isAgentError(naive.answer)) throw new Error(`T${turn} was not scored because the native provider call failed. Restart the harness to retry the same turn.`);
+    let sw: StateWeaveTurnResult;
+    let naive: AgenticTurnResult;
+    if (executionOrder === "stateweave-first") {
+      sw = await captureStateWeaveTurn(this.stateweave, task.prompt);
+      if (isAgentError(sw.answer)) throw new Error(`T${turn} was not scored because the StateWeave provider call failed.`);
+      naive = await captureNaiveTurn(this.naive, task.prompt);
+      if (isAgentError(naive.answer)) throw new Error(`T${turn} was not scored because the native provider call failed.`);
+    } else {
+      naive = await captureNaiveTurn(this.naive, task.prompt);
+      if (isAgentError(naive.answer)) throw new Error(`T${turn} was not scored because the native provider call failed.`);
+      sw = await captureStateWeaveTurn(this.stateweave, task.prompt);
+      if (isAgentError(sw.answer)) throw new Error(`T${turn} was not scored because the StateWeave provider call failed.`);
+    }
+    const modelFacing = sw.result.trace.at(-1)?.frameBefore;
+    if (modelFacing) await writeFile(this.modelFramePath, JSON.stringify(modelFacing));
     const [swScore, naiveScore] = await Promise.all([
       task.verify(this.stateweaveWorkspace, sw.answer),
       task.verify(this.naiveWorkspace, naive.answer)
@@ -270,6 +330,8 @@ export class InfiniteAgentHarness {
       baselineToolCalls: naive.toolCalls,
       baselineCompactions: naive.compactions,
       transactionValid: !sw.answer.startsWith("(agent error:"),
+      executionOrder,
+      block: Math.ceil(turn / TASKS_PER_BLOCK),
       score: { stateweave: swScore, naive: naiveScore }
     };
 
@@ -299,6 +361,7 @@ export class InfiniteAgentHarness {
       this.state.naiveStrategy.lastCompactionTurn = turn;
     }
     this.updateQuality();
+    this.updateBlocks(record);
     const alreadyArchived = await exists(this.turnPath(turn));
     await this.archiveTurn(record);
     this.state.turnArchive = {
@@ -313,8 +376,24 @@ export class InfiniteAgentHarness {
       clusters: clusters.slice(0, 40).map((cluster) => ({ id: cluster.id, label: cluster.label, nodeCount: cluster.nodeCount }))
     } : undefined;
     this.state.workspace = await workspaceCounts(this.stateweaveWorkspace, this.naiveWorkspace);
-    this.state.message = `Completed T${turn}: StateWeave ${swScore.score}, naive ${naiveScore.score}.`;
+    this.state.message = `Completed T${turn}: StateWeave ${swScore.score}, native ${naiveScore.score}.`;
+    if (turn >= this.state.design.targetTurns) {
+      this.running = false;
+      this.state.status = "stopped";
+      this.state.message = `Preregistered stopping rule reached at T${turn}.`;
+    }
     await this.save();
+  }
+
+  private updateBlocks(record: InfiniteAgentTurn): void {
+    if (record.turn % TASKS_PER_BLOCK !== 0) return;
+    const records = this.state.turns.filter((turn) => turn.block === record.block);
+    if (records.length !== TASKS_PER_BLOCK) return;
+    const stateweaveQuality = mean(records.map((turn) => qualityValue(turn.score.stateweave)));
+    const nativeQuality = mean(records.map((turn) => qualityValue(turn.score.naive)));
+    const point = { block: record.block, turns: records.length, stateweaveQuality, nativeQuality, difference: stateweaveQuality - nativeQuality };
+    this.state.blocks = [...this.state.blocks.filter((block) => block.block !== point.block), point].sort((a, b) => a.block - b.block);
+    this.state.evidence = analyzeBlocks(this.state.blocks, this.state.design.seed);
   }
 
   private updateQuality(): void {
@@ -444,13 +523,14 @@ function providerUsage(step: TraceStep): { inputTokens?: number; outputTokens?: 
   return { inputTokens, outputTokens };
 }
 
-function taskForTurn(turn: number): HarnessTask {
-  const phase = (turn - 1) % 8;
-  const index = Math.floor((turn - 1) / 8) + 1;
+function taskForTurn(turn: number, seed: number): HarnessTask {
+  const phase = (turn - 1) % TASKS_PER_BLOCK;
+  const index = Math.floor((turn - 1) / TASKS_PER_BLOCK) + 1;
   const id = `component-${String(index).padStart(3, "0")}`;
-  const owner = ["Mira", "Oren", "Priya", "Sofia", "Theo"][index % 5];
-  const endpoint = `/v${(index % 4) + 1}/${id}`;
-  const retryLimit = (index % 5) + 2;
+  const taskSeed = mixSeed(seed, index);
+  const owner = ["Mira", "Oren", "Priya", "Sofia", "Theo"][taskSeed % 5];
+  const endpoint = `/v${(Math.floor(taskSeed / 5) % 4) + 1}/${id}`;
+  const retryLimit = (Math.floor(taskSeed / 20) % 5) + 2;
   const manifestPath = `src/components/${id}.json`;
   const modulePath = `src/components/${id}.js`;
   const ticketPath = `tickets/${id}.md`;
@@ -700,9 +780,11 @@ function emptyState(agentModel: string): InfiniteAgentState {
     startedAt: now,
     updatedAt: now,
     agentModel,
+    design: experimentDesign(),
     turns: [],
     series: [],
     qualitySeries: [],
+    blocks: [],
     validTransactions: 0,
     invalidTransactions: 0,
     nodeTypes: infiniteAgentNodeTypes,
@@ -714,6 +796,95 @@ function emptyState(agentModel: string): InfiniteAgentState {
     naiveStrategy: { kind: "summary-compaction", thresholdTokens: NAIVE_COMPACTION_THRESHOLD, retainMessages: NAIVE_RETAIN_MESSAGES, startedAtTurn: 1, totalCompactions: 0 },
     turnArchive: { firstTurn: 0, lastTurn: 0, count: 0 }
   };
+}
+
+function experimentDesign(): InfiniteExperimentDesign {
+  return {
+    version: EXPERIMENT_VERSION,
+    seed: DEFAULT_EXPERIMENT_SEED,
+    targetTurns: PREREGISTERED_TARGET_TURNS,
+    tasksPerBlock: TASKS_PER_BLOCK,
+    primaryOutcome: "Mean deterministic-check quality difference per complete eight-turn component block.",
+    executionOrder: "Seeded random StateWeave-first/native-first assignment on every paired turn.",
+    stoppingRule: `Stop after ${PREREGISTERED_TARGET_TURNS} scored paired turns (${PREREGISTERED_TARGET_TURNS / TASKS_PER_BLOCK} complete blocks).`,
+    analysisPlan: `Two-sided block sign-flip permutation test and seeded percentile bootstrap 95% CI with ${RESAMPLE_COUNT} resamples; exact two-sided sign test is secondary.`
+  };
+}
+
+function orderForTurn(turn: number, seed: number): "stateweave-first" | "native-first" {
+  return (mixSeed(seed, turn) & 1) === 0 ? "stateweave-first" : "native-first";
+}
+
+function mixSeed(seed: number, value: number): number {
+  let mixed = (seed ^ Math.imul(value, 0x9e3779b1)) >>> 0;
+  mixed ^= mixed >>> 16;
+  mixed = Math.imul(mixed, 0x85ebca6b) >>> 0;
+  mixed ^= mixed >>> 13;
+  return mixed >>> 0;
+}
+
+export function analyzeBlocks(blocks: InfiniteAgentBlock[], seed: number): InfiniteAgentEvidence | undefined {
+  if (blocks.length < 2) return undefined;
+  const differences = blocks.map((block) => block.difference);
+  const observed = mean(differences);
+  const random = seededRandom(seed ^ blocks.length);
+  let extreme = 0;
+  const bootstraps: number[] = [];
+  for (let sample = 0; sample < RESAMPLE_COUNT; sample++) {
+    const permuted = mean(differences.map((difference) => random() < 0.5 ? difference : -difference));
+    if (Math.abs(permuted) >= Math.abs(observed) - 1e-12) extreme += 1;
+    bootstraps.push(mean(differences.map(() => differences[Math.floor(random() * differences.length)]!)));
+  }
+  bootstraps.sort((a, b) => a - b);
+  const wins = differences.filter((difference) => difference > 1e-12).length;
+  const losses = differences.filter((difference) => difference < -1e-12).length;
+  return {
+    unit: "eight-turn component block",
+    blocks: blocks.length,
+    stateweaveMean: mean(blocks.map((block) => block.stateweaveQuality)),
+    nativeMean: mean(blocks.map((block) => block.nativeQuality)),
+    meanDifference: observed,
+    confidenceLow: percentile(bootstraps, 0.025),
+    confidenceHigh: percentile(bootstraps, 0.975),
+    permutationPValue: (extreme + 1) / (RESAMPLE_COUNT + 1),
+    wins,
+    ties: differences.length - wins - losses,
+    losses,
+    signTestPValue: exactSignTest(wins, losses),
+    resamples: RESAMPLE_COUNT
+  };
+}
+
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state += 0x6d2b79f5;
+    let value = state;
+    value = Math.imul(value ^ value >>> 15, value | 1);
+    value ^= value + Math.imul(value ^ value >>> 7, value | 61);
+    return ((value ^ value >>> 14) >>> 0) / 4_294_967_296;
+  };
+}
+
+function exactSignTest(wins: number, losses: number): number {
+  const trials = wins + losses;
+  if (!trials) return 1;
+  const cutoff = Math.min(wins, losses);
+  let probability = 2 ** -trials;
+  let cumulative = probability;
+  for (let successes = 1; successes <= cutoff; successes++) {
+    probability *= (trials - successes + 1) / successes;
+    cumulative += probability;
+  }
+  return Math.min(1, 2 * cumulative);
+}
+
+function percentile(values: number[], quantile: number): number {
+  return values[Math.min(values.length - 1, Math.floor(quantile * values.length))] ?? 0;
+}
+
+function mean(values: number[]): number {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 }
 
 function isAgentError(answer: string): boolean {
