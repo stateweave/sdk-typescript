@@ -236,7 +236,9 @@ export class InfiniteAgentHarness {
     await this.save();
 
     const sw = await captureStateWeaveTurn(this.stateweave, task.prompt);
+    if (isAgentError(sw.answer)) throw new Error(`T${turn} was not scored because the StateWeave provider call failed. Restart the harness to retry the same turn.`);
     const naive = await captureNaiveTurn(this.naive, task.prompt);
+    if (isAgentError(naive.answer)) throw new Error(`T${turn} was not scored because the native provider call failed. Restart the harness to retry the same turn.`);
     const [swScore, naiveScore] = await Promise.all([
       task.verify(this.stateweaveWorkspace, sw.answer),
       task.verify(this.naiveWorkspace, naive.answer)
@@ -712,6 +714,10 @@ function emptyState(agentModel: string): InfiniteAgentState {
     naiveStrategy: { kind: "summary-compaction", thresholdTokens: NAIVE_COMPACTION_THRESHOLD, retainMessages: NAIVE_RETAIN_MESSAGES, startedAtTurn: 1, totalCompactions: 0 },
     turnArchive: { firstTurn: 0, lastTurn: 0, count: 0 }
   };
+}
+
+function isAgentError(answer: string): boolean {
+  return answer.startsWith("(agent error:");
 }
 
 function modelName(model: Model): string {
