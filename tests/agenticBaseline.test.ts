@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
-import { AgenticBaseline } from "../src/evals/agenticBaseline.js";
+import { AgenticBaseline, type AgenticMessage } from "../src/evals/agenticBaseline.js";
 import type { Model, ModelInput, ModelOutput, ModelToken } from "../src/llm/model.js";
 import { createFileSystemTools } from "../src/tools/fileSystemTools.js";
 
@@ -14,6 +14,19 @@ class SequenceModel implements Model {
 
   async complete(_input: ModelInput): Promise<ModelOutput> {
     return { text: this.outputs.shift() ?? "FINAL: done" };
+  }
+
+  async *stream(_input: ModelInput): AsyncIterable<ModelToken> {
+    yield { type: "token", token: "FINAL: done" };
+  }
+}
+
+class CompactionModel implements Model {
+  readonly prompts: string[] = [];
+
+  async complete(input: ModelInput): Promise<ModelOutput> {
+    this.prompts.push(input.prompt);
+    return { text: this.prompts.length === 1 ? "Durable summary of older work." : "FINAL: Continued after compaction." };
   }
 
   async *stream(_input: ModelInput): AsyncIterable<ModelToken> {
@@ -34,4 +47,30 @@ it("runs a persistent messages agent through the same filesystem tools", async (
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+it("summarizes older messages at the threshold and preserves the latest six", async () => {
+  const model = new CompactionModel();
+  const messages: AgenticMessage[] = [
+    { role: "system", content: "System protocol" },
+    ...Array.from({ length: 8 }, (_, index) => ({ role: index % 2 ? "assistant" as const : "user" as const, content: `old-${index}-${"x".repeat(80)}` }))
+  ];
+  const agent = new AgenticBaseline({
+    model,
+    tools: [],
+    systemPrompt: "Maintain the workspace.",
+    messages,
+    compaction: { thresholdTokens: 20, retainMessages: 6 }
+  });
+
+  const result = await agent.run("new-task");
+  const compacted = agent.getMessages();
+  expect(result.answer).toBe("Continued after compaction.");
+  expect(result.compactions).toBe(1);
+  expect(result.modelCalls).toBe(2);
+  expect(compacted[1].content).toContain("COMPACTED TRANSCRIPT SUMMARY");
+  expect(compacted.some((message) => message.content.startsWith("old-3-"))).toBe(true);
+  expect(compacted.some((message) => message.content.startsWith("old-2-"))).toBe(false);
+  expect(model.prompts[0]).toContain("old-0-");
+  expect(model.prompts[0]).not.toContain("new-task");
 });

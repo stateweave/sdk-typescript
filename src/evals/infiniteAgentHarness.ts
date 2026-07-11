@@ -13,7 +13,8 @@ import { AgenticBaseline, type AgenticMessage, type AgenticTurnResult } from "./
 const MAX_TURNS_KEPT = 80;
 const MAX_SERIES_KEPT = 5000;
 const MAX_AGENT_ITERATIONS = 12;
-const NAIVE_CONTEXT_LIMIT = 200_000;
+const NAIVE_COMPACTION_THRESHOLD = 250_000;
+const NAIVE_RETAIN_MESSAGES = 6;
 
 export const infiniteAgentNodeTypes = ["task", "file", "symbol", "decision", "constraint", "test_result"] as const;
 export const infiniteAgentNodeTypeRationales: Record<(typeof infiniteAgentNodeTypes)[number], string> = {
@@ -48,6 +49,7 @@ export type InfiniteAgentTurn = {
   baselineModelCalls: number;
   toolCalls: number;
   baselineToolCalls: number;
+  baselineCompactions: number;
   transactionValid: boolean;
   score: { stateweave: AgentScore; naive: AgentScore };
 };
@@ -65,6 +67,7 @@ export type InfiniteAgentSeriesPoint = {
   baselineLatencyMs: number;
   stateweaveToolCalls: number;
   baselineToolCalls: number;
+  baselineCompactions: number;
 };
 export type InfiniteAgentQualityPoint = { turn: number; stateweavePassRate: number; naivePassRate: number; stateweaveScored: number; naiveScored: number };
 export type InfiniteAgentState = {
@@ -88,6 +91,7 @@ export type InfiniteAgentState = {
   security: { bashPolicy: string; isolatedWorkspaces: boolean };
   workspace: { stateweaveFiles: number; naiveFiles: number };
   naiveContextLimit: number;
+  naiveStrategy: { kind: "summary-compaction"; thresholdTokens: number; retainMessages: number; startedAtTurn: number; totalCompactions: number; lastCompactionTurn?: number };
   turnArchive: { firstTurn: number; lastTurn: number; count: number };
   message?: string;
 };
@@ -151,7 +155,19 @@ export class InfiniteAgentHarness {
     await mkdir(this.naiveWorkspace, { recursive: true });
     await mkdir(this.turnsDir, { recursive: true });
     this.state = await readJson<InfiniteAgentState>(this.statePath) ?? this.state;
-    this.state.naiveContextLimit = NAIVE_CONTEXT_LIMIT;
+    this.state.naiveContextLimit = NAIVE_COMPACTION_THRESHOLD;
+    const strategyChanged = this.state.naiveStrategy?.kind !== "summary-compaction"
+      || this.state.naiveStrategy.thresholdTokens !== NAIVE_COMPACTION_THRESHOLD
+      || this.state.naiveStrategy.retainMessages !== NAIVE_RETAIN_MESSAGES;
+    if (strategyChanged) {
+      this.state.naiveStrategy = {
+        kind: "summary-compaction",
+        thresholdTokens: NAIVE_COMPACTION_THRESHOLD,
+        retainMessages: NAIVE_RETAIN_MESSAGES,
+        startedAtTurn: this.state.turnCount + 1,
+        totalCompactions: 0
+      };
+    }
     for (const turn of this.state.turns) {
       if (!(await exists(this.turnPath(turn.turn)))) await this.archiveTurn(turn);
     }
@@ -171,7 +187,7 @@ export class InfiniteAgentHarness {
       model: this.model,
       tools: createFileSystemTools({ rootDir: this.naiveWorkspace }),
       maxIterations: MAX_AGENT_ITERATIONS,
-      maxContextTokens: NAIVE_CONTEXT_LIMIT,
+      compaction: { thresholdTokens: NAIVE_COMPACTION_THRESHOLD, retainMessages: NAIVE_RETAIN_MESSAGES },
       systemPrompt: sharedPrompt,
       ...(messages ? { messages } : {})
     });
@@ -250,6 +266,7 @@ export class InfiniteAgentHarness {
       baselineModelCalls: naive.modelCalls,
       toolCalls: sw.toolCalls,
       baselineToolCalls: naive.toolCalls,
+      baselineCompactions: naive.compactions,
       transactionValid: !sw.answer.startsWith("(agent error:"),
       score: { stateweave: swScore, naive: naiveScore }
     };
@@ -270,10 +287,15 @@ export class InfiniteAgentHarness {
       stateweaveLatencyMs: sw.latencyMs,
       baselineLatencyMs: naive.latencyMs,
       stateweaveToolCalls: sw.toolCalls,
-      baselineToolCalls: naive.toolCalls
+      baselineToolCalls: naive.toolCalls,
+      baselineCompactions: naive.compactions
     }].slice(-MAX_SERIES_KEPT);
     if (record.transactionValid) this.state.validTransactions += 1;
     else this.state.invalidTransactions += 1;
+    if (naive.compactions > 0) {
+      this.state.naiveStrategy.totalCompactions += naive.compactions;
+      this.state.naiveStrategy.lastCompactionTurn = turn;
+    }
     this.updateQuality();
     const alreadyArchived = await exists(this.turnPath(turn));
     await this.archiveTurn(record);
@@ -382,7 +404,7 @@ async function captureNaiveTurn(agent: AgenticBaseline, prompt: string): Promise
   try {
     return await agent.run(prompt);
   } catch (error) {
-    return { answer: `(agent error: ${error instanceof Error ? error.message : String(error)})`, contextTokens: 0, totalInputTokens: 0, outputTokens: 0, tokenCountSource: "estimated", modelCalls: 0, toolCalls: 0, latencyMs: 0 };
+    return { answer: `(agent error: ${error instanceof Error ? error.message : String(error)})`, contextTokens: 0, totalInputTokens: 0, outputTokens: 0, tokenCountSource: "estimated", modelCalls: 0, toolCalls: 0, latencyMs: 0, compactions: 0 };
   }
 }
 
@@ -686,7 +708,8 @@ function emptyState(agentModel: string): InfiniteAgentState {
     tools: ["read_file", "write_file", "edit_file", "bash_command"],
     security: { bashPolicy: "Read-only command allowlist; no redirects, pipes, command substitution, absolute paths, parent traversal, network commands, or arbitrary interpreters.", isolatedWorkspaces: true },
     workspace: { stateweaveFiles: 0, naiveFiles: 0 },
-    naiveContextLimit: NAIVE_CONTEXT_LIMIT,
+    naiveContextLimit: NAIVE_COMPACTION_THRESHOLD,
+    naiveStrategy: { kind: "summary-compaction", thresholdTokens: NAIVE_COMPACTION_THRESHOLD, retainMessages: NAIVE_RETAIN_MESSAGES, startedAtTurn: 1, totalCompactions: 0 },
     turnArchive: { firstTurn: 0, lastTurn: 0, count: 0 }
   };
 }
