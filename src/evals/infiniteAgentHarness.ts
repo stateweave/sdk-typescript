@@ -13,7 +13,7 @@ import { AgenticBaseline, type AgenticMessage, type AgenticTurnResult } from "./
 const MAX_TURNS_KEPT = 80;
 const MAX_SERIES_KEPT = 5000;
 const MAX_AGENT_ITERATIONS = 12;
-const NAIVE_CONTEXT_LIMIT = 96_000;
+const NAIVE_CONTEXT_LIMIT = 200_000;
 
 export const infiniteAgentNodeTypes = ["task", "file", "symbol", "decision", "constraint", "test_result"] as const;
 export const infiniteAgentNodeTypeRationales: Record<(typeof infiniteAgentNodeTypes)[number], string> = {
@@ -25,7 +25,7 @@ export const infiniteAgentNodeTypeRationales: Record<(typeof infiniteAgentNodeTy
   test_result: "Record command/check evidence and connect failures to the responsible task or symbol."
 };
 
-export type AgentScore = { score: "pass" | "partial" | "fail"; passed: number; total: number; details: string[] };
+export type AgentScore = { score: "pass" | "partial" | "fail"; passed: number; total: number; details: string[]; checks?: Array<{ label: string; passed: boolean }> };
 export type InfiniteAgentTurn = {
   turn: number;
   phase: string;
@@ -87,6 +87,8 @@ export type InfiniteAgentState = {
   tools: string[];
   security: { bashPolicy: string; isolatedWorkspaces: boolean };
   workspace: { stateweaveFiles: number; naiveFiles: number };
+  naiveContextLimit: number;
+  turnArchive: { firstTurn: number; lastTurn: number; count: number };
   message?: string;
 };
 
@@ -113,6 +115,7 @@ export class InfiniteAgentHarness {
   private readonly statePath: string;
   private readonly framePath: string;
   private readonly messagesPath: string;
+  private readonly turnsDir: string;
   private readonly stateweaveWorkspace: string;
   private readonly naiveWorkspace: string;
   private readonly model: Model;
@@ -127,6 +130,7 @@ export class InfiniteAgentHarness {
     this.statePath = path.join(root, "state.json");
     this.framePath = path.join(root, "stateweave-frame.json");
     this.messagesPath = path.join(root, "naive-messages.json");
+    this.turnsDir = path.join(root, "turns");
     this.stateweaveWorkspace = path.join(root, "workspaces", "stateweave");
     this.naiveWorkspace = path.join(root, "workspaces", "naive");
     this.model = args.model ?? createModelFromEnv();
@@ -137,10 +141,21 @@ export class InfiniteAgentHarness {
     return structuredClone(this.state);
   }
 
+  async getTurn(turn: number): Promise<InfiniteAgentTurn | undefined> {
+    if (!Number.isInteger(turn) || turn < 1) return undefined;
+    return readJson<InfiniteAgentTurn>(this.turnPath(turn));
+  }
+
   async initialize(): Promise<void> {
     await mkdir(this.stateweaveWorkspace, { recursive: true });
     await mkdir(this.naiveWorkspace, { recursive: true });
+    await mkdir(this.turnsDir, { recursive: true });
     this.state = await readJson<InfiniteAgentState>(this.statePath) ?? this.state;
+    this.state.naiveContextLimit = NAIVE_CONTEXT_LIMIT;
+    for (const turn of this.state.turns) {
+      if (!(await exists(this.turnPath(turn.turn)))) await this.archiveTurn(turn);
+    }
+    this.state.turnArchive = await this.readTurnArchive();
     const frame = await readJson<GraphFrame>(this.framePath);
     const messages = await readJson<AgenticMessage[]>(this.messagesPath);
     const sharedPrompt = codingAgentPrompt();
@@ -218,8 +233,8 @@ export class InfiniteAgentHarness {
       phase: task.kind,
       taskKind: task.kind,
       prompt: task.prompt,
-      answer: sw.answer.slice(0, 1000),
-      baselineAnswer: naive.answer.slice(0, 1000),
+      answer: sw.answer,
+      baselineAnswer: naive.answer,
       nodeCount: frame?.graph.nodes.length ?? 0,
       edgeCount: frame?.graph.edges.length ?? 0,
       clusterCount: clusters.length,
@@ -260,6 +275,13 @@ export class InfiniteAgentHarness {
     if (record.transactionValid) this.state.validTransactions += 1;
     else this.state.invalidTransactions += 1;
     this.updateQuality();
+    const alreadyArchived = await exists(this.turnPath(turn));
+    await this.archiveTurn(record);
+    this.state.turnArchive = {
+      firstTurn: this.state.turnArchive.firstTurn || turn,
+      lastTurn: Math.max(this.state.turnArchive.lastTurn, turn),
+      count: this.state.turnArchive.count + (alreadyArchived ? 0 : 1)
+    };
     this.state.graphSnapshot = frame ? {
       nodeCount: frame.graph.nodes.length,
       edgeCount: frame.graph.edges.length,
@@ -286,6 +308,22 @@ export class InfiniteAgentHarness {
       stateweaveScored,
       naiveScored
     }].slice(-MAX_SERIES_KEPT);
+  }
+
+  private turnPath(turn: number): string {
+    return path.join(this.turnsDir, `${String(turn).padStart(8, "0")}.json`);
+  }
+
+  private async archiveTurn(turn: InfiniteAgentTurn): Promise<void> {
+    await writeFile(this.turnPath(turn.turn), JSON.stringify(turn, null, 2));
+  }
+
+  private async readTurnArchive(): Promise<{ firstTurn: number; lastTurn: number; count: number }> {
+    const turns = (await readdir(this.turnsDir).catch(() => []))
+      .map((name) => Number.parseInt(name.replace(/\.json$/, ""), 10))
+      .filter((turn) => Number.isInteger(turn) && turn > 0)
+      .sort((a, b) => a - b);
+    return { firstTurn: turns[0] ?? 0, lastTurn: turns.at(-1) ?? 0, count: turns.length };
   }
 
   private async save(): Promise<void> {
@@ -575,7 +613,13 @@ function scoreChecks(checks: Array<[string, boolean]>, options: { critical?: str
   const failed = checks.filter(([, ok]) => !ok).map(([label]) => label);
   const passed = checks.length - failed.length;
   const criticalFailure = failed.some((label) => options.critical?.includes(label));
-  return { score: passed === checks.length ? "pass" : criticalFailure || passed === 0 ? "fail" : "partial", passed, total: checks.length, details: failed };
+  return {
+    score: passed === checks.length ? "pass" : criticalFailure || passed === 0 ? "fail" : "partial",
+    passed,
+    total: checks.length,
+    details: failed,
+    checks: checks.map(([label, checkPassed]) => ({ label, passed: checkPassed }))
+  };
 }
 
 async function jsonFile(root: string, relativePath: string): Promise<Record<string, unknown> | undefined> {
@@ -641,7 +685,9 @@ function emptyState(agentModel: string): InfiniteAgentState {
     nodeTypeRationales: infiniteAgentNodeTypeRationales,
     tools: ["read_file", "write_file", "edit_file", "bash_command"],
     security: { bashPolicy: "Read-only command allowlist; no redirects, pipes, command substitution, absolute paths, parent traversal, network commands, or arbitrary interpreters.", isolatedWorkspaces: true },
-    workspace: { stateweaveFiles: 0, naiveFiles: 0 }
+    workspace: { stateweaveFiles: 0, naiveFiles: 0 },
+    naiveContextLimit: NAIVE_CONTEXT_LIMIT,
+    turnArchive: { firstTurn: 0, lastTurn: 0, count: 0 }
   };
 }
 
