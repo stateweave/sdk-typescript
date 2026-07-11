@@ -117,6 +117,7 @@ const defaultAgentSettings: AgentSettings = {
   maxIterations: 30
 };
 const agentSettingsStorageKey = "stateweave.agentSettings.v1";
+const stateChatStorageKey = "stateweave.chat.v1";
 let agentSettings = loadAgentSettings();
 const graphPositions = new Map<string, GraphPosition>();
 const copyPayloads = new Map<string, string>();
@@ -479,6 +480,7 @@ const infiniteTurnLatest = element<HTMLButtonElement>("infinite-turn-latest");
 const infiniteTurnDetail = element<HTMLElement>("infinite-turn-detail");
 const infiniteStatistics = element<HTMLElement>("infinite-statistics");
 const infiniteClusters = element<HTMLElement>("infinite-clusters");
+const infiniteOpenGraph = element<HTMLButtonElement>("infinite-open-graph");
 // The Infinite tab polls the server-owned agent harness through one state endpoint.
 const chat = element<HTMLElement>("chat");
 const form = element<HTMLFormElement>("composer");
@@ -537,6 +539,7 @@ renderMultiProgress();
 void loadHealth();
 void loadTools();
 void loadWorkspaceFiles();
+restoreStateChat();
 
 stateTab.addEventListener("click", () => setActivePage("state"));
 quickstartTab.addEventListener("click", () => setActivePage("quickstart"));
@@ -548,6 +551,7 @@ multiFourTab.addEventListener("click", () => setActivePage("prompt-four"));
 multiFiveTab.addEventListener("click", () => setActivePage("prompt-five"));
 multiSixTab.addEventListener("click", () => setActivePage("prompt-six"));
 infiniteTab.addEventListener("click", () => setActivePage("infinite"));
+infiniteOpenGraph.addEventListener("click", () => void openInfiniteGraph());
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   void sendStateWeaveMessage();
@@ -685,6 +689,37 @@ function loadAgentSettings(): AgentSettings {
 
 function saveAgentSettings(): void {
   localStorage.setItem(agentSettingsStorageKey, JSON.stringify(agentSettings));
+}
+
+function persistStateChat(): void {
+  try {
+    if (!stateFrame) {
+      localStorage.removeItem(stateChatStorageKey);
+      return;
+    }
+    localStorage.setItem(stateChatStorageKey, JSON.stringify({ frame: stateFrame, chatHtml: chat.innerHTML, savedAt: new Date().toISOString() }));
+  } catch {
+    status.textContent = "Chat is too large for browser persistence; export the graph to preserve it.";
+  }
+}
+
+function restoreStateChat(): void {
+  const raw = localStorage.getItem(stateChatStorageKey);
+  if (!raw) return;
+  try {
+    const saved = JSON.parse(raw) as { frame?: unknown; chatHtml?: unknown; savedAt?: unknown };
+    if (!isGraphFrameLike(saved.frame) || typeof saved.chatHtml !== "string") throw new Error("Invalid saved chat");
+    const restored = applyAgentSettingsToFrame(saved.frame);
+    if (!restored) throw new Error("Invalid saved chat");
+    stateFrame = restored;
+    chat.innerHTML = saved.chatHtml;
+    renderGraph(restored.graph);
+    stateInput.textContent = compactFrame(restored);
+    stateOutput.textContent = "Restored the browser-persisted StateGraph. Continue the chat or export it.";
+    status.textContent = `Restored · ${restored.graph.nodes.length} nodes / ${restored.graph.edges.length} edges`;
+  } catch {
+    localStorage.removeItem(stateChatStorageKey);
+  }
 }
 
 function renderAgentSettings(): void {
@@ -840,10 +875,12 @@ async function sendStateWeaveMessage(): Promise<void> {
     renderStateWeave(result.stateweave);
     void loadWorkspaceFiles();
     status.textContent = `Done · StateGraph ${result.stateweave.graph.nodes.length} nodes / ${result.stateweave.graph.edges.length} edges`;
+    persistStateChat();
   } catch (error) {
     failPendingStateWeave(pending, error instanceof Error ? error.message : String(error), live);
     status.textContent = "Failed.";
   } finally {
+    persistStateChat();
     stateRunning = false;
     send.disabled = false;
     reset.disabled = false;
@@ -1224,6 +1261,7 @@ function applyGraphImport(): void {
     stateInput.textContent = compactFrame(frame);
     stateOutput.textContent = "Imported GraphFrame. The next user turn will be appended as a pending user_input node.";
     status.textContent = `Imported · StateGraph ${frame.graph.nodes.length} nodes / ${frame.graph.edges.length} edges`;
+    persistStateChat();
     closeGraphTransfer();
     setActivePage("state");
   } catch (error) {
@@ -1290,6 +1328,7 @@ function emptyExportFrame(): GraphFrame {
 
 function resetStateWeaveChat(): void {
   stateFrame = undefined;
+  localStorage.removeItem(stateChatStorageKey);
   selectedGraphNodeId = undefined;
   graphPositions.clear();
   stopGraphAnimation();
@@ -2938,7 +2977,7 @@ function escapeAttribute(value: string): string {
 // --- Infinite harness ---
 
 type ProbeScore = { score: "pass" | "partial" | "fail"; passed: number; total: number; details: string[]; checks?: Array<{ label: string; passed: boolean }> };
-type InfiniteTurn = { turn: number; phase: string; taskKind: string; prompt: string; answer: string; baselineAnswer: string; nodeCount: number; edgeCount: number; clusterCount: number; promptTokenEstimate: number; baselineTokenEstimate: number; totalInputTokens: number; baselineTotalInputTokens: number; outputTokenCount: number; baselineOutputTokenCount: number; latencyMs: number; baselineLatencyMs: number; modelCalls: number; baselineModelCalls: number; toolCalls: number; baselineToolCalls: number; baselineCompactions?: number; transactionValid: boolean; score: { stateweave: ProbeScore; naive: ProbeScore } };
+type InfiniteTurn = { turn: number; phase: string; taskKind: string; prompt: string; answer: string; baselineAnswer: string; nodeCount: number; edgeCount: number; clusterCount: number; promptTokenEstimate: number; baselineTokenEstimate: number; totalInputTokens: number; baselineTotalInputTokens: number; outputTokenCount: number; baselineOutputTokenCount: number; latencyMs: number; baselineLatencyMs: number; modelCalls: number; baselineModelCalls: number; toolCalls: number; baselineToolCalls: number; baselineCompactions?: number; transactionValid: boolean; executionOrder?: "stateweave-first" | "native-first"; block?: number; score: { stateweave: ProbeScore; naive: ProbeScore } };
 type InfiniteSeriesPoint = { turn: number; stateweaveTokens: number; baselineTokens: number; stateweaveTotalInputTokens: number; baselineTotalInputTokens: number; stateweaveOutputTokens: number; baselineOutputTokens: number; stateweaveNodes: number; stateweaveClusters: number; stateweaveLatencyMs: number; baselineLatencyMs: number; stateweaveToolCalls: number; baselineToolCalls: number; baselineCompactions?: number };
 type InfiniteQualityPoint = { turn: number; stateweavePassRate: number; naivePassRate: number; stateweaveScored: number; naiveScored: number };
 type InfiniteStateView = {
@@ -2949,10 +2988,13 @@ type InfiniteStateView = {
   startedAt: string;
   updatedAt: string;
   agentModel: string;
-  currentTask?: { kind: string; prompt: string };
+  design: { version: number; seed: number; targetTurns: number; tasksPerBlock: number; primaryOutcome: string; executionOrder: string; stoppingRule: string; analysisPlan: string };
+  currentTask?: { kind: string; prompt: string; executionOrder?: string };
   turns: InfiniteTurn[];
   series: InfiniteSeriesPoint[];
   qualitySeries: InfiniteQualityPoint[];
+  blocks: Array<{ block: number; turns: number; stateweaveQuality: number; nativeQuality: number; difference: number }>;
+  evidence?: { unit: string; blocks: number; stateweaveMean: number; nativeMean: number; meanDifference: number; confidenceLow: number; confidenceHigh: number; permutationPValue: number; wins: number; ties: number; losses: number; signTestPValue: number; resamples: number };
   validTransactions: number;
   invalidTransactions: number;
   graphSnapshot?: { nodeCount: number; edgeCount: number; clusterCount: number; clusters: { id: string; label: string; nodeCount: number }[] };
@@ -2969,6 +3011,87 @@ type InfiniteStateView = {
 
 // The server-side harness owns the persistent workspaces and resumes after deploys.
 let latestInfiniteState: InfiniteStateView | undefined;
+
+async function openInfiniteGraph(): Promise<void> {
+  infiniteOpenGraph.disabled = true;
+  infiniteOpenGraph.textContent = "Loading graph…";
+  try {
+    const response = await fetch(`${apiBase}/api/infinite-agent/graph`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Graph request failed (${response.status})`);
+    const views = await response.json() as { persistent?: GraphFrame; modelFacing?: GraphFrame };
+    const initial = views.modelFacing ?? views.persistent;
+    if (!initial) throw new Error("The experiment has not produced a graph yet.");
+    document.getElementById("infinite-graph-modal")?.remove();
+    const modal = document.createElement("div");
+    modal.id = "infinite-graph-modal";
+    modal.className = "artifact-modal infinite-graph-modal";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.innerHTML = `<div class="artifact-modal-panel infinite-graph-panel">
+      <div class="artifact-modal-toolbar">
+        <div><strong>Infinite StateWeave graph</strong><small id="infinite-graph-caption"></small></div>
+        <div class="infinite-graph-actions">
+          <button class="button secondary small-button" data-graph-view="model">Model-facing projection</button>
+          <button class="button secondary small-button" data-graph-view="persistent">Persistent state</button>
+          <button class="button secondary small-button" data-infinite-graph-close>Close</button>
+        </div>
+      </div>
+      <div id="infinite-graph-canvas" class="infinite-graph-canvas"></div>
+    </div>`;
+    const canvas = modal.querySelector<HTMLElement>("#infinite-graph-canvas")!;
+    const caption = modal.querySelector<HTMLElement>("#infinite-graph-caption")!;
+    const show = (kind: "model" | "persistent") => {
+      const frame = kind === "model" ? views.modelFacing : views.persistent;
+      if (!frame) {
+        canvas.innerHTML = `<p class="message error">That graph view is not available yet.</p>`;
+        return;
+      }
+      caption.textContent = kind === "model"
+        ? `Exactly the bounded GraphFrame supplied on the latest model call · ${frame.graph.nodes.length} nodes / ${frame.graph.edges.length} edges`
+        : `Append-only state · ${frame.graph.nodes.length} nodes / ${frame.graph.edges.length} edges`;
+      renderInfiniteGraphSnapshot(canvas, frame.graph, kind);
+    };
+    modal.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target : undefined;
+      if (target === modal || target?.closest("[data-infinite-graph-close]")) modal.remove();
+      const view = target?.closest<HTMLButtonElement>("[data-graph-view]")?.dataset.graphView;
+      if (view === "model" || view === "persistent") show(view);
+    });
+    document.body.append(modal);
+    show(views.modelFacing ? "model" : "persistent");
+  } catch (error) {
+    infiniteTurnDetail.innerHTML = `<p class="message error">${escapeHtml(error instanceof Error ? error.message : String(error))}</p>`;
+  } finally {
+    infiniteOpenGraph.disabled = false;
+    infiniteOpenGraph.textContent = "Open live graph";
+  }
+}
+
+function renderInfiniteGraphSnapshot(container: HTMLElement, value: StateGraph, kind: "model" | "persistent"): void {
+  const limit = kind === "model" ? 420 : 500;
+  const root = value.nodes.find((node) => node.id === "system_root");
+  const recent = value.nodes.slice(-(limit - (root ? 1 : 0)));
+  const nodes = root && !recent.some((node) => node.id === root.id) ? [root, ...recent] : recent;
+  const ids = new Set(nodes.map((node) => node.id));
+  const edges = value.edges.filter((edge) => ids.has(edge.from) && ids.has(edge.to)).slice(-1200);
+  const width = 1200;
+  const height = 760;
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const positions = new Map(nodes.map((node, index) => {
+    if (node.id === "system_root") return [node.id, { x: centerX, y: centerY }] as const;
+    const angle = index * 2.399963229728653;
+    const radius = 55 + Math.sqrt(index + 1) * 27;
+    return [node.id, { x: centerX + Math.cos(angle) * Math.min(radius, 530), y: centerY + Math.sin(angle) * Math.min(radius, 330) }] as const;
+  }));
+  const colors: Record<string, string> = { system: "#f7c66b", user_input: "#7dd3fc", assistant_output: "#c4b5fd", tool_call: "#fb7185", tool_result: "#86efac", task: "#fbbf24", file: "#60a5fa", symbol: "#a78bfa", decision: "#f472b6", constraint: "#fb7185", test_result: "#34d399" };
+  container.innerHTML = `<div class="infinite-graph-note">Showing ${nodes.length.toLocaleString()} of ${value.nodes.length.toLocaleString()} nodes and ${edges.length.toLocaleString()} connecting edges. Hover a node for its full text.</div>
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${kind === "model" ? "Latest model-facing StateWeave projection" : "Persistent StateWeave graph"}">
+      <rect width="${width}" height="${height}" rx="20" fill="#07111f"></rect>
+      ${edges.map((edge) => { const from = positions.get(edge.from); const to = positions.get(edge.to); return from && to ? `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" stroke="#64748b" stroke-opacity="0.28" stroke-width="1"/>` : ""; }).join("")}
+      ${nodes.map((node) => { const point = positions.get(node.id)!; const radius = node.id === "system_root" ? 10 : 4.5; return `<g><title>${escapeHtml(`${node.id} [${node.type}] ${node.text}`)}</title><circle cx="${point.x}" cy="${point.y}" r="${radius}" fill="${colors[node.type] ?? "#94a3b8"}" stroke="#e2e8f0" stroke-opacity="0.45"/></g>`; }).join("")}
+    </svg>`;
+}
 
 function renderInfiniteState(state: InfiniteStateView): void {
   latestInfiniteState = state;
@@ -3128,27 +3251,26 @@ function twoSidedSignTest(wins: number, losses: number): number {
 }
 
 function renderInfiniteStatistics(state: InfiniteStateView): void {
-  const overall = pairedStatistics(state.qualitySeries);
-  const current = pairedStatistics(state.qualitySeries, state.naiveStrategy.startedAtTurn);
-  const recent = pairedStatistics(state.qualitySeries, Math.max(1, state.turnCount - 99));
+  const evidence = state.evidence;
   const p = (value: number) => value < 0.0001 ? "<0.0001" : value.toFixed(4);
-  const card = (label: string, stats: PairedStatistics | undefined) => stats
-    ? `<article class="infinite-stat-card">
-        <h4>${escapeHtml(label)} <small>n=${stats.n}</small></h4>
-        <strong>${(stats.difference * 100).toFixed(2)} quality-point SW advantage</strong>
-        <p>SW ${(stats.stateweaveMean * 100).toFixed(2)}% · native ${(stats.nativeMean * 100).toFixed(2)}% · 95% CI ${(stats.confidenceLow * 100).toFixed(2)} to ${(stats.confidenceHigh * 100).toFixed(2)} points</p>
-        <p>Paired t(${stats.degreesFreedom})=${stats.tStatistic.toFixed(2)}, approximate two-sided p=${p(stats.pValue)}</p>
-        <p>Turn wins/ties/losses: ${stats.wins}/${stats.ties}/${stats.losses} · exact sign-test p=${p(stats.signTestPValue)}</p>
-      </article>`
-    : `<article class="infinite-stat-card"><h4>${escapeHtml(label)}</h4><p>Waiting for at least two scored turns.</p></article>`;
   infiniteStatistics.innerHTML = `
-    <div class="infinite-stat-header"><h3>Paired statistical evidence</h3><p>Each turn is paired because both agents receive the same task. Scores use passed checks / total checks.</p></div>
+    <div class="infinite-stat-header"><h3>Preregistered block-level evidence</h3><p>${escapeHtml(state.design.primaryOutcome)}</p></div>
     <div class="infinite-stat-grid">
-      ${card("Entire run", overall)}
-      ${card(`Current native strategy · since T${state.naiveStrategy.startedAtTurn}`, current)}
-      ${card("Latest 100 turns", recent)}
+      <article class="infinite-stat-card">
+        <h4>Frozen design <small>v${state.design.version} · seed ${state.design.seed}</small></h4>
+        <strong>${state.turnCount}/${state.design.targetTurns} paired turns</strong>
+        <p>${escapeHtml(state.design.executionOrder)}</p>
+        <p>${escapeHtml(state.design.stoppingRule)}</p>
+      </article>
+      ${evidence ? `<article class="infinite-stat-card">
+        <h4>Primary analysis <small>n=${evidence.blocks} independent component blocks</small></h4>
+        <strong>${(evidence.meanDifference * 100).toFixed(2)} quality-point SW difference</strong>
+        <p>SW ${(evidence.stateweaveMean * 100).toFixed(2)}% · native ${(evidence.nativeMean * 100).toFixed(2)}% · bootstrap 95% CI ${(evidence.confidenceLow * 100).toFixed(2)} to ${(evidence.confidenceHigh * 100).toFixed(2)} points</p>
+        <p>Two-sided sign-flip permutation p=${p(evidence.permutationPValue)} · ${evidence.resamples.toLocaleString()} seeded resamples</p>
+        <p>Block wins/ties/losses ${evidence.wins}/${evidence.ties}/${evidence.losses} · exact sign-test p=${p(evidence.signTestPValue)}</p>
+      </article>` : `<article class="infinite-stat-card"><h4>Primary analysis</h4><p>Waiting for at least two complete eight-turn blocks.</p></article>`}
     </div>
-    <p class="statistics-caveat">A small p-value is evidence under the test assumptions, not proof. Repeated task cycles and sequential dependence weaken independence; the paired t-test measures score magnitude while the sign test checks how often StateWeave wins.</p>`;
+    <p class="statistics-caveat">${escapeHtml(state.design.analysisPlan)} The dashboard does not change the stopping rule when results are viewed.</p>`;
 }
 
 function renderInfiniteTurnDetail(turn: InfiniteTurn): void {

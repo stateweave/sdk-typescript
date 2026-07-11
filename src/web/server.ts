@@ -200,6 +200,12 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     return;
   }
 
+  if (url.pathname === "/api/infinite-agent/graph" && request.method === "GET") {
+    await infiniteAgentReady;
+    json(response, 200, await infiniteAgentHarness.getGraphView());
+    return;
+  }
+
   const infiniteAgentTurnMatch = url.pathname.match(/^\/api\/infinite-agent\/turns\/(\d+)$/);
   if (infiniteAgentTurnMatch && request.method === "GET") {
     await infiniteAgentReady;

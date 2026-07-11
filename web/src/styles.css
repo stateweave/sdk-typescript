@@ -3197,3 +3197,12 @@ label {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
 }
+
+.infinite-graph-panel { width: min(96vw, 1500px); height: min(92vh, 980px); }
+.infinite-graph-panel .artifact-modal-toolbar { gap: 16px; flex-wrap: wrap; }
+.infinite-graph-panel .artifact-modal-toolbar > div:first-child { display: grid; gap: 3px; }
+.infinite-graph-panel .artifact-modal-toolbar small { color: var(--muted); }
+.infinite-graph-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.infinite-graph-canvas { min-height: 0; overflow: auto; padding: 12px; background: #07111f; }
+.infinite-graph-canvas svg { display: block; width: 100%; min-width: 760px; height: auto; border-radius: 18px; }
+.infinite-graph-note { color: #cbd5e1; padding: 0 4px 10px; }
