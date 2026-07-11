@@ -2882,6 +2882,53 @@ label {
   .infinite-header { flex-direction: column; align-items: stretch; }
 }
 
+.infinite-statistics {
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.infinite-stat-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.infinite-stat-header h3,
+.infinite-stat-header p { margin: 0; }
+.infinite-stat-header p,
+.statistics-caveat { color: var(--muted); font-size: 0.76rem; line-height: 1.45; }
+
+.infinite-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.infinite-stat-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #f8fafc;
+}
+
+.infinite-stat-card h4 { margin: 0 0 7px; font-size: 0.82rem; }
+.infinite-stat-card h4 small { color: var(--muted); font-weight: 500; }
+.infinite-stat-card strong { color: var(--stateweave); font-size: 0.92rem; }
+.infinite-stat-card p { margin: 6px 0 0; color: #475569; font-size: 0.75rem; line-height: 1.45; }
+.statistics-caveat { margin: 10px 0 0; }
+
+@media (max-width: 820px) {
+  .infinite-stat-header { display: block; }
+  .infinite-stat-header p { margin-top: 5px; }
+  .infinite-stat-grid { grid-template-columns: 1fr; }
+}
+
 /* Infinite chart */
 .infinite-executive-live {
   margin-bottom: 16px;

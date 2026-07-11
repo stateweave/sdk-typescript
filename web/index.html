@@ -246,7 +246,7 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
             <div>
               <p class="eyebrow">Long-horizon agent benchmark</p>
               <h2>Infinite agent</h2>
-              <p class="muted-copy">Two isolated coding agents receive the same evolving filesystem tasks and the same read, write, edit, and allowlisted bash tools. The stronger naive challenger carries a transcript up to 200k tokens; StateWeave carries an append-only graph with a bounded projection.</p>
+              <p class="muted-copy">Two isolated coding agents receive the same evolving filesystem tasks and the same read, write, edit, and allowlisted bash tools. The native transcript challenger summarizes older messages at a 250k-token threshold while preserving the latest six messages. StateWeave never compacts its append-only graph; it sends a bounded projection.</p>
             </div>
             <div id="infinite-live-badge" class="infinite-live-badge">waiting</div>
           </div>
@@ -260,17 +260,18 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
           <div class="infinite-chart-wrap">
             <div class="infinite-chart-header">
               <h3>Context sent on the latest model call</h3>
-              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave adaptive projection <span class="legend-dot baseline"></span>Naive transcript up to 200k</div>
+              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave adaptive projection <span class="legend-dot baseline"></span>Native transcript · summarize at 250k</div>
             </div>
             <canvas id="infinite-chart" class="infinite-chart" width="800" height="220"></canvas>
           </div>
           <div class="infinite-chart-wrap">
             <div class="infinite-chart-header">
               <h3>Quality: cumulative task pass-rate</h3>
-              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave agent <span class="legend-dot baseline"></span>Naive agent</div>
+              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave agent <span class="legend-dot baseline"></span>Native transcript agent</div>
             </div>
             <canvas id="infinite-quality-chart" class="infinite-chart" width="800" height="220"></canvas>
           </div>
+          <div id="infinite-statistics" class="infinite-statistics"></div>
           <div id="infinite-report" class="infinite-report" hidden></div>
           <div class="infinite-body">
             <section class="infinite-panel">

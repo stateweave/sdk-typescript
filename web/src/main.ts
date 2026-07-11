@@ -477,6 +477,7 @@ const infiniteTurnNumber = element<HTMLInputElement>("infinite-turn-number");
 const infiniteTurnOpen = element<HTMLButtonElement>("infinite-turn-open");
 const infiniteTurnLatest = element<HTMLButtonElement>("infinite-turn-latest");
 const infiniteTurnDetail = element<HTMLElement>("infinite-turn-detail");
+const infiniteStatistics = element<HTMLElement>("infinite-statistics");
 const infiniteClusters = element<HTMLElement>("infinite-clusters");
 // The Infinite tab polls the server-owned agent harness through one state endpoint.
 const chat = element<HTMLElement>("chat");
@@ -2937,8 +2938,8 @@ function escapeAttribute(value: string): string {
 // --- Infinite harness ---
 
 type ProbeScore = { score: "pass" | "partial" | "fail"; passed: number; total: number; details: string[]; checks?: Array<{ label: string; passed: boolean }> };
-type InfiniteTurn = { turn: number; phase: string; taskKind: string; prompt: string; answer: string; baselineAnswer: string; nodeCount: number; edgeCount: number; clusterCount: number; promptTokenEstimate: number; baselineTokenEstimate: number; totalInputTokens: number; baselineTotalInputTokens: number; outputTokenCount: number; baselineOutputTokenCount: number; latencyMs: number; baselineLatencyMs: number; modelCalls: number; baselineModelCalls: number; toolCalls: number; baselineToolCalls: number; transactionValid: boolean; score: { stateweave: ProbeScore; naive: ProbeScore } };
-type InfiniteSeriesPoint = { turn: number; stateweaveTokens: number; baselineTokens: number; stateweaveTotalInputTokens: number; baselineTotalInputTokens: number; stateweaveOutputTokens: number; baselineOutputTokens: number; stateweaveNodes: number; stateweaveClusters: number; stateweaveLatencyMs: number; baselineLatencyMs: number; stateweaveToolCalls: number; baselineToolCalls: number };
+type InfiniteTurn = { turn: number; phase: string; taskKind: string; prompt: string; answer: string; baselineAnswer: string; nodeCount: number; edgeCount: number; clusterCount: number; promptTokenEstimate: number; baselineTokenEstimate: number; totalInputTokens: number; baselineTotalInputTokens: number; outputTokenCount: number; baselineOutputTokenCount: number; latencyMs: number; baselineLatencyMs: number; modelCalls: number; baselineModelCalls: number; toolCalls: number; baselineToolCalls: number; baselineCompactions?: number; transactionValid: boolean; score: { stateweave: ProbeScore; naive: ProbeScore } };
+type InfiniteSeriesPoint = { turn: number; stateweaveTokens: number; baselineTokens: number; stateweaveTotalInputTokens: number; baselineTotalInputTokens: number; stateweaveOutputTokens: number; baselineOutputTokens: number; stateweaveNodes: number; stateweaveClusters: number; stateweaveLatencyMs: number; baselineLatencyMs: number; stateweaveToolCalls: number; baselineToolCalls: number; baselineCompactions?: number };
 type InfiniteQualityPoint = { turn: number; stateweavePassRate: number; naivePassRate: number; stateweaveScored: number; naiveScored: number };
 type InfiniteStateView = {
   experiment: "infinite-agent";
@@ -2961,6 +2962,7 @@ type InfiniteStateView = {
   security: { bashPolicy: string; isolatedWorkspaces: boolean };
   workspace: { stateweaveFiles: number; naiveFiles: number };
   naiveContextLimit: number;
+  naiveStrategy: { kind: "summary-compaction"; thresholdTokens: number; retainMessages: number; startedAtTurn: number; totalCompactions: number; lastCompactionTurn?: number };
   turnArchive: { firstTurn: number; lastTurn: number; count: number };
   message?: string;
 };
@@ -2987,15 +2989,17 @@ function renderInfiniteState(state: InfiniteStateView): void {
     <div class="infinite-metric"><span class="metric-label">Graph integrity</span><strong>${state.validTransactions} valid / ${state.invalidTransactions} invalid</strong></div>
     <div class="infinite-metric"><span class="metric-label">Isolated workspaces</span><strong>${state.workspace.stateweaveFiles} SW / ${state.workspace.naiveFiles} naive files</strong></div>
     <div class="infinite-metric sw-metric"><span class="metric-label">SW latest context</span><strong>${swTokens.toLocaleString()} tok</strong></div>
-    <div class="infinite-metric baseline-metric"><span class="metric-label">Naive latest context · ${(state.naiveContextLimit / 1000).toFixed(0)}k cap</span><strong>${baselineTokens.toLocaleString()} tok</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Latest tool calls</span><strong>${lastTurn ? `${lastTurn.toolCalls} SW / ${lastTurn.baselineToolCalls} naive` : "—"}</strong></div>
+    <div class="infinite-metric baseline-metric"><span class="metric-label">Native latest context</span><strong>${baselineTokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Native compaction</span><strong>${(state.naiveStrategy.thresholdTokens / 1000).toFixed(0)}k → summary + last ${state.naiveStrategy.retainMessages} · ${state.naiveStrategy.totalCompactions} run</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Latest tool calls</span><strong>${lastTurn ? `${lastTurn.toolCalls} SW / ${lastTurn.baselineToolCalls} native` : "—"}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Graph size</span><strong>${snapshot?.nodeCount ?? 0} nodes / ${snapshot?.edgeCount ?? 0} edges</strong></div>
     <div class="infinite-metric sw-metric"><span class="metric-label">SW task quality</span><strong>${quality ? `${(quality.stateweavePassRate * 100).toFixed(1)}%` : "—"}</strong></div>
-    <div class="infinite-metric baseline-metric"><span class="metric-label">Naive task quality</span><strong>${quality ? `${(quality.naivePassRate * 100).toFixed(1)}%` : "—"}</strong></div>`;
+    <div class="infinite-metric baseline-metric"><span class="metric-label">Native task quality</span><strong>${quality ? `${(quality.naivePassRate * 100).toFixed(1)}%` : "—"}</strong></div>`;
 
   renderInfiniteExecutive(state, swTokens, baselineTokens, quality);
   renderInfiniteChart(state.series);
   renderInfiniteQualityChart(state.qualitySeries);
+  renderInfiniteStatistics(state);
 
   infiniteTurnNumber.max = String(state.turnCount);
   infiniteTurnNumber.placeholder = state.turnArchive.firstTurn
@@ -3006,7 +3010,7 @@ function renderInfiniteState(state: InfiniteStateView): void {
     ? turns.map((turn) => `
       <button class="infinite-turn" type="button" data-infinite-turn="${turn.turn}">
         <header><span class="turn-badge">T${turn.turn}</span> <span class="phase-badge seed">${escapeHtml(turn.taskKind)}</span> ${scoreBadges(turn.score)} ${turn.transactionValid ? "" : `<span class="score-chip fail">agent error</span>`}</header>
-        <small>${turn.nodeCount}n/${turn.edgeCount}e · SW ${turn.promptTokenEstimate.toLocaleString()} ctx / ${turn.toolCalls} tools / ${turn.modelCalls} calls · naive ${turn.baselineTokenEstimate.toLocaleString()} ctx / ${turn.baselineToolCalls} tools / ${turn.baselineModelCalls} calls</small>
+        <small>${turn.nodeCount}n/${turn.edgeCount}e · SW ${turn.promptTokenEstimate.toLocaleString()} ctx / ${turn.toolCalls} tools / ${turn.modelCalls} calls · native ${turn.baselineTokenEstimate.toLocaleString()} ctx / ${turn.baselineToolCalls} tools / ${turn.baselineModelCalls} calls${turn.baselineCompactions ? ` / ${turn.baselineCompactions} compaction` : ""}</small>
         <span class="turn-preview">${escapeHtml(oneLine(turn.prompt).slice(0, 180))}</span>
       </button>`).join("")
     : `<p class="muted-copy">Waiting for the first filesystem task…</p>`;
@@ -3028,18 +3032,123 @@ function renderInfiniteExecutive(state: InfiniteStateView, swTokens: number, bas
   const verdict = qualityGap === undefined
     ? "Waiting for the first scored filesystem task."
     : qualityGap > 2
-      ? `StateWeave leads naive by ${qualityGap.toFixed(1)} quality points.`
+      ? `StateWeave leads native by ${qualityGap.toFixed(1)} quality points.`
       : qualityGap < -2
-        ? `StateWeave trails naive by ${Math.abs(qualityGap).toFixed(1)} quality points.`
+        ? `StateWeave trails native by ${Math.abs(qualityGap).toFixed(1)} quality points.`
         : "The agents are currently within two quality points.";
-  const context = baselineTokens ? ` Latest-call context is ${swTokens.toLocaleString()} tokens for StateWeave versus ${baselineTokens.toLocaleString()} for naive.` : "";
+  const context = baselineTokens ? ` Latest-call context is ${swTokens.toLocaleString()} tokens for StateWeave versus ${baselineTokens.toLocaleString()} for native.` : "";
   target.className = `infinite-executive-live ${qualityGap !== undefined && qualityGap < -2 ? "warn" : ""}`;
   target.innerHTML = `<h3>Executive snapshot</h3><p><strong>T${state.turnCount}:</strong> ${escapeHtml(verdict + context)} Bash is restricted by a read-only command allowlist, and each agent runs in a separate workspace.</p>`;
 }
 
 function scoreBadges(score: { stateweave: ProbeScore; naive: ProbeScore }): string {
   const chip = (label: string, value: ProbeScore) => `<span class="score-chip ${value.score}" title="${escapeAttribute(value.details.length ? `Failed: ${value.details.join(", ")}` : "All checks passed")}">${label} ${value.score} ${value.passed}/${value.total}</span>`;
-  return chip("SW", score.stateweave) + chip("naive", score.naive);
+  return chip("SW", score.stateweave) + chip("native", score.naive);
+}
+
+type PairedStatistics = {
+  n: number;
+  stateweaveMean: number;
+  nativeMean: number;
+  difference: number;
+  tStatistic: number;
+  degreesFreedom: number;
+  pValue: number;
+  confidenceLow: number;
+  confidenceHigh: number;
+  wins: number;
+  ties: number;
+  losses: number;
+  signTestPValue: number;
+};
+
+function pairedStatistics(series: InfiniteQualityPoint[], fromTurn = 1): PairedStatistics | undefined {
+  let previousStateWeaveTotal = 0;
+  let previousNativeTotal = 0;
+  const pairs: Array<{ stateweave: number; native: number }> = [];
+  for (const point of series) {
+    const stateweaveTotal = point.stateweavePassRate * point.stateweaveScored;
+    const nativeTotal = point.naivePassRate * point.naiveScored;
+    const stateweave = Math.round((stateweaveTotal - previousStateWeaveTotal) * 20) / 20;
+    const native = Math.round((nativeTotal - previousNativeTotal) * 20) / 20;
+    previousStateWeaveTotal = stateweaveTotal;
+    previousNativeTotal = nativeTotal;
+    if (point.turn >= fromTurn) pairs.push({ stateweave, native });
+  }
+  if (pairs.length < 2) return undefined;
+  const n = pairs.length;
+  const stateweaveMean = pairs.reduce((sum, pair) => sum + pair.stateweave, 0) / n;
+  const nativeMean = pairs.reduce((sum, pair) => sum + pair.native, 0) / n;
+  const differences = pairs.map((pair) => pair.stateweave - pair.native);
+  const difference = stateweaveMean - nativeMean;
+  const variance = differences.reduce((sum, value) => sum + (value - difference) ** 2, 0) / (n - 1);
+  const standardError = Math.sqrt(variance / n);
+  const tStatistic = standardError > 0 ? difference / standardError : difference === 0 ? 0 : Number.POSITIVE_INFINITY;
+  const pValue = Number.isFinite(tStatistic) ? 2 * (1 - normalCdf(Math.abs(tStatistic))) : 0;
+  const wins = differences.filter((value) => value > 1e-9).length;
+  const losses = differences.filter((value) => value < -1e-9).length;
+  const ties = n - wins - losses;
+  return {
+    n,
+    stateweaveMean,
+    nativeMean,
+    difference,
+    tStatistic,
+    degreesFreedom: n - 1,
+    pValue,
+    confidenceLow: difference - 1.96 * standardError,
+    confidenceHigh: difference + 1.96 * standardError,
+    wins,
+    ties,
+    losses,
+    signTestPValue: twoSidedSignTest(wins, losses)
+  };
+}
+
+function normalCdf(value: number): number {
+  const sign = value < 0 ? -1 : 1;
+  const x = Math.abs(value) / Math.SQRT2;
+  const t = 1 / (1 + 0.3275911 * x);
+  const erf = sign * (1 - (((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x)));
+  return 0.5 * (1 + erf);
+}
+
+function twoSidedSignTest(wins: number, losses: number): number {
+  const trials = wins + losses;
+  if (trials === 0) return 1;
+  const cutoff = Math.min(wins, losses);
+  let logProbability = -trials * Math.LN2;
+  let logCumulative = logProbability;
+  for (let successes = 1; successes <= cutoff; successes++) {
+    logProbability += Math.log(trials - successes + 1) - Math.log(successes);
+    const maxLog = Math.max(logCumulative, logProbability);
+    logCumulative = maxLog + Math.log(Math.exp(logCumulative - maxLog) + Math.exp(logProbability - maxLog));
+  }
+  return Math.min(1, 2 * Math.exp(logCumulative));
+}
+
+function renderInfiniteStatistics(state: InfiniteStateView): void {
+  const overall = pairedStatistics(state.qualitySeries);
+  const current = pairedStatistics(state.qualitySeries, state.naiveStrategy.startedAtTurn);
+  const recent = pairedStatistics(state.qualitySeries, Math.max(1, state.turnCount - 99));
+  const p = (value: number) => value < 0.0001 ? "<0.0001" : value.toFixed(4);
+  const card = (label: string, stats: PairedStatistics | undefined) => stats
+    ? `<article class="infinite-stat-card">
+        <h4>${escapeHtml(label)} <small>n=${stats.n}</small></h4>
+        <strong>${(stats.difference * 100).toFixed(2)} quality-point SW advantage</strong>
+        <p>SW ${(stats.stateweaveMean * 100).toFixed(2)}% · native ${(stats.nativeMean * 100).toFixed(2)}% · 95% CI ${(stats.confidenceLow * 100).toFixed(2)} to ${(stats.confidenceHigh * 100).toFixed(2)} points</p>
+        <p>Paired t(${stats.degreesFreedom})=${stats.tStatistic.toFixed(2)}, approximate two-sided p=${p(stats.pValue)}</p>
+        <p>Turn wins/ties/losses: ${stats.wins}/${stats.ties}/${stats.losses} · exact sign-test p=${p(stats.signTestPValue)}</p>
+      </article>`
+    : `<article class="infinite-stat-card"><h4>${escapeHtml(label)}</h4><p>Waiting for at least two scored turns.</p></article>`;
+  infiniteStatistics.innerHTML = `
+    <div class="infinite-stat-header"><h3>Paired statistical evidence</h3><p>Each turn is paired because both agents receive the same task. Scores use passed checks / total checks.</p></div>
+    <div class="infinite-stat-grid">
+      ${card("Entire run", overall)}
+      ${card(`Current native strategy · since T${state.naiveStrategy.startedAtTurn}`, current)}
+      ${card("Latest 100 turns", recent)}
+    </div>
+    <p class="statistics-caveat">A small p-value is evidence under the test assumptions, not proof. Repeated task cycles and sequential dependence weaken independence; the paired t-test measures score magnitude while the sign test checks how often StateWeave wins.</p>`;
 }
 
 function renderInfiniteTurnDetail(turn: InfiniteTurn): void {
@@ -3063,10 +3172,10 @@ function renderInfiniteTurnDetail(turn: InfiniteTurn): void {
       <section><h4>Question / task</h4><pre>${escapeHtml(turn.prompt)}</pre></section>
       <div class="turn-answer-grid">
         <section class="turn-response stateweave"><h4>StateWeave answer</h4><pre>${escapeHtml(turn.answer || "(empty answer)")}</pre></section>
-        <section class="turn-response naive"><h4>Naive answer</h4><pre>${escapeHtml(turn.baselineAnswer || "(empty answer)")}</pre></section>
+        <section class="turn-response naive"><h4>Native transcript answer</h4><pre>${escapeHtml(turn.baselineAnswer || "(empty answer)")}</pre></section>
       </div>
-      <div class="turn-judgment-grid">${judgment("StateWeave", turn.score.stateweave)}${judgment("Naive", turn.score.naive)}</div>
-      <footer>StateWeave: ${turn.promptTokenEstimate.toLocaleString()} context tokens, ${turn.totalInputTokens.toLocaleString()} total input, ${turn.latencyMs.toLocaleString()}ms, ${turn.toolCalls} tool calls. Naive: ${turn.baselineTokenEstimate.toLocaleString()} context tokens, ${turn.baselineTotalInputTokens.toLocaleString()} total input, ${turn.baselineLatencyMs.toLocaleString()}ms, ${turn.baselineToolCalls} tool calls.</footer>
+      <div class="turn-judgment-grid">${judgment("StateWeave", turn.score.stateweave)}${judgment("Native", turn.score.naive)}</div>
+      <footer>StateWeave: ${turn.promptTokenEstimate.toLocaleString()} context tokens, ${turn.totalInputTokens.toLocaleString()} total input, ${turn.latencyMs.toLocaleString()}ms, ${turn.toolCalls} tool calls. Native: ${turn.baselineTokenEstimate.toLocaleString()} context tokens, ${turn.baselineTotalInputTokens.toLocaleString()} total input, ${turn.baselineLatencyMs.toLocaleString()}ms, ${turn.baselineToolCalls} tool calls${turn.baselineCompactions ? `, ${turn.baselineCompactions} compaction` : ""}.</footer>
     </article>`;
 }
 
