@@ -56,6 +56,7 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
   let mutationSucceeded = false;
   let inspectionSucceeded = false;
   let verificationSucceeded = false;
+  let checkSucceeded = false;
   const mutatedPaths = new Set<string>();
   const mutationRequested = hasMutationIntent(`${task.objective}\n${task.input}`);
   const verificationRequested = hasVerificationIntent(`${task.objective}\n${task.input}`);
@@ -87,7 +88,7 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
       parsedOps = parseAndValidateOps(rawModelOutput);
       if (hasWorkers(parsedOps) && parsedOps.some((op) => op.op === "final")) throw new Error("GraphOps cannot include @worker and @final in the same transaction; spawn workers first, then synthesize a final answer after worker results merge.");
       validateToolTransaction(parsedOps);
-      validateFinalEvidence(parsedOps, { mutationRequested, mutationSucceeded, inspectionSucceeded, verificationRequested, verificationSucceeded, mutatedPaths });
+      validateFinalEvidence(parsedOps, { mutationRequested, mutationSucceeded, inspectionSucceeded, verificationRequested, verificationSucceeded, checkSucceeded, mutatedPaths });
       const candidateFrame = applyOps(frame, parsedOps);
       yield { type: "ops", step, ops: parsedOps };
       const toolOutcome = await runToolOps(frame, candidateFrame, parsedOps, tools, step);
@@ -95,9 +96,11 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
       if (toolOutcome.mutationSucceeded) {
         mutationSucceeded = true;
         verificationSucceeded = false;
+        checkSucceeded = false;
       }
       inspectionSucceeded ||= toolOutcome.inspectionSucceeded;
       verificationSucceeded ||= toolOutcome.verificationSucceeded;
+      checkSucceeded ||= toolOutcome.checkSucceeded;
       if (toolOutcome.mutatedPath) mutatedPaths.add(toolOutcome.mutatedPath);
       if (hasWorkers(parsedOps)) {
         const scheduler = scheduleWorkers(frame, parsedOps, args, step, maxIterations);
@@ -201,11 +204,11 @@ function retryFrameAfterGraphOpsError(frame: GraphFrame, message: string): Graph
   return next;
 }
 
-type ToolOutcome = { frame: GraphFrame; mutationSucceeded: boolean; inspectionSucceeded: boolean; verificationSucceeded: boolean; mutatedPath?: string };
+type ToolOutcome = { frame: GraphFrame; mutationSucceeded: boolean; inspectionSucceeded: boolean; verificationSucceeded: boolean; checkSucceeded: boolean; mutatedPath?: string };
 
 async function runToolOps(originalFrame: GraphFrame, candidateFrame: GraphFrame, ops: GraphOp[], tools: Map<string, Tool>, step: number): Promise<ToolOutcome> {
   const op = ops.find((item): item is Extract<GraphOp, { op: "call_tool" }> => item.op === "call_tool");
-  if (!op) return { frame: candidateFrame, mutationSucceeded: false, inspectionSucceeded: false, verificationSucceeded: false };
+  if (!op) return { frame: candidateFrame, mutationSucceeded: false, inspectionSucceeded: false, verificationSucceeded: false, checkSucceeded: false };
   const tool = tools.get(op.tool);
   if (!tool) throw new Error(`Unknown tool: ${op.tool}`);
   const parsedArgs = tool.schema.parse(op.args);
@@ -220,7 +223,8 @@ async function runToolOps(originalFrame: GraphFrame, candidateFrame: GraphFrame,
       frame: next,
       mutationSucceeded: isMutatingTool(op.tool),
       inspectionSucceeded: op.tool === "read_file",
-      verificationSucceeded: (op.tool === "bash_command" && bashSucceeded(result)) || (op.tool === "app_control" && appControlSucceeded(result)),
+      verificationSucceeded: op.tool === "read_file" || (op.tool === "bash_command" && bashSucceeded(result)) || (op.tool === "app_control" && appControlSucceeded(result)),
+      checkSucceeded: (op.tool === "bash_command" && bashSucceeded(result)) || (op.tool === "app_control" && appControlSucceeded(result)),
       ...(isMutatingTool(op.tool) && toolPath(op.args) ? { mutatedPath: toolPath(op.args) } : {})
     };
   } catch (error) {
@@ -231,7 +235,7 @@ async function runToolOps(originalFrame: GraphFrame, candidateFrame: GraphFrame,
     next.frame.lastGraphOpsError = `Tool ${op.tool} failed: ${message}`;
     next.frame.currentFocus = `The ${op.tool} operation failed without committing its proposed graph mutations. Use the failure result and current file evidence to correct the call.`;
     next.frame.nextExpectedOutput = "Do not claim success. Re-read stale files when needed, then retry one corrected tool operation.";
-    return { frame: next, mutationSucceeded: false, inspectionSucceeded: false, verificationSucceeded: false };
+    return { frame: next, mutationSucceeded: false, inspectionSucceeded: false, verificationSucceeded: false, checkSucceeded: false };
   }
 }
 
@@ -261,7 +265,7 @@ function validateToolTransaction(ops: GraphOp[]): void {
 
 function validateFinalEvidence(
   ops: GraphOp[],
-  evidence: { mutationRequested: boolean; mutationSucceeded: boolean; inspectionSucceeded: boolean; verificationRequested: boolean; verificationSucceeded: boolean; mutatedPaths: Set<string> }
+  evidence: { mutationRequested: boolean; mutationSucceeded: boolean; inspectionSucceeded: boolean; verificationRequested: boolean; verificationSucceeded: boolean; checkSucceeded: boolean; mutatedPaths: Set<string> }
 ): void {
   const final = ops.find((op): op is Extract<GraphOp, { op: "final" }> => op.op === "final");
   if (!final) return;
@@ -272,7 +276,7 @@ function validateFinalEvidence(
     if (!evidence.inspectionSucceeded) {
       throw new Error("outcome=already_satisfied requires successful read_file evidence from this run.");
     }
-    if (evidence.verificationRequested && !evidence.verificationSucceeded) {
+    if (evidence.verificationRequested && !evidence.checkSucceeded) {
       throw new Error("The task requests verification, so outcome=already_satisfied also requires a successful bash_command or app_control check from this run.");
     }
   }

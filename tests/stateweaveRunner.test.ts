@@ -96,6 +96,23 @@ it("records failed mutations as rejected evidence without committing proposed se
   }
 });
 
+it("accepts a successful post-mutation read as verification evidence", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-read-verification-"));
+  try {
+    const model = new SequenceModel([
+      "SWX/1\n@tool write_file file_path=config.txt content=ready",
+      "SWX/1\n@tool read_file file_path=config.txt",
+      "SWX/1\n@final \"Wrote and verified config.txt.\""
+    ]);
+
+    const result = await runStateWeave({ model, tools: createFileSystemTools({ rootDir: root }), maxIterations: 3 }, "Write config.txt and verify it");
+
+    expect(result.finalAnswer).toBe("Wrote and verified config.txt.");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it("allows an explicitly verified already-satisfied mutation without a fake edit", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-already-satisfied-"));
   try {
