@@ -140,7 +140,7 @@ export function anthropicConfigFromEnv(env: NodeJS.ProcessEnv): AnthropicModelCo
     topK: numberEnv(env.ANTHROPIC_TOP_K),
     stopSequences: listEnv(env.ANTHROPIC_STOP_SEQUENCES),
     system: env.ANTHROPIC_SYSTEM,
-    timeoutMs: numberEnv(env.ANTHROPIC_TIMEOUT_MS),
+    timeoutMs: numberEnv(env.ANTHROPIC_TIMEOUT_MS) ?? 180_000,
     extra: jsonEnv(env.ANTHROPIC_EXTRA_JSON)
   };
 }
