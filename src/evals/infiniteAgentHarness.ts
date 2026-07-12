@@ -13,7 +13,7 @@ import { FullStackAppRuntime } from "./fullStackProject.js";
 
 const MAX_TURNS_KEPT = 80;
 const MAX_SERIES_KEPT = 5000;
-const MAX_AGENT_ITERATIONS = 12;
+const MAX_AGENT_ITERATIONS = 30;
 const NAIVE_COMPACTION_THRESHOLD = 250_000;
 const NAIVE_RETAIN_MESSAGES = 6;
 const EXPERIMENT_VERSION = 3;
@@ -99,6 +99,7 @@ export type InfiniteExperimentDesign = {
   seed: number;
   targetTurns: number;
   tasksPerBlock: number;
+  maxIterationsPerAgentTurn: number;
   primaryOutcome: string;
   executionOrder: string;
   stoppingRule: string;
@@ -801,6 +802,7 @@ function experimentDesign(): InfiniteExperimentDesign {
     seed: DEFAULT_EXPERIMENT_SEED,
     targetTurns: PREREGISTERED_TARGET_TURNS,
     tasksPerBlock: TASKS_PER_BLOCK,
+    maxIterationsPerAgentTurn: MAX_AGENT_ITERATIONS,
     primaryOutcome: "Mean deterministic-check quality difference per complete eight-turn RelayDesk full-stack release block.",
     executionOrder: "Seeded random StateWeave-first/native-first assignment on every paired product request.",
     stoppingRule: `Stop after ${PREREGISTERED_TARGET_TURNS} scored paired turns (${PREREGISTERED_TARGET_TURNS / TASKS_PER_BLOCK} complete release blocks).`,
