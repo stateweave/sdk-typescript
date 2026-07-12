@@ -2985,7 +2985,7 @@ function escapeAttribute(value: string): string {
 // --- Infinite harness ---
 
 type ProbeScore = { score: "pass" | "partial" | "fail"; passed: number; total: number; details: string[]; checks?: Array<{ label: string; passed: boolean }> };
-type InfiniteTurn = { turn: number; phase: string; taskKind: string; prompt: string; answer: string; baselineAnswer: string; nodeCount: number; edgeCount: number; clusterCount: number; promptTokenEstimate: number; baselineTokenEstimate: number; totalInputTokens: number; baselineTotalInputTokens: number; outputTokenCount: number; baselineOutputTokenCount: number; latencyMs: number; baselineLatencyMs: number; modelCalls: number; baselineModelCalls: number; toolCalls: number; baselineToolCalls: number; baselineCompactions?: number; transactionValid: boolean; executionOrder?: "stateweave-first" | "native-first"; block?: number; score: { stateweave: ProbeScore; naive: ProbeScore } };
+type InfiniteTurn = { turn: number; phase: string; taskKind: string; prompt: string; answer: string; baselineAnswer: string; nodeCount: number; edgeCount: number; clusterCount: number; semanticNodeCount?: number; suggestedSemanticNodeCount?: number; promptTokenEstimate: number; baselineTokenEstimate: number; totalInputTokens: number; baselineTotalInputTokens: number; outputTokenCount: number; baselineOutputTokenCount: number; latencyMs: number; baselineLatencyMs: number; modelCalls: number; baselineModelCalls: number; toolCalls: number; baselineToolCalls: number; baselineCompactions?: number; transactionValid: boolean; executionOrder?: "stateweave-first" | "native-first"; block?: number; score: { stateweave: ProbeScore; naive: ProbeScore } };
 type InfiniteSeriesPoint = { turn: number; stateweaveTokens: number; baselineTokens: number; stateweaveTotalInputTokens: number; baselineTotalInputTokens: number; stateweaveOutputTokens: number; baselineOutputTokens: number; stateweaveNodes: number; stateweaveClusters: number; stateweaveLatencyMs: number; baselineLatencyMs: number; stateweaveToolCalls: number; baselineToolCalls: number; baselineCompactions?: number };
 type InfiniteQualityPoint = { turn: number; stateweavePassRate: number; naivePassRate: number; stateweaveScored: number; naiveScored: number };
 type InfiniteStateView = {
@@ -2996,7 +2996,7 @@ type InfiniteStateView = {
   startedAt: string;
   updatedAt: string;
   agentModel: string;
-  design: { version: number; seed: number; targetTurns: number; tasksPerBlock: number; primaryOutcome: string; executionOrder: string; stoppingRule: string; analysisPlan: string };
+  design: { version: number; seed: number; targetTurns: number; tasksPerBlock: number; maxIterationsPerAgentTurn?: number; semanticPolicy?: string; qualityPolicy?: string; primaryOutcome: string; executionOrder: string; stoppingRule: string; analysisPlan: string };
   currentTask?: { kind: string; prompt: string; executionOrder?: string };
   turns: InfiniteTurn[];
   series: InfiniteSeriesPoint[];
@@ -3005,7 +3005,7 @@ type InfiniteStateView = {
   evidence?: { unit: string; blocks: number; stateweaveMean: number; nativeMean: number; meanDifference: number; confidenceLow: number; confidenceHigh: number; permutationPValue: number; wins: number; ties: number; losses: number; signTestPValue: number; resamples: number };
   validTransactions: number;
   invalidTransactions: number;
-  graphSnapshot?: { nodeCount: number; edgeCount: number; clusterCount: number; clusters: { id: string; label: string; nodeCount: number }[] };
+  graphSnapshot?: { nodeCount: number; edgeCount: number; clusterCount: number; semanticNodeCount?: number; suggestedSemanticNodeCount?: number; nodeTypeCounts?: Record<string, number>; clusters: { id: string; label: string; nodeCount: number }[] };
   nodeTypes: string[];
   nodeTypeRationales: Record<string, string>;
   tools: string[];
@@ -3119,6 +3119,7 @@ function renderInfiniteState(state: InfiniteStateView): void {
     <div class="infinite-metric"><span class="metric-label">Native compaction</span><strong>${(state.naiveStrategy.thresholdTokens / 1000).toFixed(0)}k → summary + last ${state.naiveStrategy.retainMessages} · ${state.naiveStrategy.totalCompactions} run</strong></div>
     <div class="infinite-metric"><span class="metric-label">Latest tool calls</span><strong>${lastTurn ? `${lastTurn.toolCalls} SW / ${lastTurn.baselineToolCalls} native` : "—"}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Graph size</span><strong>${snapshot?.nodeCount ?? 0} nodes / ${snapshot?.edgeCount ?? 0} edges</strong></div>
+    <div class="infinite-metric sw-metric"><span class="metric-label">Semantic memory</span><strong>${snapshot?.semanticNodeCount ?? 0} semantic · ${snapshot?.suggestedSemanticNodeCount ?? 0} suggested types</strong></div>
     <div class="infinite-metric sw-metric"><span class="metric-label">SW task quality</span><strong>${quality ? `${(quality.stateweavePassRate * 100).toFixed(1)}%` : "—"}</strong></div>
     <div class="infinite-metric baseline-metric"><span class="metric-label">Native task quality</span><strong>${quality ? `${(quality.naivePassRate * 100).toFixed(1)}%` : "—"}</strong></div>`;
 
@@ -3264,6 +3265,8 @@ function renderInfiniteStatistics(state: InfiniteStateView): void {
         <strong>${state.turnCount}/${state.design.targetTurns} paired turns</strong>
         <p>${escapeHtml(state.design.executionOrder)}</p>
         <p>${escapeHtml(state.design.stoppingRule)}</p>
+        ${state.design.semanticPolicy ? `<p>${escapeHtml(state.design.semanticPolicy)}</p>` : ""}
+        ${state.design.qualityPolicy ? `<p>${escapeHtml(state.design.qualityPolicy)}</p>` : ""}
       </article>
       ${evidence ? `<article class="infinite-stat-card">
         <h4>Primary analysis <small>n=${evidence.blocks} independent component blocks</small></h4>

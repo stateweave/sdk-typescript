@@ -1,5 +1,5 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import type { Tool } from "../tools/types.js";
@@ -9,8 +9,13 @@ const appControlSchema = z.object({ action: z.enum(["restart", "status", "smoke"
 export class FullStackAppRuntime {
   private process?: ChildProcess;
   private logs: string[] = [];
+  private qualityGate?: () => Promise<{ ok: boolean; details?: string[] }>;
 
   constructor(readonly rootDir: string, readonly port: number) {}
+
+  setQualityGate(gate?: () => Promise<{ ok: boolean; details?: string[] }>): void {
+    this.qualityGate = gate;
+  }
 
   async initialize(): Promise<void> {
     await seedFullStackProject(this.rootDir);
@@ -60,9 +65,12 @@ export class FullStackAppRuntime {
 
   async check(): Promise<Record<string, unknown>> {
     const run = (args: string[]) => new Promise<{ ok: boolean; output: string }>((resolve) => execFile(process.execPath, args, { cwd: this.rootDir, timeout: 30_000, maxBuffer: 64_000 }, (error, stdout, stderr) => resolve({ ok: !error, output: `${stdout}${stderr}`.slice(-12_000) })));
-    const syntax = await run(["--check", "src/server.js"]);
-    const tests = syntax.ok ? await run(["--test"]) : { ok: false, output: "Skipped because syntax check failed." };
-    return { ok: syntax.ok && tests.ok, syntax, tests };
+    const serverSyntax = await run(["--check", "src/server.js"]);
+    const clientSyntax = serverSyntax.ok ? await run(["--check", "public/app.js"]) : { ok: false, output: "Skipped because server syntax check failed." };
+    const frontend = await inspectFrontendCoherence(this.rootDir);
+    const tests = serverSyntax.ok && clientSyntax.ok && frontend.ok ? await run(["--test"]) : { ok: false, output: "Skipped because syntax or frontend coherence checks failed." };
+    const acceptance = await this.runQualityGate();
+    return { ok: serverSyntax.ok && clientSyntax.ok && frontend.ok && tests.ok && acceptance.ok, syntax: serverSyntax, clientSyntax, frontend, tests, acceptance };
   }
 
   async status(): Promise<Record<string, unknown>> {
@@ -71,13 +79,28 @@ export class FullStackAppRuntime {
 
   async smoke(): Promise<Record<string, unknown>> {
     try {
-      const [health, page] = await Promise.all([
+      const [health, page, client, styles, frontend, acceptance] = await Promise.all([
         fetch(`http://127.0.0.1:${this.port}/api/health`, { signal: AbortSignal.timeout(2_000) }),
-        fetch(`http://127.0.0.1:${this.port}/`, { signal: AbortSignal.timeout(2_000) })
+        fetch(`http://127.0.0.1:${this.port}/`, { signal: AbortSignal.timeout(2_000) }),
+        fetch(`http://127.0.0.1:${this.port}/app.js`, { signal: AbortSignal.timeout(2_000) }),
+        fetch(`http://127.0.0.1:${this.port}/styles.css`, { signal: AbortSignal.timeout(2_000) }),
+        inspectFrontendCoherence(this.rootDir),
+        this.runQualityGate()
       ]);
-      return { ...(await this.status()), healthy: health.ok, pageOk: page.ok, health: await health.text() };
+      const assetsOk = client.ok && styles.ok;
+      const ok = health.ok && page.ok && assetsOk && frontend.ok && acceptance.ok;
+      return { ...(await this.status()), ok, healthy: health.ok, pageOk: page.ok, assetsOk, frontendOk: frontend.ok, frontend, acceptance, health: await health.text() };
     } catch (error) {
-      return { ...(await this.status()), healthy: false, pageOk: false, error: error instanceof Error ? error.message : String(error) };
+      return { ...(await this.status()), ok: false, healthy: false, pageOk: false, assetsOk: false, frontendOk: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  private async runQualityGate(): Promise<{ ok: boolean; details?: string[] }> {
+    if (!this.qualityGate) return { ok: true };
+    try {
+      return await this.qualityGate();
+    } catch (error) {
+      return { ok: false, details: [error instanceof Error ? error.message : String(error)] };
     }
   }
 
@@ -85,6 +108,47 @@ export class FullStackAppRuntime {
     this.logs.push(...value.trim().split(/\r?\n/).filter(Boolean));
     this.logs = this.logs.slice(-80);
   }
+}
+
+export type FrontendCoherence = {
+  ok: boolean;
+  missingElementIds: string[];
+  unstyledClasses: string[];
+  assetsReferenced: boolean;
+};
+
+export async function inspectFrontendCoherence(root: string): Promise<FrontendCoherence> {
+  try {
+    const [html, app, css] = await Promise.all([
+      readFile(path.join(root, "public/index.html"), "utf8"),
+      readFile(path.join(root, "public/app.js"), "utf8"),
+      readFile(path.join(root, "public/styles.css"), "utf8")
+    ]);
+    const elementIds = new Set([...html.matchAll(/\bid\s*=\s*["']([^"']+)["']/g)].map((match) => match[1]!));
+    const selectedIds = new Set([
+      ...[...app.matchAll(/querySelector\(\s*["'`]#([A-Za-z][\w:-]*)["'`]\s*\)/g)].map((match) => match[1]!),
+      ...[...app.matchAll(/getElementById\(\s*["'`]([A-Za-z][\w:-]*)["'`]\s*\)/g)].map((match) => match[1]!)
+    ]);
+    const missingElementIds = [...selectedIds].filter((id) => !elementIds.has(id)).sort();
+    const usedClasses = new Set<string>();
+    for (const source of [html, app]) {
+      for (const match of source.matchAll(/\bclass\s*=\s*["']([^"']+)["']/g)) {
+        for (const token of match[1]!.split(/\s+/)) {
+          if (/^[A-Za-z_][\w-]*$/.test(token)) usedClasses.add(token);
+        }
+      }
+    }
+    const styledClasses = new Set([...css.matchAll(/\.([A-Za-z_][\w-]*)/g)].map((match) => match[1]!));
+    const unstyledClasses = [...usedClasses].filter((name) => !styledClasses.has(name)).sort();
+    const assetsReferenced = /href=["']\/styles\.css["']/.test(html) && /src=["']\/app\.js["']/.test(html);
+    return { ok: assetsReferenced && !missingElementIds.length && !unstyledClasses.length, missingElementIds, unstyledClasses, assetsReferenced };
+  } catch {
+    return { ok: false, missingElementIds: [], unstyledClasses: [], assetsReferenced: false };
+  }
+}
+
+export function relayDeskSeedStyles(): string {
+  return stylesSource();
 }
 
 export async function seedFullStackProject(root: string): Promise<void> {

@@ -80,12 +80,13 @@ it("records failed mutations as rejected evidence without committing proposed se
     const tools = createFileSystemTools({ rootDir: root });
     await tools.find((tool) => tool.name === "write_file")?.execute({ file_path: "config.txt", content: "retryLimit=3" });
     const model = new SequenceModel([
+      "SWX/1\n@tool read_file file_path=config.txt",
       "SWX/1\n@node false_claim decision \"retry updated\"\n@tool edit_file file_path=config.txt old_string=retryLimit: new_string=retryLimit=4",
       "SWX/1\n@tool edit_file file_path=config.txt old_string=retryLimit=3 new_string=retryLimit=4",
       "SWX/1\n@final \"Updated config.txt to retryLimit=4.\""
     ]);
 
-    const result = await runStateWeave({ model, tools, maxIterations: 3 }, "Fix file config.txt by updating retryLimit to 4");
+    const result = await runStateWeave({ model, tools, maxIterations: 4 }, "Fix file config.txt by updating retryLimit to 4");
 
     expect(await readFile(path.join(root, "config.txt"), "utf8")).toBe("retryLimit=4");
     expect(result.graph.nodes).not.toContainEqual(expect.objectContaining({ id: "false_claim" }));
@@ -108,6 +109,56 @@ it("accepts a successful post-mutation read as verification evidence", async () 
     const result = await runStateWeave({ model, tools: createFileSystemTools({ rootDir: root }), maxIterations: 3 }, "Write config.txt and verify it");
 
     expect(result.finalAnswer).toBe("Wrote and verified config.txt.");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("requires configured semantic task and evidence nodes for tool-using work", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-semantic-work-"));
+  try {
+    const tools = createFileSystemTools({ rootDir: root });
+    await tools.find((tool) => tool.name === "write_file")?.execute({ file_path: "config.txt", content: "ready" });
+    const model = new SequenceModel([
+      "SWX/1\n@tool read_file file_path=config.txt",
+      "SWX/1\n@node task_config task \"Verify config\" status=active\n@edge user_input_1 addresses task_config\n@tool read_file file_path=config.txt",
+      "SWX/1\n@node check_config test_result \"config read verified\" status=resolved\n@edge tool_result_2 validates check_config\n@edge check_config validates task_config\n@update task_config status=resolved\n@final \"Config is ready and verified.\""
+    ]);
+
+    const result = await runStateWeave({ model, tools, nodeTypes: ["task", "file", "symbol", "decision", "constraint", "test_result"], maxIterations: 3 }, "Read config.txt and verify it");
+
+    expect(result.metadata.retryCount).toBe(1);
+    expect(result.graph.nodes).toContainEqual(expect.objectContaining({ id: "task_config", type: "task", status: "resolved" }));
+    expect(result.graph.nodes).toContainEqual(expect.objectContaining({ id: "check_config", type: "test_result", status: "resolved" }));
+    expect(result.graph.edges).toContainEqual(expect.objectContaining({ from: "task_config", to: "tool_call_2" }));
+    expect(result.trace[0]?.error).toMatch(/first tool transaction must create/);
+    expect(result.trace[0]?.prompt).toContain("preferred suggestions, not a whitelist");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("requires requested restart and smoke evidence before finalizing", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-runtime-evidence-"));
+  try {
+    const appControl: Tool = {
+      name: "app_control",
+      description: "Run fixed app actions.",
+      schema: z.object({ action: z.enum(["restart", "smoke"]) }),
+      execute: async () => ({ ok: true, healthy: true, pageOk: true })
+    };
+    const model = new SequenceModel([
+      "SWX/1\n@tool write_file file_path=config.txt content=ready",
+      "SWX/1\n@final \"Wrote config.txt and restarted it.\"",
+      "SWX/1\n@tool app_control action=restart",
+      "SWX/1\n@final \"Wrote config.txt, restarted it, and smoke-checked it successfully.\""
+    ]);
+
+    const result = await runStateWeave({ model, tools: [...createFileSystemTools({ rootDir: root }), appControl], maxIterations: 4 }, "Write config.txt, restart, and smoke-check it");
+
+    expect(result.metadata.retryCount).toBe(1);
+    expect(result.trace[1]?.error).toMatch(/requests a restart/);
+    expect(result.finalAnswer).toContain("smoke-checked");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

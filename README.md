@@ -86,11 +86,15 @@ console.log(agent.getFrame()?.graph.nodes);
 
 `Agent` includes workspace file-system tools by default, so it can read, write, edit, and run shell commands in its workspace without extra setup.
 
+`nodeTypes` is an ordered list of preferred semantic types, not a whitelist. StateWeave shows the list explicitly in every `GraphFrame` prompt and instructs the model to use a configured type whenever it fits; the model may still create a precise custom `lower_snake_case` type when none applies. Tool-using turns preserve a semantic work record: an active task/intent before the first tool, durable constraints/files/symbols/decisions around it, and evidence-linked verification before resolution.
+
 ## Quickstart
 
 A single `Agent` owns a session `GraphFrame`. Every `run` or `stream` appends a new `user_input_N` to that same graph unless you pass an explicit frame. Concurrent turns reserve graph inputs immediately, run asynchronously, and merge their resulting branches back into the shared graph.
 
 `maxIterations` is the recursion limit for the internal model/tool loop for one user input. It defaults to `30`; if the loop is exhausted, StateWeave raises a recursion-limit error suggesting a higher `maxIterations`. The SDK/web lab do not impose an artificial upper cap. It is not a max-turn setting; user turns are just more graph nodes.
+
+Quality gates are evidence-based. `edit_file` requires a prior read of that path (or a file created earlier in the same run); failed or unsuccessful tool results reject semantic mutations from that transaction; requested checks, restarts, and smoke tests must each have matching successful tool evidence; and configured tool-using agents must resolve their semantic task and connect a resolved verification result to both the tool evidence and task before finalizing. Current file/tool evidence always outranks an earlier assistant summary.
 
 Use `streamEvents()` when you want the full trace stream, including GraphOps and built-in graph worker scheduler events:
 
