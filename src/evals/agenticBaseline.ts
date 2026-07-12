@@ -69,11 +69,11 @@ export class AgenticBaseline {
 
       const call = parseToolCall(output.text);
       if (!call) {
-        if (/TOOL_CALL|\bTOOL\s*:/i.test(output.text)) {
-          this.messages.push({ role: "tool", content: "protocol_error: Invalid tool-call envelope. Return exactly one TOOL_CALL JSON object with no fabricated TOOL result, commentary, or second call." });
+        if (!/^\s*FINAL\s*:/i.test(output.text)) {
+          this.messages.push({ role: "tool", content: "protocol_error: Planning prose is not a final answer. Continue the task by returning exactly one TOOL_CALL JSON object, or finish only after verified work with exactly FINAL: followed by the factual answer." });
           continue;
         }
-        const answer = output.text.replace(/^\s*FINAL\s*:?\s*/i, "").trim();
+        const answer = output.text.replace(/^\s*FINAL\s*:\s*/i, "").trim();
         return { answer, contextTokens, totalInputTokens, outputTokens, tokenCountSource, modelCalls, toolCalls, latencyMs: Date.now() - startedAt, compactions };
       }
 

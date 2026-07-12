@@ -21,6 +21,17 @@ class SequenceModel implements Model {
   }
 }
 
+class PlanningThenToolModel implements Model {
+  private outputs = [
+    "I'll start by reading the requested file.",
+    'TOOL_CALL {"name":"read_file","args":{"file_path":"source.txt"}}',
+    "FINAL: Read and verified source.txt."
+  ];
+
+  async complete(): Promise<ModelOutput> { return { text: this.outputs.shift() ?? "FINAL: done" }; }
+  async *stream(): AsyncIterable<ModelToken> { yield { type: "token", token: "FINAL: done" }; }
+}
+
 class FabricatingToolTranscriptModel implements Model {
   private outputs = [
     'TOOL_CALL {"name":"read_file","args":{"file_path":"source.txt"}}\nTOOL: {"content":"fabricated"}\nASSISTANT: FINAL: done',
@@ -55,6 +66,22 @@ it("runs a persistent messages agent through the same filesystem tools", async (
     expect(result.toolCalls).toBe(1);
     expect(await readFile(path.join(root, "notes/result.txt"), "utf8")).toBe("done");
     expect(agent.getMessages().map((message) => message.role)).toEqual(["system", "user", "assistant", "tool", "assistant"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("rejects planning prose as premature completion and continues to tools", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-agentic-planning-"));
+  try {
+    await writeFile(path.join(root, "source.txt"), "real source");
+    const agent = new AgenticBaseline({ model: new PlanningThenToolModel(), tools: createFileSystemTools({ rootDir: root }), systemPrompt: "Maintain the workspace." });
+    const result = await agent.run("Read and verify source.txt.");
+
+    expect(result.answer).toBe("Read and verified source.txt.");
+    expect(result.modelCalls).toBe(3);
+    expect(result.toolCalls).toBe(1);
+    expect(agent.getMessages()).toContainEqual(expect.objectContaining({ role: "tool", content: expect.stringContaining("Planning prose is not a final answer") }));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
