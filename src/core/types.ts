@@ -63,7 +63,7 @@ export type GraphOp =
   | { op: "zoom"; level: number }
   | { op: "call_tool"; tool: string; args: Record<string, unknown> }
   | { op: "spawn_worker"; id: string; objective: string; focusNodeId?: string; input?: string; maxIterations?: number }
-  | { op: "final"; answer: string; artifactId?: string; artifactIds?: string[] };
+  | { op: "final"; answer: string; artifactId?: string; artifactIds?: string[]; outcome?: "already_satisfied" };
 
 export type WorkerRunSummary = {
   id: string;

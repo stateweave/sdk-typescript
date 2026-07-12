@@ -46,7 +46,7 @@ export const graphOpSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("zoom"), level: z.number().int().min(0).max(10) }),
   z.object({ op: z.literal("call_tool"), tool: z.string().min(1), args: z.record(z.unknown()) }),
   z.object({ op: z.literal("spawn_worker"), id: z.string().min(1), objective: z.string().min(1), focusNodeId: z.string().min(1).optional(), input: z.string().min(1).optional(), maxIterations: z.number().int().min(1).optional() }),
-  z.object({ op: z.literal("final"), answer: z.string().min(1), artifactId: z.string().min(1).optional(), artifactIds: z.array(z.string().min(1)).optional() })
+  z.object({ op: z.literal("final"), answer: z.string().min(1), artifactId: z.string().min(1).optional(), artifactIds: z.array(z.string().min(1)).optional(), outcome: z.literal("already_satisfied").optional() })
 ]);
 
 export const graphOpsResponseSchema = z.object({ ops: z.array(graphOpSchema).min(1) });
@@ -260,7 +260,10 @@ function finalOpFor(
   const humanAnswer = stringAttr(attrs.text) ?? label;
   const finalIsQuotedText = /^['"]/.test(target.argText);
 
-  if (humanAnswer && (finalIsQuotedText || artifactIds.length || /\s/.test(humanAnswer))) return finalOp(humanAnswer, artifactIds);
+  const outcome = attrs.outcome === "already_satisfied" ? "already_satisfied" : undefined;
+  if (attrs.outcome !== undefined && !outcome) throw new Error(`Invalid SWX @final outcome: ${String(attrs.outcome)}`);
+
+  if (humanAnswer && (finalIsQuotedText || artifactIds.length || /\s/.test(humanAnswer))) return finalOp(humanAnswer, artifactIds, outcome);
 
   const cleanTarget = unquote(humanAnswer ?? (target.argText.trim() || "final"));
   const block = artifactBlocks.find((item) => item.id === cleanTarget);
@@ -279,12 +282,14 @@ function finalRefOpFor(target: { tokens: string[] }, blocks: SwxBlock[]): Extrac
   const { attrs } = parseLabelAndAttrs(target.tokens.slice(1));
   const block = blocks.find((item) => item.id === blockId);
   if (!block) throw new Error(`SWX @final_ref references missing block: ${blockId}`);
-  return finalOp(block.content, artifactIdsFromAttrs(attrs));
+  const outcome = attrs.outcome === "already_satisfied" ? "already_satisfied" : undefined;
+  if (attrs.outcome !== undefined && !outcome) throw new Error(`Invalid SWX @final_ref outcome: ${String(attrs.outcome)}`);
+  return finalOp(block.content, artifactIdsFromAttrs(attrs), outcome);
 }
 
-function finalOp(answer: string, artifactIds: string[] = []): Extract<GraphOp, { op: "final" }> {
+function finalOp(answer: string, artifactIds: string[] = [], outcome?: "already_satisfied"): Extract<GraphOp, { op: "final" }> {
   const ids = unique(artifactIds.filter(Boolean));
-  return withoutUndefined({ op: "final", answer, artifactId: ids[0], artifactIds: ids.length ? ids : undefined });
+  return withoutUndefined({ op: "final", answer, artifactId: ids[0], artifactIds: ids.length ? ids : undefined, outcome });
 }
 
 function artifactIdsFromAttrs(attrs: Record<string, unknown>): string[] {

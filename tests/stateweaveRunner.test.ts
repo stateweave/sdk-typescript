@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
+import { z } from "zod";
 import { Agent } from "../src/agent/stateweaveAgent.js";
 import { runStateWeave, StateWeaveRunError, streamStateWeave } from "../src/agent/stateweaveRunner.js";
 import { applyOps } from "../src/core/applyOps.js";
@@ -9,6 +10,7 @@ import { createInitialGraphFrame } from "../src/core/graph.js";
 import type { StateWeaveStreamEvent } from "../src/core/types.js";
 import type { Model, ModelInput, ModelOutput, ModelToken } from "../src/llm/model.js";
 import { createFileSystemTools } from "../src/tools/fileSystemTools.js";
+import type { Tool } from "../src/tools/types.js";
 
 it("automatically connects pending inputs and model-added nodes", async () => {
   const firstFrame = applyOps(
@@ -92,6 +94,42 @@ it("records failed mutations as rejected evidence without committing proposed se
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+it("allows an explicitly verified already-satisfied mutation without a fake edit", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-already-satisfied-"));
+  try {
+    const tools = createFileSystemTools({ rootDir: root });
+    await tools.find((tool) => tool.name === "write_file")?.execute({ file_path: "server.js", content: "export const ready = true;" });
+    const appControl: Tool = {
+      name: "app_control",
+      description: "Run fixed app checks.",
+      schema: z.object({ action: z.literal("check") }),
+      execute: async () => ({ ok: true })
+    };
+    const model = new SequenceModel([
+      "SWX/1\n@tool read_file file_path=server.js",
+      "SWX/1\n@tool app_control action=check",
+      "SWX/1\n@final \"The requested implementation was already present in server.js and checks pass; no files were changed.\" outcome=already_satisfied"
+    ]);
+
+    const result = await runStateWeave({ model, tools: [...tools, appControl], maxIterations: 3 }, "Implement the feature in server.js and run checks");
+
+    expect(result.finalAnswer).toContain("already present");
+    expect(result.trace.at(-1)?.parsedOps).toContainEqual(expect.objectContaining({ op: "final", outcome: "already_satisfied" }));
+    expect(await readFile(path.join(root, "server.js"), "utf8")).toBe("export const ready = true;");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("rejects already-satisfied completion without inspection evidence", async () => {
+  const model = new SequenceModel([
+    "SWX/1\n@final \"It was already implemented.\" outcome=already_satisfied"
+  ]);
+
+  await expect(runStateWeave({ model, tools: [], maxIterations: 1 }, "Implement the feature in server.js"))
+    .rejects.toThrow(/requires successful read_file evidence/);
 });
 
 it("forces read and bash observations into a separate model iteration", async () => {

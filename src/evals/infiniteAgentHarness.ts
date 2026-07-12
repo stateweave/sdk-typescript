@@ -294,14 +294,14 @@ export class InfiniteAgentHarness {
     let naive: AgenticTurnResult;
     if (executionOrder === "stateweave-first") {
       sw = await captureStateWeaveTurn(this.stateweave, task.prompt);
-      if (isAgentError(sw.answer)) throw new Error(`T${turn} was not scored because the StateWeave provider call failed.`);
+      if (isAgentError(sw.answer)) throw new Error(`T${turn} was not scored because the StateWeave run failed: ${agentErrorMessage(sw.answer)}`);
       naive = await captureNaiveTurn(this.naive, task.prompt);
-      if (isAgentError(naive.answer)) throw new Error(`T${turn} was not scored because the native provider call failed.`);
+      if (isAgentError(naive.answer)) throw new Error(`T${turn} was not scored because the native run failed: ${agentErrorMessage(naive.answer)}`);
     } else {
       naive = await captureNaiveTurn(this.naive, task.prompt);
-      if (isAgentError(naive.answer)) throw new Error(`T${turn} was not scored because the native provider call failed.`);
+      if (isAgentError(naive.answer)) throw new Error(`T${turn} was not scored because the native run failed: ${agentErrorMessage(naive.answer)}`);
       sw = await captureStateWeaveTurn(this.stateweave, task.prompt);
-      if (isAgentError(sw.answer)) throw new Error(`T${turn} was not scored because the StateWeave provider call failed.`);
+      if (isAgentError(sw.answer)) throw new Error(`T${turn} was not scored because the StateWeave run failed: ${agentErrorMessage(sw.answer)}`);
     }
     const modelFacing = sw.result.trace.at(-1)?.frameBefore;
     if (modelFacing) await writeFile(this.modelFramePath, JSON.stringify(modelFacing));
@@ -886,6 +886,10 @@ function mean(values: number[]): number {
 
 function isAgentError(answer: string): boolean {
   return answer.startsWith("(agent error:");
+}
+
+function agentErrorMessage(answer: string): string {
+  return answer.replace(/^\(agent error:\s*/, "").replace(/\)$/, "");
 }
 
 function modelName(model: Model): string {
