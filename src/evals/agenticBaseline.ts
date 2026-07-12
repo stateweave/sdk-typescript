@@ -69,6 +69,10 @@ export class AgenticBaseline {
 
       const call = parseToolCall(output.text);
       if (!call) {
+        if (/TOOL_CALL|\bTOOL\s*:/i.test(output.text)) {
+          this.messages.push({ role: "tool", content: "protocol_error: Invalid tool-call envelope. Return exactly one TOOL_CALL JSON object with no fabricated TOOL result, commentary, or second call." });
+          continue;
+        }
         const answer = output.text.replace(/^\s*FINAL\s*:?\s*/i, "").trim();
         return { answer, contextTokens, totalInputTokens, outputTokens, tokenCountSource, modelCalls, toolCalls, latencyMs: Date.now() - startedAt, compactions };
       }
@@ -155,12 +159,12 @@ function baselineSystemPrompt(systemPrompt: string, tools: Tool[]): string {
 }
 
 function parseToolCall(text: string): { name: string; args: unknown } | undefined {
-  const marker = text.search(/TOOL_CALL/i);
-  if (marker < 0) return undefined;
-  const start = text.indexOf("{", marker);
-  if (start < 0) return undefined;
+  const envelope = text.match(/^\s*TOOL_CALL\s*/i);
+  if (!envelope) return undefined;
+  const start = envelope[0].length;
+  if (text[start] !== "{") return undefined;
   const json = balancedJsonObject(text, start);
-  if (!json) return undefined;
+  if (!json || text.slice(start + json.length).trim()) return undefined;
   try {
     const parsed = JSON.parse(json) as { name?: unknown; args?: unknown };
     if (typeof parsed.name !== "string" || !parsed.args || typeof parsed.args !== "object" || Array.isArray(parsed.args)) return undefined;

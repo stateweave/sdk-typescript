@@ -21,6 +21,17 @@ class SequenceModel implements Model {
   }
 }
 
+class FabricatingToolTranscriptModel implements Model {
+  private outputs = [
+    'TOOL_CALL {"name":"write_file","args":{"file_path":"fake.txt","content":"fake"}}\nTOOL: {"ok":true}\nFINAL: done',
+    'TOOL_CALL {"name":"write_file","args":{"file_path":"real.txt","content":"real"}}',
+    "FINAL: Created real.txt."
+  ];
+
+  async complete(): Promise<ModelOutput> { return { text: this.outputs.shift() ?? "FINAL: done" }; }
+  async *stream(): AsyncIterable<ModelToken> { yield { type: "token", token: "FINAL: done" }; }
+}
+
 class CompactionModel implements Model {
   readonly prompts: string[] = [];
 
@@ -44,6 +55,22 @@ it("runs a persistent messages agent through the same filesystem tools", async (
     expect(result.toolCalls).toBe(1);
     expect(await readFile(path.join(root, "notes/result.txt"), "utf8")).toBe("done");
     expect(agent.getMessages().map((message) => message.role)).toEqual(["system", "user", "assistant", "tool", "assistant"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("rejects fabricated tool results and executes only a strict tool envelope", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-agentic-strict-"));
+  try {
+    const agent = new AgenticBaseline({ model: new FabricatingToolTranscriptModel(), tools: createFileSystemTools({ rootDir: root }), systemPrompt: "Maintain the workspace." });
+    const result = await agent.run("Create the real file.");
+    expect(result.answer).toBe("Created real.txt.");
+    expect(result.modelCalls).toBe(3);
+    expect(result.toolCalls).toBe(1);
+    expect(await readFile(path.join(root, "real.txt"), "utf8")).toBe("real");
+    await expect(readFile(path.join(root, "fake.txt"), "utf8")).rejects.toThrow();
+    expect(agent.getMessages().some((message) => message.content.includes("protocol_error"))).toBe(true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
