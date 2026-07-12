@@ -14,6 +14,7 @@ import { FullStackAppRuntime, inspectFrontendCoherence, relayDeskSeedStyles } fr
 const MAX_TURNS_KEPT = 80;
 const MAX_SERIES_KEPT = 5000;
 const MAX_AGENT_ITERATIONS = 30;
+const MAX_TURN_RETRIES = 2;
 const NAIVE_COMPACTION_THRESHOLD = 250_000;
 const NAIVE_RETAIN_MESSAGES = 6;
 const EXPERIMENT_VERSION = 4;
@@ -274,12 +275,23 @@ export class InfiniteAgentHarness {
 
   private async runLoop(): Promise<void> {
     if (!this.stateweave || !this.naive) throw new Error("InfiniteAgentHarness.initialize() must run before start().");
+    let turn = this.state.turnCount + 1;
+    let attempts = 0;
     while (this.running) {
       try {
-        await this.runTurn(this.state.turnCount + 1);
+        await this.runTurn(turn);
+        attempts = 0;
+        turn = this.state.turnCount + 1;
       } catch (error) {
+        attempts += 1;
+        const reason = error instanceof Error ? error.message : String(error);
+        if (attempts <= MAX_TURN_RETRIES) {
+          this.state.message = `T${turn} failed (attempt ${attempts} of ${MAX_TURN_RETRIES + 1}); retrying the same turn. Last error: ${reason}`;
+          await this.save();
+          continue;
+        }
         this.state.status = "failed";
-        this.state.message = error instanceof Error ? error.message : String(error);
+        this.state.message = `T${turn} failed after ${MAX_TURN_RETRIES + 1} attempts and is paused for same-turn retry on next start. Last error: ${reason}`;
         this.running = false;
         await this.save();
       }

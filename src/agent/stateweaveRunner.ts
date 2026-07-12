@@ -508,7 +508,25 @@ function isStructuralNodeType(type: string): boolean {
   return type === "system" || type === "user_input" || type === "assistant_output" || type === "tool_call" || type === "tool_result";
 }
 
+function swxSyntaxRecovery(message: string): string | undefined {
+  const match = message.match(/Invalid SWX @(\w+) command/);
+  if (!match) return undefined;
+  const command = match[1];
+  if (command === "edge") {
+    return "That @edge line is malformed and will be rejected again if repeated unchanged. An edge needs exactly three tokens \u2014 @edge <from-id> <type> <to-id> \u2014 where <from-id> and <to-id> reference existing nodes and <type> is one of: follows, creates, supports, contradicts, explains, depends_on, addresses, validates, constrains, causes, relates_to. Either re-emit one corrected @edge line, or drop the bad line and proceed with the rest of the transaction; never repeat the identical invalid line.";
+  }
+  if (command === "node") {
+    return "That @node line is malformed. A node needs @node <id> <type> (lowercase id and a valid node type) plus optional [text=... status=...]. Re-emit it corrected or drop it and proceed with the rest of the transaction; never repeat the identical invalid line.";
+  }
+  if (command === "update") {
+    return "That @update line is malformed. It needs @update <existing-id> plus optional [text=... status=... type=...]. Re-emit it corrected or drop it and proceed with the rest of the transaction; never repeat the identical invalid line.";
+  }
+  return `That @${command} line is malformed and will be rejected again if repeated unchanged. Re-emit a single corrected line or drop it and proceed with the rest of the transaction; never repeat the identical invalid line.`;
+}
+
 function recoveryInstruction(message: string): string {
+  const syntax = swxSyntaxRecovery(message);
+  if (syntax) return syntax;
   if (/first tool transaction must create|configured task type/i.test(message)) return "Retry the tool transaction with one active task node using a configured semantic type. StateWeave will connect structural nodes automatically; do not duplicate them.";
   if (/test_result/i.test(message)) return "Add a resolved test_result node, connect the successful tool_result to it and connect it to the current task with validates edges, resolve the task, then return @final.";
   if (/restart/i.test(message)) return "Call exactly @tool app_control action=restart, inspect the result, then update semantic verification nodes and finalize.";
