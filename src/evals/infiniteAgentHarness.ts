@@ -213,6 +213,7 @@ export class InfiniteAgentHarness {
     await Promise.all([this.stateweaveApp.initialize(), this.nativeApp.initialize()]);
     this.state = await readJson<InfiniteAgentState>(this.statePath) ?? this.state;
     this.state.design ??= experimentDesign();
+    this.state.design.maxIterationsPerAgentTurn = MAX_AGENT_ITERATIONS;
     this.state.blocks ??= [];
     this.state.evidence = analyzeBlocks(this.state.blocks, this.state.design.seed);
     this.state.naiveContextLimit = NAIVE_COMPACTION_THRESHOLD;
