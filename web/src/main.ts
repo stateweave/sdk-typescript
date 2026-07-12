@@ -481,6 +481,10 @@ const infiniteTurnDetail = element<HTMLElement>("infinite-turn-detail");
 const infiniteStatistics = element<HTMLElement>("infinite-statistics");
 const infiniteClusters = element<HTMLElement>("infinite-clusters");
 const infiniteOpenGraph = element<HTMLButtonElement>("infinite-open-graph");
+const infiniteStateWeaveApp = element<HTMLAnchorElement>("infinite-stateweave-app");
+const infiniteNativeApp = element<HTMLAnchorElement>("infinite-native-app");
+infiniteStateWeaveApp.href = `${apiBase}/api/infinite-agent/apps/stateweave/`;
+infiniteNativeApp.href = `${apiBase}/api/infinite-agent/apps/native/`;
 // The Infinite tab polls the server-owned agent harness through one state endpoint.
 const chat = element<HTMLElement>("chat");
 const form = element<HTMLFormElement>("composer");

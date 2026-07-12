@@ -180,6 +180,13 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     return;
   }
 
+  const infiniteAppMatch = url.pathname.match(/^\/api\/infinite-agent\/apps\/(stateweave|native)(\/.*)?$/);
+  if (infiniteAppMatch) {
+    await infiniteAgentReady;
+    await proxyInfiniteApp(request, response, infiniteAppMatch[1] as "stateweave" | "native", infiniteAppMatch[2] || "/");
+    return;
+  }
+
   if (url.pathname === "/api/infinite-agent/start" && request.method === "POST") {
     await infiniteAgentReady;
     void infiniteAgentHarness.start();
@@ -743,6 +750,29 @@ async function existingFile(filePath: string): Promise<string> {
   const fileStat = await stat(filePath);
   if (!fileStat.isFile()) throw new Error("not a file");
   return filePath;
+}
+
+async function proxyInfiniteApp(request: IncomingMessage, response: ServerResponse, arm: "stateweave" | "native", targetPath: string): Promise<void> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  const target = `http://127.0.0.1:${arm === "stateweave" ? 3101 : 3102}${targetPath}`;
+  const upstream = await fetch(target, {
+    method: request.method,
+    headers: { "content-type": request.headers["content-type"] ?? "application/octet-stream" },
+    body: request.method === "GET" || request.method === "HEAD" ? undefined : Buffer.concat(chunks)
+  });
+  const contentType = upstream.headers.get("content-type") ?? "application/octet-stream";
+  let payload = Buffer.from(await upstream.arrayBuffer());
+  if (/text\/html|text\/javascript/.test(contentType)) {
+    const prefix = `${basePath === "/" ? "" : basePath.slice(0, -1)}/api/infinite-agent/apps/${arm}`;
+    const text = payload.toString("utf8")
+      .replaceAll('href="/', `href="${prefix}/`)
+      .replaceAll('src="/', `src="${prefix}/`)
+      .replaceAll('"/api/', `"${prefix}/api/`);
+    payload = Buffer.from(text);
+  }
+  response.writeHead(upstream.status, { "content-type": contentType, "cache-control": "no-store" });
+  response.end(payload);
 }
 
 function requestUrl(request: IncomingMessage): URL {
