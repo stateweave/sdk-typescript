@@ -66,6 +66,7 @@ type EvalRun = {
 };
 
 type GraphPosition = { x: number; y: number; vx: number; vy: number; pinned: boolean };
+type GraphViewState = { selectedNodeId?: string; animationFrame?: number; positions: Map<string, GraphPosition> };
 type ToolInfo = { name: string; description: string };
 type WorkspaceFile = { path: string; size: number; updatedAt: string; mime: string; renderable: boolean };
 type WorkspaceFileContent = WorkspaceFile & { content: string };
@@ -105,8 +106,6 @@ let stateRunning = false;
 let abRunning = false;
 let copyCounter = 0;
 let artifactPreviewCounter = 0;
-let selectedGraphNodeId: string | undefined;
-let graphAnimationFrame: number | undefined;
 let transferMode: TransferMode = "export";
 let selectedFilePath: string | undefined;
 let workspaceFiles: WorkspaceFile[] = [];
@@ -119,7 +118,7 @@ const defaultAgentSettings: AgentSettings = {
 const agentSettingsStorageKey = "stateweave.agentSettings.v1";
 const stateChatStorageKey = "stateweave.chat.v1";
 let agentSettings = loadAgentSettings();
-const graphPositions = new Map<string, GraphPosition>();
+const primaryGraphViewState: GraphViewState = { positions: new Map<string, GraphPosition>() };
 const copyPayloads = new Map<string, string>();
 const artifactPreviews = new Map<string, string>();
 const categoryOrder: EvalCategory[] = ["memory", "logical", "holistic", ...promptFiveCategoryOrder, ...promptSixCategoryOrder];
@@ -1259,8 +1258,8 @@ function applyGraphImport(): void {
   try {
     const frame = parseImportedGraphFrame(transferText.value);
     stateFrame = frame;
-    selectedGraphNodeId = undefined;
-    graphPositions.clear();
+    primaryGraphViewState.selectedNodeId = undefined;
+    primaryGraphViewState.positions.clear();
     renderGraph(frame.graph);
     stateInput.textContent = compactFrame(frame);
     stateOutput.textContent = "Imported GraphFrame. The next user turn will be appended as a pending user_input node.";
@@ -1333,9 +1332,9 @@ function emptyExportFrame(): GraphFrame {
 function resetStateWeaveChat(): void {
   stateFrame = undefined;
   localStorage.removeItem(stateChatStorageKey);
-  selectedGraphNodeId = undefined;
-  graphPositions.clear();
-  stopGraphAnimation();
+  primaryGraphViewState.selectedNodeId = undefined;
+  primaryGraphViewState.positions.clear();
+  stopGraphAnimation(primaryGraphViewState);
   chat.innerHTML = `<div class="empty-state"><h2>Ask anything.</h2><p>StateWeave keeps one growing StateGraph rooted at <code>system_root</code>, then compiles a GraphFrame for the model each turn.</p></div>`;
   stateInput.textContent = "No turn yet.";
   stateOutput.textContent = "No output yet.";
@@ -2345,15 +2344,19 @@ function appendError(container: HTMLElement, message: string): void {
 }
 
 function renderGraph(value: StateGraph): void {
-  stopGraphAnimation();
-  const layout = graphLayout(value);
+  renderGraphComponent(graph, value, primaryGraphViewState);
+}
+
+function renderGraphComponent(container: HTMLElement, value: StateGraph, viewState: GraphViewState, focusChat = true): void {
+  stopGraphAnimation(viewState);
+  const layout = graphLayout(value, viewState.positions);
   const turnCount = value.nodes.filter((node) => node.type === "user_input").length;
   const latestNodeId = value.nodes.at(-1)?.id;
-  const selectedNode = layout.nodeMap.get(selectedGraphNodeId ?? "") ?? layout.nodeMap.get(latestNodeId ?? "") ?? layout.nodeMap.get("system_root") ?? layout.nodes[0];
-  selectedGraphNodeId = selectedNode?.id;
+  const selectedNode = layout.nodeMap.get(viewState.selectedNodeId ?? "") ?? layout.nodeMap.get(latestNodeId ?? "") ?? layout.nodeMap.get("system_root") ?? layout.nodes[0];
+  viewState.selectedNodeId = selectedNode?.id;
 
-  graph.className = "graph-visual cortex-graph";
-  graph.innerHTML = `
+  container.className = "graph-visual cortex-graph";
+  container.innerHTML = `
     <div class="graph-summary floating">
       <strong>Turn ${turnCount}</strong>
       <span>${value.nodes.length} nodes · ${value.edges.length} edges</span>
@@ -2370,14 +2373,14 @@ function renderGraph(value: StateGraph): void {
       <rect x="0" y="0" width="${layout.width}" height="${layout.height}" rx="18" fill="url(#graph-glow)"></rect>
       <g class="edges">
         ${layout.edges.map((edge, index) => edge.fromNode && edge.toNode ? `
-          <g class="cortex-edge ${escapeHtml(edge.type)} ${edge.from === selectedGraphNodeId || edge.to === selectedGraphNodeId ? "selected" : ""}">
+          <g class="cortex-edge ${escapeHtml(edge.type)} ${edge.from === viewState.selectedNodeId || edge.to === viewState.selectedNodeId ? "selected" : ""}">
             <line data-edge-index="${index}" x1="${edge.fromNode.x}" y1="${edge.fromNode.y}" x2="${edge.toNode.x}" y2="${edge.toNode.y}"></line>
             <title>${escapeHtml(edge.from)} ${escapeHtml(edge.type)} ${escapeHtml(edge.to)}</title>
           </g>` : "").join("")}
       </g>
       <g class="nodes">
         ${layout.nodes.map((node) => `
-          <g class="cortex-node ${escapeHtml(node.type)} ${node.id === "system_root" ? "root" : ""} ${node.id === latestNodeId ? "latest" : ""} ${node.id === selectedGraphNodeId ? "selected" : ""} ${node.pinned ? "pinned" : ""}" data-node-id="${escapeAttribute(node.id)}" transform="translate(${node.x} ${node.y})">
+          <g class="cortex-node ${escapeHtml(node.type)} ${node.id === "system_root" ? "root" : ""} ${node.id === latestNodeId ? "latest" : ""} ${node.id === viewState.selectedNodeId ? "selected" : ""} ${node.pinned ? "pinned" : ""}" data-node-id="${escapeAttribute(node.id)}" transform="translate(${node.x} ${node.y})">
             <circle r="${node.radius}"></circle>
             <text class="node-id" y="${node.radius + 15}">${escapeHtml(shorten(node.id, node.id === "system_root" ? 18 : 16))}</text>
             <title>${escapeHtml(`${node.id} [${node.type}]\n${node.text}`)}</title>
@@ -2391,7 +2394,7 @@ function renderGraph(value: StateGraph): void {
       <summary>Node list (${value.nodes.length})</summary>
       <ul>
         ${layout.nodes.map((node) => `
-          <li class="${node.id === selectedGraphNodeId ? "selected" : ""}" data-node-card-id="${escapeAttribute(node.id)}">
+          <li class="${node.id === viewState.selectedNodeId ? "selected" : ""}" data-node-card-id="${escapeAttribute(node.id)}">
             <strong>${escapeHtml(node.id)}</strong>
             <span>${escapeHtml(node.type)}</span>
             <em>${escapeHtml(shorten(node.text, 120))}</em>
@@ -2399,14 +2402,14 @@ function renderGraph(value: StateGraph): void {
       </ul>
     </details>
   `;
-  mountGraphInteractions(value, layout);
+  mountGraphInteractions(container, value, layout, viewState, focusChat);
 }
 
 type GraphLayoutNode = StateGraph["nodes"][number] & { x: number; y: number; vx: number; vy: number; radius: number; degree: number; pinned: boolean };
 type GraphLayoutEdge = StateGraph["edges"][number] & { fromNode?: GraphLayoutNode; toNode?: GraphLayoutNode };
 type GraphPointer = { x: number; y: number };
 
-function graphLayout(value: StateGraph): {
+function graphLayout(value: StateGraph, positions: Map<string, GraphPosition>): {
   width: number;
   height: number;
   nodes: GraphLayoutNode[];
@@ -2426,7 +2429,7 @@ function graphLayout(value: StateGraph): {
 
   const nodes: GraphLayoutNode[] = value.nodes.map((node, index) => {
     const root = node.id === "system_root";
-    const existing = graphPositions.get(node.id);
+    const existing = positions.get(node.id);
     const ring = root ? 0 : 112 + Math.sqrt(index + 1) * 28;
     const angle = root ? 0 : seededAngle(node.id, index);
     const x = existing?.x ?? (root ? centerX : centerX + Math.cos(angle) * ring);
@@ -2446,20 +2449,20 @@ function graphLayout(value: StateGraph): {
   const edges = value.edges.map((edge) => ({ ...edge, fromNode: nodeMap.get(edge.from), toNode: nodeMap.get(edge.to) }));
 
   for (let iteration = 0; iteration < 90; iteration++) {
-    applyGraphForces(nodes, edges, width, height, { cooling: 1 - iteration / 90 });
+    applyGraphForces(nodes, edges, width, height, { cooling: 1 - iteration / 90 }, positions);
   }
 
   const featuredNodes = [...nodes]
     .sort((a, b) => Number(b.id === value.nodes.at(-1)?.id) - Number(a.id === value.nodes.at(-1)?.id) || b.degree - a.degree)
     .slice(0, 8);
 
-  for (const node of nodes) rememberGraphNodePosition(node);
+  for (const node of nodes) rememberGraphNodePosition(node, positions);
 
   return { width, height, nodes, edges, featuredNodes, nodeMap };
 }
 
-function mountGraphInteractions(value: StateGraph, layout: ReturnType<typeof graphLayout>): void {
-  const svg = graph.querySelector<SVGSVGElement>("svg.cortex-map");
+function mountGraphInteractions(container: HTMLElement, value: StateGraph, layout: ReturnType<typeof graphLayout>, viewState: GraphViewState, focusChat: boolean): void {
+  const svg = container.querySelector<SVGSVGElement>("svg.cortex-map");
   if (!svg) return;
 
   const nodeElements = new Map<string, SVGGElement>();
@@ -2468,8 +2471,8 @@ function mountGraphInteractions(value: StateGraph, layout: ReturnType<typeof gra
     if (nodeId) nodeElements.set(nodeId, nodeElement);
   }
   const edgeElements = layout.edges.map((_, index) => svg.querySelector<SVGLineElement>(`line[data-edge-index="${index}"]`));
-  const inspector = graph.querySelector<HTMLElement>("#graph-selected-node");
-  const cards = [...graph.querySelectorAll<HTMLElement>("[data-node-card-id]")];
+  const inspector = container.querySelector<HTMLElement>("#graph-selected-node");
+  const cards = [...container.querySelectorAll<HTMLElement>("[data-node-card-id]")];
   let hoveredNodeId: string | undefined;
   let hoverPoint: GraphPointer | undefined;
   let dragging: { node: GraphLayoutNode; element: SVGGElement; pointerId: number; moved: boolean; start: GraphPointer } | undefined;
@@ -2477,14 +2480,14 @@ function mountGraphInteractions(value: StateGraph, layout: ReturnType<typeof gra
   const selectNode = (nodeId: string) => {
     const node = layout.nodeMap.get(nodeId);
     if (!node) return;
-    selectedGraphNodeId = node.id;
+    viewState.selectedNodeId = node.id;
     for (const [id, element] of nodeElements) element.classList.toggle("selected", id === node.id);
     for (const card of cards) card.classList.toggle("selected", card.dataset.nodeCardId === node.id);
     layout.edges.forEach((edge, index) => {
       edgeElements[index]?.parentElement?.classList.toggle("selected", edge.from === node.id || edge.to === node.id);
     });
     if (inspector) inspector.innerHTML = graphInspectorHtml(value, node);
-    focusConversationNode(node.id);
+    if (focusChat) focusConversationNode(node.id);
   };
 
   svg.addEventListener("pointermove", (event) => {
@@ -2521,7 +2524,7 @@ function mountGraphInteractions(value: StateGraph, layout: ReturnType<typeof gra
       dragging = { node, element: nodeElement, pointerId: event.pointerId, moved: false, start: point };
       nodeElement.setPointerCapture(event.pointerId);
       nodeElement.classList.add("dragging", "pinned");
-      rememberGraphNodePosition(node);
+      rememberGraphNodePosition(node, viewState.positions);
       updateGraphDom(layout, nodeElements, edgeElements);
     });
     nodeElement.addEventListener("pointermove", (event) => {
@@ -2533,14 +2536,14 @@ function mountGraphInteractions(value: StateGraph, layout: ReturnType<typeof gra
       node.y = clamp(point.y, 54, layout.height - 64);
       node.vx = 0;
       node.vy = 0;
-      rememberGraphNodePosition(node);
+      rememberGraphNodePosition(node, viewState.positions);
       updateGraphDom(layout, nodeElements, edgeElements);
     });
     const releaseDrag = (event: PointerEvent) => {
       if (!dragging || dragging.pointerId !== event.pointerId || dragging.node.id !== node.id) return;
       if (nodeElement.hasPointerCapture(event.pointerId)) nodeElement.releasePointerCapture(event.pointerId);
       nodeElement.classList.remove("dragging");
-      rememberGraphNodePosition(node);
+      rememberGraphNodePosition(node, viewState.positions);
       dragging = undefined;
     };
     nodeElement.addEventListener("pointerup", releaseDrag);
@@ -2549,7 +2552,7 @@ function mountGraphInteractions(value: StateGraph, layout: ReturnType<typeof gra
     nodeElement.addEventListener("dblclick", () => {
       node.pinned = false;
       nodeElement.classList.remove("pinned");
-      rememberGraphNodePosition(node);
+      rememberGraphNodePosition(node, viewState.positions);
       selectNode(node.id);
     });
   }
@@ -2566,11 +2569,11 @@ function mountGraphInteractions(value: StateGraph, layout: ReturnType<typeof gra
       hoverPoint,
       draggingNodeId: dragging?.node.id,
       cooling: dragging ? 0.95 : 0.72
-    });
+    }, viewState.positions);
     updateGraphDom(layout, nodeElements, edgeElements);
-    graphAnimationFrame = window.requestAnimationFrame(animate);
+    viewState.animationFrame = window.requestAnimationFrame(animate);
   };
-  graphAnimationFrame = window.requestAnimationFrame(animate);
+  viewState.animationFrame = window.requestAnimationFrame(animate);
 }
 
 function applyGraphForces(
@@ -2578,7 +2581,8 @@ function applyGraphForces(
   edges: GraphLayoutEdge[],
   width: number,
   height: number,
-  options: { hoveredNodeId?: string; hoverPoint?: GraphPointer; draggingNodeId?: string; cooling: number }
+  options: { hoveredNodeId?: string; hoverPoint?: GraphPointer; draggingNodeId?: string; cooling: number },
+  positions: Map<string, GraphPosition>
 ): void {
   const centerX = width / 2;
   const centerY = height / 2;
@@ -2632,7 +2636,7 @@ function applyGraphForces(
     if (node.id === options.draggingNodeId || node.pinned) {
       node.vx = 0;
       node.vy = 0;
-      rememberGraphNodePosition(node);
+      rememberGraphNodePosition(node, positions);
       continue;
     }
 
@@ -2654,7 +2658,7 @@ function applyGraphForces(
     node.y = clamp(node.y + node.vy * options.cooling, 54, height - 64);
     node.vx *= 0.84;
     node.vy *= 0.84;
-    rememberGraphNodePosition(node);
+    rememberGraphNodePosition(node, positions);
   }
 }
 
@@ -2722,14 +2726,14 @@ function svgPoint(svg: SVGSVGElement, event: PointerEvent): GraphPointer {
   };
 }
 
-function rememberGraphNodePosition(node: GraphLayoutNode): void {
-  graphPositions.set(node.id, { x: node.x, y: node.y, vx: node.vx, vy: node.vy, pinned: node.pinned });
+function rememberGraphNodePosition(node: GraphLayoutNode, positions: Map<string, GraphPosition>): void {
+  positions.set(node.id, { x: node.x, y: node.y, vx: node.vx, vy: node.vy, pinned: node.pinned });
 }
 
-function stopGraphAnimation(): void {
-  if (graphAnimationFrame === undefined) return;
-  window.cancelAnimationFrame(graphAnimationFrame);
-  graphAnimationFrame = undefined;
+function stopGraphAnimation(viewState: GraphViewState): void {
+  if (viewState.animationFrame === undefined) return;
+  window.cancelAnimationFrame(viewState.animationFrame);
+  viewState.animationFrame = undefined;
 }
 
 function nodeRadius(type: string, degree: number, root: boolean): number {
@@ -3044,20 +3048,32 @@ async function openInfiniteGraph(): Promise<void> {
     </div>`;
     const canvas = modal.querySelector<HTMLElement>("#infinite-graph-canvas")!;
     const caption = modal.querySelector<HTMLElement>("#infinite-graph-caption")!;
+    const infiniteGraphViewState: GraphViewState = { positions: new Map<string, GraphPosition>() };
+    const close = () => {
+      stopGraphAnimation(infiniteGraphViewState);
+      modal.remove();
+    };
     const show = (kind: "model" | "persistent") => {
       const frame = kind === "model" ? views.modelFacing : views.persistent;
       if (!frame) {
+        stopGraphAnimation(infiniteGraphViewState);
         canvas.innerHTML = `<p class="message error">That graph view is not available yet.</p>`;
         return;
       }
+      const visibleGraph = interactiveGraphSubset(frame.graph, 180);
+      const subsetNote = visibleGraph.nodes.length < frame.graph.nodes.length ? ` · showing latest ${visibleGraph.nodes.length}` : "";
       caption.textContent = kind === "model"
-        ? `Exactly the bounded GraphFrame supplied on the latest model call · ${frame.graph.nodes.length} nodes / ${frame.graph.edges.length} edges`
-        : `Append-only state · ${frame.graph.nodes.length} nodes / ${frame.graph.edges.length} edges`;
-      renderInfiniteGraphSnapshot(canvas, frame.graph, kind);
+        ? `Latest bounded GraphFrame supplied to the model · ${frame.graph.nodes.length} nodes / ${frame.graph.edges.length} edges${subsetNote}`
+        : `Append-only state · ${frame.graph.nodes.length} nodes / ${frame.graph.edges.length} edges${subsetNote}`;
+      renderGraphComponent(canvas, visibleGraph, infiniteGraphViewState, false);
+      canvas.classList.add("infinite-graph-canvas");
     };
     modal.addEventListener("click", (event) => {
       const target = event.target instanceof Element ? event.target : undefined;
-      if (target === modal || target?.closest("[data-infinite-graph-close]")) modal.remove();
+      if (target === modal || target?.closest("[data-infinite-graph-close]")) {
+        close();
+        return;
+      }
       const view = target?.closest<HTMLButtonElement>("[data-graph-view]")?.dataset.graphView;
       if (view === "model" || view === "persistent") show(view);
     });
@@ -3071,30 +3087,13 @@ async function openInfiniteGraph(): Promise<void> {
   }
 }
 
-function renderInfiniteGraphSnapshot(container: HTMLElement, value: StateGraph, kind: "model" | "persistent"): void {
-  const limit = kind === "model" ? 420 : 500;
+function interactiveGraphSubset(value: StateGraph, limit: number): StateGraph {
+  if (value.nodes.length <= limit) return value;
   const root = value.nodes.find((node) => node.id === "system_root");
   const recent = value.nodes.slice(-(limit - (root ? 1 : 0)));
   const nodes = root && !recent.some((node) => node.id === root.id) ? [root, ...recent] : recent;
   const ids = new Set(nodes.map((node) => node.id));
-  const edges = value.edges.filter((edge) => ids.has(edge.from) && ids.has(edge.to)).slice(-1200);
-  const width = 1200;
-  const height = 760;
-  const centerX = width / 2;
-  const centerY = height / 2;
-  const positions = new Map(nodes.map((node, index) => {
-    if (node.id === "system_root") return [node.id, { x: centerX, y: centerY }] as const;
-    const angle = index * 2.399963229728653;
-    const radius = 55 + Math.sqrt(index + 1) * 27;
-    return [node.id, { x: centerX + Math.cos(angle) * Math.min(radius, 530), y: centerY + Math.sin(angle) * Math.min(radius, 330) }] as const;
-  }));
-  const colors: Record<string, string> = { system: "#f7c66b", user_input: "#7dd3fc", assistant_output: "#c4b5fd", tool_call: "#fb7185", tool_result: "#86efac", task: "#fbbf24", file: "#60a5fa", symbol: "#a78bfa", decision: "#f472b6", constraint: "#fb7185", test_result: "#34d399" };
-  container.innerHTML = `<div class="infinite-graph-note">Showing ${nodes.length.toLocaleString()} of ${value.nodes.length.toLocaleString()} nodes and ${edges.length.toLocaleString()} connecting edges. Hover a node for its full text.</div>
-    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${kind === "model" ? "Latest model-facing StateWeave projection" : "Persistent StateWeave graph"}">
-      <rect width="${width}" height="${height}" rx="20" fill="#07111f"></rect>
-      ${edges.map((edge) => { const from = positions.get(edge.from); const to = positions.get(edge.to); return from && to ? `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" stroke="#64748b" stroke-opacity="0.28" stroke-width="1"/>` : ""; }).join("")}
-      ${nodes.map((node) => { const point = positions.get(node.id)!; const radius = node.id === "system_root" ? 10 : 4.5; return `<g><title>${escapeHtml(`${node.id} [${node.type}] ${node.text}`)}</title><circle cx="${point.x}" cy="${point.y}" r="${radius}" fill="${colors[node.type] ?? "#94a3b8"}" stroke="#e2e8f0" stroke-opacity="0.45"/></g>`; }).join("")}
-    </svg>`;
+  return { nodes, edges: value.edges.filter((edge) => ids.has(edge.from) && ids.has(edge.to)).slice(-1200) };
 }
 
 function renderInfiniteState(state: InfiniteStateView): void {

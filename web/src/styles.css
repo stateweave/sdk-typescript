@@ -3203,6 +3203,7 @@ label {
 .infinite-graph-panel .artifact-modal-toolbar > div:first-child { display: grid; gap: 3px; }
 .infinite-graph-panel .artifact-modal-toolbar small { color: var(--muted); }
 .infinite-graph-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.infinite-graph-canvas { min-height: 0; overflow: auto; padding: 12px; background: #07111f; }
-.infinite-graph-canvas svg { display: block; width: 100%; min-width: 760px; height: auto; border-radius: 18px; }
-.infinite-graph-note { color: #cbd5e1; padding: 0 4px 10px; }
+.infinite-graph-canvas { flex: 1; min-height: 0; border: 0; border-radius: 0; }
+.infinite-graph-canvas .graph-svg { min-height: 0; }
+.infinite-graph-canvas .graph-selected-node { bottom: 10px; }
+.infinite-graph-canvas .graph-node-list { bottom: 44px; }
