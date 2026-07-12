@@ -13,7 +13,7 @@ import { FullStackAppRuntime, inspectFrontendCoherence, relayDeskSeedStyles } fr
 
 const MAX_TURNS_KEPT = 80;
 const MAX_SERIES_KEPT = 5000;
-const MAX_AGENT_ITERATIONS = 30;
+const MAX_AGENT_ITERATIONS = 300;
 const MAX_TURN_RETRIES = 2;
 const NAIVE_COMPACTION_THRESHOLD = 250_000;
 const NAIVE_RETAIN_MESSAGES = 6;
