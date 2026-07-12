@@ -705,7 +705,7 @@ function taskForTurn(turn: number, seed: number): HarnessTask {
       const releaseNotes = await textFile(root, releasePath);
       return scoreChecks([
         ["release notes exist", Boolean(releaseNotes)],
-        ["backend and frontend documented", /backend/i.test(releaseNotes) && /frontend/i.test(releaseNotes)],
+        ["backend and frontend documented", releaseNotesDocumentBackendAndFrontend(releaseNotes, entity)],
         ["migration and compatibility documented", /migration/i.test(releaseNotes) && /compatib/i.test(releaseNotes)],
         ["checks documented", /test|check|smoke/i.test(releaseNotes)],
         ["running app healthy", await appHealthy(root)],
@@ -762,6 +762,14 @@ function scoreChecks(checks: Array<[string, boolean]>, options: { critical?: str
     details: failed,
     checks: checks.map(([label, checkPassed]) => ({ label, passed: checkPassed }))
   };
+}
+
+export function releaseNotesDocumentBackendAndFrontend(releaseNotes: string, entity: string): boolean {
+  const backendDocumented = /\bbackend\b/i.test(releaseNotes)
+    || new RegExp(`/api/${escapeRegExp(entity)}(?:[/?]|\\b)`, "i").test(releaseNotes);
+  const frontendDocumented = /\bfrontend\b/i.test(releaseNotes)
+    || new RegExp(`(?:form|search|list|summary)[^\\n]{0,120}${escapeRegExp(entity)}|${escapeRegExp(entity)}[^\\n]{0,120}(?:form|search|list|summary)`, "i").test(releaseNotes);
+  return backendDocumented && frontendDocumented;
 }
 
 async function runtimeAcceptance(task: HarnessTask, root: string): Promise<{ ok: boolean; details?: string[] }> {

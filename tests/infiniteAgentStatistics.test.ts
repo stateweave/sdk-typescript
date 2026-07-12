@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analyzeBlocks, type InfiniteAgentBlock } from "../src/evals/infiniteAgentHarness.js";
+import { analyzeBlocks, releaseNotesDocumentBackendAndFrontend, type InfiniteAgentBlock } from "../src/evals/infiniteAgentHarness.js";
 
 function block(block: number, difference: number): InfiniteAgentBlock {
   const nativeQuality = 0.5;
@@ -30,5 +30,11 @@ describe("Infinite Agent preregistered analysis", () => {
   it("does not report evidence before two independent blocks", () => {
     expect(analyzeBlocks([], 1)).toBeUndefined();
     expect(analyzeBlocks([block(1, 0.1)], 1)).toBeUndefined();
+  });
+
+  it("recognizes release notes that document backend APIs without requiring a backend heading", () => {
+    const notes = "# R002\n\n- POST /api/comments creates comments.\n- GET /api/comments lists comments.\n\n### Frontend\nAccessible comments form, search, summary, and list.";
+    expect(releaseNotesDocumentBackendAndFrontend(notes, "comments")).toBe(true);
+    expect(releaseNotesDocumentBackendAndFrontend("### Frontend\nComments form only.", "comments")).toBe(false);
   });
 });

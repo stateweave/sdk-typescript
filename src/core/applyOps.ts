@@ -156,7 +156,16 @@ function addVersionedFileState(graph: StateGraph, resultId: string, result: unkn
 
 function toolResultSummary(tool: string, result: unknown, ok: boolean): string {
   if (!ok) {
-    const error = result && typeof result === "object" && typeof (result as Record<string, unknown>).error === "string" ? (result as Record<string, unknown>).error as string : "unknown error";
+    const record = result && typeof result === "object" ? result as Record<string, unknown> : undefined;
+    const acceptance = record?.acceptance && typeof record.acceptance === "object" ? record.acceptance as Record<string, unknown> : undefined;
+    const acceptanceDetails = Array.isArray(acceptance?.details)
+      ? acceptance.details.filter((detail): detail is string => typeof detail === "string").join("; ")
+      : undefined;
+    const error = typeof record?.error === "string"
+      ? record.error
+      : acceptanceDetails
+        ? `acceptance criteria not met: ${acceptanceDetails}`
+        : "unknown error";
     return `${tool} failed: ${error.slice(0, 500)}`;
   }
   if (!result || typeof result !== "object") return `${tool} succeeded`;

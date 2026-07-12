@@ -113,6 +113,21 @@ it("links multiple final artifact refs from the assistant output", () => {
   expect(next.graph.edges).toContainEqual(expect.objectContaining({ from: "assistant_output_1", to: "tetris", type: "creates" }));
 });
 
+it("surfaces structured acceptance failures in tool evidence", () => {
+  const frame = createInitialGraphFrame({ objective: "Release comments", input: "Release R002", availableActions: [] });
+  const graph = addToolResult(frame.graph, {
+    tool: "app_control",
+    result: { ok: false, acceptance: { ok: false, details: ["backend and frontend documented"] } },
+    step: 1,
+    ok: false
+  });
+  expect(graph.nodes).toContainEqual(expect.objectContaining({
+    type: "tool_result",
+    text: "app_control failed: acceptance criteria not met: backend and frontend documented",
+    status: "rejected"
+  }));
+});
+
 it("adds deterministic tool evidence and versions canonical file state", () => {
   const frame = createInitialGraphFrame({ objective: "Fix login", input: "Login fails", availableActions: [] });
   let graph = addToolResult(frame.graph, { tool: "read_file", result: { file_path: "config.json", content_hash: "aaaaaaaaaaaaaaaa" }, step: 1 });
