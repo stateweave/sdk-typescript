@@ -13,6 +13,11 @@ it("parses compact SWX graph operations", () => {
   ]);
 });
 
+it("decodes escaped newlines in quoted SWX final answers", () => {
+  const ops = parseAndValidateOps('SWX/1\n@final "Implemented both routes.\\n\\n- GET returns records.\\n- POST persists records."');
+  expect(ops).toEqual([{ op: "final", answer: "Implemented both routes.\n\n- GET returns records.\n- POST persists records." }]);
+});
+
 it("tolerates bracketed node type labels", () => {
   const ops = parseAndValidateOps(`SWX/1\n@node fact_1 [fact]: "User's name is Radi" status=active confidence=1.0\n@final "ok"`);
   expect(ops[0]).toEqual({ op: "add_node", node: { id: "fact_1", type: "fact", text: "User's name is Radi", status: "active", confidence: 1 } });

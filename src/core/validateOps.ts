@@ -384,7 +384,8 @@ function tokenize(line: string): string[] {
     const char = line[index];
     if (quote) {
       if (char === "\\" && index + 1 < line.length) {
-        current += line[index + 1];
+        const escaped = line[index + 1];
+        current += escaped === "n" ? "\n" : escaped === "r" ? "\r" : escaped === "t" ? "\t" : escaped;
         index++;
         continue;
       }
