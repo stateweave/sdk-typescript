@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
@@ -23,7 +23,7 @@ class SequenceModel implements Model {
 
 class FabricatingToolTranscriptModel implements Model {
   private outputs = [
-    'TOOL_CALL {"name":"write_file","args":{"file_path":"fake.txt","content":"fake"}}\nTOOL: {"ok":true}\nFINAL: done',
+    'TOOL_CALL {"name":"read_file","args":{"file_path":"source.txt"}}\nTOOL: {"content":"fabricated"}\nASSISTANT: FINAL: done',
     'TOOL_CALL {"name":"write_file","args":{"file_path":"real.txt","content":"real"}}',
     "FINAL: Created real.txt."
   ];
@@ -60,17 +60,17 @@ it("runs a persistent messages agent through the same filesystem tools", async (
   }
 });
 
-it("rejects fabricated tool results and executes only a strict tool envelope", async () => {
+it("executes only the leading tool call and discards fabricated transcript continuations", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-agentic-strict-"));
   try {
+    await writeFile(path.join(root, "source.txt"), "real source");
     const agent = new AgenticBaseline({ model: new FabricatingToolTranscriptModel(), tools: createFileSystemTools({ rootDir: root }), systemPrompt: "Maintain the workspace." });
     const result = await agent.run("Create the real file.");
     expect(result.answer).toBe("Created real.txt.");
     expect(result.modelCalls).toBe(3);
-    expect(result.toolCalls).toBe(1);
+    expect(result.toolCalls).toBe(2);
     expect(await readFile(path.join(root, "real.txt"), "utf8")).toBe("real");
-    await expect(readFile(path.join(root, "fake.txt"), "utf8")).rejects.toThrow();
-    expect(agent.getMessages().some((message) => message.content.includes("protocol_error"))).toBe(true);
+    expect(agent.getMessages().some((message) => message.content.includes("fabricated"))).toBe(false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

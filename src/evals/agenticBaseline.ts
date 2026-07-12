@@ -77,6 +77,10 @@ export class AgenticBaseline {
         return { answer, contextTokens, totalInputTokens, outputTokens, tokenCountSource, modelCalls, toolCalls, latencyMs: Date.now() - startedAt, compactions };
       }
 
+      // Some providers continue by fabricating TOOL/ASSISTANT transcript lines. Execute
+      // only the first requested action and retain a canonical envelope, never the
+      // fabricated results or later calls.
+      this.messages[this.messages.length - 1] = { role: "assistant", content: `TOOL_CALL ${JSON.stringify({ name: call.name, args: call.args })}` };
       const tool = this.tools.get(call.name);
       let result: unknown;
       if (!tool) result = { error: `Unknown tool: ${call.name}`, availableTools: [...this.tools.keys()] };
@@ -164,7 +168,7 @@ function parseToolCall(text: string): { name: string; args: unknown } | undefine
   const start = envelope[0].length;
   if (text[start] !== "{") return undefined;
   const json = balancedJsonObject(text, start);
-  if (!json || text.slice(start + json.length).trim()) return undefined;
+  if (!json) return undefined;
   try {
     const parsed = JSON.parse(json) as { name?: unknown; args?: unknown };
     if (typeof parsed.name !== "string" || !parsed.args || typeof parsed.args !== "object" || Array.isArray(parsed.args)) return undefined;
