@@ -57,9 +57,19 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
   let inspectionSucceeded = false;
   let verificationSucceeded = false;
   let checkSucceeded = false;
+  let restartSucceeded = false;
+  let smokeSucceeded = false;
+  let toolActivitySucceeded = false;
   const mutatedPaths = new Set<string>();
-  const mutationRequested = hasMutationIntent(`${task.objective}\n${task.input}`);
-  const verificationRequested = hasVerificationIntent(`${task.objective}\n${task.input}`);
+  const inspectedPaths = new Set<string>();
+  const taskText = `${task.objective}\n${task.input}`;
+  const mutationRequested = hasMutationIntent(taskText);
+  const verificationRequested = hasVerificationIntent(taskText);
+  const checkRequested = hasCheckIntent(taskText);
+  const restartRequested = hasRestartIntent(taskText);
+  const smokeRequested = hasSmokeIntent(taskText);
+  const configuredSemanticNodeTypes = normalizeSemanticNodeTypes(args.nodeTypes ?? frame.frame.nodeTypes ?? []);
+  const runStartNodeIds = new Set(frame.graph.nodes.map((node) => node.id));
   const toolInfo = [...tools.values()].map((tool) => ({ name: tool.name, description: tool.description }));
 
   yield { type: "metadata", metadata: runMetadata(runId, toolInfo, startedAt, maxIterations, trace, retryCount, "running") };
@@ -88,8 +98,24 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
       parsedOps = parseAndValidateOps(rawModelOutput);
       if (hasWorkers(parsedOps) && parsedOps.some((op) => op.op === "final")) throw new Error("GraphOps cannot include @worker and @final in the same transaction; spawn workers first, then synthesize a final answer after worker results merge.");
       validateToolTransaction(parsedOps);
-      validateFinalEvidence(parsedOps, { mutationRequested, mutationSucceeded, inspectionSucceeded, verificationRequested, verificationSucceeded, checkSucceeded, mutatedPaths });
+      validateEditInspection(parsedOps, inspectedPaths, mutatedPaths);
       const candidateFrame = applyOps(frame, parsedOps);
+      validateSemanticToolPlan(parsedOps, candidateFrame, { configuredSemanticNodeTypes, runStartNodeIds, toolActivitySucceeded });
+      validateFinalEvidence(parsedOps, {
+        mutationRequested,
+        mutationSucceeded,
+        inspectionSucceeded,
+        verificationRequested,
+        verificationSucceeded,
+        checkRequested,
+        checkSucceeded,
+        restartRequested,
+        restartSucceeded,
+        smokeRequested,
+        smokeSucceeded,
+        mutatedPaths
+      });
+      validateSemanticCompletion(parsedOps, candidateFrame, { configuredSemanticNodeTypes, runStartNodeIds, mutationRequested, verificationRequested, toolActivitySucceeded });
       yield { type: "ops", step, ops: parsedOps };
       const toolOutcome = await runToolOps(frame, candidateFrame, parsedOps, tools, step);
       frame = toolOutcome.frame;
@@ -97,10 +123,16 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
         mutationSucceeded = true;
         verificationSucceeded = false;
         checkSucceeded = false;
+        restartSucceeded = false;
+        smokeSucceeded = false;
       }
+      toolActivitySucceeded ||= toolOutcome.toolActivitySucceeded;
       inspectionSucceeded ||= toolOutcome.inspectionSucceeded;
       verificationSucceeded ||= toolOutcome.verificationSucceeded;
       checkSucceeded ||= toolOutcome.checkSucceeded;
+      restartSucceeded ||= toolOutcome.restartSucceeded;
+      smokeSucceeded ||= toolOutcome.smokeSucceeded;
+      if (toolOutcome.inspectedPath) inspectedPaths.add(toolOutcome.inspectedPath);
       if (toolOutcome.mutatedPath) mutatedPaths.add(toolOutcome.mutatedPath);
       if (hasWorkers(parsedOps)) {
         const scheduler = scheduleWorkers(frame, parsedOps, args, step, maxIterations);
@@ -200,43 +232,77 @@ function retryFrameAfterGraphOpsError(frame: GraphFrame, message: string): Graph
   const next = cloneFrame(frame);
   next.frame.lastGraphOpsError = message;
   next.frame.currentFocus = `Previous GraphOps transaction was rejected: ${message}`;
-  next.frame.nextExpectedOutput = "Retry only the rejected operation. StateWeave automatically connects structural graph nodes; do not rebuild prior nodes or edges. Inspect a failed tool_result before trying a corrected tool call.";
+  next.frame.nextExpectedOutput = recoveryInstruction(message);
   return next;
 }
 
-type ToolOutcome = { frame: GraphFrame; mutationSucceeded: boolean; inspectionSucceeded: boolean; verificationSucceeded: boolean; checkSucceeded: boolean; mutatedPath?: string };
+type ToolOutcome = {
+  frame: GraphFrame;
+  toolActivitySucceeded: boolean;
+  mutationSucceeded: boolean;
+  inspectionSucceeded: boolean;
+  verificationSucceeded: boolean;
+  checkSucceeded: boolean;
+  restartSucceeded: boolean;
+  smokeSucceeded: boolean;
+  inspectedPath?: string;
+  mutatedPath?: string;
+};
+
+const emptyToolOutcome = (frame: GraphFrame): ToolOutcome => ({
+  frame,
+  toolActivitySucceeded: false,
+  mutationSucceeded: false,
+  inspectionSucceeded: false,
+  verificationSucceeded: false,
+  checkSucceeded: false,
+  restartSucceeded: false,
+  smokeSucceeded: false
+});
 
 async function runToolOps(originalFrame: GraphFrame, candidateFrame: GraphFrame, ops: GraphOp[], tools: Map<string, Tool>, step: number): Promise<ToolOutcome> {
   const op = ops.find((item): item is Extract<GraphOp, { op: "call_tool" }> => item.op === "call_tool");
-  if (!op) return { frame: candidateFrame, mutationSucceeded: false, inspectionSucceeded: false, verificationSucceeded: false, checkSucceeded: false };
+  if (!op) return emptyToolOutcome(candidateFrame);
   const tool = tools.get(op.tool);
   if (!tool) throw new Error(`Unknown tool: ${op.tool}`);
   const parsedArgs = tool.schema.parse(op.args);
   try {
     const result = await tool.execute(parsedArgs);
-    const next = { ...candidateFrame, graph: addToolResult(candidateFrame.graph, { tool: op.tool, result, step, ok: true }) };
+    if (!toolExecutionSucceeded(op.tool, result)) return failedToolOutcome(originalFrame, op, result, step, toolFailureMessage(op.tool, result));
+    const taskAnchorId = semanticTaskAnchorId(candidateFrame);
+    const next = { ...candidateFrame, graph: addToolResult(candidateFrame.graph, { tool: op.tool, result, step, ok: true, anchorId: taskAnchorId }) };
     next.frame.currentFocus = `The ${op.tool} operation succeeded. Inspect its typed tool_result before deciding whether to verify or finalize.`;
     next.frame.nextExpectedOutput = isMutatingTool(op.tool)
-      ? "Verify the mutation when requested, then return a factual final answer supported by tool evidence."
-      : "Use this observation to choose one next operation or return a factual final answer.";
+      ? "Verify the mutation with the requested check/restart/smoke action, record the resolved test_result, then return a factual final answer."
+      : "Use this observation as ground truth, update the semantic task record, and choose one next operation or a supported final answer.";
+    const appAction = op.tool === "app_control" && typeof op.args.action === "string" ? op.args.action : undefined;
+    const path = toolPath(op.args);
     return {
       frame: next,
+      toolActivitySucceeded: true,
       mutationSucceeded: isMutatingTool(op.tool),
       inspectionSucceeded: op.tool === "read_file",
-      verificationSucceeded: op.tool === "read_file" || (op.tool === "bash_command" && bashSucceeded(result)) || (op.tool === "app_control" && appControlSucceeded(result)),
-      checkSucceeded: (op.tool === "bash_command" && bashSucceeded(result)) || (op.tool === "app_control" && appControlSucceeded(result)),
-      ...(isMutatingTool(op.tool) && toolPath(op.args) ? { mutatedPath: toolPath(op.args) } : {})
+      verificationSucceeded: op.tool === "read_file" || op.tool === "bash_command" || op.tool === "app_control",
+      checkSucceeded: op.tool === "bash_command" || (op.tool === "app_control" && appAction === "check"),
+      restartSucceeded: op.tool === "app_control" && appAction === "restart",
+      smokeSucceeded: op.tool === "app_control" && (appAction === "smoke" || appAction === "restart"),
+      ...(op.tool === "read_file" && path ? { inspectedPath: path } : {}),
+      ...(isMutatingTool(op.tool) && path ? { mutatedPath: path } : {})
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const result = { ok: false, error: message, tool: op.tool, args: safeToolArgs(op.args) };
-    const next = cloneFrame(originalFrame);
-    next.graph = addToolResult(next.graph, { tool: op.tool, result, step, ok: false });
-    next.frame.lastGraphOpsError = `Tool ${op.tool} failed: ${message}`;
-    next.frame.currentFocus = `The ${op.tool} operation failed without committing its proposed graph mutations. Use the failure result and current file evidence to correct the call.`;
-    next.frame.nextExpectedOutput = "Do not claim success. Re-read stale files when needed, then retry one corrected tool operation.";
-    return { frame: next, mutationSucceeded: false, inspectionSucceeded: false, verificationSucceeded: false, checkSucceeded: false };
+    return failedToolOutcome(originalFrame, op, result, step, message);
   }
+}
+
+function failedToolOutcome(originalFrame: GraphFrame, op: Extract<GraphOp, { op: "call_tool" }>, result: unknown, step: number, message: string): ToolOutcome {
+  const next = cloneFrame(originalFrame);
+  next.graph = addToolResult(next.graph, { tool: op.tool, result, step, ok: false, anchorId: semanticTaskAnchorId(originalFrame) });
+  next.frame.lastGraphOpsError = `Tool ${op.tool} failed: ${message}`;
+  next.frame.currentFocus = `The ${op.tool} operation failed without committing its proposed semantic GraphOps. Use the rejected tool_result and current file evidence to correct the call.`;
+  next.frame.nextExpectedOutput = "Do not claim success. Address the concrete failure, re-read stale files when needed, then retry one corrected tool operation.";
+  return emptyToolOutcome(next);
 }
 
 type WorkerPlan = {
@@ -263,10 +329,46 @@ function validateToolTransaction(ops: GraphOp[]): void {
   }
 }
 
-function validateFinalEvidence(
+function validateEditInspection(ops: GraphOp[], inspectedPaths: Set<string>, mutatedPaths: Set<string>): void {
+  const edit = ops.find((op): op is Extract<GraphOp, { op: "call_tool" }> => op.op === "call_tool" && op.tool === "edit_file");
+  if (!edit) return;
+  const path = toolPath(edit.args);
+  if (path && !inspectedPaths.has(path) && !mutatedPaths.has(path)) {
+    throw new Error(`edit_file requires current evidence for ${path}. Read that file first, then retry the edit with the observed content/hash.`);
+  }
+}
+
+function validateSemanticToolPlan(
   ops: GraphOp[],
-  evidence: { mutationRequested: boolean; mutationSucceeded: boolean; inspectionSucceeded: boolean; verificationRequested: boolean; verificationSucceeded: boolean; checkSucceeded: boolean; mutatedPaths: Set<string> }
+  candidateFrame: GraphFrame,
+  evidence: { configuredSemanticNodeTypes: string[]; runStartNodeIds: Set<string>; toolActivitySucceeded: boolean }
 ): void {
+  if (evidence.toolActivitySucceeded || !evidence.configuredSemanticNodeTypes.length || !ops.some((op) => op.op === "call_tool")) return;
+  const semanticNodes = runSemanticNodes(candidateFrame, evidence.runStartNodeIds);
+  if (!semanticNodes.length) {
+    throw new Error(`The first tool transaction must create an active semantic work node. Prefer one configured type (${evidence.configuredSemanticNodeTypes.join(", ")}); these are suggestions, so a clear custom type is allowed when none fits.`);
+  }
+  if (evidence.configuredSemanticNodeTypes.includes("task") && !semanticNodes.some((node) => node.type === "task" && node.status !== "resolved")) {
+    throw new Error("The configured task type fits this tool-using request. Create one active task node in the first tool transaction; custom node types may supplement it, not replace an applicable suggested type.");
+  }
+}
+
+type FinalEvidence = {
+  mutationRequested: boolean;
+  mutationSucceeded: boolean;
+  inspectionSucceeded: boolean;
+  verificationRequested: boolean;
+  verificationSucceeded: boolean;
+  checkRequested: boolean;
+  checkSucceeded: boolean;
+  restartRequested: boolean;
+  restartSucceeded: boolean;
+  smokeRequested: boolean;
+  smokeSucceeded: boolean;
+  mutatedPaths: Set<string>;
+};
+
+function validateFinalEvidence(ops: GraphOp[], evidence: FinalEvidence): void {
   const final = ops.find((op): op is Extract<GraphOp, { op: "final" }> => op.op === "final");
   if (!final) return;
   if (evidence.mutationRequested && !evidence.mutationSucceeded) {
@@ -276,16 +378,47 @@ function validateFinalEvidence(
     if (!evidence.inspectionSucceeded) {
       throw new Error("outcome=already_satisfied requires successful read_file evidence from this run.");
     }
-    if (evidence.verificationRequested && !evidence.checkSucceeded) {
-      throw new Error("The task requests verification, so outcome=already_satisfied also requires a successful bash_command or app_control check from this run.");
-    }
   }
   const unsupportedPaths = final.outcome === "already_satisfied" ? [] : workspacePaths(final.answer).filter((filePath) => /\b(created|wrote|updated|edited|changed|fixed|implemented|removed|replaced)\b/i.test(final.answer) && !evidence.mutatedPaths.has(filePath));
   if (unsupportedPaths.length) {
     throw new Error(`Final answer claims changes to ${unsupportedPaths.join(", ")}, but this run has no successful mutation evidence for those paths.`);
   }
+  if (evidence.checkRequested && !evidence.checkSucceeded) {
+    throw new Error("The task explicitly requests checks/tests, but no successful bash_command or app_control action=check result exists. Run the check before finalizing.");
+  }
+  if (evidence.restartRequested && !evidence.restartSucceeded) {
+    throw new Error("The task explicitly requests a restart, but no successful app_control action=restart result exists. Restart before finalizing.");
+  }
+  if (evidence.smokeRequested && !evidence.smokeSucceeded) {
+    throw new Error("The task explicitly requests a smoke check, but no successful app_control action=smoke or action=restart result exists. Smoke-check before finalizing.");
+  }
   if (evidence.verificationRequested && evidence.mutationSucceeded && !evidence.verificationSucceeded) {
-    throw new Error("The task explicitly requests verification, but no successful post-mutation read_file or bash_command result exists. Verify before finalizing.");
+    throw new Error("The task explicitly requests verification, but no successful post-mutation read_file, bash_command, or app_control result exists. Verify before finalizing.");
+  }
+}
+
+function validateSemanticCompletion(
+  ops: GraphOp[],
+  candidateFrame: GraphFrame,
+  evidence: { configuredSemanticNodeTypes: string[]; runStartNodeIds: Set<string>; mutationRequested: boolean; verificationRequested: boolean; toolActivitySucceeded: boolean }
+): void {
+  if (!ops.some((op) => op.op === "final") || !evidence.configuredSemanticNodeTypes.length) return;
+  if (!evidence.mutationRequested && !evidence.verificationRequested && !evidence.toolActivitySucceeded) return;
+  const semanticNodes = runSemanticNodes(candidateFrame, evidence.runStartNodeIds);
+  if (!semanticNodes.length) {
+    throw new Error(`A non-trivial StateWeave turn must preserve semantic memory before @final. Create and connect a durable work node, preferring configured types: ${evidence.configuredSemanticNodeTypes.join(", ")}. Custom semantic types remain allowed when none fits.`);
+  }
+  const taskNodes = semanticNodes.filter((node) => node.type === "task");
+  if (evidence.configuredSemanticNodeTypes.includes("task")) {
+    if (!taskNodes.length) throw new Error("This request fits the configured task type. Add a task node connected to the current work before finalizing.");
+    if (!taskNodes.some((node) => node.status === "resolved")) throw new Error("Verification is complete only when the current task node is updated to status=resolved.");
+  }
+  if (evidence.verificationRequested && evidence.configuredSemanticNodeTypes.includes("test_result")) {
+    const testResults = semanticNodes.filter((node) => node.type === "test_result" && node.status === "resolved");
+    if (!testResults.length) throw new Error("Record the successful verification as a resolved test_result node before finalizing.");
+    const linkedToEvidence = testResults.some((node) => linkedNodeTypes(candidateFrame, node.id).has("tool_result"));
+    const linkedToTask = !taskNodes.length || testResults.some((node) => linkedNodeTypes(candidateFrame, node.id).has("task"));
+    if (!linkedToEvidence || !linkedToTask) throw new Error("Connect the resolved test_result to its successful tool_result evidence and to the current task with validates/supports edges before finalizing.");
   }
 }
 
@@ -296,7 +429,20 @@ function hasMutationIntent(text: string): boolean {
 }
 
 function hasVerificationIntent(text: string): boolean {
-  return /\b(verify|verification|run\s+[^.\n]*(?:check|test)|node\s+--check|test(?:s|ing)?|check)\b/i.test(text);
+  return /\b(verify|verification|run\s+[^.\n]*(?:check|test)|node\s+--check|test(?:s|ing)?|check|smoke|restart)\b/i.test(text);
+}
+
+function hasCheckIntent(text: string): boolean {
+  const withoutSmoke = text.replace(/smoke[- ]?(?:check|test)/gi, "");
+  return /\b(?:run|running|execute)[^.\n]*(?:checks?|tests?)\b|\b(?:syntax|project|regression|unit|integration)\s*(?:\/|and\s+)?\s*(?:checks?|tests?)\b|\btests?\b|node\s+--check|app_control\s+action=check/i.test(withoutSmoke);
+}
+
+function hasRestartIntent(text: string): boolean {
+  return /\brestart(?:ed|ing)?\b/i.test(text);
+}
+
+function hasSmokeIntent(text: string): boolean {
+  return /\bsmoke(?:[- ]?(?:check|test))(?:ed|ing)?\b|\bsmoke-check\b/i.test(text);
 }
 
 function isMutatingTool(tool: string): boolean {
@@ -313,6 +459,64 @@ function appControlSucceeded(result: unknown): boolean {
   if (typeof record.ok === "boolean") return record.ok;
   if (typeof record.healthy === "boolean" || typeof record.pageOk === "boolean") return record.healthy === true && record.pageOk === true;
   return record.running === true;
+}
+
+function toolExecutionSucceeded(tool: string, result: unknown): boolean {
+  if (tool === "bash_command") return bashSucceeded(result);
+  if (tool === "app_control") return appControlSucceeded(result);
+  return !(result && typeof result === "object" && (result as Record<string, unknown>).ok === false);
+}
+
+function toolFailureMessage(tool: string, result: unknown): string {
+  if (!result || typeof result !== "object") return `${tool} reported an unsuccessful result.`;
+  const record = result as Record<string, unknown>;
+  if (typeof record.error === "string") return record.error;
+  const frontend = record.frontend;
+  if (frontend && typeof frontend === "object") {
+    const detail = frontend as Record<string, unknown>;
+    const missing = Array.isArray(detail.missingElementIds) ? detail.missingElementIds.join(", ") : "";
+    const unstyled = Array.isArray(detail.unstyledClasses) ? detail.unstyledClasses.join(", ") : "";
+    if (missing || unstyled) return `frontend coherence failed${missing ? `; missing element ids: ${missing}` : ""}${unstyled ? `; unstyled classes: ${unstyled}` : ""}`;
+  }
+  const acceptance = record.acceptance;
+  if (acceptance && typeof acceptance === "object" && Array.isArray((acceptance as Record<string, unknown>).details)) {
+    return `acceptance checks failed: ${((acceptance as Record<string, unknown>).details as unknown[]).map(String).join(", ")}`;
+  }
+  return `${tool} reported an unsuccessful result: ${JSON.stringify(result).slice(0, 1200)}`;
+}
+
+function semanticTaskAnchorId(frame: GraphFrame): string | undefined {
+  const inputId = frame.frame.activeUserInputNodeId ?? frame.frame.latestInputNodeId;
+  if (!inputId) return undefined;
+  return [...frame.graph.nodes].reverse().find((node) => node.type === "task" && node.status !== "rejected" && node.status !== "stale" && frame.graph.edges.some((edge) => (edge.from === inputId && edge.to === node.id) || (edge.to === inputId && edge.from === node.id)))?.id;
+}
+
+function runSemanticNodes(frame: GraphFrame, runStartNodeIds: Set<string>): GraphNode[] {
+  return frame.graph.nodes.filter((node) => !runStartNodeIds.has(node.id) && !isStructuralNodeType(node.type));
+}
+
+function linkedNodeTypes(frame: GraphFrame, nodeId: string): Set<string> {
+  const linkedIds = new Set(frame.graph.edges.flatMap((edge) => edge.from === nodeId ? [edge.to] : edge.to === nodeId ? [edge.from] : []));
+  return new Set(frame.graph.nodes.filter((node) => linkedIds.has(node.id)).map((node) => node.type));
+}
+
+function normalizeSemanticNodeTypes(values: string[]): string[] {
+  return unique(values.map((value) => value.trim()).filter((value) => /^[a-z][a-z0-9_-]{0,63}$/.test(value) && !isStructuralNodeType(value)));
+}
+
+function isStructuralNodeType(type: string): boolean {
+  return type === "system" || type === "user_input" || type === "assistant_output" || type === "tool_call" || type === "tool_result";
+}
+
+function recoveryInstruction(message: string): string {
+  if (/first tool transaction must create|configured task type/i.test(message)) return "Retry the tool transaction with one active task node using a configured semantic type. StateWeave will connect structural nodes automatically; do not duplicate them.";
+  if (/test_result/i.test(message)) return "Add a resolved test_result node, connect the successful tool_result to it and connect it to the current task with validates edges, resolve the task, then return @final.";
+  if (/restart/i.test(message)) return "Call exactly @tool app_control action=restart, inspect the result, then update semantic verification nodes and finalize.";
+  if (/smoke/i.test(message)) return "Call exactly @tool app_control action=smoke (or action=restart when restart is also required), inspect the result, then finalize from evidence.";
+  if (/checks?\/tests?|action=check/i.test(message)) return "Call exactly @tool app_control action=check (or a permitted bash check), inspect the result, then record test_result evidence and finalize.";
+  if (/read that file first|current evidence/i.test(message)) return "Call exactly one read_file for the named path, inspect the returned content/hash, then retry the edit.";
+  if (/verification/i.test(message)) return "Run the requested verification as one tool transaction, inspect its typed tool_result, then resolve the task and finalize.";
+  return "Retry only the rejected operation. Do not rebuild structural nodes. Inspect rejected tool_result evidence before trying a corrected tool call, and never claim unsupported success.";
 }
 
 function toolPath(args: Record<string, unknown>): string | undefined {

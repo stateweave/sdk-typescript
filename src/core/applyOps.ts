@@ -70,7 +70,7 @@ export function applyOps(frame: GraphFrame, ops: GraphOp[]): GraphFrame {
           if (!declaredNodeIds.has(artifactId)) referenceErrors.push(`final artifact ${artifactId} references a missing node`);
         }
         if (artifactIds.some((artifactId) => !declaredNodeIds.has(artifactId))) break;
-        const assistant = addAssistantOutput(next.graph, op.answer, anchor, preNodeIds, artifactIds);
+        const assistant = addAssistantOutput(next.graph, op.answer, semanticCompletionAnchor(next, anchor), preNodeIds, artifactIds);
         next.frame.focusNodeId = assistant.id;
         next.frame.activeUserInputNodeId = userInputIdForNode(next.graph, assistant) ?? next.frame.latestInputNodeId ?? next.frame.activeUserInputNodeId;
         next.frame.currentFocus = `Cortex focus is ${assistant.id}; continue from this answer unless the next user input asks for a fresh context or another focus.`;
@@ -88,9 +88,12 @@ export function applyOps(frame: GraphFrame, ops: GraphOp[]): GraphFrame {
   return next;
 }
 
-export function addToolResult(graph: StateGraph, args: { tool: string; result: unknown; step: number; ok?: boolean }): StateGraph {
+export function addToolResult(graph: StateGraph, args: { tool: string; result: unknown; step: number; ok?: boolean; anchorId?: string }): StateGraph {
   const next = structuredClone(graph);
-  const anchor = latestUserInput(next.nodes) ?? next.nodes.find((node) => node.id === "system_root") ?? next.nodes[0];
+  const anchor = (args.anchorId ? next.nodes.find((node) => node.id === args.anchorId) : undefined)
+    ?? latestUserInput(next.nodes)
+    ?? next.nodes.find((node) => node.id === "system_root")
+    ?? next.nodes[0];
   const callId = uniqueNodeId(next.nodes, `tool_call_${args.step}`);
   const resultId = uniqueNodeId(next.nodes, `tool_result_${args.step}`);
   const createdAt = nowIso();
@@ -175,6 +178,12 @@ function uniqueNodeId(nodes: GraphNode[], base: string): string {
 function activeUserInput(frame: GraphFrame): GraphNode | undefined {
   const id = frame.frame.activeUserInputNodeId;
   return id ? frame.graph.nodes.find((node) => node.id === id && node.type === "user_input") : undefined;
+}
+
+function semanticCompletionAnchor(frame: GraphFrame, fallback: GraphNode | undefined): GraphNode | undefined {
+  const inputId = frame.frame.activeUserInputNodeId ?? frame.frame.latestInputNodeId;
+  const task = [...frame.graph.nodes].reverse().find((node) => node.type === "task" && node.status === "resolved" && Boolean(inputId) && frame.graph.edges.some((edge) => (edge.from === inputId && edge.to === node.id) || (edge.to === inputId && edge.from === node.id)));
+  return task ?? fallback;
 }
 
 function addAssistantOutput(graph: StateGraph, answer: string, anchor: GraphNode | undefined, preNodeIds: Set<string>, artifactIds: string[] = []): GraphNode {
