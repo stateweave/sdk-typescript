@@ -84,6 +84,11 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
     "system_root",
     ...(explicitFocus ? [] : [latestAssistantOutputId(graph)])
   ].filter((id): id is string => typeof id === "string" && byId.has(id)));
+  const latestToolEvidenceIds = graph.nodes
+    .filter((node) => node.type === "tool_call" || node.type === "tool_result")
+    .slice(-2)
+    .map((node) => node.id);
+  const requiredFocusIds = new Set([...centers, ...latestToolEvidenceIds]);
 
   // Positional focus must not traverse the system_root hub: every turn attaches
   // there, so an undirected BFS through it degenerates into the whole history.
@@ -107,7 +112,7 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
     : [];
 
   // Merge positional + retrieved into the final focus set.
-  const focusSet = new Set<string>(["system_root", ...positionalFocus, ...retrievedNodeIds]);
+  const focusSet = new Set<string>(["system_root", ...positionalFocus, ...retrievedNodeIds, ...latestToolEvidenceIds]);
 
   // Relational + sibling context for synthesis/combine. Atomized semantic
   // facts (fact, artifact, decision, ...) carry only their bare value and drop
@@ -182,7 +187,7 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
       .map((id) => byId.get(id))
       .filter((node): node is GraphNode => Boolean(node)),
     retrievedNodeIds,
-    new Set(centers),
+    requiredFocusIds,
     relationalNeighborIds,
     focusNodeCap,
     chronologyMode

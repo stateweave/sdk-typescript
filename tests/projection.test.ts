@@ -73,6 +73,26 @@ it("higher zoom shrinks the focus window", () => {
   expect(wide).toBeLessThanOrEqual(tight);
 });
 
+it("always projects the latest tool call and result even when a large neighborhood exhausts the BFS budget", () => {
+  const frame = createInitialGraphFrame({ objective: "Inspect", input: "Inspect the crowded workspace", availableActions: [] });
+  for (let index = 0; index < 300; index++) {
+    const id = `historical_fact_${index}`;
+    frame.graph.nodes.push({ id, type: "fact", text: `Historical workspace fact ${index}`, status: "active", createdAt: new Date(index).toISOString() });
+    frame.graph.edges.push({ id: `edge_${id}`, from: "user_input_1", to: id, type: "relates_to", createdAt: "" });
+  }
+  frame.graph.nodes.push({ id: "tool_call_latest", type: "tool_call", text: "Called read_file", data: { tool: "read_file" }, status: "resolved", createdAt: new Date(1_000).toISOString() });
+  frame.graph.nodes.push({ id: "tool_result_latest", type: "tool_result", text: "read_file succeeded", data: { result: { content: "LATEST_TOOL_EVIDENCE" }, ok: true }, status: "active", createdAt: new Date(1_001).toISOString() });
+  frame.graph.edges.push({ id: "edge_latest_call", from: "user_input_1", to: "tool_call_latest", type: "relates_to", createdAt: "" });
+  frame.graph.edges.push({ id: "edge_latest_result", from: "tool_call_latest", to: "tool_result_latest", type: "explains", createdAt: "" });
+
+  const projection = projectGraph(frame.graph, { focusNodeId: "user_input_1" });
+  const prompt = serializeGraphFrame(frame);
+
+  expect(projection.focusNodes).toContainEqual(expect.objectContaining({ id: "tool_call_latest" }));
+  expect(projection.focusNodes).toContainEqual(expect.objectContaining({ id: "tool_result_latest" }));
+  expect(prompt).toContain("LATEST_TOOL_EVIDENCE");
+});
+
 it("retrieval pulls keyword-matched nodes into focus", () => {
   let frame = createInitialGraphFrame({ objective: "Test", input: "Remember the telescope slew rate is 7", availableActions: [] });
   frame.graph.nodes.push({ id: "fact_1", type: "fact", text: "The telescope slew rate is 7", status: "active", createdAt: new Date(0).toISOString() });
