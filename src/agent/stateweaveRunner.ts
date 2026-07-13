@@ -10,7 +10,7 @@ import type { Tool } from "../tools/types.js";
 
 export type StateWeaveInput = TaskInput;
 export type StateWeaveRunOptions = { frame?: GraphFrame; inputAlreadyAppended?: boolean; signal?: AbortSignal };
-export type StateWeaveRunnerArgs = { model: Model; tools: Tool[]; maxIterations?: number; systemPrompt?: string; nodeTypes?: string[] };
+export type StateWeaveRunnerArgs = { model: Model; tools: Tool[]; maxIterations?: number; systemPrompt?: string; nodeTypes?: string[]; traceMode?: "full" | "compact" };
 
 export class StateWeaveRunError extends Error {
   trace: TraceStep[];
@@ -148,7 +148,7 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
       if (options?.signal?.aborted) throw options.signal.reason;
       const message = error instanceof Error ? error.message : String(error);
       const frameAfter = frame;
-      trace.push(traceStep({ step, startedAt: stepStartedAt, frameBefore, prompt, streamedTokens, modelMetadata, rawModelOutput, parsedOps, frameAfter, error: message }));
+      trace.push(traceStep({ step, startedAt: stepStartedAt, frameBefore, prompt, streamedTokens, modelMetadata, rawModelOutput, parsedOps, frameAfter, error: message }, args.traceMode));
       const retryable = step < maxIterations;
       yield { type: "error", step, message, retryable };
       if (!retryable) throw new StateWeaveRunError(`StateWeave GraphOps failed after ${step} step(s): ${message}`, trace, runMetadata(runId, toolInfo, startedAt, maxIterations, trace, retryCount, "error"));
@@ -161,7 +161,7 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
     if (final) finalAnswer = final.answer;
 
     const frameAfter = frame;
-    trace.push(traceStep({ step, startedAt: stepStartedAt, frameBefore, prompt, streamedTokens, modelMetadata, rawModelOutput, parsedOps, frameAfter }));
+    trace.push(traceStep({ step, startedAt: stepStartedAt, frameBefore, prompt, streamedTokens, modelMetadata, rawModelOutput, parsedOps, frameAfter }, args.traceMode));
     yield { type: "frame", step, phase: "after", frame: frameAfter };
     if (finalAnswer) break;
   }
@@ -187,23 +187,27 @@ function traceStep(args: {
   parsedOps: GraphOp[];
   frameAfter: GraphFrame;
   error?: string;
-}): TraceStep {
+}, traceMode: "full" | "compact" = "full"): TraceStep {
   const completedAt = new Date();
   return {
     step: args.step,
     startedAt: args.startedAt.toISOString(),
     completedAt: completedAt.toISOString(),
     durationMs: completedAt.getTime() - args.startedAt.getTime(),
-    frameBefore: args.frameBefore,
-    prompt: args.prompt,
+    frameBefore: traceMode === "compact" ? compactTraceFrame(args.frameBefore) : args.frameBefore,
+    prompt: traceMode === "compact" ? "" : args.prompt,
     tokenEstimate: estimateStateWeaveTokens(args.prompt),
-    streamedTokens: args.streamedTokens,
+    streamedTokens: traceMode === "compact" ? [] : args.streamedTokens,
     ...(args.modelMetadata.length ? { modelMetadata: args.modelMetadata } : {}),
     rawModelOutput: args.rawModelOutput,
     parsedOps: args.parsedOps,
-    frameAfter: args.frameAfter,
+    frameAfter: traceMode === "compact" ? compactTraceFrame(args.frameAfter) : args.frameAfter,
     ...(args.error ? { error: args.error } : {})
   };
+}
+
+function compactTraceFrame(frame: GraphFrame): GraphFrame {
+  return { frame: forkFrameMetadataOnly(frame).frame, graph: { nodes: [], edges: [] } };
 }
 
 function runMetadata(
