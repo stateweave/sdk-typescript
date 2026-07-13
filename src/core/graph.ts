@@ -73,7 +73,7 @@ export function createInitialGraphFrame(args: {
 }
 
 export function appendInputToGraphFrame(frame: GraphFrame, args: { objective: string; input: string }): GraphFrame {
-  const next = cloneFrame(frame);
+  const next = forkFrame(frame);
   const createdAt = nowIso();
   const inputId = `user_input_${nextIndex(next.graph.nodes, "user_input_")}`;
 
@@ -92,6 +92,32 @@ export function appendInputToGraphFrame(frame: GraphFrame, args: { objective: st
 
 export function cloneFrame(frame: GraphFrame): GraphFrame {
   return structuredClone(frame);
+}
+
+// Internal copy-on-write forks share immutable nested node data so long traces stay bounded.
+export function forkFrame(frame: GraphFrame): GraphFrame {
+  return { frame: forkFrameMetadata(frame.frame), graph: forkGraph(frame.graph) };
+}
+
+export function forkFrameMetadataOnly(frame: GraphFrame): GraphFrame {
+  return { frame: forkFrameMetadata(frame.frame), graph: frame.graph };
+}
+
+export function forkGraph(graph: StateGraph): StateGraph {
+  return {
+    nodes: graph.nodes.map((node) => ({ ...node })),
+    edges: graph.edges.map((edge) => ({ ...edge }))
+  };
+}
+
+function forkFrameMetadata(frame: GraphFrame["frame"]): GraphFrame["frame"] {
+  return {
+    ...frame,
+    activeConstraints: [...frame.activeConstraints],
+    availableActions: [...frame.availableActions],
+    ...(frame.candidateFocusNodeIds ? { candidateFocusNodeIds: [...frame.candidateFocusNodeIds] } : {}),
+    ...(frame.nodeTypes ? { nodeTypes: [...frame.nodeTypes] } : {})
+  };
 }
 
 function candidateFocusNodeIds(frame: GraphFrame): string[] {

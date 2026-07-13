@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { appendInputToGraphFrame, cloneFrame, createInitialGraphFrame } from "../core/graph.js";
+import { appendInputToGraphFrame, cloneFrame, createInitialGraphFrame, forkFrame } from "../core/graph.js";
 import { normalizeTaskInput } from "../core/input.js";
 import type { AgentResult, GraphEdge, GraphFrame, GraphNode, StateGraph, StateWeaveStreamEvent, TraceStep } from "../core/types.js";
 import type { Model } from "../llm/model.js";
@@ -46,7 +46,7 @@ export class StateWeaveAgent {
     if (options?.frame) return this.runOnce(input, options);
 
     const baseFrame = await this.reserveFrame(input);
-    const result = await this.runOnce(input, { frame: baseFrame, inputAlreadyAppended: true });
+    const result = await this.runOnce(input, { ...options, frame: baseFrame, inputAlreadyAppended: true });
     return this.commitResult(result, baseFrame);
   }
 
@@ -57,7 +57,7 @@ export class StateWeaveAgent {
     }
 
     const baseFrame = await this.reserveFrame(input);
-    for await (const event of this.streamOnce(input, { frame: baseFrame, inputAlreadyAppended: true })) {
+    for await (const event of this.streamOnce(input, { ...options, frame: baseFrame, inputAlreadyAppended: true })) {
       if (event.type !== "final") {
         yield event;
         continue;
@@ -95,7 +95,7 @@ export class StateWeaveAgent {
           });
       next.frame.nodeTypes = normalizeNodeTypes([...this.nodeTypes, ...(next.frame.nodeTypes ?? [])]);
       this.frame = next;
-      return cloneFrame(next);
+      return forkFrame(next);
     });
   }
 
@@ -190,7 +190,7 @@ export class Agent {
 }
 
 function mergeConcurrentFrame(currentFrame: GraphFrame, resultFrame: GraphFrame, baseFrame: GraphFrame): GraphFrame {
-  const next = cloneFrame(currentFrame);
+  const next = forkFrame(currentFrame);
   const baseNodeIds = new Set(baseFrame.graph.nodes.map((node) => node.id));
   const baseEdgeKeys = new Set(baseFrame.graph.edges.map(edgeKey));
   const nodeRenames = new Map<string, string>();

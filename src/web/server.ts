@@ -101,7 +101,8 @@ const agentTools = createDefaultTools({ rootDir: workspaceDir });
 const infiniteAgentHarness = new InfiniteAgentHarness({ rootDir: path.resolve(process.env.STATEWEAVE_INFINITE_AGENT_DIR ?? "/data/infinite-agent"), model });
 const infiniteAgentReady = infiniteAgentHarness.initialize();
 void infiniteAgentReady.then(() => {
-  if (process.env.STATEWEAVE_INFINITE_AGENT_AUTOSTART !== "false") void infiniteAgentHarness.start();
+  const status = infiniteAgentHarness.getState().status;
+  if (process.env.STATEWEAVE_INFINITE_AGENT_AUTOSTART !== "false" && (status === "idle" || status === "running")) void infiniteAgentHarness.start();
 }).catch((error: unknown) => {
   console.error(`Failed to initialize infinite agent harness: ${error instanceof Error ? error.message : String(error)}`);
 });
