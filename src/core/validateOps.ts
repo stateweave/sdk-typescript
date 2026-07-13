@@ -141,7 +141,9 @@ function parseSwx(raw: string): GraphOp[] {
     }
 
     if (command === "@tool") {
-      const tool = tokens[1];
+      const rawTool = tokens[1];
+      if (!rawTool) throw new Error(`Invalid SWX @tool command: ${trimmed}`);
+      const tool = rawTool.startsWith("name=") ? rawTool.slice("name=".length) : rawTool;
       if (!tool) throw new Error(`Invalid SWX @tool command: ${trimmed}`);
       const { args, blockIds } = parseToolArgs(tokens.slice(2), blocks);
       for (const id of blockIds) toolArgBlockIds.add(id);
