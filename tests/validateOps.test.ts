@@ -91,6 +91,12 @@ it("parses @zoom navigation ops", () => {
   expect(ops).toContainEqual({ op: "zoom", level: 3 });
 });
 
+it("accepts name= as a tolerant @tool name form", () => {
+  const ops = parseAndValidateOps(`SWX/1
+@tool name=bash_command command=pwd`);
+  expect(ops).toContainEqual({ op: "call_tool", tool: "bash_command", args: { command: "pwd" } });
+});
+
 it("parses multiline @tool args through block refs without creating artifact ops", () => {
   const ops = parseAndValidateOps(`SWX/1
 @edge system_root follows user_input_1
