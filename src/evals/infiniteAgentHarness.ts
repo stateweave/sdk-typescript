@@ -109,6 +109,7 @@ export type InfiniteAgentProgress = {
   startedAt: string;
   updatedAt: string;
 };
+export type InfiniteTrajectoryEvent = Pick<InfiniteAgentProgress, "turn" | "arm" | "phase" | "iteration" | "detail"> & { at: string };
 export type InfiniteExperimentDesign = {
   version: number;
   seed: number;
@@ -133,6 +134,7 @@ export type InfiniteAgentState = {
   design: InfiniteExperimentDesign;
   currentTask?: { kind: string; prompt: string; executionOrder?: "stateweave-first" | "native-first" };
   progress?: InfiniteAgentProgress;
+  trajectory?: InfiniteTrajectoryEvent[];
   lastAttemptError?: { turn: number; attempt: number; at: string; error: string };
   turns: InfiniteAgentTurn[];
   series: InfiniteAgentSeriesPoint[];
@@ -340,6 +342,7 @@ export class InfiniteAgentHarness {
     const executionOrder = orderForTurn(turn, this.state.design.seed);
     const firstArm = executionOrder === "stateweave-first" ? "stateweave" : "native";
     this.state.currentTask = { kind: task.kind, prompt: task.prompt, executionOrder };
+    this.state.trajectory = [];
     this.state.message = `Running T${turn}: ${task.kind} · ${executionOrder}`;
     this.setProgress(turn, "harness", { phase: "preparing", detail: `Preparing T${turn} for ${firstArm}-first execution` });
     this.stateweaveApp.setQualityGate(() => runtimeAcceptance(task, this.stateweaveWorkspace));
@@ -505,6 +508,18 @@ export class InfiniteAgentHarness {
       startedAt: sameRun ? previous.startedAt : now,
       updatedAt: now
     };
+    const event: InfiniteTrajectoryEvent = {
+      at: now,
+      turn,
+      arm,
+      phase: this.state.progress.phase,
+      iteration: this.state.progress.iteration,
+      detail: this.state.progress.detail
+    };
+    const last = this.state.trajectory?.at(-1);
+    if (!last || last.arm !== event.arm || last.phase !== event.phase || last.iteration !== event.iteration || last.detail !== event.detail) {
+      this.state.trajectory = [...(this.state.trajectory ?? []), event].slice(-80);
+    }
     this.state.updatedAt = now;
   }
 
