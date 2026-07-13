@@ -8,7 +8,7 @@ import { createModelFromEnv } from "../llm/factory.js";
 import type { Model } from "../llm/model.js";
 import { estimateStateWeaveTokens } from "../llm/tokenizer.js";
 import { createFileSystemTools } from "../tools/fileSystemTools.js";
-import { AgenticBaseline, type AgenticMessage, type AgenticTurnResult } from "./agenticBaseline.js";
+import { AgenticBaseline, type AgenticMessage, type AgenticProgress, type AgenticTurnResult } from "./agenticBaseline.js";
 import { FullStackAppRuntime, inspectFrontendCoherence, relayDeskSeedStyles } from "./fullStackProject.js";
 
 const MAX_TURNS_KEPT = 80;
@@ -97,6 +97,18 @@ export type InfiniteAgentEvidence = {
   signTestPValue: number;
   resamples: number;
 };
+export type InfiniteAgentProgress = {
+  turn: number;
+  arm: "stateweave" | "native" | "harness";
+  phase: "preparing" | "context" | "model" | "tool" | "final" | "retrying" | "verifying" | "saving" | "completed" | "stopping";
+  iteration: number;
+  maxIterations: number;
+  modelCalls: number;
+  toolCalls: number;
+  detail: string;
+  startedAt: string;
+  updatedAt: string;
+};
 export type InfiniteExperimentDesign = {
   version: number;
   seed: number;
@@ -120,6 +132,7 @@ export type InfiniteAgentState = {
   agentModel: string;
   design: InfiniteExperimentDesign;
   currentTask?: { kind: string; prompt: string; executionOrder?: "stateweave-first" | "native-first" };
+  progress?: InfiniteAgentProgress;
   turns: InfiniteAgentTurn[];
   series: InfiniteAgentSeriesPoint[];
   qualitySeries: InfiniteAgentQualityPoint[];
@@ -174,6 +187,8 @@ export class InfiniteAgentHarness {
   private naive?: AgenticBaseline;
   private running = false;
   private runPromise?: Promise<void>;
+  private runAbort?: AbortController;
+  private turnCheckpoint?: { turn: number; frame?: GraphFrame; messages: AgenticMessage[] };
 
   constructor(args: { rootDir: string; model?: Model }) {
     const root = path.resolve(args.rootDir);
@@ -201,7 +216,7 @@ export class InfiniteAgentHarness {
 
   async getGraphView(): Promise<{ persistent: GraphFrame | undefined; modelFacing: GraphFrame | undefined }> {
     return {
-      persistent: structuredClone(this.stateweave?.getFrame()),
+      persistent: this.stateweave?.getFrame(),
       modelFacing: await readJson<GraphFrame>(this.modelFramePath)
     };
   }
@@ -258,10 +273,13 @@ export class InfiniteAgentHarness {
 
   start(): Promise<void> {
     if (this.runPromise) return this.runPromise;
+    const controller = new AbortController();
+    this.runAbort = controller;
     this.running = true;
     this.state.status = "running";
     this.state.startedAt = this.state.turnCount ? this.state.startedAt : new Date().toISOString();
-    this.runPromise = this.runLoop().finally(() => {
+    this.runPromise = this.runLoop(controller.signal).finally(() => {
+      if (this.runAbort === controller) this.runAbort = undefined;
       this.runPromise = undefined;
     });
     return this.runPromise;
@@ -270,24 +288,37 @@ export class InfiniteAgentHarness {
   async stop(): Promise<void> {
     this.running = false;
     this.state.status = "stopped";
-    this.state.message = "Stopped by operator; the current model/tool step may finish before the loop becomes idle.";
-    await this.save();
+    this.state.message = "Stopped by operator; the active provider call was cancelled.";
+    this.setProgress(this.state.turnCount + 1, "harness", { phase: "stopping", detail: "Stopping the active paired turn" });
+    const activeRun = this.runPromise;
+    this.runAbort?.abort(new DOMException("Infinite agent stopped by operator.", "AbortError"));
+    if (activeRun) await activeRun.catch(() => undefined);
+    else await this.save();
   }
 
-  private async runLoop(): Promise<void> {
+  private async runLoop(signal: AbortSignal): Promise<void> {
     if (!this.stateweave || !this.naive) throw new Error("InfiniteAgentHarness.initialize() must run before start().");
     let turn = this.state.turnCount + 1;
     let attempts = 0;
     while (this.running) {
       try {
-        await this.runTurn(turn);
+        await this.runTurn(turn, signal);
         attempts = 0;
         turn = this.state.turnCount + 1;
       } catch (error) {
+        this.restoreTurnCheckpoint(turn);
+        if (signal.aborted || !this.running) {
+          this.running = false;
+          this.state.status = "stopped";
+          this.state.message = "Stopped by operator; the active paired turn was not scored.";
+          await this.save();
+          break;
+        }
         attempts += 1;
         const reason = error instanceof Error ? error.message : String(error);
         if (attempts <= MAX_TURN_RETRIES) {
           this.state.message = `T${turn} failed (attempt ${attempts} of ${MAX_TURN_RETRIES + 1}); retrying the same turn. Last error: ${reason}`;
+          this.setProgress(turn, "harness", { phase: "retrying", detail: this.state.message });
           await this.save();
           continue;
         }
@@ -299,36 +330,58 @@ export class InfiniteAgentHarness {
     }
   }
 
-  private async runTurn(turn: number): Promise<void> {
+  private async runTurn(turn: number, signal: AbortSignal): Promise<void> {
     if (!this.stateweave || !this.naive) return;
+    signal.throwIfAborted();
+    this.turnCheckpoint = { turn, frame: this.stateweave.getFrame(), messages: this.naive.getMessages() };
     const task = taskForTurn(turn, this.state.design.seed);
     const executionOrder = orderForTurn(turn, this.state.design.seed);
+    const firstArm = executionOrder === "stateweave-first" ? "stateweave" : "native";
     this.state.currentTask = { kind: task.kind, prompt: task.prompt, executionOrder };
     this.state.message = `Running T${turn}: ${task.kind} · ${executionOrder}`;
+    this.setProgress(turn, "harness", { phase: "preparing", detail: `Preparing T${turn} for ${firstArm}-first execution` });
     this.stateweaveApp.setQualityGate(() => runtimeAcceptance(task, this.stateweaveWorkspace));
     this.nativeApp.setQualityGate(() => runtimeAcceptance(task, this.naiveWorkspace));
     await Promise.all([task.prepare(this.stateweaveWorkspace), task.prepare(this.naiveWorkspace)]);
+    signal.throwIfAborted();
     await this.save();
 
+    const heartbeat = setInterval(() => {
+      if (!signal.aborted) this.touchProgress();
+    }, 5_000);
+    heartbeat.unref();
     let sw: StateWeaveTurnResult;
     let naive: AgenticTurnResult;
-    if (executionOrder === "stateweave-first") {
-      sw = await captureStateWeaveTurn(this.stateweave, task.prompt);
-      if (isAgentError(sw.answer)) throw new Error(`T${turn} was not scored because the StateWeave run failed: ${agentErrorMessage(sw.answer)}`);
-      naive = await captureNaiveTurn(this.naive, task.prompt);
-      if (isAgentError(naive.answer)) throw new Error(`T${turn} was not scored because the native run failed: ${agentErrorMessage(naive.answer)}`);
-    } else {
-      naive = await captureNaiveTurn(this.naive, task.prompt);
-      if (isAgentError(naive.answer)) throw new Error(`T${turn} was not scored because the native run failed: ${agentErrorMessage(naive.answer)}`);
-      sw = await captureStateWeaveTurn(this.stateweave, task.prompt);
-      if (isAgentError(sw.answer)) throw new Error(`T${turn} was not scored because the StateWeave run failed: ${agentErrorMessage(sw.answer)}`);
+    const runStateWeaveArm = () => captureStateWeaveTurn(this.stateweave!, task.prompt, signal, (progress) => {
+      if (!signal.aborted) this.setProgress(turn, "stateweave", progress);
+    });
+    const runNativeArm = () => captureNaiveTurn(this.naive!, task.prompt, signal, (progress) => {
+      if (!signal.aborted) this.setProgress(turn, "native", progress);
+    });
+    try {
+      if (executionOrder === "stateweave-first") {
+        sw = await runStateWeaveArm();
+        if (isAgentError(sw.answer)) throw new Error(`T${turn} was not scored because the StateWeave run failed: ${agentErrorMessage(sw.answer)}`);
+        naive = await runNativeArm();
+        if (isAgentError(naive.answer)) throw new Error(`T${turn} was not scored because the native run failed: ${agentErrorMessage(naive.answer)}`);
+      } else {
+        naive = await runNativeArm();
+        if (isAgentError(naive.answer)) throw new Error(`T${turn} was not scored because the native run failed: ${agentErrorMessage(naive.answer)}`);
+        sw = await runStateWeaveArm();
+        if (isAgentError(sw.answer)) throw new Error(`T${turn} was not scored because the StateWeave run failed: ${agentErrorMessage(sw.answer)}`);
+      }
+    } finally {
+      clearInterval(heartbeat);
     }
+    signal.throwIfAborted();
+    this.setProgress(turn, "harness", { phase: "verifying", detail: `Running deterministic checks for T${turn}` });
     const modelFacing = sw.result.trace.at(-1)?.frameBefore;
     if (modelFacing) await writeFile(this.modelFramePath, JSON.stringify(modelFacing));
     const [swScore, naiveScore] = await Promise.all([
       task.verify(this.stateweaveWorkspace, sw.answer),
       task.verify(this.naiveWorkspace, naive.answer)
     ]);
+    signal.throwIfAborted();
 
     const frame = this.stateweave.getFrame();
     const clusters = frame ? clusterGraph(frame.graph) : [];
@@ -393,6 +446,7 @@ export class InfiniteAgentHarness {
     }
     this.updateQuality();
     this.updateBlocks(record);
+    this.setProgress(turn, "harness", { phase: "saving", detail: `Archiving T${turn} and persisting both agent states` });
     const alreadyArchived = await exists(this.turnPath(turn));
     await this.archiveTurn(record);
     this.state.turnArchive = {
@@ -411,12 +465,51 @@ export class InfiniteAgentHarness {
     } : undefined;
     this.state.workspace = await workspaceCounts(this.stateweaveWorkspace, this.naiveWorkspace);
     this.state.message = `Completed T${turn}: StateWeave ${swScore.score}, native ${naiveScore.score}.`;
+    this.setProgress(turn, "harness", { phase: "completed", detail: this.state.message, iteration: 0, modelCalls: sw.modelCalls + naive.modelCalls, toolCalls: sw.toolCalls + naive.toolCalls });
     if (turn >= this.state.design.targetTurns) {
       this.running = false;
       this.state.status = "stopped";
       this.state.message = `Preregistered stopping rule reached at T${turn}.`;
     }
     await this.save();
+    this.turnCheckpoint = undefined;
+  }
+
+  private restoreTurnCheckpoint(turn: number): void {
+    if (!this.turnCheckpoint || this.turnCheckpoint.turn !== turn || !this.stateweave || !this.naive) return;
+    this.stateweave.resetFrame(this.turnCheckpoint.frame);
+    this.naive.resetMessages(this.turnCheckpoint.messages);
+    this.turnCheckpoint = undefined;
+  }
+
+  private setProgress(
+    turn: number,
+    arm: InfiniteAgentProgress["arm"],
+    update: Pick<InfiniteAgentProgress, "phase" | "detail"> & Partial<Pick<InfiniteAgentProgress, "iteration" | "maxIterations" | "modelCalls" | "toolCalls">>
+  ): void {
+    const now = new Date().toISOString();
+    const previous = this.state.progress;
+    const sameRun = previous?.turn === turn && previous.arm === arm;
+    this.state.progress = {
+      turn,
+      arm,
+      phase: update.phase,
+      iteration: update.iteration ?? (sameRun ? previous.iteration : 0),
+      maxIterations: update.maxIterations ?? MAX_AGENT_ITERATIONS,
+      modelCalls: update.modelCalls ?? (sameRun ? previous.modelCalls : 0),
+      toolCalls: update.toolCalls ?? (sameRun ? previous.toolCalls : 0),
+      detail: update.detail.replace(/\s+/g, " ").trim().slice(0, 500),
+      startedAt: sameRun ? previous.startedAt : now,
+      updatedAt: now
+    };
+    this.state.updatedAt = now;
+  }
+
+  private touchProgress(): void {
+    if (!this.state.progress) return;
+    const now = new Date().toISOString();
+    this.state.progress.updatedAt = now;
+    this.state.updatedAt = now;
   }
 
   private updateBlocks(record: InfiniteAgentTurn): void {
@@ -474,10 +567,44 @@ export class InfiniteAgentHarness {
   }
 }
 
-async function captureStateWeaveTurn(agent: StateWeaveAgent, prompt: string): Promise<StateWeaveTurnResult> {
+type CaptureProgress = Pick<InfiniteAgentProgress, "phase" | "iteration" | "maxIterations" | "modelCalls" | "toolCalls" | "detail">;
+
+async function captureStateWeaveTurn(
+  agent: StateWeaveAgent,
+  prompt: string,
+  signal: AbortSignal,
+  onProgress: (progress: CaptureProgress) => void
+): Promise<StateWeaveTurnResult> {
   const startedAt = Date.now();
+  let modelCalls = 0;
+  let toolCalls = 0;
   try {
-    const result = await agent.run(prompt);
+    let result: AgentResult | undefined;
+    onProgress({ phase: "context", iteration: 0, maxIterations: MAX_AGENT_ITERATIONS, modelCalls, toolCalls, detail: "Preparing StateWeave graph projection" });
+    for await (const event of agent.stream(prompt, { signal })) {
+      if (event.type === "frame" && event.phase === "before") {
+        modelCalls = Math.max(modelCalls, event.step);
+        onProgress({ phase: "model", iteration: event.step, maxIterations: MAX_AGENT_ITERATIONS, modelCalls, toolCalls, detail: `Waiting for StateWeave model iteration ${event.step}` });
+      } else if (event.type === "ops") {
+        const calls = event.ops.filter((op) => op.op === "call_tool");
+        toolCalls += calls.length;
+        onProgress({
+          phase: calls.length ? "tool" : "context",
+          iteration: event.step,
+          maxIterations: MAX_AGENT_ITERATIONS,
+          modelCalls,
+          toolCalls,
+          detail: calls.length ? `Running StateWeave tool ${calls[0]!.tool}` : `Applying StateWeave graph operations at iteration ${event.step}`
+        });
+      } else if (event.type === "error") {
+        onProgress({ phase: "retrying", iteration: event.step, maxIterations: MAX_AGENT_ITERATIONS, modelCalls, toolCalls, detail: event.message });
+      } else if (event.type === "worker") {
+        onProgress({ phase: "context", iteration: event.step, maxIterations: MAX_AGENT_ITERATIONS, modelCalls, toolCalls, detail: `Graph worker ${event.worker.id}: ${event.phase}` });
+      } else if (event.type === "final") {
+        result = event.result;
+      }
+    }
+    if (!result) throw new Error("StateWeave stream ended without a final result.");
     const usage = traceUsage(result.trace);
     return {
       answer: result.finalAnswer,
@@ -491,12 +618,10 @@ async function captureStateWeaveTurn(agent: StateWeaveAgent, prompt: string): Pr
       result
     };
   } catch (error) {
+    if (signal.aborted) throw signal.reason;
     const answer = `(agent error: ${error instanceof Error ? error.message : String(error)})`;
     const trace = error instanceof StateWeaveRunError ? error.trace : [];
     const usage = traceUsage(trace);
-    // A failed run has still consumed model context and may have completed useful
-    // graph/tool operations. StateWeaveAgent only commits final results, so keep
-    // the last valid partial frame here instead of discarding the whole run.
     const partialFrame = trace.at(-1)?.frameAfter ?? agent.getFrame();
     if (partialFrame) agent.resetFrame(partialFrame);
     const frame = partialFrame ?? agent.getFrame();
@@ -515,10 +640,19 @@ async function captureStateWeaveTurn(agent: StateWeaveAgent, prompt: string): Pr
   }
 }
 
-async function captureNaiveTurn(agent: AgenticBaseline, prompt: string): Promise<AgenticTurnResult> {
+async function captureNaiveTurn(
+  agent: AgenticBaseline,
+  prompt: string,
+  signal: AbortSignal,
+  onProgress: (progress: CaptureProgress) => void
+): Promise<AgenticTurnResult> {
   try {
-    return await agent.run(prompt);
+    return await agent.run(prompt, {
+      signal,
+      onProgress: (progress: AgenticProgress) => onProgress({ ...progress, maxIterations: MAX_AGENT_ITERATIONS })
+    });
   } catch (error) {
+    if (signal.aborted) throw signal.reason;
     return { answer: `(agent error: ${error instanceof Error ? error.message : String(error)})`, contextTokens: 0, totalInputTokens: 0, outputTokens: 0, tokenCountSource: "estimated", modelCalls: 0, toolCalls: 0, latencyMs: 0, compactions: 0 };
   }
 }

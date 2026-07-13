@@ -1,5 +1,5 @@
 import type { EdgeType, GraphFrame, GraphNode, GraphOp, StateGraph } from "./types.js";
-import { nowIso } from "./graph.js";
+import { forkFrame, forkGraph, nowIso } from "./graph.js";
 
 export class GraphOpsValidationError extends Error {
   reasons: string[];
@@ -12,7 +12,7 @@ export class GraphOpsValidationError extends Error {
 }
 
 export function applyOps(frame: GraphFrame, ops: GraphOp[]): GraphFrame {
-  const next: GraphFrame = structuredClone(frame);
+  const next = forkFrame(frame);
   const preNodeIds = new Set(frame.graph.nodes.map((node) => node.id));
   const declaredNodeIds = new Set(preNodeIds);
   const referenceErrors: string[] = [];
@@ -89,7 +89,7 @@ export function applyOps(frame: GraphFrame, ops: GraphOp[]): GraphFrame {
 }
 
 export function addToolResult(graph: StateGraph, args: { tool: string; result: unknown; step: number; ok?: boolean; anchorId?: string }): StateGraph {
-  const next = structuredClone(graph);
+  const next = forkGraph(graph);
   const anchor = (args.anchorId ? next.nodes.find((node) => node.id === args.anchorId) : undefined)
     ?? latestUserInput(next.nodes)
     ?? next.nodes.find((node) => node.id === "system_root")

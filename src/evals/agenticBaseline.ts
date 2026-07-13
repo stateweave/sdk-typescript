@@ -16,6 +16,19 @@ export type AgenticTurnResult = {
   compactions: number;
 };
 
+export type AgenticProgress = {
+  iteration: number;
+  phase: "context" | "model" | "tool" | "final";
+  modelCalls: number;
+  toolCalls: number;
+  detail: string;
+};
+
+export type AgenticRunOptions = {
+  signal?: AbortSignal;
+  onProgress?: (progress: AgenticProgress) => void;
+};
+
 export class AgenticBaseline {
   private readonly model: Model;
   private readonly tools: Map<string, Tool>;
@@ -37,7 +50,11 @@ export class AgenticBaseline {
     return structuredClone(this.messages);
   }
 
-  async run(task: string): Promise<AgenticTurnResult> {
+  resetMessages(messages: AgenticMessage[]): void {
+    this.messages = structuredClone(messages);
+  }
+
+  async run(task: string, options: AgenticRunOptions = {}): Promise<AgenticTurnResult> {
     const startedAt = Date.now();
     let contextTokens = 0;
     let totalInputTokens = 0;
@@ -46,9 +63,16 @@ export class AgenticBaseline {
     let toolCalls = 0;
     let modelCalls = 0;
     let compactions = 0;
+    let repeatedInvalidOutput = "";
+    let repeatedInvalidCount = 0;
+    const progress = (iteration: number, phase: AgenticProgress["phase"], detail: string): void => {
+      options.onProgress?.({ iteration, phase, modelCalls, toolCalls, detail });
+    };
 
+    options.signal?.throwIfAborted();
     this.messages.push({ role: "user", content: task });
-    const initialCompaction = await this.maintainContext();
+    progress(0, "context", "Preparing native transcript context");
+    const initialCompaction = await this.maintainContext(options.signal);
     totalInputTokens += initialCompaction.inputTokens;
     outputTokens += initialCompaction.outputTokens;
     modelCalls += initialCompaction.modelCalls;
@@ -56,8 +80,10 @@ export class AgenticBaseline {
     if (!initialCompaction.providerCounted) tokenCountSource = "estimated";
 
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
+      options.signal?.throwIfAborted();
       const prompt = serializeAgenticMessages(this.messages);
-      const output = await this.model.complete({ prompt, mode: "text", system: "Follow the transcript's SYSTEM tool protocol exactly. Return one TOOL_CALL JSON object or one FINAL response." });
+      progress(iteration, "model", `Waiting for native model iteration ${iteration}`);
+      const output = await this.model.complete({ prompt, mode: "text", system: "Follow the transcript's SYSTEM tool protocol exactly. Return one TOOL_CALL JSON object or one FINAL response.", signal: options.signal });
       modelCalls += 1;
       const estimatedInput = estimateStateWeaveTokens(prompt).estimatedTokens;
       const estimatedOutput = estimateStateWeaveTokens(output.text).estimatedTokens;
@@ -70,19 +96,28 @@ export class AgenticBaseline {
       const call = parseToolCall(output.text);
       if (!call) {
         if (!/^\s*FINAL\s*:/i.test(output.text)) {
+          const invalidOutput = output.text.trim();
+          repeatedInvalidCount = invalidOutput === repeatedInvalidOutput ? repeatedInvalidCount + 1 : 1;
+          repeatedInvalidOutput = invalidOutput;
+          if (repeatedInvalidCount >= 3) throw new Error("Native agent repeated the same invalid TOOL_CALL/final envelope 3 times.");
           this.messages.push({ role: "tool", content: "protocol_error: Planning prose is not a final answer. Continue the task by returning exactly one TOOL_CALL JSON object, or finish only after verified work with exactly FINAL: followed by the factual answer." });
           continue;
         }
         const answer = output.text.replace(/^\s*FINAL\s*:\s*/i, "").trim();
+        progress(iteration, "final", "Native agent produced a final answer");
         return { answer, contextTokens, totalInputTokens, outputTokens, tokenCountSource, modelCalls, toolCalls, latencyMs: Date.now() - startedAt, compactions };
       }
 
+      repeatedInvalidOutput = "";
+      repeatedInvalidCount = 0;
       // Some providers continue by fabricating TOOL/ASSISTANT transcript lines. Execute
       // only the first requested action and retain a canonical envelope, never the
       // fabricated results or later calls.
       this.messages[this.messages.length - 1] = { role: "assistant", content: `TOOL_CALL ${JSON.stringify({ name: call.name, args: call.args })}` };
       const tool = this.tools.get(call.name);
       let result: unknown;
+      progress(iteration, "tool", `Running native tool ${call.name}`);
+      options.signal?.throwIfAborted();
       if (!tool) result = { error: `Unknown tool: ${call.name}`, availableTools: [...this.tools.keys()] };
       else {
         try {
@@ -91,9 +126,11 @@ export class AgenticBaseline {
           result = { error: error instanceof Error ? error.message : String(error) };
         }
       }
+      options.signal?.throwIfAborted();
       toolCalls += 1;
       this.messages.push({ role: "tool", content: `${call.name}: ${JSON.stringify(result)}` });
-      const compaction = await this.maintainContext();
+      progress(iteration, "context", "Updating native transcript context");
+      const compaction = await this.maintainContext(options.signal);
       totalInputTokens += compaction.inputTokens;
       outputTokens += compaction.outputTokens;
       modelCalls += compaction.modelCalls;
@@ -104,7 +141,7 @@ export class AgenticBaseline {
     throw new Error(`Naive agent recursion limit reached after ${this.maxIterations} iterations.`);
   }
 
-  private async maintainContext(): Promise<{ inputTokens: number; outputTokens: number; modelCalls: number; compactions: number; providerCounted: boolean }> {
+  private async maintainContext(signal?: AbortSignal): Promise<{ inputTokens: number; outputTokens: number; modelCalls: number; compactions: number; providerCounted: boolean }> {
     if (!this.compaction) {
       this.truncate();
       return { inputTokens: 0, outputTokens: 0, modelCalls: 0, compactions: 0, providerCounted: true };
@@ -126,7 +163,8 @@ export class AgenticBaseline {
       "",
       serializeAgenticMessages(older)
     ].join("\n");
-    const output = await this.model.complete({ prompt, mode: "text", system: "Produce a faithful compacted transcript summary for another coding agent." });
+    signal?.throwIfAborted();
+    const output = await this.model.complete({ prompt, mode: "text", system: "Produce a faithful compacted transcript summary for another coding agent.", signal });
     const estimatedInput = estimateStateWeaveTokens(prompt).estimatedTokens;
     const estimatedOutput = estimateStateWeaveTokens(output.text).estimatedTokens;
     this.messages = [system, { role: "assistant", content: `COMPACTED TRANSCRIPT SUMMARY:\n${output.text.trim()}` }, ...tail];
@@ -167,7 +205,7 @@ function parseToolCall(text: string): { name: string; args: unknown } | undefine
   if (!envelope) return undefined;
   const start = envelope[0].length;
   if (text[start] !== "{") return undefined;
-  const json = balancedJsonObject(text, start);
+  const json = balancedJsonObject(text, start) ?? repairMissingTrailingQuote(text.slice(start).split(/\r?\n/, 1)[0]!.trim());
   if (!json) return undefined;
   try {
     const parsed = JSON.parse(json) as { name?: unknown; args?: unknown };
@@ -176,6 +214,29 @@ function parseToolCall(text: string): { name: string; args: unknown } | undefine
   } catch {
     return undefined;
   }
+}
+
+function repairMissingTrailingQuote(value: string): string | undefined {
+  const suffix = value.match(/}+$/)?.[0];
+  if (!suffix || countUnescapedQuotes(value) % 2 === 0) return undefined;
+  return `${value.slice(0, -suffix.length)}"${suffix}`;
+}
+
+function countUnescapedQuotes(value: string): number {
+  let quotes = 0;
+  let escaped = false;
+  for (const character of value) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (character === '"') quotes += 1;
+  }
+  return quotes;
 }
 
 function balancedJsonObject(text: string, start: number): string | undefined {

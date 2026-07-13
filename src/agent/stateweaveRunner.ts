@@ -1,5 +1,5 @@
 import { applyOps, addToolResult } from "../core/applyOps.js";
-import { appendInputToGraphFrame, cloneFrame, createInitialGraphFrame, nowIso } from "../core/graph.js";
+import { appendInputToGraphFrame, cloneFrame, createInitialGraphFrame, forkFrame, forkFrameMetadataOnly, nowIso } from "../core/graph.js";
 import { normalizeTaskInput, type TaskInput } from "../core/input.js";
 import { serializeGraphFrame } from "../core/serialize.js";
 import type { AgentResult, GraphEdge, GraphFrame, GraphNode, GraphOp, StateWeaveRunMetadata, StateWeaveStreamEvent, TraceStep, WorkerRunSummary } from "../core/types.js";
@@ -9,7 +9,7 @@ import { estimateStateWeaveTokens } from "../llm/tokenizer.js";
 import type { Tool } from "../tools/types.js";
 
 export type StateWeaveInput = TaskInput;
-export type StateWeaveRunOptions = { frame?: GraphFrame; inputAlreadyAppended?: boolean };
+export type StateWeaveRunOptions = { frame?: GraphFrame; inputAlreadyAppended?: boolean; signal?: AbortSignal };
 export type StateWeaveRunnerArgs = { model: Model; tools: Tool[]; maxIterations?: number; systemPrompt?: string; nodeTypes?: string[] };
 
 export class StateWeaveRunError extends Error {
@@ -72,17 +72,19 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
   const runStartNodeIds = new Set(frame.graph.nodes.map((node) => node.id));
   const toolInfo = [...tools.values()].map((tool) => ({ name: tool.name, description: tool.description }));
 
+  options?.signal?.throwIfAborted();
   yield { type: "metadata", metadata: runMetadata(runId, toolInfo, startedAt, maxIterations, trace, retryCount, "running") };
 
   for (let step = 1; step <= maxIterations; step++) {
+    options?.signal?.throwIfAborted();
     const stepStartedAt = new Date();
-    const frameBefore = cloneFrame(frame);
+    const frameBefore = frame;
     const prompt = serializeGraphFrame(frameBefore);
     const streamedTokens: string[] = [];
     const modelMetadata: Record<string, unknown>[] = [];
 
     yield { type: "frame", step, phase: "before", frame: frameBefore, prompt, tokenEstimate: estimateStateWeaveTokens(prompt) };
-    for await (const event of args.model.stream({ prompt, frame: frameBefore, mode: "graph_ops" })) {
+    for await (const event of args.model.stream({ prompt, frame: frameBefore, mode: "graph_ops", signal: options?.signal })) {
       if (event.type === "metadata") {
         modelMetadata.push(event.metadata);
         yield { type: "model_metadata", step, metadata: event.metadata };
@@ -118,6 +120,7 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
       validateSemanticCompletion(parsedOps, candidateFrame, { configuredSemanticNodeTypes, runStartNodeIds, mutationRequested, verificationRequested, toolActivitySucceeded });
       yield { type: "ops", step, ops: parsedOps };
       const toolOutcome = await runToolOps(frame, candidateFrame, parsedOps, tools, step);
+      options?.signal?.throwIfAborted();
       frame = toolOutcome.frame;
       if (toolOutcome.mutationSucceeded) {
         mutationSucceeded = true;
@@ -135,15 +138,16 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
       if (toolOutcome.inspectedPath) inspectedPaths.add(toolOutcome.inspectedPath);
       if (toolOutcome.mutatedPath) mutatedPaths.add(toolOutcome.mutatedPath);
       if (hasWorkers(parsedOps)) {
-        const scheduler = scheduleWorkers(frame, parsedOps, args, step, maxIterations);
+        const scheduler = scheduleWorkers(frame, parsedOps, args, step, maxIterations, options?.signal);
         frame = scheduler.frame;
         for await (const event of scheduler.events) yield event;
         frame = mergeWorkerExecutions(frame, await scheduler.done);
         yield { type: "worker", step, phase: "merged", worker: mergedWorkersSummary(parsedOps), frame: cloneFrame(frame) };
       }
     } catch (error) {
+      if (options?.signal?.aborted) throw options.signal.reason;
       const message = error instanceof Error ? error.message : String(error);
-      const frameAfter = cloneFrame(frame);
+      const frameAfter = frame;
       trace.push(traceStep({ step, startedAt: stepStartedAt, frameBefore, prompt, streamedTokens, modelMetadata, rawModelOutput, parsedOps, frameAfter, error: message }));
       const retryable = step < maxIterations;
       yield { type: "error", step, message, retryable };
@@ -156,7 +160,7 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
     const final = parsedOps.find((op): op is Extract<GraphOp, { op: "final" }> => op.op === "final");
     if (final) finalAnswer = final.answer;
 
-    const frameAfter = cloneFrame(frame);
+    const frameAfter = frame;
     trace.push(traceStep({ step, startedAt: stepStartedAt, frameBefore, prompt, streamedTokens, modelMetadata, rawModelOutput, parsedOps, frameAfter }));
     yield { type: "frame", step, phase: "after", frame: frameAfter };
     if (finalAnswer) break;
@@ -229,7 +233,7 @@ function runIdForNow(): string {
 }
 
 function retryFrameAfterGraphOpsError(frame: GraphFrame, message: string): GraphFrame {
-  const next = cloneFrame(frame);
+  const next = forkFrameMetadataOnly(frame);
   next.frame.lastGraphOpsError = message;
   next.frame.currentFocus = `Previous GraphOps transaction was rejected: ${message}`;
   next.frame.nextExpectedOutput = recoveryInstruction(message);
@@ -297,7 +301,7 @@ async function runToolOps(originalFrame: GraphFrame, candidateFrame: GraphFrame,
 }
 
 function failedToolOutcome(originalFrame: GraphFrame, op: Extract<GraphOp, { op: "call_tool" }>, result: unknown, step: number, message: string): ToolOutcome {
-  const next = cloneFrame(originalFrame);
+  const next = forkFrameMetadataOnly(originalFrame);
   next.graph = addToolResult(next.graph, { tool: op.tool, result, step, ok: false, anchorId: semanticTaskAnchorId(originalFrame) });
   next.frame.lastGraphOpsError = `Tool ${op.tool} failed: ${message}`;
   next.frame.currentFocus = `The ${op.tool} operation failed without committing its proposed semantic GraphOps. Use the rejected tool_result and current file evidence to correct the call.`;
@@ -562,16 +566,17 @@ function scheduleWorkers(
   ops: GraphOp[],
   args: StateWeaveRunnerArgs,
   step: number,
-  parentMaxIterations: number
+  parentMaxIterations: number,
+  signal?: AbortSignal
 ): { frame: GraphFrame; events: AsyncIterable<StateWeaveStreamEvent>; done: Promise<WorkerExecution[]> } {
   const { frame: preparedFrame, plans } = prepareWorkerPlans(frame, workerOps(ops));
   const queue = new AsyncEventQueue<StateWeaveStreamEvent>();
-  const executions = Promise.all(plans.map((plan) => runWorker(plan, preparedFrame, args, step, parentMaxIterations, queue))).finally(() => queue.close());
+  const executions = Promise.all(plans.map((plan) => runWorker(plan, preparedFrame, args, step, parentMaxIterations, queue, signal))).finally(() => queue.close());
   return { frame: preparedFrame, events: queue, done: executions };
 }
 
 function prepareWorkerPlans(frame: GraphFrame, ops: Extract<GraphOp, { op: "spawn_worker" }>[]): { frame: GraphFrame; plans: WorkerPlan[] } {
-  const next = cloneFrame(frame);
+  const next = forkFrame(frame);
   const plans: WorkerPlan[] = [];
 
   for (const op of ops) {
@@ -611,7 +616,8 @@ async function runWorker(
   args: StateWeaveRunnerArgs,
   parentStep: number,
   parentMaxIterations: number,
-  queue: AsyncEventQueue<StateWeaveStreamEvent>
+  queue: AsyncEventQueue<StateWeaveStreamEvent>,
+  signal?: AbortSignal
 ): Promise<WorkerExecution> {
   const workerFrame = workerFrameFor(baseFrame, plan);
   const summary = workerSummary(plan, "queued");
@@ -623,7 +629,7 @@ async function runWorker(
     for await (const event of streamStateWeave(
       { ...args, maxIterations: plan.maxIterations ?? parentMaxIterations },
       { objective: plan.objective, input: plan.input ?? plan.objective },
-      { frame: workerFrame, inputAlreadyAppended: true }
+      { frame: workerFrame, inputAlreadyAppended: true, signal }
     )) {
       if (event.type === "token") queue.push({ type: "worker", step: parentStep, phase: "token", worker: workerSummary(plan, "running"), token: event.token });
       else if (event.type === "ops") queue.push({ type: "worker", step: parentStep, phase: "ops", worker: workerSummary(plan, "running"), ops: event.ops });
@@ -635,6 +641,7 @@ async function runWorker(
     queue.push({ type: "worker", step: parentStep, phase: "done", worker: workerSummary(plan, "done", { finalAnswer: result.finalAnswer, nodeCount: result.graph.nodes.length, edgeCount: result.graph.edges.length }) });
     return { plan, baseFrame: workerFrame, result };
   } catch (error) {
+    if (signal?.aborted) throw signal.reason;
     const message = error instanceof Error ? error.message : String(error);
     queue.push({ type: "worker", step: parentStep, phase: "error", worker: workerSummary(plan, "error", { error: message }) });
     return { plan, baseFrame: workerFrame, error: message };
@@ -642,7 +649,7 @@ async function runWorker(
 }
 
 function workerFrameFor(baseFrame: GraphFrame, plan: WorkerPlan): GraphFrame {
-  const frame = cloneFrame(baseFrame);
+  const frame = forkFrameMetadataOnly(baseFrame);
   frame.frame.objective = plan.objective;
   frame.frame.currentFocus = `Graph worker ${plan.id}: ${plan.objective}. Create or update nodes connected to ${plan.taskNodeId}; return a compact final summary.`;
   frame.frame.focusNodeId = plan.taskNodeId;
@@ -654,7 +661,7 @@ function workerFrameFor(baseFrame: GraphFrame, plan: WorkerPlan): GraphFrame {
 }
 
 function mergeWorkerExecutions(frame: GraphFrame, executions: WorkerExecution[]): GraphFrame {
-  let next = cloneFrame(frame);
+  let next = forkFrame(frame);
   const resultFocusIds: string[] = [];
 
   for (const execution of executions) {
@@ -680,7 +687,7 @@ function mergeWorkerExecutions(frame: GraphFrame, executions: WorkerExecution[])
 }
 
 function mergeWorkerGraph(currentFrame: GraphFrame, resultFrame: GraphFrame, baseFrame: GraphFrame): GraphFrame {
-  const next = cloneFrame(currentFrame);
+  const next = forkFrame(currentFrame);
   const baseNodeIds = new Set(baseFrame.graph.nodes.map((node) => node.id));
   const baseEdgeKeys = new Set(baseFrame.graph.edges.map(edgeKey));
   const renames = new Map<string, string>();

@@ -292,6 +292,31 @@ it("throws a clear recursion-limit error when maxIterations is exhausted", async
   await expect(runStateWeave({ model: new SequenceModel([output]), tools: [], maxIterations: 1 }, "Keep going forever")).rejects.toThrow(/Recursion limit reached.*maxIterations/);
 });
 
+it("shares the unchanged graph across rejected retries instead of cloning historical payloads", async () => {
+  const frame = createInitialGraphFrame({ objective: "Retry safely", input: "Finish the task", availableActions: [] });
+  frame.graph.nodes[0]!.data = { payload: "x".repeat(200_000) };
+  const model = new SequenceModel([
+    "SWX/1\n@edge malformed",
+    "SWX/1\n@final \"Recovered after the malformed operation.\""
+  ]);
+
+  const result = await runStateWeave({ model, tools: [], maxIterations: 2 }, "Finish the task", { frame });
+
+  expect(result.trace).toHaveLength(2);
+  expect(result.trace[0]!.frameBefore.graph).toBe(result.trace[0]!.frameAfter.graph);
+  expect(result.trace[0]!.frameAfter.graph).toBe(result.trace[1]!.frameBefore.graph);
+  expect(result.finalAnswer).toContain("Recovered");
+});
+
+it("cancels an active provider stream through the run signal", async () => {
+  const controller = new AbortController();
+  const run = runStateWeave({ model: new AbortableModel(), tools: [], maxIterations: 3 }, "Wait forever", { signal: controller.signal });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  controller.abort(new DOMException("stopped", "AbortError"));
+
+  await expect(run).rejects.toMatchObject({ name: "AbortError" });
+});
+
 it("Agent streams final text by default and keeps one graph across user turns", async () => {
   const agent = new Agent({
     model: new SequenceModel([
@@ -383,6 +408,24 @@ class ConcurrentModel implements Model {
     const label = slow ? "slow" : "fast";
     return `SWX/1\n@edge system_root follows ${latest}\n@node ${label}_branch branch_work \"${label} branch\"\n@edge ${latest} creates ${label}_branch\n@final \"${label} done\"`;
   }
+}
+
+class AbortableModel implements Model {
+  async complete(input: ModelInput): Promise<ModelOutput> {
+    await waitForAbort(input.signal);
+    return { text: "SWX/1\n@final \"unreachable\"" };
+  }
+
+  async *stream(input: ModelInput): AsyncIterable<ModelToken> {
+    await waitForAbort(input.signal);
+    yield { type: "token", token: "SWX/1\n@final \"unreachable\"" };
+  }
+}
+
+function waitForAbort(signal: AbortSignal | undefined): Promise<void> {
+  if (!signal) return Promise.reject(new Error("missing abort signal"));
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
 }
 
 class SequenceModel implements Model {

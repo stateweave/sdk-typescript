@@ -2998,6 +2998,7 @@ type InfiniteStateView = {
   agentModel: string;
   design: { version: number; seed: number; targetTurns: number; tasksPerBlock: number; maxIterationsPerAgentTurn?: number; semanticPolicy?: string; qualityPolicy?: string; primaryOutcome: string; executionOrder: string; stoppingRule: string; analysisPlan: string };
   currentTask?: { kind: string; prompt: string; executionOrder?: string };
+  progress?: { turn: number; arm: "stateweave" | "native" | "harness"; phase: string; iteration: number; maxIterations: number; modelCalls: number; toolCalls: number; detail: string; startedAt: string; updatedAt: string };
   turns: InfiniteTurn[];
   series: InfiniteSeriesPoint[];
   qualitySeries: InfiniteQualityPoint[];
@@ -3099,8 +3100,9 @@ function interactiveGraphSubset(value: StateGraph, limit: number): StateGraph {
 function renderInfiniteState(state: InfiniteStateView): void {
   latestInfiniteState = state;
   const running = state.status === "running";
+  const activeTurn = state.progress?.turn ?? state.turnCount;
   if (infiniteLiveBadge) {
-    infiniteLiveBadge.textContent = running ? `turn ${state.turnCount} · running` : (state.status || "idle");
+    infiniteLiveBadge.textContent = running ? `turn ${activeTurn} · ${state.progress?.arm ?? "harness"} ${state.progress?.phase ?? "running"}` : (state.status || "idle");
     infiniteLiveBadge.className = `infinite-live-badge ${running ? "live" : "idle"}`;
   }
 
@@ -3111,7 +3113,8 @@ function renderInfiniteState(state: InfiniteStateView): void {
   const quality = state.qualitySeries.at(-1);
   infiniteMetrics.innerHTML = `
     <div class="infinite-metric"><span class="metric-label">Tasks completed</span><strong>${state.turnCount} · next milestone ${state.nextMilestone}</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Current task</span><strong>${escapeHtml(state.currentTask?.kind ?? "waiting")}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Current task</span><strong>${escapeHtml(state.currentTask?.kind ?? "waiting")}${state.progress ? ` · T${state.progress.turn}` : ""}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Live execution</span><strong>${state.progress ? `${escapeHtml(state.progress.arm)} · ${escapeHtml(state.progress.phase)} · ${state.progress.iteration}/${state.progress.maxIterations}` : "—"}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Graph integrity</span><strong>${state.validTransactions} valid / ${state.invalidTransactions} invalid</strong></div>
     <div class="infinite-metric"><span class="metric-label">Isolated workspaces</span><strong>${state.workspace.stateweaveFiles} SW / ${state.workspace.naiveFiles} naive files</strong></div>
     <div class="infinite-metric sw-metric"><span class="metric-label">SW latest context</span><strong>${swTokens.toLocaleString()} tok</strong></div>
@@ -3461,13 +3464,18 @@ async function pollSwLoop(): Promise<void> {
 }
 
 function renderAgentRuntime(state: InfiniteStateView): void {
-  const heartbeatAgeMs = Date.now() - Date.parse(state.updatedAt);
+  const heartbeatAt = state.progress?.updatedAt ?? state.updatedAt;
+  const heartbeatAgeMs = Date.now() - Date.parse(heartbeatAt);
   const running = state.status === "running";
+  const progress = state.progress;
   swLoopStartButton.disabled = running;
   swLoopStopButton.disabled = !running;
   swLoopStatus.innerHTML = `
     <div class="infinite-metric"><span class="metric-label">Agent status</span><strong>${escapeHtml(state.status)}</strong></div>
-    <div class="infinite-metric"><span class="metric-label">State updated</span><strong>${Number.isFinite(heartbeatAgeMs) ? `${Math.max(0, Math.round(heartbeatAgeMs / 1000))}s ago` : "—"}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Heartbeat</span><strong>${Number.isFinite(heartbeatAgeMs) ? `${Math.max(0, Math.round(heartbeatAgeMs / 1000))}s ago` : "—"}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Active trajectory</span><strong>${progress ? `T${progress.turn} · ${escapeHtml(progress.arm)} · ${escapeHtml(progress.phase)} · iteration ${progress.iteration}/${progress.maxIterations}` : "—"}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Live calls</span><strong>${progress ? `${progress.modelCalls} model / ${progress.toolCalls} tools` : "—"}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Current step</span><strong>${escapeHtml(progress?.detail ?? state.message ?? "Waiting")}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Tools</span><strong>${escapeHtml(state.tools.join(", "))}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Bash security</span><strong>${escapeHtml(state.security.bashPolicy)}</strong></div>`;
 }
