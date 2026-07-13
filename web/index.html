@@ -246,7 +246,7 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
             <div>
               <p class="eyebrow">Long-horizon agent benchmark</p>
               <h2>Infinite agent</h2>
-              <p class="muted-copy">Two isolated engineers evolve the same realistic RelayDesk full-stack product: Node.js API, SQLite database, browser frontend, migrations, tests, and live application runtime. They receive the same ordinary product requests and tools without being told about the comparison. Native summarizes its transcript at 250k tokens; StateWeave keeps an append-only graph and sends a bounded projection.</p>
+              <p class="muted-copy">V5 runs two isolated engineers on byte-identical RelayDesk products with the same model, ordinary requests, tools, 300-step budget, deterministic verifier, and execution order randomized but balanced 4/4 per release block. Both participants are blinded to the experiment, scores, arm identities, and the other run. The graph candidate receives a bounded projection; the matched transcript challenger compacts at 250k tokens and retains the latest 12 messages.</p>
             </div>
             <div id="infinite-live-badge" class="infinite-live-badge">waiting</div>
           </div>
@@ -254,8 +254,8 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
             <button id="sw-loop-start" class="button" type="button">Start agent</button>
             <button id="sw-loop-stop" class="button secondary" type="button" disabled>Stop agent</button>
             <button id="infinite-open-graph" class="button secondary" type="button">Open live graph</button>
-            <a id="infinite-stateweave-app" class="button secondary" href="#" target="_blank" rel="noopener">Open StateWeave app</a>
-            <a id="infinite-native-app" class="button secondary" href="#" target="_blank" rel="noopener">Open native app</a>
+            <a id="infinite-stateweave-app" class="button secondary" href="#" target="_blank" rel="noopener">Open graph candidate app</a>
+            <a id="infinite-native-app" class="button secondary" href="#" target="_blank" rel="noopener">Open challenger app</a>
           </div>
           <div id="sw-loop-status" class="sw-loop-status"></div>
           <div id="infinite-metrics" class="infinite-metrics"></div>
@@ -263,14 +263,14 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
           <div class="infinite-chart-wrap">
             <div class="infinite-chart-header">
               <h3>Context sent on the latest model call</h3>
-              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave adaptive projection <span class="legend-dot baseline"></span>Native transcript · summarize at 250k</div>
+              <div class="infinite-legend"><span class="legend-dot sw"></span>Graph candidate projection <span class="legend-dot baseline"></span>Transcript challenger · compact at 250k</div>
             </div>
             <canvas id="infinite-chart" class="infinite-chart" width="800" height="220"></canvas>
           </div>
           <div class="infinite-chart-wrap">
             <div class="infinite-chart-header">
-              <h3>Quality: cumulative task pass-rate</h3>
-              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave agent <span class="legend-dot baseline"></span>Native transcript agent</div>
+              <h3>Quality: cumulative completion-gated pass rate</h3>
+              <div class="infinite-legend"><span class="legend-dot sw"></span>Graph candidate <span class="legend-dot baseline"></span>Transcript challenger</div>
             </div>
             <canvas id="infinite-quality-chart" class="infinite-chart" width="800" height="220"></canvas>
           </div>
@@ -290,7 +290,7 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
               <div id="infinite-turns" class="infinite-turns"><p class="muted-copy">Waiting for the first task.</p></div>
             </section>
             <section class="infinite-panel">
-              <h3>StateWeave graph map</h3>
+              <h3>Graph-candidate memory map</h3>
               <div id="infinite-clusters" class="infinite-clusters"><p class="muted-copy">No graph topics yet.</p></div>
             </section>
           </div>

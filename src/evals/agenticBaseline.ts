@@ -6,6 +6,9 @@ export type AgenticMessage = { role: "system" | "user" | "assistant" | "tool"; c
 
 export type AgenticTurnResult = {
   answer: string;
+  completed: boolean;
+  failureKind?: "agent" | "provider";
+  error?: string;
   contextTokens: number;
   totalInputTokens: number;
   outputTokens: number;
@@ -35,14 +38,18 @@ export class AgenticBaseline {
   private readonly maxIterations: number;
   private readonly maxContextTokens: number;
   private readonly compaction?: { thresholdTokens: number; retainMessages: number };
+  private readonly providerSystem?: string;
+  private readonly enforceCompletionEvidence: boolean;
   private messages: AgenticMessage[];
 
-  constructor(args: { model: Model; tools: Tool[]; systemPrompt: string; maxIterations?: number; maxContextTokens?: number; compaction?: { thresholdTokens: number; retainMessages: number }; messages?: AgenticMessage[] }) {
+  constructor(args: { model: Model; tools: Tool[]; systemPrompt: string; maxIterations?: number; maxContextTokens?: number; compaction?: { thresholdTokens: number; retainMessages: number }; messages?: AgenticMessage[]; providerSystem?: string; enforceCompletionEvidence?: boolean }) {
     this.model = args.model;
     this.tools = new Map(args.tools.map((tool) => [tool.name, tool]));
     this.maxIterations = args.maxIterations ?? 12;
     this.maxContextTokens = args.maxContextTokens ?? 96_000;
     this.compaction = args.compaction;
+    this.providerSystem = args.providerSystem;
+    this.enforceCompletionEvidence = args.enforceCompletionEvidence ?? false;
     this.messages = args.messages?.length ? structuredClone(args.messages) : [{ role: "system", content: baselineSystemPrompt(args.systemPrompt, args.tools) }];
   }
 
@@ -65,9 +72,26 @@ export class AgenticBaseline {
     let compactions = 0;
     let repeatedInvalidOutput = "";
     let repeatedInvalidCount = 0;
+    let repeatedMissingEvidence = "";
+    let repeatedMissingEvidenceCount = 0;
+    const evidence: CompletionEvidence = { inspected: false, inspectedPaths: new Set(), mutated: false, mutatedPaths: new Set(), mutationBeforeInspection: false, checked: false, restarted: false, smoked: false };
     const progress = (iteration: number, phase: AgenticProgress["phase"], detail: string): void => {
       options.onProgress?.({ iteration, phase, modelCalls, toolCalls, detail });
     };
+    const failedResult = (message: string): AgenticTurnResult => ({
+      answer: `(agent error: ${message})`,
+      completed: false,
+      failureKind: "agent",
+      error: message,
+      contextTokens,
+      totalInputTokens,
+      outputTokens,
+      tokenCountSource,
+      modelCalls,
+      toolCalls,
+      latencyMs: Date.now() - startedAt,
+      compactions
+    });
 
     options.signal?.throwIfAborted();
     this.messages.push({ role: "user", content: task });
@@ -83,7 +107,7 @@ export class AgenticBaseline {
       options.signal?.throwIfAborted();
       const prompt = serializeAgenticMessages(this.messages);
       progress(iteration, "model", `Waiting for native model iteration ${iteration}`);
-      const output = await this.model.complete({ prompt, mode: "text", system: "Follow the transcript's SYSTEM tool protocol exactly. Return one TOOL_CALL JSON object or one FINAL response.", signal: options.signal });
+      const output = await this.model.complete({ prompt, mode: "text", system: providerSystem(this.providerSystem, "Follow the supplied tool protocol exactly. Return one TOOL_CALL JSON object or one FINAL response."), signal: options.signal });
       modelCalls += 1;
       const estimatedInput = estimateStateWeaveTokens(prompt).estimatedTokens;
       const estimatedOutput = estimateStateWeaveTokens(output.text).estimatedTokens;
@@ -101,13 +125,23 @@ export class AgenticBaseline {
           repeatedInvalidOutput = invalidOutput;
           const preview = invalidOutput.replace(/\s+/g, " ").slice(0, 240);
           progress(iteration, "retrying", `Invalid native envelope ${repeatedInvalidCount}/3: ${preview}`);
-          if (repeatedInvalidCount >= 3) throw new Error(`Native agent repeated the same invalid TOOL_CALL/final envelope 3 times: ${preview}`);
+          if (repeatedInvalidCount >= 3) return failedResult(`Transcript agent repeated the same invalid TOOL_CALL/final envelope 3 times: ${preview}`);
           this.messages.push({ role: "tool", content: "protocol_error: Planning prose is not a final answer. Continue the task by returning exactly one TOOL_CALL JSON object, or finish only after verified work with exactly FINAL: followed by the factual answer." });
           continue;
         }
         const answer = output.text.replace(/^\s*FINAL\s*:\s*/i, "").trim();
-        progress(iteration, "final", "Native agent produced a final answer");
-        return { answer, contextTokens, totalInputTokens, outputTokens, tokenCountSource, modelCalls, toolCalls, latencyMs: Date.now() - startedAt, compactions };
+        const missingEvidence = this.enforceCompletionEvidence ? completionEvidenceGaps(task, evidence, answer) : [];
+        if (missingEvidence.length) {
+          const missing = missingEvidence.join(", ");
+          repeatedMissingEvidenceCount = missing === repeatedMissingEvidence ? repeatedMissingEvidenceCount + 1 : 1;
+          repeatedMissingEvidence = missing;
+          progress(iteration, "retrying", `Final blocked by missing evidence: ${missing}`);
+          if (repeatedMissingEvidenceCount >= 3) return failedResult(`Transcript agent repeated an unsupported final 3 times; missing evidence: ${missing}`);
+          this.messages.push({ role: "tool", content: `completion_error: Final is not yet supported by successful tool evidence. Still required: ${missing}. Continue with exactly one TOOL_CALL.` });
+          continue;
+        }
+        progress(iteration, "final", "Transcript agent produced an evidence-backed final answer");
+        return { answer, completed: true, contextTokens, totalInputTokens, outputTokens, tokenCountSource, modelCalls, toolCalls, latencyMs: Date.now() - startedAt, compactions };
       }
 
       repeatedInvalidOutput = "";
@@ -130,6 +164,7 @@ export class AgenticBaseline {
       }
       options.signal?.throwIfAborted();
       toolCalls += 1;
+      recordCompletionEvidence(evidence, call.name, call.args, result);
       this.messages.push({ role: "tool", content: `${call.name}: ${JSON.stringify(result)}` });
       progress(iteration, "context", "Updating native transcript context");
       const compaction = await this.maintainContext(options.signal);
@@ -140,7 +175,7 @@ export class AgenticBaseline {
       if (!compaction.providerCounted) tokenCountSource = "estimated";
     }
 
-    throw new Error(`Naive agent recursion limit reached after ${this.maxIterations} iterations.`);
+    return failedResult(`Transcript agent recursion limit reached after ${this.maxIterations} iterations.`);
   }
 
   private async maintainContext(signal?: AbortSignal): Promise<{ inputTokens: number; outputTokens: number; modelCalls: number; compactions: number; providerCounted: boolean }> {
@@ -166,7 +201,7 @@ export class AgenticBaseline {
       serializeAgenticMessages(older)
     ].join("\n");
     signal?.throwIfAborted();
-    const output = await this.model.complete({ prompt, mode: "text", system: "Produce a faithful compacted transcript summary for another coding agent.", signal });
+    const output = await this.model.complete({ prompt, mode: "text", system: providerSystem(this.providerSystem, "Produce a faithful compacted working-memory summary for the next turn."), signal });
     const estimatedInput = estimateStateWeaveTokens(prompt).estimatedTokens;
     const estimatedOutput = estimateStateWeaveTokens(output.text).estimatedTokens;
     this.messages = [system, { role: "assistant", content: `COMPACTED TRANSCRIPT SUMMARY:\n${output.text.trim()}` }, ...tail];
@@ -190,10 +225,73 @@ export function serializeAgenticMessages(messages: AgenticMessage[]): string {
   return messages.map((message) => `${message.role.toUpperCase()}: ${message.content}`).join("\n\n");
 }
 
+type CompletionEvidence = {
+  inspected: boolean;
+  inspectedPaths: Set<string>;
+  mutated: boolean;
+  mutatedPaths: Set<string>;
+  mutationBeforeInspection: boolean;
+  checked: boolean;
+  restarted: boolean;
+  smoked: boolean;
+};
+
+function recordCompletionEvidence(evidence: CompletionEvidence, toolName: string, args: unknown, result: unknown): void {
+  if (!toolResultSucceeded(result)) return;
+  const toolArgs = args && typeof args === "object" ? args as Record<string, unknown> : {};
+  const filePath = String(toolArgs.file_path ?? toolArgs.path ?? "");
+  if (toolName === "read_file") {
+    evidence.inspected = true;
+    if (filePath) evidence.inspectedPaths.add(filePath);
+  }
+  if (toolName === "write_file" || toolName === "edit_file") {
+    if (toolName === "edit_file" && filePath && !evidence.inspectedPaths.has(filePath) && !evidence.mutatedPaths.has(filePath)) evidence.mutationBeforeInspection = true;
+    evidence.mutated = true;
+    if (filePath) evidence.mutatedPaths.add(filePath);
+    evidence.checked = false;
+    evidence.restarted = false;
+    evidence.smoked = false;
+  }
+  if (toolName === "bash_command" && args && typeof args === "object" && /\bnode\s+--check\b/.test(String((args as Record<string, unknown>).command ?? ""))) evidence.checked = true;
+  if (toolName !== "app_control" || !args || typeof args !== "object") return;
+  const action = (args as Record<string, unknown>).action;
+  if (action === "check") evidence.checked = true;
+  if (action === "restart") {
+    evidence.restarted = true;
+    evidence.smoked = true;
+  }
+  if (action === "smoke") evidence.smoked = true;
+}
+
+function toolResultSucceeded(result: unknown): boolean {
+  if (!result || typeof result !== "object") return true;
+  const record = result as Record<string, unknown>;
+  if (record.error !== undefined || record.ok === false) return false;
+  return typeof record.exitCode !== "number" || record.exitCode === 0;
+}
+
+function completionEvidenceGaps(task: string, evidence: CompletionEvidence, answer: string): string[] {
+  const lower = task.toLowerCase();
+  const alreadySatisfied = /already (?:satisfied|implemented|present|complete)|no changes? (?:were )?(?:needed|required)/i.test(answer);
+  const gaps: string[] = [];
+  if (/\b(?:read|inspect|review)\b/.test(lower) && !evidence.inspected) gaps.push("workspace inspection");
+  if (/\b(?:add|apply|build|fix|harden|implement|update|write)\b/.test(lower) && !evidence.mutated && !alreadySatisfied) gaps.push("a confirmed file mutation or an explicit already-satisfied finding");
+  if (evidence.mutationBeforeInspection) gaps.push("inspection before mutation");
+  if (/\b(?:check|checks|test|tests|syntax)\b/.test(lower) && !evidence.checked) gaps.push("a successful fixed check");
+  if (/\brestart\b/.test(lower) && !evidence.restarted) gaps.push("a successful restart");
+  if (/\bsmoke(?:-test|-check| test| check)?\b/.test(lower) && !evidence.smoked) gaps.push("a successful smoke check");
+  return gaps;
+}
+
+function providerSystem(common: string | undefined, instruction: string): string {
+  return common ?? instruction;
+}
+
 function baselineSystemPrompt(systemPrompt: string, tools: Tool[]): string {
   return [
     systemPrompt,
     "You have a persistent workspace and must use tools to inspect current files before changing them.",
+    "Use the transcript and any compacted working-memory summary deliberately: preserve active tasks, constraints, file paths, implementation decisions, failures, and successful check evidence, while treating current workspace reads as authoritative.",
     "For one tool action, return exactly TOOL_CALL followed by one JSON object: {\"name\":\"tool_name\",\"args\":{...}}.",
     "After a TOOL result, either call another tool or finish with exactly FINAL: followed by a concise human answer.",
     "Never claim a file changed unless a write_file or edit_file result confirms it. Prefer read_file before edit_file. bash_command is read-only and allowlisted.",

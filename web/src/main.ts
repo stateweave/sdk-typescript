@@ -2984,8 +2984,8 @@ function escapeAttribute(value: string): string {
 
 // --- Infinite harness ---
 
-type ProbeScore = { score: "pass" | "partial" | "fail"; passed: number; total: number; details: string[]; checks?: Array<{ label: string; passed: boolean }> };
-type InfiniteTurn = { turn: number; phase: string; taskKind: string; prompt: string; answer: string; baselineAnswer: string; nodeCount: number; edgeCount: number; clusterCount: number; semanticNodeCount?: number; suggestedSemanticNodeCount?: number; promptTokenEstimate: number; baselineTokenEstimate: number; totalInputTokens: number; baselineTotalInputTokens: number; outputTokenCount: number; baselineOutputTokenCount: number; latencyMs: number; baselineLatencyMs: number; modelCalls: number; baselineModelCalls: number; toolCalls: number; baselineToolCalls: number; baselineCompactions?: number; transactionValid: boolean; executionOrder?: "stateweave-first" | "native-first"; block?: number; score: { stateweave: ProbeScore; naive: ProbeScore } };
+type ProbeScore = { score: "pass" | "partial" | "fail"; passed: number; total: number; details: string[]; completed?: boolean; checks?: Array<{ label: string; passed: boolean }> };
+type InfiniteTurn = { turn: number; phase: string; taskKind: string; prompt: string; answer: string; baselineAnswer: string; nodeCount: number; edgeCount: number; clusterCount: number; semanticNodeCount?: number; suggestedSemanticNodeCount?: number; promptTokenEstimate: number; baselineTokenEstimate: number; totalInputTokens: number; baselineTotalInputTokens: number; outputTokenCount: number; baselineOutputTokenCount: number; latencyMs: number; baselineLatencyMs: number; modelCalls: number; baselineModelCalls: number; toolCalls: number; baselineToolCalls: number; baselineCompactions?: number; stateweaveCompleted?: boolean; baselineCompleted?: boolean; stateweaveError?: string; baselineError?: string; transactionValid: boolean; executionOrder?: "stateweave-first" | "native-first"; block?: number; score: { stateweave: ProbeScore; naive: ProbeScore } };
 type InfiniteSeriesPoint = { turn: number; stateweaveTokens: number; baselineTokens: number; stateweaveTotalInputTokens: number; baselineTotalInputTokens: number; stateweaveOutputTokens: number; baselineOutputTokens: number; stateweaveNodes: number; stateweaveClusters: number; stateweaveLatencyMs: number; baselineLatencyMs: number; stateweaveToolCalls: number; baselineToolCalls: number; baselineCompactions?: number };
 type InfiniteQualityPoint = { turn: number; stateweavePassRate: number; naivePassRate: number; stateweaveScored: number; naiveScored: number };
 type InfiniteStateView = {
@@ -2996,11 +2996,12 @@ type InfiniteStateView = {
   startedAt: string;
   updatedAt: string;
   agentModel: string;
-  design: { version: number; seed: number; targetTurns: number; tasksPerBlock: number; maxIterationsPerAgentTurn?: number; semanticPolicy?: string; qualityPolicy?: string; primaryOutcome: string; executionOrder: string; stoppingRule: string; analysisPlan: string };
+  design: { version: number; seed: number; targetTurns: number; tasksPerBlock: number; maxIterationsPerAgentTurn?: number; semanticPolicy?: string; qualityPolicy?: string; primaryOutcome: string; executionOrder: string; stoppingRule: string; analysisPlan: string; protocolId?: string; blindingPolicy?: string; challengerPolicy?: string; failurePolicy?: string; fairnessPolicy?: string };
   currentTask?: { kind: string; prompt: string; executionOrder?: string };
   progress?: { turn: number; arm: "stateweave" | "native" | "harness"; phase: string; iteration: number; maxIterations: number; modelCalls: number; toolCalls: number; detail: string; startedAt: string; updatedAt: string };
   trajectory?: Array<{ at: string; turn: number; arm: "stateweave" | "native" | "harness"; phase: string; iteration: number; detail: string }>;
   lastAttemptError?: { turn: number; attempt: number; at: string; error: string };
+  reliability?: { stateweaveCompleted: number; challengerCompleted: number; stateweaveAgentFailures: number; challengerAgentFailures: number; providerRetries: number };
   turns: InfiniteTurn[];
   series: InfiniteSeriesPoint[];
   qualitySeries: InfiniteQualityPoint[];
@@ -3040,7 +3041,7 @@ async function openInfiniteGraph(): Promise<void> {
     modal.setAttribute("aria-modal", "true");
     modal.innerHTML = `<div class="artifact-modal-panel infinite-graph-panel">
       <div class="artifact-modal-toolbar">
-        <div><strong>Infinite StateWeave graph</strong><small id="infinite-graph-caption"></small></div>
+        <div><strong>Graph-candidate memory</strong><small id="infinite-graph-caption"></small></div>
         <div class="infinite-graph-actions">
           <button class="button secondary small-button" data-graph-view="model">Model-facing projection</button>
           <button class="button secondary small-button" data-graph-view="persistent">Persistent state</button>
@@ -3114,19 +3115,21 @@ function renderInfiniteState(state: InfiniteStateView): void {
   const baselineTokens = lastTurn?.baselineTokenEstimate ?? 0;
   const quality = state.qualitySeries.at(-1);
   infiniteMetrics.innerHTML = `
-    <div class="infinite-metric"><span class="metric-label">Tasks completed</span><strong>${state.turnCount} · next milestone ${state.nextMilestone}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Paired turns scored</span><strong>${state.turnCount} · next milestone ${state.nextMilestone}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Current task</span><strong>${escapeHtml(state.currentTask?.kind ?? "waiting")}${state.progress ? ` · T${state.progress.turn}` : ""}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Live execution</span><strong>${state.progress ? `${escapeHtml(state.progress.arm)} · ${escapeHtml(state.progress.phase)} · ${state.progress.iteration}/${state.progress.maxIterations}` : "—"}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Graph integrity</span><strong>${state.validTransactions} valid / ${state.invalidTransactions} invalid</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Isolated workspaces</span><strong>${state.workspace.stateweaveFiles} SW / ${state.workspace.naiveFiles} naive files</strong></div>
-    <div class="infinite-metric sw-metric"><span class="metric-label">SW latest context</span><strong>${swTokens.toLocaleString()} tok</strong></div>
-    <div class="infinite-metric baseline-metric"><span class="metric-label">Native latest context</span><strong>${baselineTokens.toLocaleString()} tok</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Native compaction</span><strong>${(state.naiveStrategy.thresholdTokens / 1000).toFixed(0)}k → summary + last ${state.naiveStrategy.retainMessages} · ${state.naiveStrategy.totalCompactions} run</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Latest tool calls</span><strong>${lastTurn ? `${lastTurn.toolCalls} SW / ${lastTurn.baselineToolCalls} native` : "—"}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Isolated workspaces</span><strong>${state.workspace.stateweaveFiles} candidate A / ${state.workspace.naiveFiles} candidate B files</strong></div>
+    <div class="infinite-metric sw-metric"><span class="metric-label">Graph latest context</span><strong>${swTokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric baseline-metric"><span class="metric-label">Challenger latest context</span><strong>${baselineTokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Challenger compaction</span><strong>${(state.naiveStrategy.thresholdTokens / 1000).toFixed(0)}k → summary + last ${state.naiveStrategy.retainMessages} · ${state.naiveStrategy.totalCompactions} run</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Latest tool calls</span><strong>${lastTurn ? `${lastTurn.toolCalls} graph / ${lastTurn.baselineToolCalls} challenger` : "—"}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Graph size</span><strong>${snapshot?.nodeCount ?? 0} nodes / ${snapshot?.edgeCount ?? 0} edges</strong></div>
     <div class="infinite-metric sw-metric"><span class="metric-label">Semantic memory</span><strong>${snapshot?.semanticNodeCount ?? 0} semantic · ${snapshot?.suggestedSemanticNodeCount ?? 0} suggested types</strong></div>
-    <div class="infinite-metric sw-metric"><span class="metric-label">SW task quality</span><strong>${quality ? `${(quality.stateweavePassRate * 100).toFixed(1)}%` : "—"}</strong></div>
-    <div class="infinite-metric baseline-metric"><span class="metric-label">Native task quality</span><strong>${quality ? `${(quality.naivePassRate * 100).toFixed(1)}%` : "—"}</strong></div>`;
+    <div class="infinite-metric sw-metric"><span class="metric-label">Graph completion-gated quality</span><strong>${quality ? `${(quality.stateweavePassRate * 100).toFixed(1)}%` : "—"}</strong></div>
+    <div class="infinite-metric baseline-metric"><span class="metric-label">Challenger completion-gated quality</span><strong>${quality ? `${(quality.naivePassRate * 100).toFixed(1)}%` : "—"}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Completed turns</span><strong>${state.reliability ? `${state.reliability.stateweaveCompleted} graph / ${state.reliability.challengerCompleted} challenger` : "—"}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Failures / provider retries</span><strong>${state.reliability ? `${state.reliability.stateweaveAgentFailures} graph · ${state.reliability.challengerAgentFailures} challenger · ${state.reliability.providerRetries} retries` : "—"}</strong></div>`;
 
   renderInfiniteExecutive(state, swTokens, baselineTokens, quality);
   renderInfiniteChart(state.series);
@@ -3141,8 +3144,8 @@ function renderInfiniteState(state: InfiniteStateView): void {
   infiniteTurns.innerHTML = turns.length
     ? turns.map((turn) => `
       <button class="infinite-turn" type="button" data-infinite-turn="${turn.turn}">
-        <header><span class="turn-badge">T${turn.turn}</span> <span class="phase-badge seed">${escapeHtml(turn.taskKind)}</span> ${scoreBadges(turn.score)} ${turn.transactionValid ? "" : `<span class="score-chip fail">agent error</span>`}</header>
-        <small>${turn.nodeCount}n/${turn.edgeCount}e · SW ${turn.promptTokenEstimate.toLocaleString()} ctx / ${turn.toolCalls} tools / ${turn.modelCalls} calls · native ${turn.baselineTokenEstimate.toLocaleString()} ctx / ${turn.baselineToolCalls} tools / ${turn.baselineModelCalls} calls${turn.baselineCompactions ? ` / ${turn.baselineCompactions} compaction` : ""}</small>
+        <header><span class="turn-badge">T${turn.turn}</span> <span class="phase-badge seed">${escapeHtml(turn.taskKind)}</span> ${scoreBadges(turn.score)} ${turn.stateweaveCompleted === false ? `<span class="score-chip fail">graph failure</span>` : ""}${turn.baselineCompleted === false ? `<span class="score-chip fail">challenger failure</span>` : ""}</header>
+        <small>${turn.nodeCount}n/${turn.edgeCount}e · graph ${turn.promptTokenEstimate.toLocaleString()} ctx / ${turn.toolCalls} tools / ${turn.modelCalls} calls · challenger ${turn.baselineTokenEstimate.toLocaleString()} ctx / ${turn.baselineToolCalls} tools / ${turn.baselineModelCalls} calls${turn.baselineCompactions ? ` / ${turn.baselineCompactions} compaction` : ""}</small>
         <span class="turn-preview">${escapeHtml(oneLine(turn.prompt).slice(0, 180))}</span>
       </button>`).join("")
     : `<p class="muted-copy">Waiting for the first filesystem task…</p>`;
@@ -3164,18 +3167,18 @@ function renderInfiniteExecutive(state: InfiniteStateView, swTokens: number, bas
   const verdict = qualityGap === undefined
     ? "Waiting for the first scored filesystem task."
     : qualityGap > 2
-      ? `StateWeave leads native by ${qualityGap.toFixed(1)} quality points.`
+      ? `The graph candidate leads the transcript challenger by ${qualityGap.toFixed(1)} quality points.`
       : qualityGap < -2
-        ? `StateWeave trails native by ${Math.abs(qualityGap).toFixed(1)} quality points.`
-        : "The agents are currently within two quality points.";
-  const context = baselineTokens ? ` Latest-call context is ${swTokens.toLocaleString()} tokens for StateWeave versus ${baselineTokens.toLocaleString()} for native.` : "";
+        ? `The graph candidate trails the transcript challenger by ${Math.abs(qualityGap).toFixed(1)} quality points.`
+        : "The candidates are currently within two quality points.";
+  const context = baselineTokens ? ` Latest-call context is ${swTokens.toLocaleString()} tokens for the graph candidate versus ${baselineTokens.toLocaleString()} for the transcript challenger.` : "";
   target.className = `infinite-executive-live ${qualityGap !== undefined && qualityGap < -2 ? "warn" : ""}`;
   target.innerHTML = `<h3>Executive snapshot</h3><p><strong>T${state.turnCount}:</strong> ${escapeHtml(verdict + context)} Bash is restricted by a read-only command allowlist, and each agent runs in a separate workspace.</p>`;
 }
 
 function scoreBadges(score: { stateweave: ProbeScore; naive: ProbeScore }): string {
-  const chip = (label: string, value: ProbeScore) => `<span class="score-chip ${value.score}" title="${escapeAttribute(value.details.length ? `Failed: ${value.details.join(", ")}` : "All checks passed")}">${label} ${value.score} ${value.passed}/${value.total}</span>`;
-  return chip("SW", score.stateweave) + chip("native", score.naive);
+  const chip = (label: string, value: ProbeScore) => `<span class="score-chip ${value.score}" title="${escapeAttribute(value.details.length ? `Failed: ${value.details.join(", ")}` : "All checks passed")}">${label} ${value.completed === false ? `agent failure · workspace ${value.passed}/${value.total}` : `${value.score} ${value.passed}/${value.total}`}</span>`;
+  return chip("graph", score.stateweave) + chip("challenger", score.naive);
 }
 
 type PairedStatistics = {
@@ -3268,47 +3271,53 @@ function renderInfiniteStatistics(state: InfiniteStateView): void {
       <article class="infinite-stat-card">
         <h4>Frozen design <small>v${state.design.version} · seed ${state.design.seed}</small></h4>
         <strong>${state.turnCount}/${state.design.targetTurns} paired turns</strong>
+        ${state.design.protocolId ? `<p><code>${escapeHtml(state.design.protocolId)}</code></p>` : ""}
         <p>${escapeHtml(state.design.executionOrder)}</p>
         <p>${escapeHtml(state.design.stoppingRule)}</p>
+        ${state.design.blindingPolicy ? `<p>${escapeHtml(state.design.blindingPolicy)}</p>` : ""}
+        ${state.design.challengerPolicy ? `<p>${escapeHtml(state.design.challengerPolicy)}</p>` : ""}
+        ${state.design.failurePolicy ? `<p>${escapeHtml(state.design.failurePolicy)}</p>` : ""}
+        ${state.design.fairnessPolicy ? `<p>${escapeHtml(state.design.fairnessPolicy)}</p>` : ""}
         ${state.design.semanticPolicy ? `<p>${escapeHtml(state.design.semanticPolicy)}</p>` : ""}
         ${state.design.qualityPolicy ? `<p>${escapeHtml(state.design.qualityPolicy)}</p>` : ""}
       </article>
       ${evidence ? `<article class="infinite-stat-card">
-        <h4>Primary analysis <small>n=${evidence.blocks} independent component blocks</small></h4>
-        <strong>${(evidence.meanDifference * 100).toFixed(2)} quality-point SW difference</strong>
-        <p>SW ${(evidence.stateweaveMean * 100).toFixed(2)}% · native ${(evidence.nativeMean * 100).toFixed(2)}% · bootstrap 95% CI ${(evidence.confidenceLow * 100).toFixed(2)} to ${(evidence.confidenceHigh * 100).toFixed(2)} points</p>
+        <h4>Primary analysis <small>n=${evidence.blocks} paired cumulative release blocks</small></h4>
+        <strong>${(evidence.meanDifference * 100).toFixed(2)} quality-point graph difference</strong>
+        <p>Graph ${(evidence.stateweaveMean * 100).toFixed(2)}% · challenger ${(evidence.nativeMean * 100).toFixed(2)}% · bootstrap 95% CI ${(evidence.confidenceLow * 100).toFixed(2)} to ${(evidence.confidenceHigh * 100).toFixed(2)} points</p>
         <p>Two-sided sign-flip permutation p=${p(evidence.permutationPValue)} · ${evidence.resamples.toLocaleString()} seeded resamples</p>
         <p>Block wins/ties/losses ${evidence.wins}/${evidence.ties}/${evidence.losses} · exact sign-test p=${p(evidence.signTestPValue)}</p>
       </article>` : `<article class="infinite-stat-card"><h4>Primary analysis</h4><p>Waiting for at least two complete eight-turn blocks.</p></article>`}
     </div>
-    <p class="statistics-caveat">${escapeHtml(state.design.analysisPlan)} The dashboard does not change the stopping rule when results are viewed.</p>`;
+    <p class="statistics-caveat">${escapeHtml(state.design.analysisPlan)} Blocks evolve one cumulative product and are serially dependent; these p-values summarize this frozen protocol and are not standalone causal proof. The dashboard does not change the stopping rule when results are viewed.</p>`;
 }
 
 function renderInfiniteTurnDetail(turn: InfiniteTurn): void {
   infiniteTurnNumber.value = String(turn.turn);
   const judgment = (label: string, score: ProbeScore) => {
+    const completionFailure = score.completed === false ? score.details.find((detail) => detail.startsWith("agent did not complete")) : undefined;
     const checks = score.checks?.length
-      ? score.checks
+      ? [...(completionFailure ? [{ label: completionFailure, passed: false }] : []), ...score.checks]
       : [
           ...score.details.map((detail) => ({ label: detail, passed: false })),
           ...(score.passed ? [{ label: `${score.passed} other check${score.passed === 1 ? "" : "s"} passed (legacy turn; labels were not archived)`, passed: true }] : [])
         ];
     return `<section class="turn-judgment ${score.score}">
-      <h4>${escapeHtml(label)} judgment <span class="score-chip ${score.score}">${score.score} ${score.passed}/${score.total}</span></h4>
-      <p>${score.details.length ? "The deterministic verifier found the failures below." : "All deterministic workspace checks passed."}</p>
+      <h4>${escapeHtml(label)} judgment <span class="score-chip ${score.score}">${score.completed === false ? `agent failure · workspace ${score.passed}/${score.total}` : `${score.score} ${score.passed}/${score.total}`}</span></h4>
+      <p>${score.completed === false ? "The run did not complete, so primary quality is zero regardless of residual workspace checks." : score.details.length ? "The deterministic verifier found the failures below." : "All deterministic workspace checks passed."}</p>
       <ul>${checks.map((check) => `<li class="${check.passed ? "passed" : "failed"}">${check.passed ? "✓" : "✕"} ${escapeHtml(check.label)}</li>`).join("")}</ul>
     </section>`;
   };
   infiniteTurnDetail.innerHTML = `
     <article class="turn-inspection">
-      <header><span class="turn-badge">T${turn.turn}</span><span class="phase-badge seed">${escapeHtml(turn.taskKind)}</span>${turn.transactionValid ? "" : `<span class="score-chip fail">invalid transaction</span>`}</header>
+      <header><span class="turn-badge">T${turn.turn}</span><span class="phase-badge seed">${escapeHtml(turn.taskKind)}</span>${turn.stateweaveCompleted === false ? `<span class="score-chip fail">graph agent failure</span>` : ""}${turn.baselineCompleted === false ? `<span class="score-chip fail">challenger agent failure</span>` : ""}</header>
       <section><h4>Question / task</h4><pre>${escapeHtml(turn.prompt)}</pre></section>
       <div class="turn-answer-grid">
-        <section class="turn-response stateweave"><h4>StateWeave answer</h4><pre>${escapeHtml(turn.answer || "(empty answer)")}</pre></section>
-        <section class="turn-response naive"><h4>Native transcript answer</h4><pre>${escapeHtml(turn.baselineAnswer || "(empty answer)")}</pre></section>
+        <section class="turn-response stateweave"><h4>Graph candidate answer</h4><pre>${escapeHtml(turn.answer || "(empty answer)")}</pre></section>
+        <section class="turn-response naive"><h4>Transcript challenger answer</h4><pre>${escapeHtml(turn.baselineAnswer || "(empty answer)")}</pre></section>
       </div>
-      <div class="turn-judgment-grid">${judgment("StateWeave", turn.score.stateweave)}${judgment("Native", turn.score.naive)}</div>
-      <footer>StateWeave: ${turn.promptTokenEstimate.toLocaleString()} context tokens, ${turn.totalInputTokens.toLocaleString()} total input, ${turn.latencyMs.toLocaleString()}ms, ${turn.toolCalls} tool calls. Native: ${turn.baselineTokenEstimate.toLocaleString()} context tokens, ${turn.baselineTotalInputTokens.toLocaleString()} total input, ${turn.baselineLatencyMs.toLocaleString()}ms, ${turn.baselineToolCalls} tool calls${turn.baselineCompactions ? `, ${turn.baselineCompactions} compaction` : ""}.</footer>
+      <div class="turn-judgment-grid">${judgment("Graph candidate", turn.score.stateweave)}${judgment("Transcript challenger", turn.score.naive)}</div>
+      <footer>Graph candidate: ${turn.promptTokenEstimate.toLocaleString()} context tokens, ${turn.totalInputTokens.toLocaleString()} total input, ${turn.latencyMs.toLocaleString()}ms, ${turn.toolCalls} tool calls. Transcript challenger: ${turn.baselineTokenEstimate.toLocaleString()} context tokens, ${turn.baselineTotalInputTokens.toLocaleString()} total input, ${turn.baselineLatencyMs.toLocaleString()}ms, ${turn.baselineToolCalls} tool calls${turn.baselineCompactions ? `, ${turn.baselineCompactions} compaction` : ""}.</footer>
     </article>`;
 }
 
