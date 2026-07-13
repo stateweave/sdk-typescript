@@ -37,6 +37,19 @@ it("automatically connects pending inputs and model-added nodes", async () => {
   expect(result.graph.edges).toContainEqual(expect.objectContaining({ from: "assistant_output_2", to: "house_svg", type: "creates" }));
 });
 
+it("supports compact traces for long-running agents without retaining frame graphs or prompts", async () => {
+  const result = await runStateWeave(
+    { model: new SequenceModel(["SWX/1\n@final \"done\""]), tools: [], maxIterations: 1, traceMode: "compact" },
+    "Complete the task"
+  );
+
+  expect(result.finalAnswer).toBe("done");
+  expect(result.trace[0]?.prompt).toBe("");
+  expect(result.trace[0]?.streamedTokens).toEqual([]);
+  expect(result.trace[0]?.frameBefore.graph).toEqual({ nodes: [], edges: [] });
+  expect(result.graph.nodes.length).toBeGreaterThan(0);
+});
+
 it("runs workspace write/edit tools end to end with SWX block-ref args", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-runner-tools-"));
   try {
