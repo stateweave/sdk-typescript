@@ -133,6 +133,7 @@ export type InfiniteAgentState = {
   design: InfiniteExperimentDesign;
   currentTask?: { kind: string; prompt: string; executionOrder?: "stateweave-first" | "native-first" };
   progress?: InfiniteAgentProgress;
+  lastAttemptError?: { turn: number; attempt: number; at: string; error: string };
   turns: InfiniteAgentTurn[];
   series: InfiniteAgentSeriesPoint[];
   qualitySeries: InfiniteAgentQualityPoint[];
@@ -316,6 +317,7 @@ export class InfiniteAgentHarness {
         }
         attempts += 1;
         const reason = error instanceof Error ? error.message : String(error);
+        this.state.lastAttemptError = { turn, attempt: attempts, at: new Date().toISOString(), error: reason.slice(0, 1_000) };
         if (attempts <= MAX_TURN_RETRIES) {
           this.state.message = `T${turn} failed (attempt ${attempts} of ${MAX_TURN_RETRIES + 1}); retrying the same turn. Last error: ${reason}`;
           this.setProgress(turn, "harness", { phase: "retrying", detail: this.state.message });
@@ -464,6 +466,7 @@ export class InfiniteAgentHarness {
       clusters: clusters.slice(0, 40).map((cluster) => ({ id: cluster.id, label: cluster.label, nodeCount: cluster.nodeCount }))
     } : undefined;
     this.state.workspace = await workspaceCounts(this.stateweaveWorkspace, this.naiveWorkspace);
+    delete this.state.lastAttemptError;
     this.state.message = `Completed T${turn}: StateWeave ${swScore.score}, native ${naiveScore.score}.`;
     this.setProgress(turn, "harness", { phase: "completed", detail: this.state.message, iteration: 0, modelCalls: sw.modelCalls + naive.modelCalls, toolCalls: sw.toolCalls + naive.toolCalls });
     if (turn >= this.state.design.targetTurns) {
