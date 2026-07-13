@@ -2,9 +2,11 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
+import { z } from "zod";
 import { AgenticBaseline, type AgenticMessage, type AgenticProgress } from "../src/evals/agenticBaseline.js";
 import type { Model, ModelInput, ModelOutput, ModelToken } from "../src/llm/model.js";
 import { createFileSystemTools } from "../src/tools/fileSystemTools.js";
+import type { Tool } from "../src/tools/types.js";
 
 class SequenceModel implements Model {
   private outputs = [
@@ -47,6 +49,16 @@ class MissingQuoteToolModel implements Model {
   private outputs = [
     'TOOL_CALL {"name":"write_file","args":{"file_path":"repaired.txt","content":"ready}}',
     "FINAL: Created repaired.txt."
+  ];
+
+  async complete(): Promise<ModelOutput> { return { text: this.outputs.shift() ?? "FINAL: done" }; }
+  async *stream(): AsyncIterable<ModelToken> { yield { type: "token", token: "FINAL: done" }; }
+}
+
+class UnescapedCommandQuoteModel implements Model {
+  private outputs = [
+    'TOOL_CALL {"name":"bash_command","args":{"command":"find test -type f -name "*.js" | sort}}',
+    "FINAL: Inspected JavaScript tests."
   ];
 
   async complete(): Promise<ModelOutput> { return { text: this.outputs.shift() ?? "FINAL: done" }; }
@@ -152,6 +164,27 @@ it("repairs an unambiguous missing quote at the end of a tool envelope", async (
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+it("repairs unescaped quotes inside a shell command argument", async () => {
+  const commands: string[] = [];
+  const bashTool: Tool = {
+    name: "bash_command",
+    description: "Record a read-only command.",
+    schema: z.object({ command: z.string() }),
+    execute: async (args: unknown) => {
+      const { command } = z.object({ command: z.string() }).parse(args);
+      commands.push(command);
+      return { exitCode: 0, output: "test/example.js" };
+    }
+  };
+  const agent = new AgenticBaseline({ model: new UnescapedCommandQuoteModel(), tools: [bashTool], systemPrompt: "Maintain the workspace." });
+
+  const result = await agent.run("Inspect JavaScript tests.");
+
+  expect(result.answer).toBe("Inspected JavaScript tests.");
+  expect(commands).toEqual(['find test -type f -name "*.js" | sort']);
+  expect(agent.getMessages().some((message) => message.content.startsWith("protocol_error:"))).toBe(false);
 });
 
 it("fails a repeated invalid envelope quickly instead of exhausting the full iteration budget", async () => {

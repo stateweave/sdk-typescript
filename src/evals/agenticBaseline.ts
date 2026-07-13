@@ -207,21 +207,69 @@ function parseToolCall(text: string): { name: string; args: unknown } | undefine
   if (!envelope) return undefined;
   const start = envelope[0].length;
   if (text[start] !== "{") return undefined;
-  const json = balancedJsonObject(text, start) ?? repairMissingTrailingQuote(text.slice(start).split(/\r?\n/, 1)[0]!.trim());
-  if (!json) return undefined;
-  try {
-    const parsed = JSON.parse(json) as { name?: unknown; args?: unknown };
-    if (typeof parsed.name !== "string" || !parsed.args || typeof parsed.args !== "object" || Array.isArray(parsed.args)) return undefined;
-    return { name: parsed.name, args: parsed.args };
-  } catch {
-    return undefined;
+  const line = text.slice(start).split(/\r?\n/, 1)[0]!.trim();
+  const raw = balancedJsonObject(text, start) ?? line;
+  const trailingQuoteRepair = repairMissingTrailingQuote(raw);
+  const candidates = [
+    raw,
+    trailingQuoteRepair,
+    trailingQuoteRepair ? repairCommandValueQuotes(trailingQuoteRepair) : undefined,
+    repairCommandValueQuotes(raw)
+  ];
+  for (const json of new Set(candidates.filter((value): value is string => Boolean(value)))) {
+    try {
+      const parsed = JSON.parse(json) as { name?: unknown; args?: unknown };
+      if (typeof parsed.name !== "string" || !parsed.args || typeof parsed.args !== "object" || Array.isArray(parsed.args)) continue;
+      return { name: parsed.name, args: parsed.args };
+    } catch {
+      continue;
+    }
   }
+  return undefined;
 }
 
 function repairMissingTrailingQuote(value: string): string | undefined {
   const suffix = value.match(/}+$/)?.[0];
   if (!suffix || countUnescapedQuotes(value) % 2 === 0) return undefined;
   return `${value.slice(0, -suffix.length)}"${suffix}`;
+}
+
+function repairCommandValueQuotes(value: string): string | undefined {
+  const marker = /"command"\s*:\s*"/.exec(value);
+  if (!marker) return undefined;
+  const start = marker.index + marker[0].length;
+  let escaped = false;
+  let closing = -1;
+  for (let index = start; index < value.length; index++) {
+    const character = value[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (character !== '"') continue;
+    if (/^\s*(?:}\s*}|,\s*"[^"]+"\s*:)/.test(value.slice(index + 1))) {
+      closing = index;
+      break;
+    }
+  }
+  if (closing < 0) return undefined;
+  return `${value.slice(0, start)}${escapeUnescapedQuotes(value.slice(start, closing))}${value.slice(closing)}`;
+}
+
+function escapeUnescapedQuotes(value: string): string {
+  let output = "";
+  let escaped = false;
+  for (const character of value) {
+    if (character === '"' && !escaped) output += "\\";
+    output += character;
+    if (character === "\\") escaped = !escaped;
+    else escaped = false;
+  }
+  return output;
 }
 
 function countUnescapedQuotes(value: string): number {
