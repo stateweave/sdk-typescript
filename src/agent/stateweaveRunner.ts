@@ -10,17 +10,19 @@ import type { Tool } from "../tools/types.js";
 
 export type StateWeaveInput = TaskInput;
 export type StateWeaveRunOptions = { frame?: GraphFrame; inputAlreadyAppended?: boolean; signal?: AbortSignal };
-export type StateWeaveRunnerArgs = { model: Model; tools: Tool[]; maxIterations?: number; systemPrompt?: string; nodeTypes?: string[]; traceMode?: "full" | "compact" };
+export type StateWeaveRunnerArgs = { model: Model; tools: Tool[]; maxIterations?: number; systemPrompt?: string; nodeTypes?: string[]; traceMode?: "full" | "compact"; blindIdentity?: boolean; providerSystem?: string };
 
 export class StateWeaveRunError extends Error {
   trace: TraceStep[];
   metadata: StateWeaveRunMetadata;
+  frame?: GraphFrame;
 
-  constructor(message: string, trace: TraceStep[], metadata: StateWeaveRunMetadata) {
+  constructor(message: string, trace: TraceStep[], metadata: StateWeaveRunMetadata, frame?: GraphFrame) {
     super(message);
     this.name = "StateWeaveRunError";
     this.trace = trace;
     this.metadata = metadata;
+    this.frame = frame ? cloneFrame(frame) : undefined;
   }
 }
 
@@ -79,12 +81,12 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
     options?.signal?.throwIfAborted();
     const stepStartedAt = new Date();
     const frameBefore = frame;
-    const prompt = serializeGraphFrame(frameBefore);
+    const prompt = serializeGraphFrame(frameBefore, { blindIdentity: args.blindIdentity });
     const streamedTokens: string[] = [];
     const modelMetadata: Record<string, unknown>[] = [];
 
     yield { type: "frame", step, phase: "before", frame: frameBefore, prompt, tokenEstimate: estimateStateWeaveTokens(prompt) };
-    for await (const event of args.model.stream({ prompt, frame: frameBefore, mode: "graph_ops", signal: options?.signal })) {
+    for await (const event of args.model.stream({ prompt, frame: frameBefore, mode: "graph_ops", signal: options?.signal, system: args.providerSystem })) {
       if (event.type === "metadata") {
         modelMetadata.push(event.metadata);
         yield { type: "model_metadata", step, metadata: event.metadata };
@@ -151,7 +153,7 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
       trace.push(traceStep({ step, startedAt: stepStartedAt, frameBefore, prompt, streamedTokens, modelMetadata, rawModelOutput, parsedOps, frameAfter, error: message }, args.traceMode));
       const retryable = step < maxIterations;
       yield { type: "error", step, message, retryable };
-      if (!retryable) throw new StateWeaveRunError(`StateWeave GraphOps failed after ${step} step(s): ${message}`, trace, runMetadata(runId, toolInfo, startedAt, maxIterations, trace, retryCount, "error"));
+      if (!retryable) throw new StateWeaveRunError(`StateWeave GraphOps failed after ${step} step(s): ${message}`, trace, runMetadata(runId, toolInfo, startedAt, maxIterations, trace, retryCount, "error"), frame);
       retryCount += 1;
       frame = retryFrameAfterGraphOpsError(frame, message);
       continue;
@@ -170,7 +172,8 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
     throw new StateWeaveRunError(
       `Recursion limit reached after ${maxIterations} iteration(s); consider increasing maxIterations.`,
       trace,
-      runMetadata(runId, toolInfo, startedAt, maxIterations, trace, retryCount, "error")
+      runMetadata(runId, toolInfo, startedAt, maxIterations, trace, retryCount, "error"),
+      frame
     );
   }
   yield { type: "final", result: { finalAnswer, frame, graph: frame.graph, trace, metadata: runMetadata(runId, toolInfo, startedAt, maxIterations, trace, retryCount, "done") } };

@@ -21,6 +21,8 @@ export type StateWeaveAgentArgs = {
   traceDir?: string;
   frame?: GraphFrame;
   traceMode?: "full" | "compact";
+  blindIdentity?: boolean;
+  providerSystem?: string;
 };
 
 export class StateWeaveAgent {
@@ -32,6 +34,8 @@ export class StateWeaveAgent {
   private traceDir?: string;
   private frame?: GraphFrame;
   private traceMode: "full" | "compact";
+  private blindIdentity: boolean;
+  private providerSystem?: string;
   private stateLock: Promise<void> = Promise.resolve();
 
   constructor(args: StateWeaveAgentArgs) {
@@ -43,6 +47,8 @@ export class StateWeaveAgent {
     this.traceDir = args.traceDir;
     this.frame = args.frame ? cloneFrame(args.frame) : undefined;
     this.traceMode = args.traceMode ?? "full";
+    this.blindIdentity = args.blindIdentity ?? false;
+    this.providerSystem = args.providerSystem;
   }
 
   async run(input: StateWeaveInput, options?: StateWeaveRunOptions): Promise<AgentResult> {
@@ -104,7 +110,7 @@ export class StateWeaveAgent {
 
   private async runOnce(input: StateWeaveInput, options: StateWeaveRunOptions | undefined): Promise<AgentResult> {
     try {
-      const result = await runStateWeave({ model: this.model, tools: this.tools, maxIterations: this.maxIterations, systemPrompt: this.systemPrompt, nodeTypes: this.nodeTypes, traceMode: this.traceMode }, input, options);
+      const result = await runStateWeave({ model: this.model, tools: this.tools, maxIterations: this.maxIterations, systemPrompt: this.systemPrompt, nodeTypes: this.nodeTypes, traceMode: this.traceMode, blindIdentity: this.blindIdentity, providerSystem: this.providerSystem }, input, options);
       if (this.traceDir) await this.saveTrace(traceObjective(result.trace), result.trace);
       return result;
     } catch (error) {
@@ -115,7 +121,7 @@ export class StateWeaveAgent {
 
   private async *streamOnce(input: StateWeaveInput, options: StateWeaveRunOptions | undefined): AsyncIterable<StateWeaveStreamEvent> {
     try {
-      for await (const event of streamStateWeave({ model: this.model, tools: this.tools, maxIterations: this.maxIterations, systemPrompt: this.systemPrompt, nodeTypes: this.nodeTypes, traceMode: this.traceMode }, input, options)) {
+      for await (const event of streamStateWeave({ model: this.model, tools: this.tools, maxIterations: this.maxIterations, systemPrompt: this.systemPrompt, nodeTypes: this.nodeTypes, traceMode: this.traceMode, blindIdentity: this.blindIdentity, providerSystem: this.providerSystem }, input, options)) {
         if (event.type === "final" && this.traceDir) await this.saveTrace(traceObjective(event.result.trace), event.result.trace);
         yield event;
       }

@@ -76,6 +76,20 @@ class RepeatingInvalidModel implements Model {
   async *stream(): AsyncIterable<ModelToken> { yield { type: "token", token: "FINAL: done" }; }
 }
 
+class EvidenceGateModel implements Model {
+  private outputs = [
+    'TOOL_CALL {"name":"read_file","args":{"file_path":"PRODUCT.md"}}',
+    'TOOL_CALL {"name":"write_file","args":{"file_path":"notes.txt","content":"ready"}}',
+    "FINAL: Finished without checks.",
+    'TOOL_CALL {"name":"app_control","args":{"action":"check"}}',
+    'TOOL_CALL {"name":"app_control","args":{"action":"restart"}}',
+    "FINAL: Implemented and verified the requested change."
+  ];
+
+  async complete(): Promise<ModelOutput> { return { text: this.outputs.shift() ?? "FINAL: done" }; }
+  async *stream(): AsyncIterable<ModelToken> { yield { type: "token", token: "FINAL: done" }; }
+}
+
 class BlockingModel implements Model {
   async complete(input: ModelInput): Promise<ModelOutput> {
     if (!input.signal) throw new Error("missing abort signal");
@@ -187,12 +201,40 @@ it("repairs unescaped quotes inside a shell command argument", async () => {
   expect(agent.getMessages().some((message) => message.content.startsWith("protocol_error:"))).toBe(false);
 });
 
-it("fails a repeated invalid envelope quickly instead of exhausting the full iteration budget", async () => {
+it("returns a scored agent failure for a repeated invalid envelope instead of exhausting the full iteration budget", async () => {
   const model = new RepeatingInvalidModel();
   const agent = new AgenticBaseline({ model, tools: [], maxIterations: 300, systemPrompt: "Maintain the workspace." });
 
-  await expect(agent.run("Inspect the workspace.")).rejects.toThrow(/repeated the same invalid.*3 times/i);
+  const result = await agent.run("Inspect the workspace.");
+  expect(result).toMatchObject({ completed: false, failureKind: "agent", modelCalls: 3 });
+  expect(result.error).toMatch(/repeated the same invalid.*3 times/i);
   expect(model.calls).toBe(3);
+});
+
+it("blocks unsupported finals until requested checks, restart, and smoke evidence exist", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-agentic-evidence-"));
+  const appControl: Tool = {
+    name: "app_control",
+    description: "Run fixed app checks.",
+    schema: z.object({ action: z.enum(["check", "restart", "smoke"]) }),
+    execute: async () => ({ ok: true })
+  };
+  try {
+    await writeFile(path.join(root, "PRODUCT.md"), "Product constraints");
+    const agent = new AgenticBaseline({
+      model: new EvidenceGateModel(),
+      tools: [...createFileSystemTools({ rootDir: root }), appControl],
+      systemPrompt: "Maintain the workspace.",
+      enforceCompletionEvidence: true
+    });
+
+    const result = await agent.run("Read PRODUCT.md, add notes.txt, run checks, restart and smoke-check the application.");
+
+    expect(result).toMatchObject({ completed: true, modelCalls: 6, toolCalls: 4 });
+    expect(agent.getMessages()).toContainEqual(expect.objectContaining({ role: "tool", content: expect.stringContaining("Final is not yet supported") }));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 it("cancels an active native model call", async () => {

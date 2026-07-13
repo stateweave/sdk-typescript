@@ -303,6 +303,14 @@ it("throws a clear recursion-limit error when maxIterations is exhausted", async
 
   await expect(runStateWeave({ model: new SequenceModel([output]), tools: [], maxIterations: 1 }, "Keep going forever")).rejects.toThrow(StateWeaveRunError);
   await expect(runStateWeave({ model: new SequenceModel([output]), tools: [], maxIterations: 1 }, "Keep going forever")).rejects.toThrow(/Recursion limit reached.*maxIterations/);
+  try {
+    await runStateWeave({ model: new SequenceModel([output]), tools: [], maxIterations: 1, traceMode: "compact" }, "Keep going forever");
+    throw new Error("expected compact recursion failure");
+  } catch (error) {
+    expect(error).toBeInstanceOf(StateWeaveRunError);
+    expect((error as StateWeaveRunError).trace[0]?.frameAfter.graph).toEqual({ nodes: [], edges: [] });
+    expect((error as StateWeaveRunError).frame?.graph.nodes).toContainEqual(expect.objectContaining({ id: "note_1" }));
+  }
 });
 
 it("shares the unchanged graph across rejected retries instead of cloning historical payloads", async () => {
