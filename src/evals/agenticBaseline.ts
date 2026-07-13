@@ -18,7 +18,7 @@ export type AgenticTurnResult = {
 
 export type AgenticProgress = {
   iteration: number;
-  phase: "context" | "model" | "tool" | "final";
+  phase: "context" | "model" | "tool" | "final" | "retrying";
   modelCalls: number;
   toolCalls: number;
   detail: string;
@@ -99,7 +99,9 @@ export class AgenticBaseline {
           const invalidOutput = output.text.trim();
           repeatedInvalidCount = invalidOutput === repeatedInvalidOutput ? repeatedInvalidCount + 1 : 1;
           repeatedInvalidOutput = invalidOutput;
-          if (repeatedInvalidCount >= 3) throw new Error("Native agent repeated the same invalid TOOL_CALL/final envelope 3 times.");
+          const preview = invalidOutput.replace(/\s+/g, " ").slice(0, 240);
+          progress(iteration, "retrying", `Invalid native envelope ${repeatedInvalidCount}/3: ${preview}`);
+          if (repeatedInvalidCount >= 3) throw new Error(`Native agent repeated the same invalid TOOL_CALL/final envelope 3 times: ${preview}`);
           this.messages.push({ role: "tool", content: "protocol_error: Planning prose is not a final answer. Continue the task by returning exactly one TOOL_CALL JSON object, or finish only after verified work with exactly FINAL: followed by the factual answer." });
           continue;
         }
