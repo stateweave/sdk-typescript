@@ -2999,6 +2999,7 @@ type InfiniteStateView = {
   design: { version: number; seed: number; targetTurns: number; tasksPerBlock: number; maxIterationsPerAgentTurn?: number; semanticPolicy?: string; qualityPolicy?: string; primaryOutcome: string; executionOrder: string; stoppingRule: string; analysisPlan: string };
   currentTask?: { kind: string; prompt: string; executionOrder?: string };
   progress?: { turn: number; arm: "stateweave" | "native" | "harness"; phase: string; iteration: number; maxIterations: number; modelCalls: number; toolCalls: number; detail: string; startedAt: string; updatedAt: string };
+  trajectory?: Array<{ at: string; turn: number; arm: "stateweave" | "native" | "harness"; phase: string; iteration: number; detail: string }>;
   lastAttemptError?: { turn: number; attempt: number; at: string; error: string };
   turns: InfiniteTurn[];
   series: InfiniteSeriesPoint[];
@@ -3469,6 +3470,7 @@ function renderAgentRuntime(state: InfiniteStateView): void {
   const heartbeatAgeMs = Date.now() - Date.parse(heartbeatAt);
   const running = state.status === "running";
   const progress = state.progress;
+  const trajectory = (state.trajectory ?? []).slice(-8);
   swLoopStartButton.disabled = running;
   swLoopStopButton.disabled = !running;
   swLoopStatus.innerHTML = `
@@ -3477,6 +3479,7 @@ function renderAgentRuntime(state: InfiniteStateView): void {
     <div class="infinite-metric"><span class="metric-label">Active trajectory</span><strong>${progress ? `T${progress.turn} · ${escapeHtml(progress.arm)} · ${escapeHtml(progress.phase)} · iteration ${progress.iteration}/${progress.maxIterations}` : "—"}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Live calls</span><strong>${progress ? `${progress.modelCalls} model / ${progress.toolCalls} tools` : "—"}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Current step</span><strong>${escapeHtml(progress?.detail ?? state.message ?? "Waiting")}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Recent trajectory</span><strong>${trajectory.length ? trajectory.map((event) => `${escapeHtml(event.arm)} · ${escapeHtml(event.phase)} ${event.iteration} · ${escapeHtml(event.detail)}`).join("<br>") : "—"}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Last unscored error</span><strong>${state.lastAttemptError ? `T${state.lastAttemptError.turn} attempt ${state.lastAttemptError.attempt} · ${escapeHtml(state.lastAttemptError.error)}` : "—"}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Tools</span><strong>${escapeHtml(state.tools.join(", "))}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Bash security</span><strong>${escapeHtml(state.security.bashPolicy)}</strong></div>`;
