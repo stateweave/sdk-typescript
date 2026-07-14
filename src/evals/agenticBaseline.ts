@@ -126,7 +126,10 @@ export class AgenticBaseline {
           const preview = invalidOutput.replace(/\s+/g, " ").slice(0, 240);
           progress(iteration, "retrying", `Invalid native envelope ${repeatedInvalidCount}/3: ${preview}`);
           if (repeatedInvalidCount >= 3) return failedResult(`Transcript agent repeated the same invalid TOOL_CALL/final envelope 3 times: ${preview}`);
-          this.messages.push({ role: "tool", content: "protocol_error: Planning prose is not a final answer. Continue the task by returning exactly one TOOL_CALL JSON object, or finish only after verified work with exactly FINAL: followed by the factual answer." });
+          const toolEnvelope = /^\s*TOOL_CALL\b/i.test(output.text);
+          this.messages.push({ role: "tool", content: toolEnvelope
+            ? "protocol_error: The TOOL_CALL JSON was malformed or truncated and was not executed. Retry with one smaller action. Keep write_file content under 2,500 characters and build long artifacts through multiple write/edit calls; never repeat the same oversized envelope."
+            : "protocol_error: Planning prose is not a final answer. Continue the task by returning exactly one TOOL_CALL JSON object, or finish only after verified work with exactly FINAL: followed by the factual answer." });
           continue;
         }
         const answer = output.text.replace(/^\s*FINAL\s*:\s*/i, "").trim();
@@ -292,7 +295,7 @@ function baselineSystemPrompt(systemPrompt: string, tools: Tool[]): string {
     systemPrompt,
     "You have a persistent workspace and must use tools to inspect current files before changing them.",
     "Use the transcript and any compacted working-memory summary deliberately: preserve active tasks, constraints, file paths, implementation decisions, failures, and successful check evidence, while treating current workspace reads as authoritative.",
-    "For one tool action, return exactly TOOL_CALL followed by one JSON object: {\"name\":\"tool_name\",\"args\":{...}}.",
+    "For one tool action, return exactly TOOL_CALL followed by one JSON object: {\"name\":\"tool_name\",\"args\":{...}}. Keep each write_file content value under 2,500 characters and build longer artifacts through multiple write/edit calls so the JSON envelope cannot be truncated.",
     "After a TOOL result, either call another tool or finish with exactly FINAL: followed by a concise human answer.",
     "Never claim a file changed unless a write_file or edit_file result confirms it. Prefer read_file before edit_file. bash_command is read-only and allowlisted.",
     "Available tools:",
