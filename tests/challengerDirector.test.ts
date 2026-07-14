@@ -1,6 +1,6 @@
 import path from "node:path";
 import { expect, it } from "vitest";
-import { generateParticipantStartingMaterials, judgeChallengerPair } from "../src/evals/challengerDirector.js";
+import { generateCalibrationAnchor, generateParticipantStartingMaterials, judgeChallengerPair } from "../src/evals/challengerDirector.js";
 import { readChallengerScenario } from "../src/evals/challengerScenarioLibrary.js";
 import type { Model, ModelInput, ModelOutput, ModelToken } from "../src/llm/model.js";
 
@@ -21,6 +21,15 @@ it("generates leak-checked participant starting materials", async () => {
   const generated = await generateParticipantStartingMaterials(scenario!, new QueueModel([markdown, JSON.stringify({ safe: true, reason: "No private leakage." })]));
   expect(generated.markdown).toContain("Synthetic fraud operations evidence");
   expect(generated.usage).toEqual({ inputTokens: 20, outputTokens: 10, calls: 2 });
+});
+
+it("generates concrete calibration anchors with retry accounting", async () => {
+  const scenario = await readChallengerScenario(path.resolve(process.cwd(), "data/challenger-scenarios"), "12-fraud-monitoring.md");
+  const valid = JSON.stringify({ answer: "A concrete decision package with corrected prevalence, threshold choice, capacity impact, segment uncertainty, monitoring, and limitations.".repeat(2), evidence: "Dated source row, correction changelog, threshold table, queue simulation, segment interval, shadow result, and rollback trigger. ".repeat(20) });
+  const anchor = await generateCalibrationAnchor(scenario!, scenario!.turns.at(-1)!, new QueueModel(["invalid", valid]));
+  expect(anchor.answer.length).toBeGreaterThan(100);
+  expect(anchor.evidence.length).toBeGreaterThan(500);
+  expect(anchor.usage.calls).toBe(2);
 });
 
 it("double-judges in opposite anonymous orders and computes rubric-weighted scores", async () => {
