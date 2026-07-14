@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { listChallengerScenarios, readChallengerScenario, type ChallengerScenario } from "./challengerScenarioLibrary.js";
 
-export const CHALLENGER_V6_PROTOCOL_ID = "infinite-v6-challenger-heldout-r5-20260714";
+export const CHALLENGER_V6_PROTOCOL_ID = "infinite-v6-challenger-heldout-r6-20260714";
 export const CHALLENGER_V6_SEED = 20260714;
 export const CHALLENGER_V6_CORPUS_SHA256 = "4e5eaec89a10c2dccbfe20698215d8ee1722d8696e28358b348449ccc7c935bd";
 export const CHALLENGER_V6_REPETITIONS = 3;

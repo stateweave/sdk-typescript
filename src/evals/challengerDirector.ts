@@ -54,9 +54,9 @@ export async function generateParticipantStartingMaterials(scenario: ChallengerS
 export async function generateCalibrationAnchor(scenario: ChallengerScenario, turn: ChallengerScenarioTurn, model: Model, signal?: AbortSignal): Promise<{ answer: string; evidence: string; usage: ChallengerUsage }> {
   const prompt = [
     "Create an intentionally excellent synthetic calibration anchor for the current private scenario turn.",
-    "Return strict compact JSON with string keys answer and evidence.",
-    "The answer must be candid and decision-useful. Evidence must contain concrete excerpts from realistic durable artifacts, source/provenance records, correction history, current-state distinctions, and actual behavioral check results sufficient to support the answer.",
-    "Satisfy all obligations that should exist by this turn without mentioning calibration, grading, hidden criteria, or future work. Keep evidence under 1,500 words.",
+    "Return exactly this plain-text envelope: <<<ANSWER>>> then the answer, <<<EVIDENCE>>> then evidence, and <<<END>>>.",
+    "The answer must be candid, decision-useful, and under 150 words. Evidence must contain concrete excerpts from realistic durable artifacts, source/provenance records, correction history, current-state distinctions, and actual behavioral check results sufficient to support the answer.",
+    "Satisfy all obligations that should exist by this turn without mentioning calibration, grading, hidden criteria, or future work. Evidence must be under 600 words so the complete envelope cannot be truncated.",
     "",
     "PRIVATE SCENARIO:", scenario.markdown,
     "",
@@ -66,14 +66,15 @@ export async function generateCalibrationAnchor(scenario: ChallengerScenario, tu
   let repair = "";
   let lastError = "";
   for (let attempt = 1; attempt <= 3; attempt += 1) {
-    const attemptPrompt = repair ? `${prompt}\n\nPrevious invalid JSON (${lastError}):\n${repair}\nReturn a fresh complete JSON object only.` : prompt;
+    const attemptPrompt = repair ? `${prompt}\n\nPrevious invalid envelope (${lastError}):\n${repair}\nReturn a fresh complete envelope only.` : prompt;
     const output = await model.complete({ prompt: attemptPrompt, mode: "text", system: DIRECTOR_SYSTEM, signal });
     usage = addUsage(usage, usageFor(attemptPrompt, output.text, output.usage));
     try {
-      const parsed = JSON.parse(output.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "")) as { answer?: unknown; evidence?: unknown };
-      const answer = String(parsed.answer ?? "").trim();
-      const evidence = String(parsed.evidence ?? "").trim();
-      if (answer.length < 100 || evidence.length < 500) throw new Error("anchor answer or evidence was too short");
+      const parsed = output.text.match(/<<<ANSWER>>>\s*([\s\S]*?)\s*<<<EVIDENCE>>>\s*([\s\S]*?)\s*<<<END>>>/);
+      const answer = parsed?.[1]?.trim() ?? "";
+      const evidence = parsed?.[2]?.trim() ?? "";
+      if (answer.length < 100 || evidence.length < 500) throw new Error("anchor envelope was missing or its answer/evidence was too short");
+      if (evidence.split(/\s+/).length > 700) throw new Error("anchor evidence exceeded the safe output budget");
       return { answer, evidence, usage };
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
