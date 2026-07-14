@@ -176,7 +176,7 @@ export type InfiniteAgentState = {
   turnArchive: { firstTurn: number; lastTurn: number; count: number };
   challenger?: {
     corpusSha256: string;
-    calibration: { status: "required" | "running" | "passed" | "failed"; scenarios: number; passed: number; usage: ChallengerUsage; updatedAt?: string };
+    calibration: { status: "required" | "running" | "passed" | "failed"; scenarios: number; passed: number; usage: ChallengerUsage; outcomes?: Array<{ scenarioId: string; strong: number; weak: number; gap: number; review: boolean }>; updatedAt?: string };
     split: "held-out";
     trajectory: number;
     scenarioId?: string;
@@ -312,9 +312,9 @@ export class InfiniteAgentHarness {
     this.state.challenger ??= { corpusSha256: manifest.corpusSha256, calibration: { status: "required", scenarios: manifest.calibration.length, passed: 0, usage: emptyUsage() }, split: "held-out", trajectory: 1, scenarioCount: manifest.heldOut.length, driverUsage: emptyUsage(), judgeUsage: emptyUsage(), judgeReviewTurns: [] };
     if (this.state.challenger.corpusSha256 !== manifest.corpusSha256) throw new Error("Stored Challenger state does not match the frozen v6 corpus hash.");
     this.state.challenger.calibration ??= { status: "required", scenarios: manifest.calibration.length, passed: 0, usage: emptyUsage() };
-    const calibration = await readJson<{ protocolId: string; corpusSha256: string; passed: number; scenarios: number; usage: ChallengerUsage; updatedAt: string }>(this.calibrationPath);
+    const calibration = await readJson<{ protocolId: string; corpusSha256: string; passed: number; scenarios: number; usage: ChallengerUsage; outcomes?: Array<{ scenarioId: string; strong: number; weak: number; gap: number; review: boolean }>; updatedAt: string }>(this.calibrationPath);
     if (calibration?.protocolId === EXPERIMENT_PROTOCOL_ID && calibration.corpusSha256 === manifest.corpusSha256 && calibration.passed === manifest.calibration.length) {
-      this.state.challenger.calibration = { status: "passed", scenarios: calibration.scenarios, passed: calibration.passed, usage: calibration.usage, updatedAt: calibration.updatedAt };
+      this.state.challenger.calibration = { status: "passed", scenarios: calibration.scenarios, passed: calibration.passed, usage: calibration.usage, outcomes: calibration.outcomes, updatedAt: calibration.updatedAt };
     } else if (this.state.turnCount === 0) {
       this.state.challenger.calibration = { status: "required", scenarios: manifest.calibration.length, passed: 0, usage: emptyUsage() };
       this.state.status = "stopped";
@@ -377,6 +377,7 @@ export class InfiniteAgentHarness {
     try {
     let passed = 0;
     let usage = emptyUsage();
+    const outcomes: Array<{ scenarioId: string; strong: number; weak: number; gap: number; review: boolean }> = [];
     for (const [index, entry] of manifest.calibration.entries()) {
       const scenario = await readChallengerScenario(this.scenarioDir, entry.filename);
       if (!scenario) throw new Error(`Missing calibration scenario ${entry.filename}.`);
@@ -398,16 +399,18 @@ export class InfiniteAgentHarness {
         seed: this.state.design.seed + index,
       });
       usage = addChallengerUsage(usage, judgment.usage);
-      if (judgment.stateweave.score >= judgment.transcript.score + 15) passed += 1;
-      this.state.challenger.calibration = { status: "running", scenarios: manifest.calibration.length, passed, usage, updatedAt: new Date().toISOString() };
+      const gap = judgment.stateweave.score - judgment.transcript.score;
+      outcomes.push({ scenarioId: scenario.id, strong: judgment.stateweave.score, weak: judgment.transcript.score, gap, review: judgment.agreement.requiresHumanReview });
+      if (gap >= 15) passed += 1;
+      this.state.challenger.calibration = { status: "running", scenarios: manifest.calibration.length, passed, usage, outcomes: [...outcomes], updatedAt: new Date().toISOString() };
       await this.save();
     }
     const status = passed === manifest.calibration.length ? "passed" : "failed";
     const updatedAt = new Date().toISOString();
-    this.state.challenger.calibration = { status, scenarios: manifest.calibration.length, passed, usage, updatedAt };
+    this.state.challenger.calibration = { status, scenarios: manifest.calibration.length, passed, usage, outcomes, updatedAt };
     this.state.status = "stopped";
     this.state.message = status === "passed" ? "Challenger v6 blind-judge calibration passed; held-out trajectory is ready for an explicit start." : `Challenger v6 calibration failed ${manifest.calibration.length - passed} of ${manifest.calibration.length} anchor comparisons; held-out start remains blocked.`;
-    await atomicWriteJson(this.calibrationPath, { protocolId: EXPERIMENT_PROTOCOL_ID, corpusSha256: manifest.corpusSha256, passed, scenarios: manifest.calibration.length, usage, updatedAt }, 2);
+    await atomicWriteJson(this.calibrationPath, { protocolId: EXPERIMENT_PROTOCOL_ID, corpusSha256: manifest.corpusSha256, passed, scenarios: manifest.calibration.length, usage, outcomes, updatedAt }, 2);
     await this.save();
     } catch (error) {
       const current = this.state.challenger.calibration;
