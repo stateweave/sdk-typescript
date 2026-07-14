@@ -25,7 +25,7 @@ it("generates leak-checked participant starting materials", async () => {
 
 it("generates concrete calibration anchors with retry accounting", async () => {
   const scenario = await readChallengerScenario(path.resolve(process.cwd(), "data/challenger-scenarios"), "12-fraud-monitoring.md");
-  const valid = JSON.stringify({ answer: "A concrete decision package with corrected prevalence, threshold choice, capacity impact, segment uncertainty, monitoring, and limitations.".repeat(2), evidence: "Dated source row, correction changelog, threshold table, queue simulation, segment interval, shadow result, and rollback trigger. ".repeat(20) });
+  const valid = `<<<ANSWER>>>\n${"A concrete decision package with corrected prevalence, threshold choice, capacity impact, segment uncertainty, monitoring, and limitations. ".repeat(2)}\n<<<EVIDENCE>>>\n${"Dated source row, correction changelog, threshold table, queue simulation, segment interval, shadow result, and rollback trigger. ".repeat(20)}\n<<<END>>>`;
   const anchor = await generateCalibrationAnchor(scenario!, scenario!.turns.at(-1)!, new QueueModel(["invalid", valid]));
   expect(anchor.answer.length).toBeGreaterThan(100);
   expect(anchor.evidence.length).toBeGreaterThan(500);
