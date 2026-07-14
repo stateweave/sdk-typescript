@@ -52,14 +52,25 @@ it("ships a balanced 24-scenario, 180-turn review corpus", async () => {
 
   for (const summary of summaries) {
     const scenario = await readChallengerScenario(root, summary.filename);
-    expect(scenario?.markdown).toContain("## TL;DR");
-    expect(scenario?.markdown).toContain("## Hidden acceptance criteria");
-    expect(scenario?.markdown).toContain("## Behavioral verification");
-    expect(scenario?.markdown).toContain("## Quality rubric");
-    expect(scenario?.markdown).toContain("## Challenger notes");
-    const headedTurns = scenario?.markdown.match(/^### Turn \d+/gm)?.length ?? 0;
-    const listedTurns = scenario?.markdown.match(/^\d+\. \*\*/gm)?.length ?? 0;
-    expect(headedTurns || listedTurns).toBe(summary.estimatedTurns);
+    const markdown = scenario?.markdown ?? "";
+    const section = (heading: string): string => markdown.match(new RegExp(`## ${heading}\\n\\n([\\s\\S]*?)(?=\\n\\n## |$)`))?.[1] ?? "";
+    const listItemCount = (value: string): number => value.match(/^(?:- |\d+\. )/gm)?.length ?? 0;
+
+    expect(markdown).toContain("## TL;DR");
+    expect(markdown).toContain("## Why this scenario exists");
+    expect(markdown).toContain("## Hidden acceptance criteria");
+    expect(markdown).toContain("## Behavioral verification");
+    expect(markdown).toContain("## Quality rubric");
+    expect(markdown).toContain("## Challenger notes");
+    expect(markdown.split(/\s+/).filter(Boolean).length).toBeGreaterThanOrEqual(600);
+    expect(markdown.match(/^### Turn \d+/gm)?.length ?? 0).toBe(summary.estimatedTurns);
+    expect(markdown.match(/^> /gm)?.length ?? 0).toBe(summary.estimatedTurns);
+    expect(listItemCount(section("Hidden acceptance criteria"))).toBeGreaterThanOrEqual(8);
+    expect(listItemCount(section("Behavioral verification"))).toBeGreaterThanOrEqual(6);
+    expect(listItemCount(section("Challenger notes"))).toBeGreaterThanOrEqual(4);
+    const rubricScores = [...section("Quality rubric").matchAll(/: (\d+)$/gm)].map((match) => Number(match[1]));
+    expect(rubricScores.length).toBeGreaterThanOrEqual(6);
+    expect(rubricScores.reduce((sum, score) => sum + score, 0)).toBe(100);
   }
 });
 
