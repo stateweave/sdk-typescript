@@ -12,7 +12,7 @@ import { estimateStateWeaveTokens } from "../llm/tokenizer.js";
 import { createFileSystemTools } from "../tools/fileSystemTools.js";
 import { AgenticBaseline, type AgenticMessage, type AgenticProgress, type AgenticTurnResult } from "./agenticBaseline.js";
 import { inspectFrontendCoherence, relayDeskSeedStyles } from "./fullStackProject.js";
-import { generateParticipantStartingMaterials, judgeChallengerPair, type ChallengerCandidateJudgment, type ChallengerUsage } from "./challengerDirector.js";
+import { generateCalibrationAnchor, generateParticipantStartingMaterials, judgeChallengerPair, type ChallengerCandidateJudgment, type ChallengerUsage } from "./challengerDirector.js";
 import { buildChallengerProtocolManifest, CHALLENGER_V6_PROTOCOL_ID, CHALLENGER_V6_SEED } from "./challengerProtocol.js";
 import { readChallengerScenario, type ChallengerScenario, type ChallengerScenarioTurn } from "./challengerScenarioLibrary.js";
 
@@ -382,18 +382,16 @@ export class InfiniteAgentHarness {
       const scenario = await readChallengerScenario(this.scenarioDir, entry.filename);
       if (!scenario) throw new Error(`Missing calibration scenario ${entry.filename}.`);
       this.setProgress(0, "harness", { phase: "verifying", detail: `Calibrating private blind judge ${index + 1}/${manifest.calibration.length}: ${scenario.id}` });
-      const strongEvidence = [
-        "Synthetic calibration anchor: intentionally strong, evidence-backed outcome.",
-        ...scenario.hiddenAcceptanceCriteria.map((criterion) => `VERIFIED: ${criterion} Evidence: dated artifact, reproducible check, and current-state trace are present.`),
-        ...scenario.behavioralVerification.map((check) => `CHECK PASSED: ${check}`)
-      ].join("\n");
-      const weakEvidence = "Synthetic calibration anchor: no workspace artifact, no verification, no provenance, and no support for completion claims.";
+      const calibrationTurn = scenario.turns.at(-1)!;
+      const anchor = await generateCalibrationAnchor(scenario, calibrationTurn, this.model);
+      usage = addChallengerUsage(usage, anchor.usage);
+      const weakEvidence = "No workspace artifact, no verification, no provenance, and no support for completion claims.";
       const judgment = await judgeChallengerPair({
         scenario,
-        turn: scenario.turns[0]!,
-        stateweaveAnswer: "Completed the request; the attached calibration evidence contains the verified result.",
+        turn: calibrationTurn,
+        stateweaveAnswer: anchor.answer,
         transcriptAnswer: "Done. Everything looks good.",
-        stateweaveEvidence: strongEvidence,
+        stateweaveEvidence: anchor.evidence,
         transcriptEvidence: weakEvidence,
         model: this.model,
         seed: this.state.design.seed + index,

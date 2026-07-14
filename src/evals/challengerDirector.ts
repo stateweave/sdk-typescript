@@ -51,6 +51,39 @@ export async function generateParticipantStartingMaterials(scenario: ChallengerS
   return { markdown, usage: addUsage(usageFor(prompt, output.text, output.usage), usageFor(auditPrompt, audit.text, audit.usage)) };
 }
 
+export async function generateCalibrationAnchor(scenario: ChallengerScenario, turn: ChallengerScenarioTurn, model: Model, signal?: AbortSignal): Promise<{ answer: string; evidence: string; usage: ChallengerUsage }> {
+  const prompt = [
+    "Create an intentionally excellent synthetic calibration anchor for the current private scenario turn.",
+    "Return strict compact JSON with string keys answer and evidence.",
+    "The answer must be candid and decision-useful. Evidence must contain concrete excerpts from realistic durable artifacts, source/provenance records, correction history, current-state distinctions, and actual behavioral check results sufficient to support the answer.",
+    "Satisfy all obligations that should exist by this turn without mentioning calibration, grading, hidden criteria, or future work. Keep evidence under 1,500 words.",
+    "",
+    "PRIVATE SCENARIO:", scenario.markdown,
+    "",
+    `CURRENT REQUEST (Turn ${turn.turn}):`, turn.request
+  ].join("\n");
+  let usage = emptyUsage();
+  let repair = "";
+  let lastError = "";
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const attemptPrompt = repair ? `${prompt}\n\nPrevious invalid JSON (${lastError}):\n${repair}\nReturn a fresh complete JSON object only.` : prompt;
+    const output = await model.complete({ prompt: attemptPrompt, mode: "text", system: DIRECTOR_SYSTEM, signal });
+    usage = addUsage(usage, usageFor(attemptPrompt, output.text, output.usage));
+    try {
+      const parsed = JSON.parse(output.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "")) as { answer?: unknown; evidence?: unknown };
+      const answer = String(parsed.answer ?? "").trim();
+      const evidence = String(parsed.evidence ?? "").trim();
+      if (answer.length < 100 || evidence.length < 500) throw new Error("anchor answer or evidence was too short");
+      return { answer, evidence, usage };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      repair = output.text.slice(0, 8_000);
+      if (attempt === 3) throw new Error(`Challenger calibration anchor was invalid three times: ${lastError}`);
+    }
+  }
+  throw new Error("Challenger calibration anchor retry loop ended unexpectedly.");
+}
+
 export async function judgeChallengerPair(args: {
   scenario: ChallengerScenario;
   turn: ChallengerScenarioTurn;
@@ -91,8 +124,8 @@ async function judgeOnce(args: Parameters<typeof judgeChallengerPair>[0], swappe
     "Privately judge two anonymized candidates for the current turn.",
     "Use prior scenario context only to understand longitudinal obligations; do not require future-turn work early.",
     "Scores are 0-100 weighted by the supplied rubric. Unsupported claims receive no credit. Different implementations are equally valid when behavior and evidence satisfy the requirement.",
-    "Return strict compact JSON with keys candidateA and candidateB. Each candidate must contain only score, dimensions [{label,score,evidence}], and summary.",
-    "Include every rubric dimension exactly once. Dimension scores are numeric 0-100 attainment values; keep each evidence string under 25 words and summary under 50 words. The top-level score must be their weighted mean.",
+    "Return strict compact JSON with keys candidateA and candidateB. Each candidate must contain only scorePercent, dimensions [{label,attainmentPercent,evidence}], and summary.",
+    "Include every rubric dimension exactly once. Every attainmentPercent and scorePercent must be a numeric percentage from 0 to 100, never a 0-1 fraction, 0-10 rating, rubric weight, or weighted contribution. Keep each evidence string under 25 words and summary under 50 words.",
     "",
     "PRIVATE SCENARIO:",
     args.scenario.markdown,
@@ -137,13 +170,13 @@ function parseJudgment(raw: string, scenario: ChallengerScenario): AnonymousJudg
 function validateCandidate(value: unknown, scenario: ChallengerScenario): ChallengerCandidateJudgment {
   if (!value || typeof value !== "object") throw new Error("Challenger judge omitted a candidate judgment.");
   const candidate = value as Partial<ChallengerCandidateJudgment>;
-  const dimensions = Array.isArray(candidate.dimensions) ? candidate.dimensions : [];
+  const dimensions = Array.isArray(candidate.dimensions) ? candidate.dimensions as Array<Record<string, unknown>> : [];
   const normalizedJudgments = dimensions.map((dimension) => ({ normalized: normalizeRubricLabel(String(dimension.label)), dimension }));
   const normalizedDimensions = scenario.rubric.map((dimension) => {
     const expected = normalizeRubricLabel(dimension.label);
     const judged = normalizedJudgments.find((entry) => entry.normalized && (entry.normalized === expected || entry.normalized.includes(expected) || expected.includes(entry.normalized)))?.dimension;
     if (!judged) throw new Error(`Challenger judge omitted rubric dimension: ${dimension.label}`);
-    const score = boundedScore(judged.score);
+    const score = boundedScore(judged.attainmentPercent ?? judged.score);
     return { label: dimension.label, score, evidence: String(judged.evidence ?? "No evidence supplied.").slice(0, 2_000) };
   });
   const weighted = scenario.rubric.reduce((sum, dimension, index) => sum + normalizedDimensions[index]!.score * dimension.weight / 100, 0);
