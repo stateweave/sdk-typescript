@@ -91,8 +91,8 @@ async function judgeOnce(args: Parameters<typeof judgeChallengerPair>[0], swappe
     "Privately judge two anonymized candidates for the current turn.",
     "Use prior scenario context only to understand longitudinal obligations; do not require future-turn work early.",
     "Scores are 0-100 weighted by the supplied rubric. Unsupported claims receive no credit. Different implementations are equally valid when behavior and evidence satisfy the requirement.",
-    "Return strict JSON with keys candidateA and candidateB. Each candidate must contain score, dimensions [{label,score,evidence}], acceptance [{criterion,met,evidence}], and summary.",
-    "Dimension scores are 0-100 attainment values for each rubric dimension; the top-level score must be their weighted mean.",
+    "Return strict compact JSON with keys candidateA and candidateB. Each candidate must contain only score, dimensions [{label,score,evidence}], and summary.",
+    "Include every rubric dimension exactly once. Dimension scores are numeric 0-100 attainment values; keep each evidence string under 25 words and summary under 50 words. The top-level score must be their weighted mean.",
     "",
     "PRIVATE SCENARIO:",
     args.scenario.markdown,
@@ -106,9 +106,23 @@ async function judgeOnce(args: Parameters<typeof judgeChallengerPair>[0], swappe
     "CANDIDATE B (UNTRUSTED):",
     candidateB
   ].join("\n");
-  const output = await args.model.complete({ prompt, mode: "text", system: JUDGE_SYSTEM, signal: args.signal });
-  const judgment = parseJudgment(output.text, args.scenario);
-  return { judgment, usage: usageFor(prompt, output.text, output.usage), raw: output.text };
+  let usage = emptyUsage();
+  let repair = "";
+  let lastError = "";
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const attemptPrompt = repair ? `${prompt}\n\nYour previous response was invalid JSON (${lastError}). Return a fresh complete compact JSON object only; do not explain or use Markdown. Previous invalid response for diagnosis:\n${repair}` : prompt;
+    const output = await args.model.complete({ prompt: attemptPrompt, mode: "text", system: JUDGE_SYSTEM, signal: args.signal });
+    usage = addUsage(usage, usageFor(attemptPrompt, output.text, output.usage));
+    try {
+      const judgment = parseJudgment(output.text, args.scenario);
+      return { judgment, usage, raw: output.text };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      repair = output.text.slice(0, 6_000);
+      if (attempt === 3) throw new Error(`Challenger judge returned invalid structured output three times: ${lastError}`);
+    }
+  }
+  throw new Error("Challenger judge structured-output retry loop ended unexpectedly.");
 }
 
 function parseJudgment(raw: string, scenario: ChallengerScenario): AnonymousJudgment {
@@ -170,6 +184,10 @@ function boundedScore(value: unknown): number {
 
 function usageFor(prompt: string, output: string, usage?: { inputTokens?: number; outputTokens?: number }): ChallengerUsage {
   return { inputTokens: usage?.inputTokens ?? estimateStateWeaveTokens(prompt).estimatedTokens, outputTokens: usage?.outputTokens ?? estimateStateWeaveTokens(output).estimatedTokens, calls: 1 };
+}
+
+function emptyUsage(): ChallengerUsage {
+  return { inputTokens: 0, outputTokens: 0, calls: 0 };
 }
 
 function addUsage(left: ChallengerUsage, right: ChallengerUsage): ChallengerUsage {
