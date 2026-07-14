@@ -124,11 +124,13 @@ function validateCandidate(value: unknown, scenario: ChallengerScenario): Challe
   if (!value || typeof value !== "object") throw new Error("Challenger judge omitted a candidate judgment.");
   const candidate = value as Partial<ChallengerCandidateJudgment>;
   const dimensions = Array.isArray(candidate.dimensions) ? candidate.dimensions : [];
-  const byLabel = new Map(dimensions.map((dimension) => [String(dimension.label).toLowerCase(), dimension]));
+  const normalizedJudgments = dimensions.map((dimension) => ({ normalized: normalizeRubricLabel(String(dimension.label)), dimension }));
   const normalizedDimensions = scenario.rubric.map((dimension) => {
-    const judged = byLabel.get(dimension.label.toLowerCase());
-    const score = boundedScore(judged?.score);
-    return { label: dimension.label, score, evidence: String(judged?.evidence ?? "No evidence supplied.").slice(0, 2_000) };
+    const expected = normalizeRubricLabel(dimension.label);
+    const judged = normalizedJudgments.find((entry) => entry.normalized && (entry.normalized === expected || entry.normalized.includes(expected) || expected.includes(entry.normalized)))?.dimension;
+    if (!judged) throw new Error(`Challenger judge omitted rubric dimension: ${dimension.label}`);
+    const score = boundedScore(judged.score);
+    return { label: dimension.label, score, evidence: String(judged.evidence ?? "No evidence supplied.").slice(0, 2_000) };
   });
   const weighted = scenario.rubric.reduce((sum, dimension, index) => sum + normalizedDimensions[index]!.score * dimension.weight / 100, 0);
   return {
@@ -156,8 +158,12 @@ function candidateEvidence(answer: string, evidence: string): string {
   return `FINAL ANSWER:\n${answer.slice(0, 20_000)}\n\nCHANGED WORKSPACE EVIDENCE:\n${evidence.slice(0, 160_000)}`;
 }
 
+function normalizeRubricLabel(value: string): string {
+  return value.toLowerCase().replace(/\b(?:weight|weighted)\b/g, "").replace(/\d+(?:\.\d+)?\s*%?/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+}
+
 function boundedScore(value: unknown): number {
-  const score = Number(value);
+  const score = typeof value === "string" ? Number.parseFloat(value) : Number(value);
   if (!Number.isFinite(score)) return 0;
   return Math.max(0, Math.min(100, score));
 }

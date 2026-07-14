@@ -33,6 +33,8 @@ it("double-judges in opposite anonymous orders and computes rubric-weighted scor
     summary: "Evidence-based judgment."
   });
   const output = JSON.stringify({ candidateA: candidate(80), candidateB: candidate(60) });
+  const decorated = (score: number) => ({ ...candidate(score), dimensions: scenario!.rubric.map((dimension) => ({ label: `${dimension.label} (${dimension.weight}%)`, score: `${score}/100`, evidence: "Observable artifact evidence." })) });
+  const reversedFormatOutput = JSON.stringify({ candidateA: decorated(80), candidateB: decorated(60) });
   const judgment = await judgeChallengerPair({
     scenario: scenario!,
     turn: scenario!.turns[0]!,
@@ -40,7 +42,7 @@ it("double-judges in opposite anonymous orders and computes rubric-weighted scor
     transcriptAnswer: "Done",
     stateweaveEvidence: "artifact",
     transcriptEvidence: "artifact",
-    model: new QueueModel([output, output]),
+    model: new QueueModel([output, reversedFormatOutput]),
     seed: 42
   });
 
