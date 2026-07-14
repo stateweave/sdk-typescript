@@ -40,6 +40,29 @@ it("lists curated Markdown scenarios and returns reviewable bodies", async () =>
   }
 });
 
+it("ships a balanced 24-scenario, 180-turn review corpus", async () => {
+  const root = path.resolve(process.cwd(), "data/challenger-scenarios");
+  const summaries = await listChallengerScenarios(root);
+  const domains = Object.fromEntries([...new Set(summaries.map((scenario) => scenario.domain))].map((domain) => [domain, summaries.filter((scenario) => scenario.domain === domain).length]));
+
+  expect(summaries).toHaveLength(24);
+  expect(new Set(summaries.map((scenario) => scenario.id)).size).toBe(24);
+  expect(summaries.reduce((sum, scenario) => sum + scenario.estimatedTurns, 0)).toBe(180);
+  expect(Object.values(domains)).toEqual(Array(8).fill(3));
+
+  for (const summary of summaries) {
+    const scenario = await readChallengerScenario(root, summary.filename);
+    expect(scenario?.markdown).toContain("## TL;DR");
+    expect(scenario?.markdown).toContain("## Hidden acceptance criteria");
+    expect(scenario?.markdown).toContain("## Behavioral verification");
+    expect(scenario?.markdown).toContain("## Quality rubric");
+    expect(scenario?.markdown).toContain("## Challenger notes");
+    const headedTurns = scenario?.markdown.match(/^### Turn \d+/gm)?.length ?? 0;
+    const listedTurns = scenario?.markdown.match(/^\d+\. \*\*/gm)?.length ?? 0;
+    expect(headedTurns || listedTurns).toBe(summary.estimatedTurns);
+  }
+});
+
 it("rejects traversal and missing scenario files", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "challenger-scenarios-safe-"));
   try {
