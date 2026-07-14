@@ -485,10 +485,6 @@ const challengerLibraryCount = element<HTMLElement>("challenger-library-count");
 const challengerScenarioList = element<HTMLElement>("challenger-scenario-list");
 const challengerScenarioHeading = element<HTMLElement>("challenger-scenario-heading");
 const challengerScenarioContent = element<HTMLElement>("challenger-scenario-content");
-const infiniteStateWeaveApp = element<HTMLAnchorElement>("infinite-stateweave-app");
-const infiniteNativeApp = element<HTMLAnchorElement>("infinite-native-app");
-infiniteStateWeaveApp.href = `${apiBase}/api/infinite-agent/apps/stateweave/`;
-infiniteNativeApp.href = `${apiBase}/api/infinite-agent/apps/native/`;
 // The Infinite tab polls the server-owned agent harness through one state endpoint.
 const chat = element<HTMLElement>("chat");
 const form = element<HTMLFormElement>("composer");
@@ -3032,6 +3028,7 @@ type InfiniteStateView = {
   naiveContextLimit: number;
   naiveStrategy: { kind: "summary-compaction"; thresholdTokens: number; retainMessages: number; startedAtTurn: number; totalCompactions: number; lastCompactionTurn?: number };
   turnArchive: { firstTurn: number; lastTurn: number; count: number };
+  challenger?: { corpusSha256: string; split: "held-out"; trajectory: number; scenarioId?: string; scenarioIndex?: number; scenarioTurn?: number; scenarioCount: number; calibration: { status: string; scenarios: number; passed: number; usage: { inputTokens: number; outputTokens: number; calls: number }; updatedAt?: string }; driverUsage: { inputTokens: number; outputTokens: number; calls: number }; judgeUsage: { inputTokens: number; outputTokens: number; calls: number }; judgeReviewTurns: number[] };
   message?: string;
 };
 
@@ -3052,7 +3049,9 @@ async function loadChallengerScenarioLibrary(): Promise<void> {
     challengerScenarioSummaries = library.scenarios;
     challengerLibraryTldr.textContent = library.tldr;
     const totalTurns = library.scenarios.reduce((sum, scenario) => sum + scenario.estimatedTurns, 0);
-    challengerLibraryCount.textContent = `${library.scenarios.length} review drafts · ${totalTurns} planned turns`;
+    const calibration = library.scenarios.filter((scenario) => scenario.status === "calibration").length;
+    const heldOut = library.scenarios.filter((scenario) => scenario.status === "held-out").length;
+    challengerLibraryCount.textContent = `${calibration} calibration · ${heldOut} held-out · ${totalTurns} planned turns`;
     renderChallengerScenarioList();
     challengerScenarioLibraryLoaded = true;
     if (library.scenarios[0]) await openChallengerScenario(library.scenarios[0].filename);
@@ -3345,6 +3344,7 @@ function renderInfiniteStatistics(state: InfiniteStateView): void {
         ${state.design.protocolId ? `<p><code>${escapeHtml(state.design.protocolId)}</code></p>` : ""}
         <p>${escapeHtml(state.design.executionOrder)}</p>
         <p>${escapeHtml(state.design.stoppingRule)}</p>
+        ${state.challenger ? `<p><strong>Calibration:</strong> ${escapeHtml(state.challenger.calibration.status)} · ${state.challenger.calibration.passed}/${state.challenger.calibration.scenarios} anchors · driver ${state.challenger.driverUsage.calls} calls · judge ${state.challenger.judgeUsage.calls} calls · ${state.challenger.judgeReviewTurns.length} review flags</p>` : ""}
         ${state.design.blindingPolicy ? `<p>${escapeHtml(state.design.blindingPolicy)}</p>` : ""}
         ${state.design.challengerPolicy ? `<p>${escapeHtml(state.design.challengerPolicy)}</p>` : ""}
         ${state.design.failurePolicy ? `<p>${escapeHtml(state.design.failurePolicy)}</p>` : ""}
@@ -3353,14 +3353,14 @@ function renderInfiniteStatistics(state: InfiniteStateView): void {
         ${state.design.qualityPolicy ? `<p>${escapeHtml(state.design.qualityPolicy)}</p>` : ""}
       </article>
       ${evidence ? `<article class="infinite-stat-card">
-        <h4>Primary analysis <small>n=${evidence.blocks} paired cumulative release blocks</small></h4>
+        <h4>Primary analysis <small>n=${evidence.blocks} complete held-out scenarios</small></h4>
         <strong>${(evidence.meanDifference * 100).toFixed(2)} quality-point graph difference</strong>
         <p>Graph ${(evidence.stateweaveMean * 100).toFixed(2)}% · challenger ${(evidence.nativeMean * 100).toFixed(2)}% · bootstrap 95% CI ${(evidence.confidenceLow * 100).toFixed(2)} to ${(evidence.confidenceHigh * 100).toFixed(2)} points</p>
         <p>Two-sided sign-flip permutation p=${p(evidence.permutationPValue)} · ${evidence.resamples.toLocaleString()} seeded resamples</p>
-        <p>Block wins/ties/losses ${evidence.wins}/${evidence.ties}/${evidence.losses} · exact sign-test p=${p(evidence.signTestPValue)}</p>
-      </article>` : `<article class="infinite-stat-card"><h4>Primary analysis</h4><p>Waiting for at least two complete eight-turn blocks.</p></article>`}
+        <p>Scenario wins/ties/losses ${evidence.wins}/${evidence.ties}/${evidence.losses} · exact sign-test p=${p(evidence.signTestPValue)}</p>
+      </article>` : `<article class="infinite-stat-card"><h4>Primary analysis</h4><p>Waiting for the first complete held-out scenario.</p></article>`}
     </div>
-    <p class="statistics-caveat">${escapeHtml(state.design.analysisPlan)} Blocks evolve one cumulative product and are serially dependent; these p-values summarize this frozen protocol and are not standalone causal proof. The dashboard does not change the stopping rule when results are viewed.</p>`;
+    <p class="statistics-caveat">${escapeHtml(state.design.analysisPlan)} Scenarios evolve one continuous trajectory and are serially dependent; these statistics summarize this frozen protocol and are not standalone causal proof. The dashboard does not change the stopping rule when results are viewed.</p>`;
 }
 
 function renderInfiniteTurnDetail(turn: InfiniteTurn): void {
@@ -3472,6 +3472,7 @@ function drawLineChart<T extends { turn: number }>(canvas: HTMLCanvasElement, se
 
 // --- Infinite agent controls ---
 
+const infiniteCalibrateButton = element<HTMLButtonElement>("infinite-calibrate");
 const swLoopStartButton = element<HTMLButtonElement>("sw-loop-start");
 const swLoopStopButton = element<HTMLButtonElement>("sw-loop-stop");
 const swLoopStatus = element<HTMLElement>("sw-loop-status");
@@ -3504,6 +3505,21 @@ infiniteTurnLatest.addEventListener("click", () => {
 });
 infiniteTurnNumber.addEventListener("keydown", (event) => {
   if (event.key === "Enter") void openInfiniteTurn(Number(infiniteTurnNumber.value));
+});
+
+infiniteCalibrateButton.addEventListener("click", async () => {
+  infiniteCalibrateButton.disabled = true;
+  swLoopStatus.innerHTML = `<p class="muted-copy">Running private blind-judge anchor calibration…</p>`;
+  try {
+    const response = await fetch(`${apiBase}/api/infinite-agent/calibrate`, { method: "POST" });
+    if (!response.ok) throw new Error(`Calibration failed (${response.status})`);
+    swLoopStatus.innerHTML = `<p class="muted-copy">Calibration started. Progress will update below.</p>`;
+    startSwLoopPoll();
+  } catch (error) {
+    swLoopStatus.innerHTML = `<p class="message error">${escapeHtml(error instanceof Error ? error.message : String(error))}</p>`;
+  } finally {
+    infiniteCalibrateButton.disabled = false;
+  }
 });
 
 swLoopStartButton.addEventListener("click", async () => {
@@ -3551,7 +3567,8 @@ function renderAgentRuntime(state: InfiniteStateView): void {
   const running = state.status === "running";
   const progress = state.progress;
   const trajectory = (state.trajectory ?? []).slice(-8);
-  swLoopStartButton.disabled = running;
+  infiniteCalibrateButton.disabled = running || state.challenger?.calibration.status === "running" || state.challenger?.calibration.status === "passed";
+  swLoopStartButton.disabled = running || state.challenger?.calibration.status !== "passed";
   swLoopStopButton.disabled = !running;
   swLoopStatus.innerHTML = `
     <div class="infinite-metric"><span class="metric-label">Agent status</span><strong>${escapeHtml(state.status)}</strong></div>

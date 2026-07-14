@@ -4,7 +4,7 @@ title: Adaptive professional learning program
 tldr: Tests whether an agent can maintain a months-long learning plan, incorporate performance evidence, revise misconceptions, and preserve motivation without lowering standards.
 domain: long-term-knowledge-and-organization
 estimated_turns: 8
-status: draft
+status: calibration
 ---
 
 # Adaptive professional learning program

@@ -4,7 +4,7 @@ title: Technical acquisition diligence
 tldr: Tests whether an agent can maintain a coherent diligence thesis as repository, security, revenue, and organizational evidence conflict.
 domain: research-and-strategy
 estimated_turns: 8
-status: draft
+status: held-out
 ---
 
 # Technical acquisition diligence

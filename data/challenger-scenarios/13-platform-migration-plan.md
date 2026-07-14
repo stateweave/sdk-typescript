@@ -4,7 +4,7 @@ title: Cross-team platform migration
 tldr: Tests whether an agent can coordinate a multi-quarter migration with dependencies, ownership, changing constraints, and measurable exit criteria.
 domain: project-planning-and-coordination
 estimated_turns: 8
-status: draft
+status: calibration
 ---
 
 # Cross-team platform migration

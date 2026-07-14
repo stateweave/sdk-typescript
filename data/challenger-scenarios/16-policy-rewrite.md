@@ -4,7 +4,7 @@ title: Employee policy rewrite with stakeholder conflict
 tldr: Tests whether an agent can revise a sensitive policy through legal, employee, operational, and executive feedback without losing rationale or consistency.
 domain: writing-and-stakeholder-communication
 estimated_turns: 7
-status: draft
+status: calibration
 ---
 
 # Employee policy rewrite with stakeholder conflict

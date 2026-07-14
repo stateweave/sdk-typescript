@@ -246,16 +246,15 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
             <div>
               <p class="eyebrow">Long-horizon agent benchmark</p>
               <h2>Infinite agent</h2>
-              <p class="muted-copy">The V5 diagnostic compared two persistent engineers with matched requests and tools: a bounded graph projection and a transcript compacted at 250k tokens. That run is paused while the next protocol is reviewed. The private Challenger scenario library below is the draft human context and quality contract for that redesign; it is not yet wired into scoring.</p>
+              <p class="muted-copy">V6 runs the frozen held-out Challenger trajectory: both persistent participants receive identical canonical requests and generated starting evidence, while two order-reversed private blind judgments score behavior and provenance. Driver and judge tokens are tracked separately from participant efficiency.</p>
             </div>
             <div id="infinite-live-badge" class="infinite-live-badge">waiting</div>
           </div>
           <div class="infinite-controls" style="margin-bottom: 14px;">
-            <button id="sw-loop-start" class="button" type="button">Start agent</button>
-            <button id="sw-loop-stop" class="button secondary" type="button" disabled>Stop agent</button>
+            <button id="infinite-calibrate" class="button secondary" type="button">Calibrate blind judge</button>
+            <button id="sw-loop-start" class="button" type="button">Start held-out run</button>
+            <button id="sw-loop-stop" class="button secondary" type="button" disabled>Stop run</button>
             <button id="infinite-open-graph" class="button secondary" type="button">Open live graph</button>
-            <a id="infinite-stateweave-app" class="button secondary" href="#" target="_blank" rel="noopener">Open graph candidate app</a>
-            <a id="infinite-native-app" class="button secondary" href="#" target="_blank" rel="noopener">Open challenger app</a>
           </div>
           <div id="sw-loop-status" class="sw-loop-status"></div>
           <div id="infinite-metrics" class="infinite-metrics"></div>

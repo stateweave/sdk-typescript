@@ -4,7 +4,7 @@ title: Demand forecast with structural break
 tldr: Tests whether an agent can maintain a forecast when seasonality, promotions, stockouts, and a later structural break complicate historical data.
 domain: data-analysis-and-forecasting
 estimated_turns: 7
-status: draft
+status: calibration
 ---
 
 # Demand forecast with structural break

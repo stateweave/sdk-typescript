@@ -4,7 +4,7 @@ title: Evolving service-incident communications
 tldr: Tests whether an agent can communicate during a crisis as facts change, avoiding speculation, contradiction, and premature closure.
 domain: writing-and-stakeholder-communication
 estimated_turns: 8
-status: draft
+status: held-out
 ---
 
 # Evolving service-incident communications

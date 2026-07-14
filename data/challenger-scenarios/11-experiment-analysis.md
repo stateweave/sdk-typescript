@@ -4,7 +4,7 @@ title: Product experiment with metric conflict
 tldr: Tests whether an agent can analyze a product experiment when assignment, attrition, novelty, and conflicting metrics complicate the headline result.
 domain: data-analysis-and-forecasting
 estimated_turns: 8
-status: draft
+status: held-out
 ---
 
 # Product experiment with metric conflict

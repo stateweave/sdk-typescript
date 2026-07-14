@@ -4,7 +4,7 @@ title: Conference product launch coordination
 tldr: Tests whether an agent can coordinate a fixed-date launch across product, marketing, legal, support, and operations while scope changes.
 domain: project-planning-and-coordination
 estimated_turns: 7
-status: draft
+status: calibration
 ---
 
 # Conference product launch coordination

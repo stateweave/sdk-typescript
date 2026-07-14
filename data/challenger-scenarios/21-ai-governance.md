@@ -4,7 +4,7 @@ title: AI feature governance and release review
 tldr: Tests whether an agent can govern an AI-assisted feature across intended use, evaluation, human oversight, incidents, and changing model behavior.
 domain: compliance-policy-and-risk
 estimated_turns: 8
-status: draft
+status: calibration
 ---
 
 # AI feature governance and release review

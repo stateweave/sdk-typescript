@@ -4,7 +4,7 @@ title: Long-running family logistics coordinator
 tldr: Tests whether an agent can maintain preferences, constraints, corrections, schedules, and commitments across an evolving personal planning session.
 domain: long-term-knowledge-and-organization
 estimated_turns: 7
-status: draft
+status: calibration
 ---
 
 # Long-running family logistics coordinator
