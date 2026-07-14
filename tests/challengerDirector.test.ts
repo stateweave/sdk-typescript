@@ -42,11 +42,11 @@ it("double-judges in opposite anonymous orders and computes rubric-weighted scor
     transcriptAnswer: "Done",
     stateweaveEvidence: "artifact",
     transcriptEvidence: "artifact",
-    model: new QueueModel([output, reversedFormatOutput]),
+    model: new QueueModel(["{ invalid", output, reversedFormatOutput]),
     seed: 42
   });
 
   expect([judgment.stateweave.score, judgment.transcript.score].sort()).toEqual([70, 70]);
   expect(judgment.agreement.requiresHumanReview).toBe(true);
-  expect(judgment.usage.calls).toBe(2);
+  expect(judgment.usage.calls).toBe(3);
 });
