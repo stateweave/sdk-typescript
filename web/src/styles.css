@@ -3261,6 +3261,9 @@ label {
   margin-bottom: 16px;
 }
 
+.sw-loop-status .infinite-metric { min-width: 0; }
+.sw-loop-status .infinite-metric strong { overflow-wrap: anywhere; }
+
 .sw-loop-iterations {
   display: flex;
   flex-direction: column;
