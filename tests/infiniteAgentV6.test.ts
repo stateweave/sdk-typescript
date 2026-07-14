@@ -5,6 +5,8 @@ import { serializeGraphFrame } from "../src/core/serialize.js";
 import { AgenticBaseline } from "../src/evals/agenticBaseline.js";
 import {
   completionGatedScore,
+  entitySearchIsConnected,
+  summaryFrontendIsConnected,
   entityRouteBlock,
   entityRouteCount,
   INFINITE_AGENT_BLIND_PROVIDER_SYSTEM,
@@ -104,6 +106,15 @@ it("matches exact method routes instead of a prefix-related summary route", () =
 it("rejects duplicate exact route handlers", () => {
   const route = 'if (url.pathname === "/api/incidents" && request.method === "GET") return json(response, 200, []);';
   expect(entityRouteCount(`${route}\n${route}`, "incidents", "GET")).toBe(2);
+});
+
+it("accepts behaviorally equivalent search and summary frontend wiring", () => {
+  const searchHtml = `<form id="incident-search-form"><label for="incident-search">Search</label><input id="incident-search" type="search"></form>`;
+  const submitWiring = `document.querySelector('#incident-search-form').addEventListener('submit', async (event) => { const q = document.getElementById('incident-search').value; await fetch('/api/incidents?q=' + encodeURIComponent(q)); });`;
+  const summaryWiring = `const target = document.getElementById('incident-summary'); fetch('/api/incidents/summary').then(r => r.json()).then(data => target.innerHTML = render(data));`;
+
+  expect(entitySearchIsConnected(searchHtml, submitWiring, "incident")).toBe(true);
+  expect(summaryFrontendIsConnected(summaryWiring, "incidents", "incident")).toBe(true);
 });
 
 it("scores agent exhaustion as zero regardless of partial workspace checks", () => {

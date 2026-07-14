@@ -4,7 +4,7 @@ title: Subscription billing migration
 tldr: Tests whether an agent can replace a billing model gradually while preserving invoices, entitlements, webhooks, and rollback safety.
 domain: product-engineering
 estimated_turns: 8
-status: draft
+status: calibration
 ---
 
 # Subscription billing migration

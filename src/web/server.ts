@@ -185,8 +185,14 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
 
   const infiniteAppMatch = url.pathname.match(/^\/api\/infinite-agent\/apps\/(stateweave|native)(\/.*)?$/);
   if (infiniteAppMatch) {
+    json(response, 410, { error: "Infinite v6 uses private generic workspaces; participant applications are not exposed." });
+    return;
+  }
+
+  if (url.pathname === "/api/infinite-agent/calibrate" && request.method === "POST") {
     await infiniteAgentReady;
-    await proxyInfiniteApp(request, response, infiniteAppMatch[1] as "stateweave" | "native", infiniteAppMatch[2] || "/");
+    void infiniteAgentHarness.calibrate().catch((error) => console.error("Challenger calibration failed", error));
+    json(response, 202, { ok: true, state: infiniteAgentHarness.getState() });
     return;
   }
 

@@ -4,7 +4,7 @@ title: Fraud monitoring threshold redesign
 tldr: Tests whether an agent can redesign a risk threshold while accounting for delayed labels, asymmetric costs, drift, fairness, and operations capacity.
 domain: data-analysis-and-forecasting
 estimated_turns: 7
-status: draft
+status: calibration
 ---
 
 # Fraud monitoring threshold redesign

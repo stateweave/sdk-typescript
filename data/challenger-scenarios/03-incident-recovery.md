@@ -4,7 +4,7 @@ title: Incident recovery and prevention program
 tldr: Tests whether an agent can support an evolving incident from triage through recovery, correction, handoff, and prevention without confusing hypotheses with facts.
 domain: operations-and-reliability
 estimated_turns: 8
-status: draft
+status: calibration
 ---
 
 # Incident recovery and prevention program

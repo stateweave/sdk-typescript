@@ -4,7 +4,7 @@ title: Living technical handbook reconstruction
 tldr: Tests whether an agent can build and maintain a coherent handbook from fragmented sources while resolving contradictions and preserving useful history.
 domain: writing-and-stakeholder-communication
 estimated_turns: 7
-status: draft
+status: calibration
 ---
 
 # Living technical handbook reconstruction

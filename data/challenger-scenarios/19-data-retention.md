@@ -4,7 +4,7 @@ title: Data retention and deletion program
 tldr: Tests whether an agent can translate overlapping retention obligations into executable controls, exceptions, evidence, and customer-facing behavior.
 domain: compliance-policy-and-risk
 estimated_turns: 8
-status: draft
+status: calibration
 ---
 
 # Data retention and deletion program

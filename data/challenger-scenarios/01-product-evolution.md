@@ -4,7 +4,7 @@ title: RelayDesk customer import program
 tldr: Tests whether an agent can evolve one production feature across changing requirements without losing compatibility, evidence, or unfinished work.
 domain: product-engineering
 estimated_turns: 8
-status: draft
+status: calibration
 ---
 
 # RelayDesk customer import program

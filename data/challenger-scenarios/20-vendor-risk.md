@@ -4,7 +4,7 @@ title: Critical vendor risk assessment
 tldr: Tests whether an agent can maintain a risk decision as security evidence, contract terms, service dependencies, and remediation commitments evolve.
 domain: compliance-policy-and-risk
 estimated_turns: 7
-status: draft
+status: held-out
 ---
 
 # Critical vendor risk assessment

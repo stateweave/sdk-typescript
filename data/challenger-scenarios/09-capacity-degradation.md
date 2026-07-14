@@ -4,7 +4,7 @@ title: Gradual capacity degradation program
 tldr: Tests whether an agent can diagnose and remediate a slow reliability decline across weeks of evidence without anchoring on the first plausible cause.
 domain: operations-and-reliability
 estimated_turns: 8
-status: draft
+status: calibration
 ---
 
 # Gradual capacity degradation program

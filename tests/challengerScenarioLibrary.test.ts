@@ -15,7 +15,25 @@ status: draft
 
 # Scenario ${id}
 
-Participant instructions.
+## Canonical request sequence
+
+${Array.from({ length: turns }, (_, index) => `### Turn ${index + 1} — Step\n\n> Complete step ${index + 1}.`).join("\n\n")}
+
+## Hidden acceptance criteria
+
+- Preserve evidence.
+
+## Behavioral verification
+
+- Inspect the result.
+
+## Quality rubric
+
+- Correctness: 100
+
+## Challenger notes
+
+- Keep context private.
 `;
 
 it("lists curated Markdown scenarios and returns reviewable bodies", async () => {
@@ -49,6 +67,12 @@ it("ships a balanced 24-scenario, 180-turn review corpus", async () => {
   expect(new Set(summaries.map((scenario) => scenario.id)).size).toBe(24);
   expect(summaries.reduce((sum, scenario) => sum + scenario.estimatedTurns, 0)).toBe(180);
   expect(Object.values(domains)).toEqual(Array(8).fill(3));
+  expect(summaries.filter((scenario) => scenario.status === "calibration")).toHaveLength(16);
+  expect(summaries.filter((scenario) => scenario.status === "held-out")).toHaveLength(8);
+  for (const domain of Object.keys(domains)) {
+    expect(summaries.filter((scenario) => scenario.domain === domain && scenario.status === "calibration")).toHaveLength(2);
+    expect(summaries.filter((scenario) => scenario.domain === domain && scenario.status === "held-out")).toHaveLength(1);
+  }
 
   for (const summary of summaries) {
     const scenario = await readChallengerScenario(root, summary.filename);
@@ -71,6 +95,11 @@ it("ships a balanced 24-scenario, 180-turn review corpus", async () => {
     const rubricScores = [...section("Quality rubric").matchAll(/: (\d+)$/gm)].map((match) => Number(match[1]));
     expect(rubricScores.length).toBeGreaterThanOrEqual(6);
     expect(rubricScores.reduce((sum, score) => sum + score, 0)).toBe(100);
+    expect(scenario?.turns).toHaveLength(summary.estimatedTurns);
+    expect(scenario?.hiddenAcceptanceCriteria.length).toBeGreaterThanOrEqual(8);
+    expect(scenario?.behavioralVerification.length).toBeGreaterThanOrEqual(6);
+    expect(scenario?.rubric).toHaveLength(rubricScores.length);
+    expect(scenario?.challengerNotes.length).toBeGreaterThanOrEqual(4);
   }
 });
 

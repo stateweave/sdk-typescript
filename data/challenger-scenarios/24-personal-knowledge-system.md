@@ -4,7 +4,7 @@ title: Personal knowledge system over time
 tldr: Tests whether an agent can organize evolving notes, decisions, corrections, and commitments without flattening everything into an unreliable summary.
 domain: long-term-knowledge-and-organization
 estimated_turns: 7
-status: draft
+status: held-out
 ---
 
 # Personal knowledge system over time

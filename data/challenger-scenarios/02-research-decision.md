@@ -4,7 +4,7 @@ title: Evidence-backed market entry decision
 tldr: Tests whether an agent can maintain a defensible research decision as evidence, assumptions, and executive priorities change over one long session.
 domain: research-and-strategy
 estimated_turns: 7
-status: draft
+status: calibration
 ---
 
 # Evidence-backed market entry decision

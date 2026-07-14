@@ -4,7 +4,7 @@ title: Clinical evidence review under correction
 tldr: Tests whether an agent can synthesize sensitive evidence while preserving provenance, population boundaries, uncertainty, and later corrections.
 domain: research-and-strategy
 estimated_turns: 7
-status: draft
+status: calibration
 ---
 
 # Clinical evidence review under correction

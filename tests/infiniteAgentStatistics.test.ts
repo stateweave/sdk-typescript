@@ -12,10 +12,10 @@ describe("Infinite Agent preregistered analysis", () => {
     expect(analyzeBlocks(blocks, 20260711)).toEqual(analyzeBlocks(blocks, 20260711));
   });
 
-  it("uses complete component blocks as the analysis unit", () => {
+  it("uses complete held-out scenarios as the analysis unit", () => {
     const evidence = analyzeBlocks([block(1, 0.25), block(2, 0.25), block(3, 0.25)], 7);
     expect(evidence).toMatchObject({
-      unit: "eight-turn full-stack release block",
+      unit: "held-out Challenger scenario",
       blocks: 3,
       meanDifference: 0.25,
       wins: 3,

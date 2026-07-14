@@ -4,7 +4,7 @@ title: Global community program rollout
 tldr: Tests whether an agent can plan a distributed program with local variation, safeguarding, budget constraints, and feedback-driven revision.
 domain: project-planning-and-coordination
 estimated_turns: 8
-status: draft
+status: held-out
 ---
 
 # Global community program rollout

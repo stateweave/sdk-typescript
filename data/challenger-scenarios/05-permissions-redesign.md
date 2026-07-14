@@ -4,7 +4,7 @@ title: Multi-tenant permissions redesign
 tldr: Tests whether an agent can evolve authorization across many turns without creating privilege escalation or breaking legacy roles.
 domain: product-engineering
 estimated_turns: 7
-status: draft
+status: held-out
 ---
 
 # Multi-tenant permissions redesign
