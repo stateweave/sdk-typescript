@@ -144,6 +144,8 @@ export type InfiniteExperimentDesign = {
   failurePolicy: string;
   fairnessPolicy: string;
 };
+type ChallengerCalibrationOutcome = { scenarioId: string; strong: number; medium: number; weak: number; strongMediumGap: number; mediumWeakGap: number; review: boolean };
+
 export type InfiniteAgentState = {
   experiment: "infinite-agent";
   status: "idle" | "running" | "stopped" | "failed";
@@ -176,7 +178,7 @@ export type InfiniteAgentState = {
   turnArchive: { firstTurn: number; lastTurn: number; count: number };
   challenger?: {
     corpusSha256: string;
-    calibration: { status: "required" | "running" | "passed" | "failed"; scenarios: number; passed: number; usage: ChallengerUsage; outcomes?: Array<{ scenarioId: string; strong: number; weak: number; gap: number; review: boolean }>; updatedAt?: string };
+    calibration: { status: "required" | "running" | "passed" | "failed"; scenarios: number; passed: number; usage: ChallengerUsage; outcomes?: ChallengerCalibrationOutcome[]; updatedAt?: string };
     split: "held-out";
     trajectory: number;
     scenarioId?: string;
@@ -312,7 +314,7 @@ export class InfiniteAgentHarness {
     this.state.challenger ??= { corpusSha256: manifest.corpusSha256, calibration: { status: "required", scenarios: manifest.calibration.length, passed: 0, usage: emptyUsage() }, split: "held-out", trajectory: 1, scenarioCount: manifest.heldOut.length, driverUsage: emptyUsage(), judgeUsage: emptyUsage(), judgeReviewTurns: [] };
     if (this.state.challenger.corpusSha256 !== manifest.corpusSha256) throw new Error("Stored Challenger state does not match the frozen v6 corpus hash.");
     this.state.challenger.calibration ??= { status: "required", scenarios: manifest.calibration.length, passed: 0, usage: emptyUsage() };
-    const calibration = await readJson<{ protocolId: string; corpusSha256: string; passed: number; scenarios: number; usage: ChallengerUsage; outcomes?: Array<{ scenarioId: string; strong: number; weak: number; gap: number; review: boolean }>; updatedAt: string }>(this.calibrationPath);
+    const calibration = await readJson<{ protocolId: string; corpusSha256: string; passed: number; scenarios: number; usage: ChallengerUsage; outcomes?: ChallengerCalibrationOutcome[]; updatedAt: string }>(this.calibrationPath);
     if (calibration?.protocolId === EXPERIMENT_PROTOCOL_ID && calibration.corpusSha256 === manifest.corpusSha256 && calibration.passed === manifest.calibration.length) {
       this.state.challenger.calibration = { status: "passed", scenarios: calibration.scenarios, passed: calibration.passed, usage: calibration.usage, outcomes: calibration.outcomes, updatedAt: calibration.updatedAt };
     } else if (this.state.turnCount === 0) {
@@ -377,7 +379,7 @@ export class InfiniteAgentHarness {
     try {
     let passed = 0;
     let usage = emptyUsage();
-    const outcomes: Array<{ scenarioId: string; strong: number; weak: number; gap: number; review: boolean }> = [];
+    const outcomes: ChallengerCalibrationOutcome[] = [];
     for (const [index, entry] of manifest.calibration.entries()) {
       const scenario = await readChallengerScenario(this.scenarioDir, entry.filename);
       if (!scenario) throw new Error(`Missing calibration scenario ${entry.filename}.`);
@@ -385,21 +387,38 @@ export class InfiniteAgentHarness {
       const calibrationTurn = scenario.turns.at(-1)!;
       const anchor = await generateCalibrationAnchor(scenario, calibrationTurn, this.model);
       usage = addChallengerUsage(usage, anchor.usage);
+      const mediumAnswer = "This is a preliminary package, not a completed handoff. It captures part of the current state and some evidence, but verification, cross-artifact reconciliation, and several final decision details remain incomplete.";
+      const mediumEvidence = `${anchor.evidence.slice(0, Math.max(500, Math.floor(anchor.evidence.length * 0.35)))}\n\nLIMITATION: Remaining artifacts and behavioral checks were not completed.`;
       const weakEvidence = "No workspace artifact, no verification, no provenance, and no support for completion claims.";
-      const judgment = await judgeChallengerPair({
+      const strongVsMedium = await judgeChallengerPair({
         scenario,
         turn: calibrationTurn,
         stateweaveAnswer: anchor.answer,
-        transcriptAnswer: "Done. Everything looks good.",
+        transcriptAnswer: mediumAnswer,
         stateweaveEvidence: anchor.evidence,
+        transcriptEvidence: mediumEvidence,
+        model: this.model,
+        seed: this.state.design.seed + index * 2,
+      });
+      const mediumVsWeak = await judgeChallengerPair({
+        scenario,
+        turn: calibrationTurn,
+        stateweaveAnswer: mediumAnswer,
+        transcriptAnswer: "Done. Everything looks good.",
+        stateweaveEvidence: mediumEvidence,
         transcriptEvidence: weakEvidence,
         model: this.model,
-        seed: this.state.design.seed + index,
+        seed: this.state.design.seed + index * 2 + 1,
       });
-      usage = addChallengerUsage(usage, judgment.usage);
-      const gap = judgment.stateweave.score - judgment.transcript.score;
-      outcomes.push({ scenarioId: scenario.id, strong: judgment.stateweave.score, weak: judgment.transcript.score, gap, review: judgment.agreement.requiresHumanReview });
-      if (gap >= 15) passed += 1;
+      usage = addChallengerUsage(usage, addChallengerUsage(strongVsMedium.usage, mediumVsWeak.usage));
+      const strong = strongVsMedium.stateweave.score;
+      const medium = Math.round((strongVsMedium.transcript.score + mediumVsWeak.stateweave.score) * 50) / 100;
+      const weak = mediumVsWeak.transcript.score;
+      const strongMediumGap = strong - medium;
+      const mediumWeakGap = medium - weak;
+      const review = strongVsMedium.agreement.requiresHumanReview || mediumVsWeak.agreement.requiresHumanReview;
+      outcomes.push({ scenarioId: scenario.id, strong, medium, weak, strongMediumGap, mediumWeakGap, review });
+      if (strongMediumGap >= 10 && mediumWeakGap >= 10) passed += 1;
       this.state.challenger.calibration = { status: "running", scenarios: manifest.calibration.length, passed, usage, outcomes: [...outcomes], updatedAt: new Date().toISOString() };
       await this.save();
     }
