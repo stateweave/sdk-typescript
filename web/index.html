@@ -246,7 +246,7 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
             <div>
               <p class="eyebrow">Long-horizon agent benchmark</p>
               <h2>Infinite agent</h2>
-              <p class="muted-copy">V5 runs two isolated engineers on byte-identical RelayDesk products with the same model, ordinary requests, tools, 300-step budget, deterministic verifier, and execution order randomized but balanced 4/4 per release block. Both participants are blinded to the experiment, scores, arm identities, and the other run. The graph candidate receives a bounded projection; the matched transcript challenger compacts at 250k tokens and retains the latest 12 messages.</p>
+              <p class="muted-copy">The V5 diagnostic compared two persistent engineers with matched requests and tools: a bounded graph projection and a transcript compacted at 250k tokens. That run is paused while the next protocol is reviewed. The private Challenger scenario library below is the draft human context and quality contract for that redesign; it is not yet wired into scoring.</p>
             </div>
             <div id="infinite-live-badge" class="infinite-live-badge">waiting</div>
           </div>
@@ -276,6 +276,28 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
           </div>
           <div id="infinite-statistics" class="infinite-statistics"></div>
           <div id="infinite-report" class="infinite-report" hidden></div>
+          <section class="challenger-library" aria-labelledby="challenger-library-title">
+            <header class="challenger-library-header">
+              <div>
+                <h3 id="challenger-library-title">Challenger scenario library</h3>
+                <p id="challenger-library-tldr">Private Markdown files that define the human context, canonical requests, hidden checks, and quality rubric for long-running paired tests.</p>
+              </div>
+              <span id="challenger-library-count" class="scenario-count">Loading drafts…</span>
+            </header>
+            <div class="scenario-workbench">
+              <nav id="challenger-scenario-list" class="scenario-list" aria-label="Challenger scenarios">
+                <p class="muted-copy">Loading scenario files…</p>
+              </nav>
+              <article class="scenario-reader" aria-live="polite">
+                <header id="challenger-scenario-heading" class="scenario-reader-heading">
+                  <div><span class="scenario-file">Markdown review</span><h3>Select a scenario</h3></div>
+                </header>
+                <div id="challenger-scenario-content" class="scenario-document markdown">
+                  <p>Choose a file to review the full private brief and the exact requests that would be sent to both agents.</p>
+                </div>
+              </article>
+            </div>
+          </section>
           <div class="infinite-body">
             <section class="infinite-panel">
               <h3>Turn inspector</h3>

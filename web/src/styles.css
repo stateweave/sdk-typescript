@@ -2653,6 +2653,149 @@ label {
   font-size: 1.1rem;
 }
 
+.challenger-library {
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.challenger-library-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(110deg, #ffffff 0%, #f8fafc 72%, #eef2ff 100%);
+}
+
+.challenger-library-header h3,
+.challenger-library-header p { margin: 0; }
+.challenger-library-header h3 { font-size: 1rem; }
+.challenger-library-header p {
+  max-width: 76ch;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.scenario-count {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid #c7d2fe;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4338ca;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.scenario-workbench {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1.7fr);
+  min-height: 560px;
+}
+
+.scenario-list {
+  max-height: 720px;
+  padding: 10px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: #f8fafc;
+}
+
+.scenario-list-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 9px;
+  width: 100%;
+  padding: 12px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.scenario-list-item + .scenario-list-item { margin-top: 4px; }
+.scenario-list-item:hover,
+.scenario-list-item:focus-visible {
+  border-color: #cbd5e1;
+  background: #fff;
+}
+.scenario-list-item.active {
+  border-color: #a5b4fc;
+  background: #fff;
+  box-shadow: inset 3px 0 #6366f1;
+}
+.scenario-list-item:active { transform: translateY(1px); }
+
+.scenario-index,
+.scenario-file {
+  font: 0.68rem/1.4 var(--mono-font, ui-monospace, monospace);
+  color: #6366f1;
+}
+
+.scenario-list-copy { min-width: 0; }
+.scenario-list-copy strong,
+.scenario-list-copy small,
+.scenario-list-copy > span { display: block; }
+.scenario-list-copy strong { font-size: 0.82rem; line-height: 1.35; }
+.scenario-list-copy small {
+  margin-top: 4px;
+  color: #475569;
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+.scenario-list-copy > span {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.scenario-reader {
+  min-width: 0;
+  max-height: 720px;
+  overflow-y: auto;
+  background: #fff;
+}
+
+.scenario-reader-heading {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(8px);
+}
+.scenario-reader-heading h3 { margin: 2px 0 0; font-size: 0.95rem; }
+.scenario-reader-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.scenario-reader-meta span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.scenario-document { padding: 18px clamp(18px, 4vw, 46px) 40px; }
+.scenario-document.markdown { max-width: none; color: #1e293b; }
+.scenario-document.markdown h1 { margin-top: 0; font-size: 1.45rem; }
+.scenario-document.markdown h2 { margin-top: 1.8em; padding-top: 0.4em; border-top: 1px solid #e2e8f0; }
+.scenario-document.markdown h3 { margin-top: 1.4em; }
+.scenario-document.markdown blockquote { border-left-color: #6366f1; background: #f8fafc; }
+
 .infinite-body {
   display: grid;
   grid-template-columns: 1.5fr 1fr;
@@ -2879,7 +3022,14 @@ label {
 
 @media (max-width: 820px) {
   .infinite-body { grid-template-columns: 1fr; }
-  .infinite-header { flex-direction: column; align-items: stretch; }
+  .infinite-header,
+  .challenger-library-header { flex-direction: column; align-items: stretch; }
+  .scenario-count { align-self: flex-start; }
+  .scenario-workbench { grid-template-columns: 1fr; }
+  .scenario-list { max-height: 300px; border-right: 0; border-bottom: 1px solid var(--border); }
+  .scenario-reader { max-height: 680px; }
+  .scenario-reader-heading { position: static; flex-direction: column; }
+  .scenario-reader-meta { justify-content: flex-start; }
 }
 
 .infinite-statistics {

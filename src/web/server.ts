@@ -9,6 +9,7 @@ import { defaultSystemPrompt } from "../core/graph.js";
 import type { GraphFrame, StateWeaveRunMetadata, TraceStep } from "../core/types.js";
 import { createModelFromEnv } from "../llm/factory.js";
 import { createDefaultTools, describeTools } from "../tools/fileSystemTools.js";
+import { listChallengerScenarios, readChallengerScenario } from "../evals/challengerScenarioLibrary.js";
 import { InfiniteAgentHarness } from "../evals/infiniteAgentHarness.js";
 
 type RunRequest = {
@@ -94,6 +95,7 @@ const basePath = normalizeBasePath(process.env.STATEWEAVE_WEB_BASE_PATH ?? "/");
 const distDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../dist-web");
 const runStorePath = path.resolve(process.env.STATEWEAVE_RUN_STORE ?? ".stateweave/eval-runs.json");
 const traceDir = path.resolve(process.env.STATEWEAVE_TRACE_DIR ?? ".stateweave/traces");
+const challengerScenarioDir = path.resolve(process.env.STATEWEAVE_CHALLENGER_SCENARIO_DIR ?? path.join(process.cwd(), "data/challenger-scenarios"));
 const model = createModelFromEnv();
 const workspaceDir = path.resolve(process.env.STATEWEAVE_WORKSPACE_DIR ?? "/data/workspace");
 const agentTools = createDefaultTools({ rootDir: workspaceDir });
@@ -211,6 +213,23 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   if (url.pathname === "/api/infinite-agent/graph" && request.method === "GET") {
     await infiniteAgentReady;
     json(response, 200, await infiniteAgentHarness.getGraphView());
+    return;
+  }
+
+  if (url.pathname === "/api/infinite-agent/scenarios" && request.method === "GET") {
+    json(response, 200, {
+      purpose: "Private, human-authored long-horizon scenarios for a Challenger to send identically to both persistent participant agents and judge over time.",
+      tldr: "Each Markdown file is one reviewable multi-turn test. The Challenger sees the full file; participants receive only its canonical requests.",
+      scenarios: await listChallengerScenarios(challengerScenarioDir)
+    });
+    return;
+  }
+
+  const challengerScenarioMatch = url.pathname.match(/^\/api\/infinite-agent\/scenarios\/([^/]+)$/);
+  if (challengerScenarioMatch && request.method === "GET") {
+    const scenario = await readChallengerScenario(challengerScenarioDir, decodeURIComponent(challengerScenarioMatch[1]));
+    if (scenario) json(response, 200, scenario);
+    else json(response, 404, { error: "Challenger scenario not found." });
     return;
   }
 

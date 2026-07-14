@@ -480,6 +480,11 @@ const infiniteTurnDetail = element<HTMLElement>("infinite-turn-detail");
 const infiniteStatistics = element<HTMLElement>("infinite-statistics");
 const infiniteClusters = element<HTMLElement>("infinite-clusters");
 const infiniteOpenGraph = element<HTMLButtonElement>("infinite-open-graph");
+const challengerLibraryTldr = element<HTMLElement>("challenger-library-tldr");
+const challengerLibraryCount = element<HTMLElement>("challenger-library-count");
+const challengerScenarioList = element<HTMLElement>("challenger-scenario-list");
+const challengerScenarioHeading = element<HTMLElement>("challenger-scenario-heading");
+const challengerScenarioContent = element<HTMLElement>("challenger-scenario-content");
 const infiniteStateWeaveApp = element<HTMLAnchorElement>("infinite-stateweave-app");
 const infiniteNativeApp = element<HTMLAnchorElement>("infinite-native-app");
 infiniteStateWeaveApp.href = `${apiBase}/api/infinite-agent/apps/stateweave/`;
@@ -838,7 +843,12 @@ function setActivePage(page: PageName, updateHash = true): void {
   if (updateHash) history.replaceState(null, "", isState ? location.pathname : isQuickstart ? "#quick-start" : isAb ? "#ab" : isInfinite ? "#infinite" : `#${suite.id}`);
   if (isMulti) void resumeStoredEvalRun();
   else stopBackgroundPoll();
-  if (isInfinite) { startSwLoopPoll(); } else { stopSwLoopPoll(); }
+  if (isInfinite) {
+    startSwLoopPoll();
+    void loadChallengerScenarioLibrary();
+  } else {
+    stopSwLoopPoll();
+  }
   if (isState) input.focus();
   else if (isAb) abInput.focus();
   else if (isMulti) multiStart.focus();
@@ -2984,6 +2994,10 @@ function escapeAttribute(value: string): string {
 
 // --- Infinite harness ---
 
+type ChallengerScenarioSummary = { id: string; filename: string; title: string; tldr: string; domain: string; estimatedTurns: number; status: string };
+type ChallengerScenario = ChallengerScenarioSummary & { markdown: string };
+type ChallengerScenarioLibrary = { purpose: string; tldr: string; scenarios: ChallengerScenarioSummary[] };
+
 type ProbeScore = { score: "pass" | "partial" | "fail"; passed: number; total: number; details: string[]; completed?: boolean; checks?: Array<{ label: string; passed: boolean }> };
 type InfiniteTurn = { turn: number; phase: string; taskKind: string; prompt: string; answer: string; baselineAnswer: string; nodeCount: number; edgeCount: number; clusterCount: number; semanticNodeCount?: number; suggestedSemanticNodeCount?: number; promptTokenEstimate: number; baselineTokenEstimate: number; totalInputTokens: number; baselineTotalInputTokens: number; outputTokenCount: number; baselineOutputTokenCount: number; latencyMs: number; baselineLatencyMs: number; modelCalls: number; baselineModelCalls: number; toolCalls: number; baselineToolCalls: number; baselineCompactions?: number; stateweaveCompleted?: boolean; baselineCompleted?: boolean; stateweaveError?: string; baselineError?: string; transactionValid: boolean; executionOrder?: "stateweave-first" | "native-first"; block?: number; score: { stateweave: ProbeScore; naive: ProbeScore } };
 type InfiniteSeriesPoint = { turn: number; stateweaveTokens: number; baselineTokens: number; stateweaveTotalInputTokens: number; baselineTotalInputTokens: number; stateweaveOutputTokens: number; baselineOutputTokens: number; stateweaveNodes: number; stateweaveClusters: number; stateweaveLatencyMs: number; baselineLatencyMs: number; stateweaveToolCalls: number; baselineToolCalls: number; baselineCompactions?: number };
@@ -3023,6 +3037,63 @@ type InfiniteStateView = {
 
 // The server-side harness owns the persistent workspaces and resumes after deploys.
 let latestInfiniteState: InfiniteStateView | undefined;
+let challengerScenarioSummaries: ChallengerScenarioSummary[] = [];
+let selectedChallengerScenario: string | undefined;
+let challengerScenarioLibraryLoading = false;
+let challengerScenarioLibraryLoaded = false;
+
+async function loadChallengerScenarioLibrary(): Promise<void> {
+  if (challengerScenarioLibraryLoading || challengerScenarioLibraryLoaded) return;
+  challengerScenarioLibraryLoading = true;
+  try {
+    const response = await fetch(`${apiBase}/api/infinite-agent/scenarios`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Scenario library request failed (${response.status})`);
+    const library = await response.json() as ChallengerScenarioLibrary;
+    challengerScenarioSummaries = library.scenarios;
+    challengerLibraryTldr.textContent = library.tldr;
+    const totalTurns = library.scenarios.reduce((sum, scenario) => sum + scenario.estimatedTurns, 0);
+    challengerLibraryCount.textContent = `${library.scenarios.length} review drafts · ${totalTurns} planned turns`;
+    renderChallengerScenarioList();
+    challengerScenarioLibraryLoaded = true;
+    if (library.scenarios[0]) await openChallengerScenario(library.scenarios[0].filename);
+  } catch (error) {
+    challengerScenarioList.innerHTML = `<p class="message error">${escapeHtml(error instanceof Error ? error.message : String(error))}</p>`;
+    challengerLibraryCount.textContent = "Library unavailable";
+  } finally {
+    challengerScenarioLibraryLoading = false;
+  }
+}
+
+function renderChallengerScenarioList(): void {
+  challengerScenarioList.innerHTML = challengerScenarioSummaries.length
+    ? challengerScenarioSummaries.map((scenario, index) => `
+      <button class="scenario-list-item${scenario.filename === selectedChallengerScenario ? " active" : ""}" type="button" data-scenario-file="${escapeAttribute(scenario.filename)}" aria-pressed="${scenario.filename === selectedChallengerScenario}">
+        <span class="scenario-index">${String(index + 1).padStart(2, "0")}</span>
+        <span class="scenario-list-copy"><strong>${escapeHtml(scenario.title)}</strong><small>${escapeHtml(scenario.tldr)}</small><span>${escapeHtml(scenario.domain)} · ${scenario.estimatedTurns} turns · ${escapeHtml(scenario.status)}</span></span>
+      </button>`).join("")
+    : `<p class="muted-copy">No Markdown scenarios are available.</p>`;
+  for (const button of challengerScenarioList.querySelectorAll<HTMLButtonElement>("[data-scenario-file]")) {
+    button.addEventListener("click", () => void openChallengerScenario(button.dataset.scenarioFile ?? ""));
+  }
+}
+
+async function openChallengerScenario(filename: string): Promise<void> {
+  if (!filename) return;
+  selectedChallengerScenario = filename;
+  renderChallengerScenarioList();
+  challengerScenarioContent.innerHTML = `<p>Loading ${escapeHtml(filename)}…</p>`;
+  try {
+    const response = await fetch(`${apiBase}/api/infinite-agent/scenarios/${encodeURIComponent(filename)}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(response.status === 404 ? "Scenario file not found." : `Scenario request failed (${response.status})`);
+    const scenario = await response.json() as ChallengerScenario;
+    challengerScenarioHeading.innerHTML = `
+      <div><span class="scenario-file">${escapeHtml(scenario.filename)}</span><h3>${escapeHtml(scenario.title)}</h3></div>
+      <div class="scenario-reader-meta"><span>${escapeHtml(scenario.domain)}</span><span>${scenario.estimatedTurns} turns</span><span>${escapeHtml(scenario.status)}</span></div>`;
+    challengerScenarioContent.innerHTML = renderMarkdown(scenario.markdown);
+  } catch (error) {
+    challengerScenarioContent.innerHTML = `<p class="message error">${escapeHtml(error instanceof Error ? error.message : String(error))}</p>`;
+  }
+}
 
 async function openInfiniteGraph(): Promise<void> {
   infiniteOpenGraph.disabled = true;
@@ -3495,4 +3566,7 @@ function renderAgentRuntime(state: InfiniteStateView): void {
 }
 
 // Start polling agent state when the Infinite page is active
-if (activePage === "infinite") startSwLoopPoll();
+if (activePage === "infinite") {
+  startSwLoopPoll();
+  void loadChallengerScenarioLibrary();
+}
