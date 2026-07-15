@@ -71,6 +71,8 @@ export function parseAndValidateOps(raw: string): GraphOp[] {
 
 function parseSwx(raw: string): GraphOp[] {
   const { commands, blocks } = extractBlocks(raw);
+  const unterminated = blocks.filter((block) => !block.terminated).map((block) => block.id);
+  if (unterminated.length) throw new Error(`Unterminated SWX raw block${unterminated.length === 1 ? "" : "s"}: ${unterminated.join(", ")}`);
   const commandLines = mergeContinuedQuotes(commands.split(/\r?\n/));
   const nodeOps: Extract<GraphOp, { op: "add_node" }>[] = [];
   const otherOps: GraphOp[] = [];
@@ -160,7 +162,15 @@ function parseSwx(raw: string): GraphOp[] {
       finalTargets.push({ command, tokens: tokens.slice(1), argText: trimmed.slice(command.length).trim() });
       continue;
     }
+
+    throw new Error(`Unknown SWX command: ${command}`);
   }
+
+  if (finalTargets.length > 1) throw new Error(`SWX transaction must contain at most one final operation; received ${finalTargets.length}.`);
+  const duplicateNodeIds = duplicateValues(nodeOps.map((op) => op.node.id));
+  if (duplicateNodeIds.length) throw new Error(`SWX transaction declares duplicate node id${duplicateNodeIds.length === 1 ? "" : "s"}: ${duplicateNodeIds.join(", ")}`);
+  const duplicateWorkerIds = duplicateValues(otherOps.filter((op): op is Extract<GraphOp, { op: "spawn_worker" }> => op.op === "spawn_worker").map((op) => op.id));
+  if (duplicateWorkerIds.length) throw new Error(`SWX transaction declares duplicate worker id${duplicateWorkerIds.length === 1 ? "" : "s"}: ${duplicateWorkerIds.join(", ")}`);
 
   const finalAnswerBlockIds = new Set(finalTargets.flatMap((target) => target.command === "@final_ref" && target.tokens[0] ? [target.tokens[0]] : []));
   const artifactBlocks = blocks.filter((block) => !toolArgBlockIds.has(block.id) && !finalAnswerBlockIds.has(block.id));
@@ -443,6 +453,16 @@ function withoutUndefined<T extends Record<string, unknown>>(value: T): T {
 
 function unique(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function duplicateValues(values: string[]): string[] {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const value of values) {
+    if (seen.has(value)) duplicates.add(value);
+    seen.add(value);
+  }
+  return [...duplicates];
 }
 
 function stringAttr(value: unknown): string | undefined {

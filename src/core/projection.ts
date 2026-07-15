@@ -70,8 +70,8 @@ export function clusterGraph(graph: StateGraph, adjacency: Map<string, string[]>
 
 export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Projection {
   const zoom = Math.max(0, focus.zoom ?? 0);
-  const radius = focus.radius ?? Math.max(1, DEFAULT_RADIUS - zoom);
-  const budget = Math.max(8, (focus.budgetNodes ?? DEFAULT_BUDGET) - zoom * 8);
+  const radius = focus.radius ?? DEFAULT_RADIUS + zoom;
+  const budget = Math.max(8, (focus.budgetNodes ?? DEFAULT_BUDGET) + zoom * 32);
   const byId = new Map(graph.nodes.map((node) => [node.id, node]));
   const adjacency = undirectedAdjacency(graph);
   const clusters = clusterGraph(graph, adjacency);
@@ -177,11 +177,12 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
     }
   }
 
-  const focusNodeCap = chronologyMode
+  const baseFocusNodeCap = chronologyMode
     ? FOCUS_NODE_CAP_CHRONOLOGY
     : conflictMode
       ? FOCUS_NODE_CAP_CONFLICT
       : FOCUS_NODE_CAP;
+  const focusNodeCap = baseFocusNodeCap + zoom * 32;
   const focusNodes = capFocusNodes(
     [...focusSet]
       .map((id) => byId.get(id))
@@ -592,8 +593,13 @@ function buildCluster(graph: StateGraph, seedId: string, nodeIds: string[], byId
   const typeCounts = new Map<string, number>();
   for (const node of members) typeCounts.set(node.type, (typeCounts.get(node.type) ?? 0) + 1);
   const dominantType = [...typeCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "node";
-  const label = seed ? oneLine(seed.text).slice(0, 64) : dominantType;
-  const summary = `${members.length}n ${edgeCount}e · ${dominantType}`;
+  const representative = members
+    .filter((node) => node.type !== "system" && node.type !== "tool_call" && node.type !== "tool_result" && node.status !== "stale" && node.status !== "rejected")
+    .slice(-3)
+    .map((node) => oneLine(node.text).slice(0, 56));
+  const label = seed ? oneLine(seed.text).slice(0, 64) : representative.at(-1) ?? dominantType;
+  const semanticSample = representative.length ? ` · ${representative.join(" | ")}` : "";
+  const summary = `${members.length}n ${edgeCount}e · ${dominantType}${semanticSample}`;
   return { id: clusterId(nodeIds), seedId, nodeIds, label, summary, nodeCount: members.length, edgeCount, dominantType };
 }
 

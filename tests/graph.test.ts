@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { appendInputToGraphFrame, createInitialGraphFrame } from "../src/core/graph.js";
+import { appendInputToGraphFrame, assertValidGraphFrame, createInitialGraphFrame } from "../src/core/graph.js";
 import { serializeGraphFrame } from "../src/core/serialize.js";
 
 it("creates a system-only initial GraphFrame when no user input is provided", () => {
@@ -45,6 +45,21 @@ it("appends new input as the active cortex node for deterministic attachment", (
   expect(next.graph.nodes.some((node) => node.text === "What is my name?")).toBe(true);
   expect(next.graph.edges.some((edge) => edge.from === "user_input_1" && edge.to === "user_input_2")).toBe(false);
   expect(next.frame.currentFocus).toMatch(/attach this user_input structurally/i);
+});
+
+it("allocates the next unused input suffix in an imported graph with gaps", () => {
+  const frame = createInitialGraphFrame({ objective: "One", input: "One", availableActions: [] });
+  frame.graph.nodes.push({ id: "user_input_3", type: "user_input", text: "Three", createdAt: new Date().toISOString() });
+  frame.graph.edges.push({ id: "edge_gap", from: "system_root", to: "user_input_3", type: "follows", createdAt: new Date().toISOString() });
+  const next = appendInputToGraphFrame(frame, { objective: "Four", input: "Four" });
+  expect(next.frame.latestInputNodeId).toBe("user_input_4");
+});
+
+it("rejects malformed imported graph identity and references", () => {
+  const frame = createInitialGraphFrame({ objective: "One", input: "One", availableActions: [] });
+  frame.graph.nodes.push({ ...frame.graph.nodes[1]! });
+  frame.graph.edges.push({ id: "bad", from: "missing", to: "user_input_1", type: "follows", createdAt: new Date().toISOString() });
+  expect(() => assertValidGraphFrame(frame)).toThrow(/duplicate node id user_input_1.*missing from node missing/);
 });
 
 it("does not hard-code fresh branch attachment before the model weaves the input", () => {

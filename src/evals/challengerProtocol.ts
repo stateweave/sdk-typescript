@@ -5,6 +5,8 @@ import { listChallengerScenarios, readChallengerScenario, type ChallengerScenari
 
 export const CHALLENGER_V6_PROTOCOL_ID = "infinite-v6-challenger-heldout-r7-20260714";
 export const CHALLENGER_V6_CALIBRATION_ID = "challenger-blind-judge-three-tier-20260714";
+export const CHALLENGER_V7_PROTOCOL_ID = "infinite-v7-sdk-hardened-heldout-r1-20260715";
+export const CHALLENGER_V7_CALIBRATION_ID = "challenger-blind-judge-three-tier-sdk-hardened-20260715";
 export const CHALLENGER_V6_SEED = 20260714;
 export const CHALLENGER_V6_CORPUS_SHA256 = "4e5eaec89a10c2dccbfe20698215d8ee1722d8696e28358b348449ccc7c935bd";
 export const CHALLENGER_V6_REPETITIONS = 3;
@@ -49,7 +51,7 @@ export async function buildChallengerProtocolManifest(rootDir: string): Promise<
   const calibrationTurns = calibration.reduce((sum, scenario) => sum + scenario.turns, 0);
   const heldOutTurnsPerTrajectory = heldOut.reduce((sum, scenario) => sum + scenario.turns, 0);
   return {
-    protocolId: CHALLENGER_V6_PROTOCOL_ID,
+    protocolId: CHALLENGER_V7_PROTOCOL_ID,
     seed: CHALLENGER_V6_SEED,
     corpusSha256,
     calibration,

@@ -16,9 +16,14 @@ export function applyOps(frame: GraphFrame, ops: GraphOp[]): GraphFrame {
   const preNodeIds = new Set(frame.graph.nodes.map((node) => node.id));
   const declaredNodeIds = new Set(preNodeIds);
   const referenceErrors: string[] = [];
+  const transactionNodeIds = new Set<string>();
 
   for (const op of ops) {
-    if (op.op === "add_node") declaredNodeIds.add(op.node.id);
+    if (op.op !== "add_node") continue;
+    if (preNodeIds.has(op.node.id)) referenceErrors.push(`add_node ${op.node.id} collides with an existing node`);
+    if (transactionNodeIds.has(op.node.id)) referenceErrors.push(`add_node ${op.node.id} is declared more than once in the transaction`);
+    transactionNodeIds.add(op.node.id);
+    declaredNodeIds.add(op.node.id);
   }
 
   const anchor = activeUserInput(next) ?? focusedNode(next) ?? latestUserInput(next.graph.nodes) ?? next.graph.nodes.find((node) => node.id === "system_root") ?? next.graph.nodes[0];
@@ -26,8 +31,9 @@ export function applyOps(frame: GraphFrame, ops: GraphOp[]): GraphFrame {
   for (const op of ops) {
     switch (op.op) {
       case "add_node": {
-        const existing = next.graph.nodes.find((node) => node.id === op.node.id);
-        if (!existing) next.graph.nodes.push({ ...op.node, createdAt: nowIso() });
+        if (!preNodeIds.has(op.node.id) && !next.graph.nodes.some((node) => node.id === op.node.id)) {
+          next.graph.nodes.push({ ...op.node, createdAt: nowIso() });
+        }
         break;
       }
       case "add_edge": {
@@ -210,7 +216,7 @@ function addAssistantOutput(graph: StateGraph, answer: string, anchor: GraphNode
     return existing;
   }
 
-  const id = `assistant_output_${nextIndex(graph.nodes, "assistant_output_")}`;
+  const id = nextSequenceId(graph.nodes, "assistant_output_");
   const node: GraphNode = { id, type: "assistant_output", text: answer, data, status: "resolved", confidence: 1, createdAt: nowIso() };
   graph.nodes.push(node);
   if (anchor) addEdge(graph, anchor.id, id, "follows");
@@ -324,8 +330,13 @@ function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
 
-function nextIndex(nodes: GraphNode[], prefix: string): number {
-  return nodes.filter((node) => node.id.startsWith(prefix)).length + 1;
+function nextSequenceId(nodes: GraphNode[], prefix: string): string {
+  let next = nodes.reduce((max, node) => {
+    const suffix = node.id.startsWith(prefix) ? Number(node.id.slice(prefix.length)) : NaN;
+    return Number.isInteger(suffix) && suffix >= 0 ? Math.max(max, suffix) : max;
+  }, 0) + 1;
+  while (nodes.some((node) => node.id === `${prefix}${next}`)) next += 1;
+  return `${prefix}${next}`;
 }
 
 function isReferenced(graph: StateGraph, nodeId: string): boolean {
