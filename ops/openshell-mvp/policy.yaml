@@ -1,0 +1,22 @@
+version: 1
+
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /usr
+    - /etc
+    - /proc/self
+  read_write:
+    - /sandbox
+    - /tmp
+
+landlock:
+  compatibility: hard_requirement
+
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+
+# inference.local is enforced by OpenShell's inference router and does not
+# require a network allow rule. Every ordinary outbound destination is denied.
+network_policies: {}
