@@ -176,25 +176,32 @@ It has multiple paragraphs.
   expect(ops).toContainEqual({ op: "final", answer: "Here is a longer answer.\n\nIt has multiple paragraphs." });
 });
 
-it("tolerates a final SWX block missing its closing sentinel", () => {
-  const ops = parseAndValidateOps(`SWX/1
-@node output_3 html_game "Fixed Pac-Man" mime=text/html
-@edge user_input_3 creates output_3
-@final output_3
+it("rejects a raw block missing its closing sentinel", () => {
+  expect(() => parseAndValidateOps(`SWX/1
+@tool write_file file_path=game.html content_ref=output_3
 <<<output_3:text/html
-<html><body>Pac-Man</body></html>`);
+<html><body>Pac-Man</body></html>`)).toThrow(/Unterminated SWX raw block: output_3/);
+});
 
-  expect(ops).toContainEqual({
-    op: "add_node",
-    node: {
-      id: "output_3",
-      type: "html_game",
-      text: "Fixed Pac-Man",
-      status: "resolved",
-      data: { mime: "text/html", content: "<html><body>Pac-Man</body></html>", swxTerminated: false }
-    }
-  });
-  expect(ops).toContainEqual({ op: "final", answer: "Completed. See output_3.", artifactId: "output_3", artifactIds: ["output_3"] });
+it("rejects unknown commands instead of silently dropping them", () => {
+  expect(() => parseAndValidateOps(`SWX/1
+@ndoe fact_1 fact "typo"
+@final "done"`)).toThrow(/Unknown SWX command: @ndoe/);
+});
+
+it("rejects multiple final operations", () => {
+  expect(() => parseAndValidateOps(`SWX/1
+@final "first"
+@final "second"`)).toThrow(/at most one final operation/);
+});
+
+it("rejects duplicate node and worker identifiers", () => {
+  expect(() => parseAndValidateOps(`SWX/1
+@node fact_1 fact "one"
+@node fact_1 fact "two"`)).toThrow(/duplicate node id: fact_1/);
+  expect(() => parseAndValidateOps(`SWX/1
+@worker inspect "Inspect one"
+@worker inspect "Inspect two"`)).toThrow(/duplicate worker id: inspect/);
 });
 
 it("parses graph ops wrapped in a markdown swx fence", () => {

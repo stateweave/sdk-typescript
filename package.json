@@ -18,6 +18,8 @@
   },
   "files": [
     "dist",
+    "!dist/evals/**",
+    "!dist/web/**",
     "README.md",
     "LICENSE"
   ],
@@ -48,7 +50,8 @@
     "cli": "tsx src/cli.ts",
     "eval": "tsx src/evals/runEval.ts",
     "test": "vitest run",
-    "prepublishOnly": "pnpm test && pnpm build",
+    "prepublishOnly": "pnpm test && pnpm build && pnpm package:check",
+    "package:check": "node scripts/verify-package.mjs",
     "repo:protect": "node scripts/protect-main.mjs"
   },
   "dependencies": {

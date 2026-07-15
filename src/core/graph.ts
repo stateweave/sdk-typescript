@@ -73,9 +73,10 @@ export function createInitialGraphFrame(args: {
 }
 
 export function appendInputToGraphFrame(frame: GraphFrame, args: { objective: string; input: string }): GraphFrame {
+  assertValidGraphFrame(frame);
   const next = forkFrame(frame);
   const createdAt = nowIso();
-  const inputId = `user_input_${nextIndex(next.graph.nodes, "user_input_")}`;
+  const inputId = nextSequenceId(next.graph.nodes, "user_input_");
 
   next.graph.nodes.push({ id: inputId, type: "user_input", text: args.input, status: "active", confidence: 1, createdAt });
 
@@ -138,8 +139,41 @@ function extractConstraints(input: string): string[] {
   return constraints;
 }
 
-function nextIndex(nodes: GraphNode[], prefix: string): number {
-  return nodes.filter((node) => node.id.startsWith(prefix)).length + 1;
+export function assertValidGraphFrame(frame: GraphFrame): void {
+  const errors: string[] = [];
+  const nodeIds = new Set<string>();
+  const edgeIds = new Set<string>();
+  for (const node of frame.graph.nodes) {
+    if (nodeIds.has(node.id)) errors.push(`duplicate node id ${node.id}`);
+    nodeIds.add(node.id);
+  }
+  for (const edge of frame.graph.edges) {
+    if (edgeIds.has(edge.id)) errors.push(`duplicate edge id ${edge.id}`);
+    edgeIds.add(edge.id);
+    if (!nodeIds.has(edge.from)) errors.push(`edge ${edge.id} references missing from node ${edge.from}`);
+    if (!nodeIds.has(edge.to)) errors.push(`edge ${edge.id} references missing to node ${edge.to}`);
+  }
+  for (const [name, id] of [
+    ["focusNodeId", frame.frame.focusNodeId],
+    ["latestInputNodeId", frame.frame.latestInputNodeId],
+    ["activeUserInputNodeId", frame.frame.activeUserInputNodeId]
+  ] as const) {
+    if (id && !nodeIds.has(id)) errors.push(`${name} references missing node ${id}`);
+  }
+  if (errors.length) throw new Error(`Invalid GraphFrame: ${errors.join("; ")}`);
+}
+
+function nextSequenceId(nodes: GraphNode[], prefix: string): string {
+  let next = nodes.reduce((max, node) => {
+    const match = node.id.match(new RegExp(`^${escapeRegExp(prefix)}(\\d+)$`));
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0) + 1;
+  while (nodes.some((node) => node.id === `${prefix}${next}`)) next += 1;
+  return `${prefix}${next}`;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function normalizeNodeTypes(values: string[]): string[] {

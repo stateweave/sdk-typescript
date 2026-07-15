@@ -16,6 +16,15 @@ it("applies add_node, add_edge, update_node, and focus ops", () => {
   expect(next.frame.currentFocus).toBe("finalize");
 });
 
+it("rejects add_node identifiers that collide with existing or transaction nodes", () => {
+  const frame = createInitialGraphFrame({ objective: "Identity", input: "Keep identity sound", availableActions: [] });
+  expect(() => applyOps(frame, [{ op: "add_node", node: { id: "system_root", type: "fact", text: "collision" } }])).toThrow(/collides with an existing node/);
+  expect(() => applyOps(frame, [
+    { op: "add_node", node: { id: "fact_1", type: "fact", text: "one" } },
+    { op: "add_node", node: { id: "fact_1", type: "fact", text: "two" } }
+  ])).toThrow(/declared more than once/);
+});
+
 it("moves cortex focus to an explicit user input node", () => {
   const frame = createInitialGraphFrame({ objective: "Focus", input: "Start", availableActions: [] });
   const next = applyOps(frame, [{ op: "focus", nodeId: "user_input_1", currentFocus: "Work from the first user input" }]);

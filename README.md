@@ -90,9 +90,11 @@ console.log(agent.getFrame()?.graph.nodes);
 
 ## Quickstart
 
-A single `Agent` owns a session `GraphFrame`. Every `run` or `stream` appends a new `user_input_N` to that same graph unless you pass an explicit frame. Concurrent turns reserve graph inputs immediately, run asynchronously, and merge their resulting branches back into the shared graph.
+A single `Agent` owns a session `GraphFrame`. Every successful `run` or `stream` commits a new `user_input_N` and its result to that graph unless you pass an explicit frame. Stateful calls are serialized in invocation order so a later turn sees the prior committed result; failed, aborted, or reset-invalidated work is not committed. Explicit-frame calls are independent and may run concurrently.
 
 `maxIterations` is the recursion limit for the internal model/tool loop for one user input. It defaults to `30`; if the loop is exhausted, StateWeave raises a recursion-limit error suggesting a higher `maxIterations`. The SDK/web lab do not impose an artificial upper cap. It is not a max-turn setting; user turns are just more graph nodes.
+
+`maxPromptTokens` is the hard model-input budget for each compiled `GraphFrame` and defaults to `64_000`. StateWeave recursively summarizes bulky tool metadata, prioritizes the active input and focused/retrieved graph regions, and omits optional projection lines before crossing the budget. If mandatory state cannot fit, the SDK fails locally before calling the provider. Set this below the provider model's context window, leaving room for output tokens.
 
 Quality gates are evidence-based. `edit_file` requires a prior read of that path (or a file created earlier in the same run); failed or unsuccessful tool results reject semantic mutations from that transaction; requested checks, restarts, and smoke tests must each have matching successful tool evidence; and configured tool-using agents must resolve their semantic task and connect a resolved verification result to both the tool evidence and task before finalizing. Current file/tool evidence always outranks an earlier assistant summary.
 

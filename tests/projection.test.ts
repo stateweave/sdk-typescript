@@ -37,6 +37,17 @@ it("clusters keep unrelated turns separate without a shared entity", () => {
   expect(labels).toContain("Fix login bug");
 });
 
+it("builds deterministic semantic cluster summaries and overview pages", () => {
+  const frame = buildConversation(Array.from({ length: 70 }, (_, index) => ({ input: `Topic ${index}`, answer: `Decision ${index}` })));
+  const clusters = clusterGraph(frame.graph);
+  expect(clusters.some((cluster) => cluster.summary.includes("Decision"))).toBe(true);
+  const first = serializeGraphFrame(frame, { maxTokens: 32_000 });
+  const second = serializeGraphFrame(frame, { maxTokens: 32_000 });
+  expect(second).toBe(first);
+  expect(first).toContain("overview_page_1");
+  expect(first).toMatch(/omitted clusters, range cluster_/);
+});
+
 it("cluster ids are stable across turns when nodes don't change", () => {
   let frame = buildConversation([{ input: "First", answer: "A1" }, { input: "Second", answer: "A2" }]);
   const before = clusterGraph(frame.graph).map((c) => c.id);
@@ -62,15 +73,18 @@ it("focus window is bounded by budget and centered on focusNodeId", () => {
   expect(projection.focusNodes.some((n) => n.id === "system_root")).toBe(true);
 });
 
-it("higher zoom shrinks the focus window", () => {
-  const frame = buildConversation([
-    { input: "T1", answer: "A1" },
-    { input: "T2", answer: "A2" },
-    { input: "T3", answer: "A3" }
-  ]);
-  const tight = projectGraph(frame.graph, { zoom: 0 }).focusNodes.length;
-  const wide = projectGraph(frame.graph, { zoom: 3 }).focusNodes.length;
-  expect(wide).toBeLessThanOrEqual(tight);
+it("higher zoom widens the focus window", () => {
+  const frame = createInitialGraphFrame({ objective: "Map", input: "the and", availableActions: [] });
+  let previous = "user_input_1";
+  for (let index = 1; index <= 20; index++) {
+    const id = `chain_${index}`;
+    frame.graph.nodes.push({ id, type: "fact", text: `Chain fact ${index}`, createdAt: new Date(index).toISOString() });
+    frame.graph.edges.push({ id: `edge_chain_${index}`, from: previous, to: id, type: "follows", createdAt: new Date(index).toISOString() });
+    previous = id;
+  }
+  const tight = projectGraph(frame.graph, { focusNodeId: "user_input_1", zoom: 0 }).focusNodes.length;
+  const wide = projectGraph(frame.graph, { focusNodeId: "user_input_1", zoom: 3 }).focusNodes.length;
+  expect(wide).toBeGreaterThan(tight);
 });
 
 it("always projects the latest tool call and result even when a large neighborhood exhausts the BFS budget", () => {
@@ -91,6 +105,24 @@ it("always projects the latest tool call and result even when a large neighborho
   expect(projection.focusNodes).toContainEqual(expect.objectContaining({ id: "tool_call_latest" }));
   expect(projection.focusNodes).toContainEqual(expect.objectContaining({ id: "tool_result_latest" }));
   expect(prompt).toContain("LATEST_TOOL_EVIDENCE");
+});
+
+it("bounds nested tool payloads by prompt tokens while preserving active evidence", () => {
+  const frame = createInitialGraphFrame({ objective: "Inspect", input: "Summarize the current large report", availableActions: [] });
+  frame.graph.nodes.push({
+    id: "tool_result_large",
+    type: "tool_result",
+    text: "read_file succeeded for report.txt",
+    data: { result: { path: "report.txt", content: "EVIDENCE_START " + "x".repeat(1_000_000), stdout: "y".repeat(1_000_000) }, ok: true },
+    status: "active",
+    createdAt: new Date().toISOString()
+  });
+  frame.graph.edges.push({ id: "edge_large", from: "user_input_1", to: "tool_result_large", type: "explains", createdAt: new Date().toISOString() });
+  const prompt = serializeGraphFrame(frame, { maxTokens: 4_000 });
+  expect(Math.ceil(prompt.length / 4)).toBeLessThanOrEqual(4_000);
+  expect(prompt).toContain("Summarize the current large report");
+  expect(prompt).toContain("EVIDENCE_START");
+  expect(prompt).not.toContain("x".repeat(20_000));
 });
 
 it("retrieval pulls keyword-matched nodes into focus", () => {

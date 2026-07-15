@@ -360,7 +360,7 @@ it("Agent streams final text by default and keeps one graph across user turns", 
   expect(agent.getFrame()?.graph.nodes).toHaveLength(second.graph.nodes.length);
 });
 
-it("Agent runs same-graph turns concurrently and merges branch results", async () => {
+it("Agent serializes concurrent stateful turns and commits them in invocation order", async () => {
   const agent = new Agent({ model: new ConcurrentModel(), tools: [], maxIterations: 2 });
 
   const [slow, fast] = await Promise.all([agent.run("slow branch"), agent.run("fast branch")]);
@@ -372,6 +372,47 @@ it("Agent runs same-graph turns concurrently and merges branch results", async (
   expect(frame?.graph.nodes).toContainEqual(expect.objectContaining({ id: "user_input_2", text: "fast branch" }));
   expect(frame?.graph.nodes.filter((node) => node.type === "assistant_output")).toHaveLength(2);
   expect(new Set(frame?.graph.nodes.filter((node) => node.type === "assistant_output").map((node) => node.id)).size).toBe(2);
+});
+
+it("does not commit a failed stateful turn", async () => {
+  const agent = new Agent({
+    model: new SequenceModel(["SWX/1\n@final \"committed\"", "SWX/1\n@ndoe broken fact \"bad\""]),
+    tools: [],
+    maxIterations: 1
+  });
+  await agent.run("first");
+  const before = JSON.stringify(agent.getFrame());
+  await expect(agent.run("failed second")).rejects.toThrow(/Unknown SWX command/);
+  expect(JSON.stringify(agent.getFrame())).toBe(before);
+});
+
+it("resetFrame invalidates an in-flight stateful commit", async () => {
+  const agent = new Agent({ model: new ConcurrentModel(), tools: [], maxIterations: 1 });
+  const active = agent.run("slow branch");
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  agent.resetFrame();
+  await expect(active).resolves.toMatchObject({ finalAnswer: "slow done" });
+  expect(agent.getFrame()).toBeUndefined();
+});
+
+it("releases the state lock when a stream consumer closes early", async () => {
+  const agent = new Agent({ model: new ConcurrentModel(), tools: [], maxIterations: 1 });
+  const iterator = agent.streamEvents("abandoned stream")[Symbol.asyncIterator]();
+  expect((await iterator.next()).value?.type).toBe("metadata");
+  await iterator.return?.();
+  await expect(agent.run("fast branch")).resolves.toMatchObject({ finalAnswer: "fast done" });
+});
+
+it("rejects an impossible prompt budget before calling the provider", async () => {
+  let calls = 0;
+  const model: Model = {
+    async complete() { calls += 1; return { text: "SWX/1\n@final \"unexpected\"" }; },
+    async *stream() { calls += 1; yield { type: "token", token: "SWX/1\n@final \"unexpected\"" }; }
+  };
+  const agent = new Agent({ model, tools: [], maxIterations: 1, maxPromptTokens: 256, systemPrompt: "x".repeat(20_000) });
+  await expect(agent.run("never call the model")).rejects.toThrow(/cannot fit/i);
+  expect(calls).toBe(0);
+  expect(agent.getFrame()).toBeUndefined();
 });
 
 class WorkerSchedulerModel implements Model {

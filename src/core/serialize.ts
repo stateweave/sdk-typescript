@@ -8,8 +8,18 @@ const TIMELINE_LIMIT = 32;
 const TIMELINE_CHRONOLOGY_LIMIT = 96;
 const TIMELINE_CHRONOLOGY_NEIGHBORHOOD = 12;
 const TIMELINE_CHRONOLOGY_HEAD = 16;
+const DEFAULT_MAX_PROMPT_TOKENS = 64_000;
+const MAX_NODE_TEXT_CHARS = 4_000;
+const MAX_DATA_VALUE_CHARS = 1_200;
 
-export type SerializeGraphFrameOptions = { blindIdentity?: boolean };
+export type SerializeGraphFrameOptions = { blindIdentity?: boolean; maxTokens?: number };
+
+export class PromptBudgetExceededError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PromptBudgetExceededError";
+  }
+}
 
 export function serializeGraphFrame(frame: GraphFrame, options: SerializeGraphFrameOptions = {}): string {
   const projection = projectGraph(frame.graph, { focusNodeId: frame.frame.focusNodeId, zoom: frame.frame.zoom });
@@ -39,19 +49,19 @@ export function serializeGraphFrame(frame: GraphFrame, options: SerializeGraphFr
     "",
     "Current GraphFrame:",
     "<FRAME>",
-    `objective: ${frame.frame.objective}`,
-    `currentFocus: ${frame.frame.currentFocus}`,
+    `objective: ${truncate(frame.frame.objective, 4_000)}`,
+    `currentFocus: ${truncate(frame.frame.currentFocus, 2_000)}`,
     `focusNodeId: ${frame.frame.focusNodeId ?? "unknown"}`,
     `zoom: ${frame.frame.zoom ?? 0}`,
     `latestInputNodeId: ${frame.frame.latestInputNodeId ?? latestNodeId(frame, "user_input") ?? "unknown"}`,
     `activeUserInputNodeId: ${frame.frame.activeUserInputNodeId ?? frame.frame.latestInputNodeId ?? "unknown"}`,
     `candidateFocusNodeIds: ${formatLimitedList(candidateFocusIds, CANDIDATE_FOCUS_LIMIT)}`,
-    `nextExpectedOutput: ${frame.frame.nextExpectedOutput}`,
-    ...(frame.frame.lastGraphOpsError ? [`lastGraphOpsError: ${frame.frame.lastGraphOpsError}`] : []),
+    `nextExpectedOutput: ${truncate(frame.frame.nextExpectedOutput, 2_000)}`,
+    ...(frame.frame.lastGraphOpsError ? [`lastGraphOpsError: ${truncate(frame.frame.lastGraphOpsError, 2_000)}`] : []),
     "activeConstraints:",
-    ...frame.frame.activeConstraints.map((c) => `- ${c}`),
+    ...frame.frame.activeConstraints.map((c) => `- ${truncate(c, 1_000)}`),
     "availableActions:",
-    ...frame.frame.availableActions.map((a) => `- ${a}`),
+    ...frame.frame.availableActions.map((a) => `- ${truncate(a, 1_000)}`),
     "semanticNodeTypes:",
     ...(frame.frame.nodeTypes?.length ? frame.frame.nodeTypes.map((type) => `- ${type}`) : ["- (none configured; choose semantic slugs from node meaning)"]),
     "</FRAME>",
@@ -87,7 +97,7 @@ export function serializeGraphFrame(frame: GraphFrame, options: SerializeGraphFr
     for (const node of projection.focusNodes) {
       const rank = chronoRank.get(node.id);
       const rankTag = chronologyMode && rank !== undefined ? ` #${rank}` : "";
-      lines.push(`node ${node.id} [${node.type}]:${rankTag} ${node.text}${nodeDataSummary(node)}`);
+      lines.push(`node ${node.id} [${node.type}]:${rankTag} ${truncate(node.text, MAX_NODE_TEXT_CHARS)}${nodeDataSummary(node)}`);
     }
     lines.push(...projection.focusEdgeLines);
   } else {
@@ -115,7 +125,7 @@ export function serializeGraphFrame(frame: GraphFrame, options: SerializeGraphFr
     lines.push("</TIMELINE>");
   }
 
-  return lines.join("\n");
+  return enforcePromptBudget(lines.join("\n"), frame, projection, options.maxTokens ?? DEFAULT_MAX_PROMPT_TOKENS);
 }
 
 // Global chronological rank: 1-based, over non-system nodes, sorted by
@@ -138,11 +148,22 @@ function bigBrainLines(clusters: Cluster[], focusClusterIds: string[], limit: nu
   const focusSet = new Set(focusClusterIds);
   const focused = clusters.filter((cluster) => focusSet.has(cluster.id));
   const remaining = clusters.filter((cluster) => !focusSet.has(cluster.id));
-  const shown = [...focused, ...remaining].slice(0, Math.max(limit, focused.length));
-  return shown.map((cluster) => {
+  const shown = [...focused, ...remaining].slice(0, limit);
+  const lines = shown.map((cluster) => {
     const mark = focusSet.has(cluster.id) ? " *" : "";
-    return `- ${cluster.id}${mark} (${cluster.summary}) "${truncate(cluster.label, 70)}"`;
+    return `- ${cluster.id}${mark} (${truncate(cluster.summary, 240)}) "${truncate(cluster.label, 70)}"`;
   });
+  const shownIds = new Set(shown.map((cluster) => cluster.id));
+  const omitted = clusters.filter((cluster) => !shownIds.has(cluster.id));
+  for (let index = 0; index < omitted.length; index += 64) {
+    const page = omitted.slice(index, index + 64);
+    const first = page[0];
+    const last = page.at(-1);
+    if (!first || !last) continue;
+    const labels = page.slice(0, 3).map((cluster) => truncate(cluster.label, 36)).join(" | ");
+    lines.push(`- overview_page_${Math.floor(index / 64) + 1} (${page.length} omitted clusters, range ${first.id}..${last.id}) "${labels}${page.length > 3 ? " | …" : ""}"`);
+  }
+  return lines;
 }
 
 function clusterPin(cluster: Cluster): string {
@@ -243,15 +264,73 @@ function nodeDataSummary(node: GraphNode): string {
 
   if (node.data) {
     for (const [key, value] of Object.entries(node.data)) {
-      if (key === "content" && typeof value === "string") {
-        parts.push(`contentLength=${value.length} contentPreview=${JSON.stringify(oneLine(value.slice(0, 360)))}`);
-      } else {
-        parts.push(`${key}=${JSON.stringify(value)}`);
-      }
+      parts.push(`${key}=${summarizeDataValue(value)}`);
     }
   }
 
   return parts.length ? ` data ${parts.join(" ")}` : "";
+}
+
+function summarizeDataValue(value: unknown, depth = 0): string {
+  if (typeof value === "string") {
+    const preview = oneLine(value.slice(0, MAX_DATA_VALUE_CHARS));
+    return value.length > MAX_DATA_VALUE_CHARS
+      ? JSON.stringify({ length: value.length, preview: `${preview}…` })
+      : JSON.stringify(preview);
+  }
+  if (value === null || typeof value === "number" || typeof value === "boolean") return JSON.stringify(value);
+  if (depth >= 2) return JSON.stringify(Array.isArray(value) ? { items: value.length } : { keys: Object.keys(value as object).slice(0, 16) });
+  if (Array.isArray(value)) return `[${value.slice(0, 12).map((item) => summarizeDataValue(item, depth + 1)).join(",")}${value.length > 12 ? `,…+${value.length - 12}` : ""}]`;
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    const rendered = entries.slice(0, 16).map(([key, item]) => `${JSON.stringify(key)}:${summarizeDataValue(item, depth + 1)}`);
+    if (entries.length > 16) rendered.push(`${JSON.stringify("_omittedKeys")}:${entries.length - 16}`);
+    return `{${rendered.join(",")}}`;
+  }
+  return JSON.stringify(String(value));
+}
+
+function enforcePromptBudget(prompt: string, frame: GraphFrame, projection: ReturnType<typeof projectGraph>, maxTokens: number): string {
+  if (!Number.isInteger(maxTokens) || maxTokens < 256) throw new PromptBudgetExceededError(`maxTokens must be an integer of at least 256; received ${String(maxTokens)}.`);
+  const maxChars = maxTokens * 4;
+  if (prompt.length <= maxChars) return prompt;
+
+  const frameEnd = prompt.indexOf("</FRAME>");
+  if (frameEnd < 0) throw new PromptBudgetExceededError("Cannot locate mandatory GraphFrame section while enforcing the prompt budget.");
+  const mandatory = prompt.slice(0, frameEnd + "</FRAME>".length);
+  const activeId = frame.frame.activeUserInputNodeId ?? frame.frame.latestInputNodeId;
+  const active = activeId ? frame.graph.nodes.find((node) => node.id === activeId) : undefined;
+  const focusIds = unique([
+    activeId,
+    frame.frame.focusNodeId,
+    "system_root",
+    ...projection.retrievedNodeIds
+  ].filter((id): id is string => Boolean(id)));
+  const byId = new Map(frame.graph.nodes.map((node) => [node.id, node]));
+  const compactLines = [...mandatory.split("\n"), "", "<ACTIVE_INPUT>"];
+  compactLines.push(active ? `node ${active.id} [${active.type}]: ${truncate(active.text, 16_000)}` : "(none)", "</ACTIVE_INPUT>", "", "<FOCUS>");
+  for (const id of focusIds) {
+    const node = byId.get(id);
+    if (!node || node.id === active?.id) continue;
+    compactLines.push(`node ${node.id} [${node.type}]: ${truncate(node.text, 2_000)}${nodeDataSummary(node)}`);
+  }
+  compactLines.push(`... bounded projection: ${Math.max(0, projection.focusNodes.length - focusIds.length)} additional focus nodes omitted`, "</FOCUS>", "", "<BIG_BRAIN>");
+  compactLines.push(...bigBrainLines(projection.bigBrainClusters, projection.focusClusterIds, Number.MAX_SAFE_INTEGER));
+  compactLines.push("</BIG_BRAIN>", "", `<BUDGET maxTokens=${maxTokens} mode=compacted />`);
+
+  const output: string[] = [];
+  const suffix = "\n... optional projection lines omitted to respect the model-input budget\n";
+  for (const line of compactLines) {
+    const boundedLine = truncate(line, 4_000);
+    const candidateLength = output.reduce((sum, item) => sum + item.length + 1, 0) + boundedLine.length + suffix.length;
+    if (candidateLength > maxChars) break;
+    output.push(boundedLine);
+  }
+  const compact = output.join("\n") + suffix;
+  if (!output.length || compact.length > maxChars || !compact.includes("</FRAME>") || !compact.includes("<ACTIVE_INPUT>")) {
+    throw new PromptBudgetExceededError(`Mandatory GraphFrame state cannot fit within the ${maxTokens}-token prompt budget.`);
+  }
+  return compact;
 }
 
 function oneLine(value: string): string {
