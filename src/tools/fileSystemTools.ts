@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
@@ -84,7 +84,7 @@ export function createFileSystemTools(options: FileSystemToolsOptions = {}): Too
       schema: readFileSchema,
       async execute(args: unknown) {
         const parsed = normalizeReadFileArgs(args);
-        const filePath = resolveWorkspacePath(rootDir, parsed.filePath);
+        const filePath = await resolveWorkspacePath(rootDir, parsed.filePath);
         const content = await readFile(filePath, "utf8");
         const lines = content.split(/\r?\n/);
         const limited = lines.slice(parsed.offset, parsed.offset + parsed.limit).join("\n");
@@ -97,7 +97,8 @@ export function createFileSystemTools(options: FileSystemToolsOptions = {}): Too
       schema: writeFileSchema,
       async execute(args: unknown) {
         const parsed = normalizeWriteFileArgs(args);
-        const filePath = resolveWorkspacePath(rootDir, parsed.filePath);
+        await mkdir(rootDir, { recursive: true });
+        const filePath = await resolveWorkspacePath(rootDir, parsed.filePath);
         await assertExpectedHash(filePath, parsed.expectedHash);
         await mkdir(path.dirname(filePath), { recursive: true });
         await writeFile(filePath, parsed.content, "utf8");
@@ -110,7 +111,7 @@ export function createFileSystemTools(options: FileSystemToolsOptions = {}): Too
       schema: editFileSchema,
       async execute(args: unknown) {
         const parsed = normalizeEditFileArgs(args);
-        const filePath = resolveWorkspacePath(rootDir, parsed.filePath);
+        const filePath = await resolveWorkspacePath(rootDir, parsed.filePath);
         const content = await readFile(filePath, "utf8");
         assertContentHash(content, parsed.expectedHash, parsed.filePath);
         if (parsed.oldString === parsed.newString) throw new Error(`Refusing a no-op edit: old_string and new_string are identical. Quote complete one-line values or use old_string_ref/new_string_ref blocks.\nCurrent file preview:\n${filePreview(content)}`);
@@ -128,14 +129,21 @@ export function createFileSystemTools(options: FileSystemToolsOptions = {}): Too
         const parsed = normalizeBashCommandArgs(args);
         validateBashCommand(parsed.command, allowedBashCommands);
         await mkdir(rootDir, { recursive: true });
+        await validateBashWorkspacePaths(parsed.command, rootDir);
         try {
-          const result = await execFileAsync("bash", ["-lc", parsed.command], {
-            cwd: rootDir,
-            env: safeToolEnv(rootDir),
-            timeout: Math.min(parsed.timeoutMs ?? timeoutMs, 60_000),
-            maxBuffer: maxOutputBytes
-          });
-          return { exitCode: 0, stdout: truncate(result.stdout, maxOutputBytes), stderr: truncate(result.stderr, maxOutputBytes) };
+          let stdout = "";
+          let stderr = "";
+          for (const segment of commandSegments(parsed.command)) {
+            const result = await execFileAsync(segment[0]!, segment.slice(1), {
+              cwd: rootDir,
+              env: safeToolEnv(rootDir),
+              timeout: Math.min(parsed.timeoutMs ?? timeoutMs, 60_000),
+              maxBuffer: maxOutputBytes
+            });
+            stdout += result.stdout;
+            stderr += result.stderr;
+          }
+          return { exitCode: 0, stdout: truncate(stdout, maxOutputBytes), stderr: truncate(stderr, maxOutputBytes) };
         } catch (error) {
           const failure = error as Error & { stdout?: string; stderr?: string; code?: number | string; signal?: string };
           return {
@@ -222,16 +230,56 @@ function replaceExact(content: string, oldString: string, newString: string, rep
   return { content: replaceAll ? content.split(oldString).join(newString) : content.replace(oldString, newString), occurrences: replaceAll ? occurrences : 1 };
 }
 
-function resolveWorkspacePath(rootDir: string, requestedPath: string): string {
+async function resolveWorkspacePath(rootDir: string, requestedPath: string): Promise<string> {
   if (path.isAbsolute(requestedPath)) throw new Error("File tool paths must be relative to the agent workspace.");
-  const resolved = path.resolve(rootDir, requestedPath);
-  if (resolved !== rootDir && !resolved.startsWith(`${rootDir}${path.sep}`)) throw new Error(`Path escapes the agent workspace: ${requestedPath}`);
+  const lexical = path.resolve(rootDir, requestedPath);
+  if (lexical !== rootDir && !lexical.startsWith(`${rootDir}${path.sep}`)) throw new Error(`Path escapes the agent workspace: ${requestedPath}`);
+
+  const canonicalRoot = await realpath(rootDir);
+  const relative = path.relative(rootDir, lexical);
+  const segments = relative ? relative.split(path.sep) : [];
+  let current = canonicalRoot;
+  for (const segment of segments) {
+    current = path.join(current, segment);
+    try {
+      const info = await lstat(current);
+      if (info.isSymbolicLink()) throw new Error(`Workspace path contains a symbolic link: ${requestedPath}`);
+    } catch (error) {
+      if (isMissingPathError(error)) break;
+      throw error;
+    }
+  }
+  const resolved = path.resolve(canonicalRoot, relative);
+  if (resolved !== canonicalRoot && !resolved.startsWith(`${canonicalRoot}${path.sep}`)) throw new Error(`Path escapes the agent workspace: ${requestedPath}`);
   return resolved;
+}
+
+async function validateBashWorkspacePaths(command: string, rootDir: string): Promise<void> {
+  const tokens = shellTokens(command);
+  if (tokens.some((token) => /[*?\[\]{}~]/.test(token))) throw new Error("bash_command rejected shell path expansion; use find or rg with explicit workspace paths.");
+  for (const token of tokens) {
+    if (!token || token === "&&") continue;
+    const optionValue = token.includes("=") ? token.slice(token.indexOf("=") + 1) : token;
+    if (!optionValue || (token.startsWith("-") && optionValue === token)) continue;
+    if (path.isAbsolute(optionValue) || optionValue.split(/[\\/]+/).includes("..")) throw new Error(`bash_command rejected path outside the workspace: ${optionValue}`);
+    const candidate = path.resolve(rootDir, optionValue);
+    try {
+      await lstat(candidate);
+    } catch (error) {
+      if (isMissingPathError(error)) continue;
+      throw error;
+    }
+    await resolveWorkspacePath(rootDir, optionValue);
+  }
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT");
 }
 
 function safeToolEnv(rootDir: string): NodeJS.ProcessEnv {
   return {
-    PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
+    PATH: "/usr/local/bin:/usr/bin:/bin",
     HOME: rootDir,
     LANG: "C.UTF-8"
   };
@@ -239,9 +287,12 @@ function safeToolEnv(rootDir: string): NodeJS.ProcessEnv {
 
 function validateBashCommand(command: string, allowedCommands: Set<string>): void {
   if (/[\n\r\0`$<>|;]/.test(command)) throw new Error("bash_command rejected unsafe shell syntax.");
-  const tokens = shellTokens(command);
+  for (const segment of commandSegments(command)) validateCommandSegment(segment, allowedCommands);
+}
+
+function commandSegments(command: string): string[][] {
   const segments: string[][] = [[]];
-  for (const token of tokens) {
+  for (const token of shellTokens(command)) {
     if (token === "&&") {
       if (!segments.at(-1)?.length) throw new Error("bash_command rejected an empty command segment.");
       segments.push([]);
@@ -251,8 +302,7 @@ function validateBashCommand(command: string, allowedCommands: Set<string>): voi
     segments.at(-1)?.push(token);
   }
   if (!segments.at(-1)?.length) throw new Error("bash_command rejected an empty command segment.");
-
-  for (const segment of segments) validateCommandSegment(segment, allowedCommands);
+  return segments;
 }
 
 function validateCommandSegment(segment: string[], allowedCommands: Set<string>): void {
@@ -267,13 +317,15 @@ function validateCommandSegment(segment: string[], allowedCommands: Set<string>)
   if (command === "node" && (args.length !== 2 || args[0] !== "--check" || args[1].startsWith("-"))) {
     throw new Error("node is limited to: node --check <relative-file>.");
   }
-  if (command === "find" && args.some((arg) => /^-(?:delete|exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls)$/.test(arg))) {
-    throw new Error("bash_command rejected a stateful find action.");
+  if (command === "find" && args.some((arg) => /^-(?:delete|exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls|L|H)$/.test(arg))) {
+    throw new Error("bash_command rejected a stateful find or symlink-following find action.");
   }
   if ((command === "rg" || command === "grep") && args.some((arg) => /^--(?:pre|hostname-bin)(?:=|$)/.test(arg))) {
     throw new Error(`bash_command rejected executable ${command} preprocessing.`);
   }
-  if (command === "sort" && args.some((arg) => arg === "-o" || arg.startsWith("--output"))) throw new Error("bash_command rejected sort output redirection.");
+  if (command === "rg" && args.some((arg) => arg === "-L" || arg === "--follow")) throw new Error("bash_command rejected symlink-following rg behavior.");
+  if (command === "grep" && args.some((arg) => arg === "-R" || arg === "--dereference-recursive")) throw new Error("bash_command rejected symlink-following grep behavior.");
+  if (command === "sort" && args.some((arg) => arg === "-o" || arg.startsWith("--output") || arg.startsWith("--compress-program"))) throw new Error("bash_command rejected sort output or executable helper options.");
 }
 
 function shellTokens(command: string): string[] {

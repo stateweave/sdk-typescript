@@ -84,7 +84,7 @@ await agent.run("Add keyboard shortcuts.");
 console.log(agent.getFrame()?.graph.nodes);
 ```
 
-`Agent` includes workspace file-system tools by default, so it can read, write, edit, and run shell commands in its workspace without extra setup.
+`Agent` includes workspace file-system tools by default, so it can read, write, edit, and run shell commands in its workspace without extra setup. File tools reject absolute paths, traversal, and symlink components. The read-only bash allowlist runs without shell startup profiles, with a fixed trusted `PATH`, and rejects symlink-following flags and glob expansion.
 
 `nodeTypes` is an ordered list of preferred semantic types, not a whitelist. StateWeave shows the list explicitly in every `GraphFrame` prompt and instructs the model to use a configured type whenever it fits; the model may still create a precise custom `lower_snake_case` type when none applies. Tool-using turns preserve a semantic work record: an active task/intent before the first tool, durable constraints/files/symbols/decisions around it, and evidence-linked verification before resolution.
 

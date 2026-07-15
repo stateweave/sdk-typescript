@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
@@ -44,6 +44,12 @@ it("rejects non-allowlisted and shell-escape bash commands", async () => {
     await expect(bash?.execute({ command: "ls $(pwd)" })).rejects.toThrow(/unsafe shell syntax/);
     await expect(bash?.execute({ command: "find . -delete" })).rejects.toThrow(/stateful find/);
     await expect(bash?.execute({ command: "node -e 'process.exit()'" })).rejects.toThrow(/limited/);
+    await expect(bash?.execute({ command: "find -L ." })).rejects.toThrow(/symlink-following/);
+    await expect(bash?.execute({ command: "rg --follow token ." })).rejects.toThrow(/symlink-following/);
+    await expect(bash?.execute({ command: "ls *.txt" })).rejects.toThrow(/shell path expansion/);
+    await expect(bash?.execute({ command: "head ~root/.ssh/id_rsa" })).rejects.toThrow(/shell path expansion/);
+    await expect(bash?.execute({ command: "grep --file=/etc/passwd token" })).rejects.toThrow(/outside the workspace/);
+    await expect(bash?.execute({ command: "sort --compress-program=sh notes.txt" })).rejects.toThrow(/executable helper/);
     await expect(bash?.execute({ command: "pwd && ls" })).resolves.toMatchObject({ exitCode: 0 });
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -57,5 +63,36 @@ it("rejects file paths outside the workspace", async () => {
     await expect(read?.execute({ file_path: "../secret.txt" })).rejects.toThrow(/escapes the agent workspace/);
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("rejects symlink escapes for file and bash tools", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-tools-root-"));
+  const outside = await mkdtemp(path.join(os.tmpdir(), "stateweave-tools-outside-"));
+  try {
+    await writeFile(path.join(outside, "secret.txt"), "outside secret");
+    await symlink(outside, path.join(root, "escape"));
+    const tools = new Map(createFileSystemTools({ rootDir: root }).map((tool) => [tool.name, tool]));
+    await expect(tools.get("read_file")?.execute({ file_path: "escape/secret.txt" })).rejects.toThrow(/symbolic link/);
+    await expect(tools.get("write_file")?.execute({ file_path: "escape/new.txt", content: "escaped" })).rejects.toThrow(/symbolic link/);
+    await expect(tools.get("bash_command")?.execute({ command: "head escape/secret.txt" })).rejects.toThrow(/symbolic link/);
+    await expect(access(path.join(outside, "new.txt"))).rejects.toThrow();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
+  }
+});
+
+it("does not execute workspace shell startup files", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-tools-profile-"));
+  const marker = path.join(os.tmpdir(), `stateweave-profile-marker-${Date.now()}`);
+  try {
+    await writeFile(path.join(root, ".bash_profile"), `touch ${JSON.stringify(marker)}\n`);
+    const bash = createFileSystemTools({ rootDir: root }).find((tool) => tool.name === "bash_command");
+    await expect(bash?.execute({ command: "pwd" })).resolves.toMatchObject({ exitCode: 0 });
+    await expect(access(marker)).rejects.toThrow();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(marker, { force: true });
   }
 });
