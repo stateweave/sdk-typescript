@@ -3190,16 +3190,16 @@ function renderInfiniteState(state: InfiniteStateView): void {
     <div class="infinite-metric"><span class="metric-label">Live execution</span><strong>${state.progress ? `${escapeHtml(state.progress.arm)} · ${escapeHtml(state.progress.phase)} · ${state.progress.iteration}/${state.progress.maxIterations}` : "—"}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Graph integrity</span><strong>${state.validTransactions} valid / ${state.invalidTransactions} invalid</strong></div>
     <div class="infinite-metric"><span class="metric-label">Isolated workspaces</span><strong>${state.workspace.stateweaveFiles} candidate A / ${state.workspace.naiveFiles} candidate B files</strong></div>
-    <div class="infinite-metric sw-metric"><span class="metric-label">Graph latest context</span><strong>${swTokens.toLocaleString()} tok</strong></div>
-    <div class="infinite-metric baseline-metric"><span class="metric-label">Challenger latest context</span><strong>${baselineTokens.toLocaleString()} tok</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Challenger compaction</span><strong>${(state.naiveStrategy.thresholdTokens / 1000).toFixed(0)}k → summary + last ${state.naiveStrategy.retainMessages} · ${state.naiveStrategy.totalCompactions} run</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Latest tool calls</span><strong>${lastTurn ? `${lastTurn.toolCalls} graph / ${lastTurn.baselineToolCalls} challenger` : "—"}</strong></div>
+    <div class="infinite-metric sw-metric"><span class="metric-label">StateWeave agent latest context</span><strong>${swTokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric baseline-metric"><span class="metric-label">Naive agent latest context</span><strong>${baselineTokens.toLocaleString()} tok</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Naive agent compaction</span><strong>${(state.naiveStrategy.thresholdTokens / 1000).toFixed(0)}k → summary + last ${state.naiveStrategy.retainMessages} · ${state.naiveStrategy.totalCompactions} run</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Latest tool calls</span><strong>${lastTurn ? `${lastTurn.toolCalls} StateWeave / ${lastTurn.baselineToolCalls} naive` : "—"}</strong></div>
     <div class="infinite-metric"><span class="metric-label">Graph size</span><strong>${snapshot?.nodeCount ?? 0} nodes / ${snapshot?.edgeCount ?? 0} edges</strong></div>
     <div class="infinite-metric sw-metric"><span class="metric-label">Semantic memory</span><strong>${snapshot?.semanticNodeCount ?? 0} semantic · ${snapshot?.suggestedSemanticNodeCount ?? 0} suggested types</strong></div>
-    <div class="infinite-metric sw-metric"><span class="metric-label">Graph completion-gated quality</span><strong>${quality ? `${(quality.stateweavePassRate * 100).toFixed(1)}%` : "—"}</strong></div>
-    <div class="infinite-metric baseline-metric"><span class="metric-label">Challenger completion-gated quality</span><strong>${quality ? `${(quality.naivePassRate * 100).toFixed(1)}%` : "—"}</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Completed turns</span><strong>${state.reliability ? `${state.reliability.stateweaveCompleted} graph / ${state.reliability.challengerCompleted} challenger` : "—"}</strong></div>
-    <div class="infinite-metric"><span class="metric-label">Failures / provider retries</span><strong>${state.reliability ? `${state.reliability.stateweaveAgentFailures} graph · ${state.reliability.challengerAgentFailures} challenger · ${state.reliability.providerRetries} retries` : "—"}</strong></div>`;
+    <div class="infinite-metric sw-metric"><span class="metric-label">StateWeave agent completion-gated quality</span><strong>${quality ? `${(quality.stateweavePassRate * 100).toFixed(1)}%` : "—"}</strong></div>
+    <div class="infinite-metric baseline-metric"><span class="metric-label">Naive agent completion-gated quality</span><strong>${quality ? `${(quality.naivePassRate * 100).toFixed(1)}%` : "—"}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Completed turns</span><strong>${state.reliability ? `${state.reliability.stateweaveCompleted} StateWeave / ${state.reliability.challengerCompleted} naive` : "—"}</strong></div>
+    <div class="infinite-metric"><span class="metric-label">Failures / provider retries</span><strong>${state.reliability ? `${state.reliability.stateweaveAgentFailures} StateWeave · ${state.reliability.challengerAgentFailures} naive · ${state.reliability.providerRetries} retries` : "—"}</strong></div>`;
 
   renderInfiniteExecutive(state, swTokens, baselineTokens, quality);
   renderInfiniteChart(state.series);
@@ -3384,11 +3384,11 @@ function renderInfiniteTurnDetail(turn: InfiniteTurn): void {
       <header><span class="turn-badge">T${turn.turn}</span><span class="phase-badge seed">${escapeHtml(turn.taskKind)}</span>${turn.stateweaveCompleted === false ? `<span class="score-chip fail">graph agent failure</span>` : ""}${turn.baselineCompleted === false ? `<span class="score-chip fail">challenger agent failure</span>` : ""}</header>
       <section><h4>Question / task</h4><pre>${escapeHtml(turn.prompt)}</pre></section>
       <div class="turn-answer-grid">
-        <section class="turn-response stateweave"><h4>Graph candidate answer</h4><pre>${escapeHtml(turn.answer || "(empty answer)")}</pre></section>
-        <section class="turn-response naive"><h4>Transcript challenger answer</h4><pre>${escapeHtml(turn.baselineAnswer || "(empty answer)")}</pre></section>
+        <section class="turn-response stateweave"><h4>StateWeave agent answer</h4><pre>${escapeHtml(turn.answer || "(empty answer)")}</pre></section>
+        <section class="turn-response naive"><h4>Naive agent answer</h4><pre>${escapeHtml(turn.baselineAnswer || "(empty answer)")}</pre></section>
       </div>
-      <div class="turn-judgment-grid">${judgment("Graph candidate", turn.score.stateweave)}${judgment("Transcript challenger", turn.score.naive)}</div>
-      <footer>Graph candidate: ${turn.promptTokenEstimate.toLocaleString()} context tokens, ${turn.totalInputTokens.toLocaleString()} total input, ${turn.latencyMs.toLocaleString()}ms, ${turn.toolCalls} tool calls. Transcript challenger: ${turn.baselineTokenEstimate.toLocaleString()} context tokens, ${turn.baselineTotalInputTokens.toLocaleString()} total input, ${turn.baselineLatencyMs.toLocaleString()}ms, ${turn.baselineToolCalls} tool calls${turn.baselineCompactions ? `, ${turn.baselineCompactions} compaction` : ""}.</footer>
+      <div class="turn-judgment-grid">${judgment("StateWeave agent", turn.score.stateweave)}${judgment("Naive agent", turn.score.naive)}</div>
+      <footer>StateWeave agent: ${turn.promptTokenEstimate.toLocaleString()} context tokens, ${turn.totalInputTokens.toLocaleString()} total input, ${turn.latencyMs.toLocaleString()}ms, ${turn.toolCalls} tool calls. Naive agent: ${turn.baselineTokenEstimate.toLocaleString()} context tokens, ${turn.baselineTotalInputTokens.toLocaleString()} total input, ${turn.baselineLatencyMs.toLocaleString()}ms, ${turn.baselineToolCalls} tool calls${turn.baselineCompactions ? `, ${turn.baselineCompactions} compaction` : ""}.</footer>
     </article>`;
 }
 
