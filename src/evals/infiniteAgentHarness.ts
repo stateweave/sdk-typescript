@@ -13,7 +13,7 @@ import { createFileSystemTools } from "../tools/fileSystemTools.js";
 import { AgenticBaseline, type AgenticMessage, type AgenticProgress, type AgenticTurnResult } from "./agenticBaseline.js";
 import { inspectFrontendCoherence, relayDeskSeedStyles } from "./fullStackProject.js";
 import { generateCalibrationAnchor, generateParticipantStartingMaterials, judgeChallengerPair, type ChallengerCandidateJudgment, type ChallengerUsage } from "./challengerDirector.js";
-import { buildChallengerProtocolManifest, CHALLENGER_V6_SEED, CHALLENGER_V7_CALIBRATION_ID, CHALLENGER_V7_PROTOCOL_ID } from "./challengerProtocol.js";
+import { buildChallengerProtocolManifest, CHALLENGER_V6_SEED, CHALLENGER_V8_CALIBRATION_ID, CHALLENGER_V8_PROTOCOL_ID } from "./challengerProtocol.js";
 import { readChallengerScenario, type ChallengerScenario, type ChallengerScenarioTurn } from "./challengerScenarioLibrary.js";
 
 const MAX_TURNS_KEPT = 80;
@@ -22,8 +22,8 @@ const MAX_AGENT_ITERATIONS = 300;
 const MAX_TURN_RETRIES = 2;
 const NAIVE_COMPACTION_THRESHOLD = 250_000;
 const NAIVE_RETAIN_MESSAGES = 12;
-const EXPERIMENT_VERSION = 7;
-const EXPERIMENT_PROTOCOL_ID = CHALLENGER_V7_PROTOCOL_ID;
+const EXPERIMENT_VERSION = 8;
+const EXPERIMENT_PROTOCOL_ID = CHALLENGER_V8_PROTOCOL_ID;
 const DEFAULT_EXPERIMENT_SEED = CHALLENGER_V6_SEED;
 const GRAPH_WORKSPACE_NAME = "harbor";
 const CHALLENGER_WORKSPACE_NAME = "meadow";
@@ -285,42 +285,42 @@ export class InfiniteAgentHarness {
     }
     const manifest = await buildChallengerProtocolManifest(this.scenarioDir);
     const storedManifest = await readJson<typeof manifest>(this.manifestPath);
-    if (storedManifest && JSON.stringify(storedManifest) !== JSON.stringify(manifest)) throw new Error("Stored Infinite v7 protocol manifest differs from the compiled frozen manifest; archive and reset instead of continuing.");
+    if (storedManifest && JSON.stringify(storedManifest) !== JSON.stringify(manifest)) throw new Error("Stored Infinite v8 protocol manifest differs from the compiled frozen manifest; archive and reset instead of continuing.");
     if (!storedManifest) await atomicWriteJson(this.manifestPath, manifest, 2);
     const heldOut = new Map<string, ChallengerScenario>();
     for (const id of manifest.evaluationOrders[0]!) {
       const entry = manifest.heldOut.find((scenario) => scenario.id === id);
-      if (!entry) throw new Error(`Challenger v7 order references unknown held-out scenario ${id}.`);
+      if (!entry) throw new Error(`Challenger v8 order references unknown held-out scenario ${id}.`);
       const scenario = await readChallengerScenario(this.scenarioDir, entry.filename);
-      if (!scenario) throw new Error(`Challenger v7 scenario file is missing: ${entry.filename}.`);
+      if (!scenario) throw new Error(`Challenger v8 scenario file is missing: ${entry.filename}.`);
       heldOut.set(id, scenario);
     }
     this.scenarioPlan = manifest.evaluationOrders[0]!.flatMap((id, scenarioIndex) => {
       const scenario = heldOut.get(id)!;
       return scenario.turns.map((turn, index) => ({ scenario, scenarioIndex: scenarioIndex + 1, turn, firstInScenario: index === 0, lastInScenario: index === scenario.turns.length - 1 }));
     });
-    if (this.scenarioPlan.length !== PREREGISTERED_TARGET_TURNS) throw new Error(`Challenger v7 expected ${PREREGISTERED_TARGET_TURNS} held-out turns, received ${this.scenarioPlan.length}.`);
+    if (this.scenarioPlan.length !== PREREGISTERED_TARGET_TURNS) throw new Error(`Challenger v8 expected ${PREREGISTERED_TARGET_TURNS} held-out turns, received ${this.scenarioPlan.length}.`);
     await mkdir(this.stateweaveWorkspace, { recursive: true });
     await mkdir(this.naiveWorkspace, { recursive: true });
     storedState = await this.recoverInterruptedTurn(storedState);
     if (!storedState || storedState.turnCount === 0) {
       const [graphSeed, challengerSeed] = await Promise.all([sourceWorkspaceDigest(this.stateweaveWorkspace), sourceWorkspaceDigest(this.naiveWorkspace)]);
-      if (graphSeed !== challengerSeed) throw new Error("Infinite v7 participants did not start from byte-identical source workspaces.");
+      if (graphSeed !== challengerSeed) throw new Error("Infinite v8 participants did not start from byte-identical source workspaces.");
     }
     this.state = storedState ?? this.state;
     this.state.design ??= experimentDesign();
     this.state.design.maxIterationsPerAgentTurn = MAX_AGENT_ITERATIONS;
     this.state.reliability ??= { stateweaveCompleted: 0, challengerCompleted: 0, stateweaveAgentFailures: 0, challengerAgentFailures: 0, providerRetries: 0 };
     this.state.challenger ??= { corpusSha256: manifest.corpusSha256, calibration: { status: "required", scenarios: manifest.calibration.length, passed: 0, usage: emptyUsage() }, split: "held-out", trajectory: 1, scenarioCount: manifest.heldOut.length, driverUsage: emptyUsage(), judgeUsage: emptyUsage(), judgeReviewTurns: [] };
-    if (this.state.challenger.corpusSha256 !== manifest.corpusSha256) throw new Error("Stored Challenger state does not match the frozen v7 protocol corpus hash.");
+    if (this.state.challenger.corpusSha256 !== manifest.corpusSha256) throw new Error("Stored Challenger state does not match the frozen v8 protocol corpus hash.");
     this.state.challenger.calibration ??= { status: "required", scenarios: manifest.calibration.length, passed: 0, usage: emptyUsage() };
     const calibration = await readJson<{ calibrationId: string; corpusSha256: string; passed: number; scenarios: number; usage: ChallengerUsage; outcomes?: ChallengerCalibrationOutcome[]; updatedAt: string }>(this.calibrationPath);
-    if (calibration?.calibrationId === CHALLENGER_V7_CALIBRATION_ID && calibration.corpusSha256 === manifest.corpusSha256 && calibration.passed === manifest.calibration.length) {
+    if (calibration?.calibrationId === CHALLENGER_V8_CALIBRATION_ID && calibration.corpusSha256 === manifest.corpusSha256 && calibration.passed === manifest.calibration.length) {
       this.state.challenger.calibration = { status: "passed", scenarios: calibration.scenarios, passed: calibration.passed, usage: calibration.usage, outcomes: calibration.outcomes, updatedAt: calibration.updatedAt };
     } else if (this.state.turnCount === 0) {
       this.state.challenger.calibration = { status: "required", scenarios: manifest.calibration.length, passed: 0, usage: emptyUsage() };
       this.state.status = "stopped";
-      this.state.message = "Challenger v7 requires blind-judge anchor calibration before the held-out trajectory can start.";
+      this.state.message = "Challenger v8 requires blind-judge anchor calibration before the held-out trajectory can start.";
     }
     this.state.blocks ??= [];
     this.state.evidence = analyzeBlocks(this.state.blocks, this.state.design.seed);
@@ -427,14 +427,14 @@ export class InfiniteAgentHarness {
     const updatedAt = new Date().toISOString();
     this.state.challenger.calibration = { status, scenarios: manifest.calibration.length, passed, usage, outcomes, updatedAt };
     this.state.status = "stopped";
-    this.state.message = status === "passed" ? "Challenger v7 blind-judge calibration passed; held-out trajectory is ready for an explicit start." : `Challenger v7 calibration failed ${manifest.calibration.length - passed} of ${manifest.calibration.length} anchor comparisons; held-out start remains blocked.`;
-    await atomicWriteJson(this.calibrationPath, { calibrationId: CHALLENGER_V7_CALIBRATION_ID, corpusSha256: manifest.corpusSha256, passed, scenarios: manifest.calibration.length, usage, outcomes, updatedAt }, 2);
+    this.state.message = status === "passed" ? "Challenger v8 blind-judge calibration passed; held-out trajectory is ready for an explicit start." : `Challenger v8 calibration failed ${manifest.calibration.length - passed} of ${manifest.calibration.length} anchor comparisons; held-out start remains blocked.`;
+    await atomicWriteJson(this.calibrationPath, { calibrationId: CHALLENGER_V8_CALIBRATION_ID, corpusSha256: manifest.corpusSha256, passed, scenarios: manifest.calibration.length, usage, outcomes, updatedAt }, 2);
     await this.save();
     } catch (error) {
       const current = this.state.challenger.calibration;
       this.state.challenger.calibration = { ...current, status: "failed", updatedAt: new Date().toISOString() };
       this.state.status = "stopped";
-      this.state.message = `Challenger v7 calibration failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1_000);
+      this.state.message = `Challenger v8 calibration failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1_000);
       await this.save();
       throw error;
     }
@@ -449,7 +449,7 @@ export class InfiniteAgentHarness {
     }
     if (this.state.challenger?.calibration.status !== "passed") {
       this.state.status = "stopped";
-      this.state.message = "Challenger v7 start blocked until all private blind-judge calibration anchors pass.";
+      this.state.message = "Challenger v8 start blocked until all private blind-judge calibration anchors pass.";
       void this.save();
       return Promise.resolve();
     }
@@ -523,7 +523,7 @@ export class InfiniteAgentHarness {
     if (!this.stateweave || !this.naive) return;
     signal.throwIfAborted();
     const planned = this.scenarioPlan[turn - 1];
-    if (!planned) throw new Error(`Challenger v7 has no preregistered task for T${turn}.`);
+    if (!planned) throw new Error(`Challenger v8 has no preregistered task for T${turn}.`);
     const task: HarnessTask = {
       kind: `${planned.scenario.id}:${planned.turn.label}`,
       prompt: planned.turn.request,
