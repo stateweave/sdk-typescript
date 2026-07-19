@@ -29,6 +29,7 @@
         <button id="multi-four-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt four</button>
         <button id="multi-five-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt five</button>
         <button id="multi-six-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt six</button>
+        <button id="sdk-build-tab" class="tab" type="button" aria-controls="sdk-build-page" aria-selected="false">SDK build</button>
         <button id="infinite-tab" class="tab" type="button" aria-controls="infinite-page" aria-selected="false">Infinite</button>
       </nav>
 
@@ -237,6 +238,61 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
               </div>
             </div>
           </div>
+        </section>
+      </main>
+
+      <main id="sdk-build-page" class="page sdk-build-page" hidden>
+        <section class="card sdk-build-shell" aria-labelledby="sdk-build-title">
+          <header class="sdk-build-header">
+            <div>
+              <p class="eyebrow">One-shot artifact experiment</p>
+              <h2 id="sdk-build-title">Build a JavaScript SDK and an interactive economic model</h2>
+              <p class="muted-copy">Review the exact neutral prompt that will be sent once to both coding agents. This page cannot launch a model or create a sandbox.</p>
+            </div>
+            <span class="sdk-build-review-badge">Review only</span>
+          </header>
+
+          <section class="sdk-build-contract" aria-labelledby="sdk-build-contract-title">
+            <div class="sdk-build-contract-heading">
+              <div>
+                <h3 id="sdk-build-contract-title">Execution contract</h3>
+                <p>When execution is approved, both arms will receive the same prompt and separate fresh workspaces. Nothing has been provisioned or started.</p>
+              </div>
+              <button class="button secondary" type="button" disabled>Launch locked</button>
+            </div>
+            <div class="sdk-build-environments">
+              <article>
+                <span>Workspace A</span>
+                <strong>Isolated OpenShell sandbox</strong>
+                <p>Fresh project directory, shell and file access, identical runtime image and resource limits.</p>
+                <small>Not provisioned</small>
+              </article>
+              <article>
+                <span>Workspace B</span>
+                <strong>Isolated OpenShell sandbox</strong>
+                <p>Fresh project directory, shell and file access, identical runtime image and resource limits.</p>
+                <small>Not provisioned</small>
+              </article>
+            </div>
+            <ul class="sdk-build-guardrails">
+              <li>One initial prompt and one uninterrupted run per arm</li>
+              <li>Independent filesystems with no access to the other arm</li>
+              <li>Same model, dependencies, limits, and starting contents</li>
+              <li>No reference implementation or hidden source material</li>
+            </ul>
+          </section>
+
+          <section class="sdk-build-prompt-panel" aria-labelledby="sdk-build-prompt-title">
+            <header>
+              <div>
+                <p class="eyebrow">Exact participant input</p>
+                <h3 id="sdk-build-prompt-title">Canonical prompt</h3>
+                <p id="sdk-build-prompt-stats" class="sdk-build-prompt-stats"></p>
+              </div>
+              <button id="sdk-build-copy" class="button primary" type="button">Copy prompt</button>
+            </header>
+            <pre id="sdk-build-prompt" class="sdk-build-prompt" tabindex="0"></pre>
+          </section>
         </section>
       </main>
 
