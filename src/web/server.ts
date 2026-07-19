@@ -11,6 +11,7 @@ import { createModelFromEnv } from "../llm/factory.js";
 import { createDefaultTools, describeTools } from "../tools/fileSystemTools.js";
 import { listChallengerScenarios, readChallengerScenario } from "../evals/challengerScenarioLibrary.js";
 import { InfiniteAgentHarness } from "../evals/infiniteAgentHarness.js";
+import { SdkBuildBenchmarkApi } from "./sdkBuildBenchmark.js";
 
 type RunRequest = {
   input?: unknown;
@@ -99,6 +100,7 @@ const challengerScenarioDir = path.resolve(process.env.STATEWEAVE_CHALLENGER_SCE
 const model = createModelFromEnv();
 const workspaceDir = path.resolve(process.env.STATEWEAVE_WORKSPACE_DIR ?? "/data/workspace");
 const agentTools = createDefaultTools({ rootDir: workspaceDir });
+const sdkBuildBenchmark = new SdkBuildBenchmarkApi(path.resolve(process.env.STATEWEAVE_SDK_BENCHMARK_DIR ?? "/data/sdk-build-benchmark"));
 
 const infiniteAgentHarness = new InfiniteAgentHarness({ rootDir: path.resolve(process.env.STATEWEAVE_INFINITE_AGENT_DIR ?? "/data/infinite-agent"), model });
 const infiniteAgentReady = infiniteAgentHarness.initialize();
@@ -180,6 +182,35 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     if (request.method === "GET") await listEvalRuns(response);
     else if (request.method === "POST") await startEvalRun(request, response);
     else json(response, 405, { error: "Method not allowed" });
+    return;
+  }
+
+  if (url.pathname === "/api/sdk-build/state" && request.method === "GET") {
+    json(response, 200, await sdkBuildBenchmark.publicState());
+    return;
+  }
+
+  if (url.pathname === "/api/sdk-build/start" && request.method === "POST") {
+    const result = await sdkBuildBenchmark.start();
+    json(response, result.status, result.body);
+    return;
+  }
+
+  if (url.pathname === "/api/sdk-build/stop" && request.method === "POST") {
+    const result = await sdkBuildBenchmark.stop();
+    json(response, result.status, result.body);
+    return;
+  }
+
+  if (url.pathname === "/api/sdk-build/judge" && request.method === "POST") {
+    const result = await sdkBuildBenchmark.judge(await readJson(request));
+    json(response, result.status, result.body);
+    return;
+  }
+
+  const sdkBuildPreviewMatch = url.pathname.match(/^\/api\/sdk-build\/preview\/(a|b)(?:\/(.*))?$/);
+  if (sdkBuildPreviewMatch && (request.method === "GET" || request.method === "HEAD")) {
+    await sdkBuildBenchmark.servePreview(response, sdkBuildPreviewMatch[1] as "a" | "b", sdkBuildPreviewMatch[2] ?? "", request.method === "HEAD");
     return;
   }
 

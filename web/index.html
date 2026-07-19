@@ -247,39 +247,73 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
             <div>
               <p class="eyebrow">One-shot artifact experiment</p>
               <h2 id="sdk-build-title">Build a JavaScript SDK and an interactive economic model</h2>
-              <p class="muted-copy">Review the exact neutral prompt that will be sent once to both coding agents. This page cannot launch a model or create a sandbox.</p>
+              <p class="muted-copy">Two coding agents receive the same prompt, model, resources, and fresh OpenShell environment. Only their state representation differs.</p>
             </div>
-            <span class="sdk-build-review-badge">Review only</span>
+            <span id="sdk-build-live-badge" class="sdk-build-review-badge">Checking worker</span>
           </header>
 
           <section class="sdk-build-contract" aria-labelledby="sdk-build-contract-title">
             <div class="sdk-build-contract-heading">
               <div>
                 <h3 id="sdk-build-contract-title">Execution contract</h3>
-                <p>When execution is approved, both arms will receive the same prompt and separate fresh workspaces. Nothing has been provisioned or started.</p>
+                <p id="sdk-build-message">Checking the paired OpenShell worker. Deployment alone never starts a run.</p>
               </div>
-              <button class="button secondary" type="button" disabled>Launch locked</button>
+              <div class="sdk-build-actions">
+                <button id="sdk-build-start" class="button primary" type="button" disabled>Start benchmark</button>
+                <button id="sdk-build-stop" class="button secondary" type="button" disabled>Stop</button>
+              </div>
             </div>
             <div class="sdk-build-environments">
-              <article>
-                <span>Workspace A</span>
+              <article id="sdk-build-environment-1">
+                <span>Participant 1</span>
                 <strong>Isolated OpenShell sandbox</strong>
-                <p>Fresh project directory, shell and file access, identical runtime image and resource limits.</p>
-                <small>Not provisioned</small>
+                <p>Fresh project directory, full sandbox shell, identical model and resource limits.</p>
+                <small data-environment-status>Not provisioned</small>
+                <p class="sdk-build-environment-progress" data-environment-progress></p>
               </article>
-              <article>
-                <span>Workspace B</span>
+              <article id="sdk-build-environment-2">
+                <span>Participant 2</span>
                 <strong>Isolated OpenShell sandbox</strong>
-                <p>Fresh project directory, shell and file access, identical runtime image and resource limits.</p>
-                <small>Not provisioned</small>
+                <p>Fresh project directory, full sandbox shell, identical model and resource limits.</p>
+                <small data-environment-status>Not provisioned</small>
+                <p class="sdk-build-environment-progress" data-environment-progress></p>
               </article>
             </div>
             <ul class="sdk-build-guardrails">
               <li>One initial prompt and one uninterrupted run per arm</li>
-              <li>Independent filesystems with no access to the other arm</li>
+              <li>Independent Landlock-isolated filesystems</li>
               <li>Same model, dependencies, limits, and starting contents</li>
-              <li>No reference implementation or hidden source material</li>
+              <li>Blind labels until both human scores are submitted</li>
             </ul>
+          </section>
+
+          <section id="sdk-build-review" class="sdk-build-review" aria-labelledby="sdk-build-review-title" hidden>
+            <header>
+              <div>
+                <p class="eyebrow">Blind human review</p>
+                <h3 id="sdk-build-review-title">Score both finished applications</h3>
+                <p>Candidate identities and efficiency metrics remain hidden until you submit both scores.</p>
+              </div>
+            </header>
+            <div class="sdk-build-candidates">
+              <article>
+                <header><h3>Candidate A</h3><a id="sdk-build-open-a" class="button secondary small-button" target="_blank" rel="noopener">Open full page</a></header>
+                <iframe id="sdk-build-preview-a" title="Candidate A application preview" sandbox="allow-scripts"></iframe>
+                <details><summary>Final response</summary><pre id="sdk-build-answer-a"></pre></details>
+              </article>
+              <article>
+                <header><h3>Candidate B</h3><a id="sdk-build-open-b" class="button secondary small-button" target="_blank" rel="noopener">Open full page</a></header>
+                <iframe id="sdk-build-preview-b" title="Candidate B application preview" sandbox="allow-scripts"></iframe>
+                <details><summary>Final response</summary><pre id="sdk-build-answer-b"></pre></details>
+              </article>
+            </div>
+            <form id="sdk-build-score-form" class="sdk-build-score-form">
+              <label><span>Candidate A score</span><input id="sdk-build-score-a" type="number" min="0" max="100" step="0.1" required></label>
+              <label><span>Candidate B score</span><input id="sdk-build-score-b" type="number" min="0" max="100" step="0.1" required></label>
+              <label class="sdk-build-score-notes"><span>Judge notes</span><textarea id="sdk-build-score-notes" rows="3" placeholder="Optional observations made before reveal"></textarea></label>
+              <button id="sdk-build-submit-score" class="button primary" type="submit">Submit scores and reveal</button>
+            </form>
+            <div id="sdk-build-reveal" class="sdk-build-reveal" hidden></div>
           </section>
 
           <section class="sdk-build-prompt-panel" aria-labelledby="sdk-build-prompt-title">

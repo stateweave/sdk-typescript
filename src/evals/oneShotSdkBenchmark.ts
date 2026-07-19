@@ -52,3 +52,58 @@ export function oneShotPromptStats(): { characters: number; words: number } {
     words: oneShotSdkBuildPrompt.trim().split(/\s+/).length
   };
 }
+
+export const sdkBuildBenchmarkVersion = 1;
+export type SdkBuildArm = "graph" | "transcript";
+export type SdkBuildRunStatus = "ready" | "queued" | "preparing" | "running" | "completed" | "failed" | "stopping" | "stopped";
+export type SdkBuildArmStatus = "waiting" | "preparing" | "running" | "completed" | "failed" | "stopped";
+export type SdkBuildProgress = {
+  iteration: number;
+  phase: string;
+  modelCalls: number;
+  toolCalls: number;
+  detail: string;
+  updatedAt: string;
+};
+export type SdkBuildMetrics = {
+  modelCalls: number;
+  toolCalls: number;
+  latestContextTokens: number;
+  totalInputTokens: number;
+  outputTokens: number;
+  durationMs: number;
+};
+export type SdkBuildArmState = {
+  slot: 1 | 2;
+  status: SdkBuildArmStatus;
+  sandboxName?: string;
+  startedAt?: string;
+  completedAt?: string;
+  progress?: SdkBuildProgress;
+  finalAnswer?: string;
+  error?: string;
+  metrics?: SdkBuildMetrics;
+  previewRoot?: string;
+};
+export type SdkBuildJudgement = {
+  scoreA: number;
+  scoreB: number;
+  notes: string;
+  submittedAt: string;
+};
+export type SdkBuildBenchmarkState = {
+  version: number;
+  status: SdkBuildRunStatus;
+  message: string;
+  promptSha256: string;
+  promptWords: number;
+  workerHeartbeatAt: string;
+  runId?: string;
+  createdAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  executionOrder?: SdkBuildArm[];
+  labels?: { a: SdkBuildArm; b: SdkBuildArm };
+  arms: Record<SdkBuildArm, SdkBuildArmState>;
+  judgement?: SdkBuildJudgement;
+};
