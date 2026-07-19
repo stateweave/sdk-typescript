@@ -3,6 +3,7 @@ import { renderMarkdown } from "./markdown.js";
 import { scoreEvalRecords, type EvalPrimitive as Primitive, type EvalVote as Vote, type ScoreBreakdown } from "./evalScores.js";
 import { promptFiveCases, promptFiveCategoryOrder, type PromptFiveCategory } from "./promptFive.js";
 import { promptSixCases, promptSixCategoryOrder, promptSixHypothesis, type PromptSixCategory, type PromptSixHypothesis } from "./promptSix.js";
+import { oneShotPromptStats, oneShotSdkBuildPrompt } from "./oneShotSdkBuild.js";
 import "./styles.css";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -27,7 +28,7 @@ type CompareResponse = StateWeaveResponse & {
   };
 };
 
-type PageName = "state" | "quickstart" | "ab" | "infinite" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
+type PageName = "state" | "quickstart" | "ab" | "sdk-build" | "infinite" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
 type SuiteId = "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
 type EvalCategory = "memory" | "logical" | "holistic" | PromptFiveCategory | PromptSixCategory;
 type MultiCase = { prompt: string; expect: string; categories?: EvalCategory[] };
@@ -464,12 +465,17 @@ const multiThreeTab = element<HTMLButtonElement>("multi-three-tab");
 const multiFourTab = element<HTMLButtonElement>("multi-four-tab");
 const multiFiveTab = element<HTMLButtonElement>("multi-five-tab");
 const multiSixTab = element<HTMLButtonElement>("multi-six-tab");
+const sdkBuildTab = element<HTMLButtonElement>("sdk-build-tab");
 const infiniteTab = element<HTMLButtonElement>("infinite-tab");
 const statePage = element<HTMLElement>("state-page");
 const quickstartPage = element<HTMLElement>("quickstart-page");
 const abPage = element<HTMLElement>("ab-page");
 const multiPage = element<HTMLElement>("multi-page");
+const sdkBuildPage = element<HTMLElement>("sdk-build-page");
 const infinitePage = element<HTMLElement>("infinite-page");
+const sdkBuildPrompt = element<HTMLElement>("sdk-build-prompt");
+const sdkBuildPromptStats = element<HTMLElement>("sdk-build-prompt-stats");
+const sdkBuildCopy = element<HTMLButtonElement>("sdk-build-copy");
 const infiniteLiveBadge = element<HTMLElement>("infinite-live-badge");
 const infiniteMetrics = element<HTMLElement>("infinite-metrics");
 const infiniteTurns = element<HTMLElement>("infinite-turns");
@@ -537,6 +543,10 @@ const multiConfirmJudges = element<HTMLInputElement>("multi-confirm-judges");
 const multiSteps = element<HTMLElement>("multi-steps");
 const multiStage = element<HTMLElement>("multi-stage");
 
+sdkBuildPrompt.textContent = oneShotSdkBuildPrompt;
+const sdkPromptStats = oneShotPromptStats();
+sdkBuildPromptStats.textContent = `${sdkPromptStats.words.toLocaleString()} words · ${sdkPromptStats.characters.toLocaleString()} characters · execution disabled`;
+
 setActivePage(activePage, false);
 renderAgentSettings();
 renderMultiProgress();
@@ -554,7 +564,9 @@ multiThreeTab.addEventListener("click", () => setActivePage("prompt-three"));
 multiFourTab.addEventListener("click", () => setActivePage("prompt-four"));
 multiFiveTab.addEventListener("click", () => setActivePage("prompt-five"));
 multiSixTab.addEventListener("click", () => setActivePage("prompt-six"));
+sdkBuildTab.addEventListener("click", () => setActivePage("sdk-build"));
 infiniteTab.addEventListener("click", () => setActivePage("infinite"));
+sdkBuildCopy.addEventListener("click", () => void copyText(oneShotSdkBuildPrompt, sdkBuildCopy));
 infiniteOpenGraph.addEventListener("click", () => void openInfiniteGraph());
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -568,6 +580,7 @@ reset.addEventListener("click", () => {
   if (activePage === "state") resetStateWeaveChat();
   else if (activePage === "quickstart") setActivePage("state");
   else if (activePage === "ab") resetAbTests();
+  else if (activePage === "sdk-build") setActivePage("state");
   else void resetCurrentMultiTest();
 });
 input.addEventListener("keydown", (event) => {
@@ -661,6 +674,7 @@ setupCopyableLog(stateOutput, "GraphOps");
 function pageFromHash(): PageName {
   if (location.hash === "#quick-start") return "quickstart";
   if (location.hash === "#ab") return "ab";
+  if (location.hash === "#sdk-build") return "sdk-build";
   if (location.hash === "#infinite") return "infinite";
   if (location.hash === "#prompt-one") return "prompt-one";
   if (location.hash === "#prompt-two") return "prompt-two";
@@ -793,6 +807,7 @@ function setActivePage(page: PageName, updateHash = true): void {
   const isState = page === "state";
   const isQuickstart = page === "quickstart";
   const isAb = page === "ab";
+  const isSdkBuild = page === "sdk-build";
   const nextSuiteId = suiteIdForPage(page);
   const isMulti = Boolean(nextSuiteId);
   if (nextSuiteId && (nextSuiteId !== multiSuiteId || (!multiRun && !multiRecords.length && multiIndex === 0))) {
@@ -819,6 +834,8 @@ function setActivePage(page: PageName, updateHash = true): void {
   multiFiveTab.setAttribute("aria-selected", String(page === "prompt-five"));
   multiSixTab.classList.toggle("active", page === "prompt-six");
   multiSixTab.setAttribute("aria-selected", String(page === "prompt-six"));
+  sdkBuildTab.classList.toggle("active", isSdkBuild);
+  sdkBuildTab.setAttribute("aria-selected", String(isSdkBuild));
   const isInfinite = page === "infinite";
   infiniteTab.classList.toggle("active", isInfinite);
   infiniteTab.setAttribute("aria-selected", String(isInfinite));
@@ -830,13 +847,15 @@ function setActivePage(page: PageName, updateHash = true): void {
   abPage.classList.toggle("active", isAb);
   multiPage.hidden = !isMulti;
   multiPage.classList.toggle("active", isMulti);
+  sdkBuildPage.hidden = !isSdkBuild;
+  sdkBuildPage.classList.toggle("active", isSdkBuild);
   infinitePage.hidden = !isInfinite;
   infinitePage.classList.toggle("active", isInfinite);
   multiTitle.textContent = suite.title;
   multiDescription.textContent = suite.description;
-  reset.textContent = isState ? "Reset" : isQuickstart ? "Back to chat" : isAb ? "Reset A/B" : isInfinite ? "Reset harness" : `Reset ${suite.title.toLowerCase()}`;
+  reset.textContent = isState ? "Reset" : isQuickstart || isSdkBuild ? "Back to chat" : isAb ? "Reset A/B" : isInfinite ? "Reset harness" : `Reset ${suite.title.toLowerCase()}`;
   syncMultiModeControls();
-  if (updateHash) history.replaceState(null, "", isState ? location.pathname : isQuickstart ? "#quick-start" : isAb ? "#ab" : isInfinite ? "#infinite" : `#${suite.id}`);
+  if (updateHash) history.replaceState(null, "", isState ? location.pathname : isQuickstart ? "#quick-start" : isAb ? "#ab" : isSdkBuild ? "#sdk-build" : isInfinite ? "#infinite" : `#${suite.id}`);
   if (isMulti) void resumeStoredEvalRun();
   else stopBackgroundPoll();
   if (isInfinite) {
@@ -847,6 +866,7 @@ function setActivePage(page: PageName, updateHash = true): void {
   }
   if (isState) input.focus();
   else if (isAb) abInput.focus();
+  else if (isSdkBuild) sdkBuildCopy.focus();
   else if (isMulti) multiStart.focus();
 }
 
