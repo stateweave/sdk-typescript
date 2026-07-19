@@ -49,6 +49,7 @@ export class SdkBuildBenchmarkApi {
       completedAt: state.completedAt,
       canStart: workerOnline && promptMatches && state.status === "ready",
       canStop: workerOnline && activeStatuses.has(state.status),
+      retry: state.retry,
       environments: state.runId
         ? ordered.map((arm) => ({ slot: arm.slot, status: arm.status, progress: arm.progress ? { ...arm.progress, detail: safeProgressDetail(arm.progress.detail) } : undefined }))
         : defaultEnvironments("not_provisioned")
@@ -59,6 +60,9 @@ export class SdkBuildBenchmarkApi {
         b: candidatePublicState(state, state.labels.b)
       };
       const judgement = await this.readJudgement(state.runId);
+      const failedCandidate = (["a", "b"] as const).find((candidate) => state.arms[state.labels![candidate]].status === "failed");
+      publicState.canRetryFailed = workerOnline && !judgement && Boolean(failedCandidate);
+      publicState.failedCandidate = failedCandidate;
       if (judgement) {
         publicState.judgement = {
           ...judgement,
@@ -102,6 +106,26 @@ export class SdkBuildBenchmarkApi {
     return { status: 202, body: { ok: true, message: "Stop requested. Active work will be interrupted and artifacts preserved." } };
   }
 
+  async retryFailed(input: unknown): Promise<{ status: number; body: unknown }> {
+    const state = await this.readState();
+    if (!state?.runId || state.status !== "completed" || !state.labels) return { status: 409, body: { error: "A completed benchmark with one failed candidate is required." } };
+    if (Date.now() - Date.parse(state.workerHeartbeatAt) > heartbeatFreshMs) return { status: 503, body: { error: "OpenShell benchmark worker heartbeat is stale." } };
+    if (await this.readJudgement(state.runId)) return { status: 409, body: { error: "A scored benchmark cannot be retried." } };
+    const body = input && typeof input === "object" ? input as Record<string, unknown> : {};
+    const candidate = body.candidate;
+    const maxIterations = Number(body.maxIterations);
+    if ((candidate !== "a" && candidate !== "b") || maxIterations !== 3_000) return { status: 400, body: { error: "candidate must be a or b and maxIterations must be exactly 3000." } };
+    if (state.arms[state.labels[candidate]].status !== "failed") return { status: 409, body: { error: `Candidate ${candidate.toUpperCase()} is not failed.` } };
+    await mkdir(this.requestDir, { recursive: true });
+    try {
+      await writeFile(path.join(this.requestDir, "retry-failed.json"), `${JSON.stringify({ requestId: randomUUID(), candidate, maxIterations, createdAt: new Date().toISOString() })}\n`, { encoding: "utf8", flag: "wx", mode: 0o644 });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") return { status: 409, body: { error: "A retry request is already queued." } };
+      throw error;
+    }
+    return { status: 202, body: { ok: true, message: `Candidate ${candidate.toUpperCase()} retry queued with a 3,000-iteration ceiling.` } };
+  }
+
   async judge(input: unknown): Promise<{ status: number; body: unknown }> {
     const state = await this.readState();
     if (!state?.runId || state.status !== "completed" || !state.labels) return { status: 409, body: { error: "Both candidate attempts must finish before scoring." } };
@@ -127,7 +151,7 @@ export class SdkBuildBenchmarkApi {
     const arm = state.labels[candidate];
     const previewRoot = state.arms[arm].previewRoot;
     if (!previewRoot) return json(response, 404, { error: "Candidate did not produce a previewable index.html." });
-    const workspaceRoot = path.join(this.rootDir, "runs", state.runId, "artifacts", arm, "workspace");
+    const workspaceRoot = path.join(this.rootDir, "runs", state.runId, "artifacts", state.arms[arm].artifactKey ?? arm, "workspace");
     const root = path.resolve(workspaceRoot, previewRoot);
     const relative = safeRelativePath(requestedPath || "index.html");
     let filePath = path.resolve(root, relative);
@@ -178,7 +202,10 @@ function candidatePublicState(state: SdkBuildBenchmarkState, arm: SdkBuildArm): 
     status: value.status,
     finalAnswer: value.finalAnswer,
     error: value.error,
-    previewReady: Boolean(value.previewRoot)
+    previewReady: Boolean(value.previewRoot),
+    attempt: value.attempt ?? 1,
+    maxIterations: value.maxIterations ?? 300,
+    previousAttempts: value.previousAttempts?.map((attempt) => ({ attempt: attempt.attempt, maxIterations: attempt.maxIterations, status: attempt.status }))
   };
 }
 

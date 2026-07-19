@@ -15,7 +15,10 @@ const outputDir = "/sandbox/output";
 const payloadRoot = "/sandbox/benchmark/payload";
 const mode = process.env.PARTICIPANT_MODE;
 if (mode !== "graph" && mode !== "transcript") throw new Error("PARTICIPANT_MODE must be graph or transcript.");
+const maxIterations = Number(process.env.PARTICIPANT_MAX_ITERATIONS ?? "300");
+if (!Number.isInteger(maxIterations) || maxIterations < 1 || maxIterations > 3_000) throw new Error("PARTICIPANT_MAX_ITERATIONS must be an integer from 1 to 3000.");
 delete process.env.PARTICIPANT_MODE;
+delete process.env.PARTICIPANT_MAX_ITERATIONS;
 
 if (typeof process.getuid === "function" && process.getuid() === 0) throw new Error("Benchmark participant must not run as root.");
 if (process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== "unused") throw new Error("A real model credential reached the sandbox.");
@@ -51,10 +54,10 @@ const startedAt = Date.now();
 
 try {
   const outcome = mode === "graph"
-    ? await runGraphParticipant({ model, tools, providerSystem, systemPrompt, signal: abortController.signal })
-    : await runTranscriptParticipant({ model, tools, providerSystem, systemPrompt, signal: abortController.signal });
+    ? await runGraphParticipant({ model, tools, providerSystem, systemPrompt, maxIterations, signal: abortController.signal })
+    : await runTranscriptParticipant({ model, tools, providerSystem, systemPrompt, maxIterations, signal: abortController.signal });
   await removeDependencyLink();
-  const report = { ok: true, mode, finalAnswer: outcome.finalAnswer, metrics: { ...outcome.metrics, durationMs: Date.now() - startedAt } };
+  const report = { ok: true, mode, maxIterations, finalAnswer: outcome.finalAnswer, metrics: { ...outcome.metrics, durationMs: Date.now() - startedAt } };
   await writeJson(`${outputDir}/result.json`, report);
   if (outcome.frame) await writeJson(`${outputDir}/frame.json`, outcome.frame);
   if (outcome.messages) await writeJson(`${outputDir}/messages.json`, outcome.messages);
@@ -63,18 +66,18 @@ try {
 } catch (error) {
   await removeDependencyLink().catch(() => undefined);
   const stopped = abortController.signal.aborted;
-  const report = { ok: false, mode, stopped, error: error instanceof Error ? error.message : String(error), metrics: { modelCalls: 0, toolCalls: 0, latestContextTokens: 0, totalInputTokens: 0, outputTokens: 0, durationMs: Date.now() - startedAt } };
+  const report = { ok: false, mode, maxIterations, stopped, error: error instanceof Error ? error.message : String(error), metrics: { modelCalls: 0, toolCalls: 0, latestContextTokens: 0, totalInputTokens: 0, outputTokens: 0, durationMs: Date.now() - startedAt } };
   await writeJson(`${outputDir}/result.json`, report);
   emitProgress({ iteration: 0, phase: stopped ? "stopped" : "failed", modelCalls: 0, toolCalls: 0, detail: report.error });
   console.log(`RESULT ${JSON.stringify(report)}`);
   process.exitCode = stopped ? 130 : 1;
 }
 
-async function runGraphParticipant({ model, tools, providerSystem, systemPrompt, signal }) {
+async function runGraphParticipant({ model, tools, providerSystem, systemPrompt, maxIterations, signal }) {
   const agent = new StateWeaveAgent({
     model,
     tools,
-    maxIterations: 300,
+    maxIterations,
     maxPromptTokens: 250_000,
     systemPrompt,
     nodeTypes: ["task", "file", "symbol", "decision", "constraint", "test_result"],
@@ -105,12 +108,12 @@ async function runGraphParticipant({ model, tools, providerSystem, systemPrompt,
   return { finalAnswer: result.finalAnswer, frame: result.frame, metrics: { modelCalls: result.metadata.stepCount, toolCalls, latestContextTokens, totalInputTokens, outputTokens } };
 }
 
-async function runTranscriptParticipant({ model, tools, providerSystem, systemPrompt, signal }) {
+async function runTranscriptParticipant({ model, tools, providerSystem, systemPrompt, maxIterations, signal }) {
   const agent = new AgenticBaseline({
     model,
     tools,
     systemPrompt,
-    maxIterations: 300,
+    maxIterations,
     maxContextTokens: 250_000,
     compaction: { thresholdTokens: 250_000, retainMessages: 12 },
     providerSystem,
