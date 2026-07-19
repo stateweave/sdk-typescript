@@ -202,6 +202,12 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     return;
   }
 
+  if (url.pathname === "/api/sdk-build/retry-failed" && request.method === "POST") {
+    const result = await sdkBuildBenchmark.retryFailed(await readJson(request));
+    json(response, result.status, result.body);
+    return;
+  }
+
   if (url.pathname === "/api/sdk-build/judge" && request.method === "POST") {
     const result = await sdkBuildBenchmark.judge(await readJson(request));
     json(response, result.status, result.body);

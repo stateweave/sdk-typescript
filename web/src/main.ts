@@ -30,7 +30,7 @@ type CompareResponse = StateWeaveResponse & {
 
 type PageName = "state" | "quickstart" | "ab" | "sdk-build" | "infinite" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
 type SdkBuildEnvironment = { slot: number; status: string; progress?: { iteration: number; phase: string; modelCalls: number; toolCalls: number; detail: string; updatedAt: string } };
-type SdkBuildCandidate = { status: string; finalAnswer?: string; error?: string; previewReady: boolean };
+type SdkBuildCandidate = { status: string; finalAnswer?: string; error?: string; previewReady: boolean; attempt?: number; maxIterations?: number; previousAttempts?: { attempt: number; maxIterations: number; status: string }[] };
 type SdkBuildPublicState = {
   status: string;
   underlyingStatus?: string;
@@ -41,6 +41,7 @@ type SdkBuildPublicState = {
   runId?: string;
   environments: SdkBuildEnvironment[];
   candidates?: { a: SdkBuildCandidate; b: SdkBuildCandidate };
+  retry?: { candidate: "a" | "b"; attempt: number; maxIterations: number; requestedAt: string };
   judgement?: {
     scoreA: number;
     scoreB: number;
@@ -977,6 +978,7 @@ function renderSdkBuildEnvironment(element: HTMLElement, environment: SdkBuildEn
 function renderSdkBuildReview(state: SdkBuildPublicState): void {
   if (!state.candidates || !state.runId) {
     sdkBuildReview.hidden = true;
+    sdkBuildPreviewRunId = undefined;
     return;
   }
   sdkBuildReview.hidden = false;
@@ -1004,7 +1006,10 @@ function renderSdkBuildCandidate(label: "a" | "b", runId: string, candidate: Sdk
   const previewUrl = `${apiBase}/api/sdk-build/preview/${label}/`;
   link.href = previewUrl;
   link.hidden = !candidate.previewReady;
-  answer.textContent = candidate.finalAnswer || candidate.error || "No final response was recorded.";
+  const retryNotice = (candidate.attempt ?? 1) > 1
+    ? `Exploratory retry attempt ${candidate.attempt} used a ${(candidate.maxIterations ?? 0).toLocaleString()}-iteration ceiling. Original attempt: ${candidate.previousAttempts?.map((attempt) => `attempt ${attempt.attempt} ${attempt.status} at ${attempt.maxIterations.toLocaleString()} iterations`).join("; ") ?? "preserved"}.\n\n`
+    : "";
+  answer.textContent = `${retryNotice}${candidate.finalAnswer || candidate.error || "No final response was recorded."}`;
   if (sdkBuildPreviewRunId !== runId) {
     if (candidate.previewReady) {
       frame.removeAttribute("srcdoc");

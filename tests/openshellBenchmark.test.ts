@@ -10,7 +10,8 @@ describe("OpenShell SDK build benchmark", () => {
     expect(runner).toContain("StateWeaveAgent");
     expect(runner).toContain("AgenticBaseline");
     expect(runner).toContain("oneShotSdkBuildPrompt");
-    expect(runner).toContain("maxIterations: 300");
+    expect(runner).toContain('PARTICIPANT_MAX_ITERATIONS ?? "300"');
+    expect(runner).toContain("maxIterations > 3_000");
     expect(runner).toContain("maxPromptTokens: 250_000");
     expect(runner).toContain("thresholdTokens: 250_000");
     expect(runner).toContain('name: "shell_command"');
@@ -29,6 +30,8 @@ describe("OpenShell SDK build benchmark", () => {
   it("never starts a run merely because the worker service starts", async () => {
     const worker = await readFile(new URL("worker.mjs", root), "utf8");
     expect(worker).toContain('exists(startRequestPath)');
+    expect(worker).toContain('exists(retryRequestPath)');
+    expect(worker).toContain('request.maxIterations !== 3_000');
     expect(worker).toContain('state.status !== "ready"');
     expect(worker).toContain('Math.random() < 0.5');
     expect(worker).toContain("security-probe.mjs");

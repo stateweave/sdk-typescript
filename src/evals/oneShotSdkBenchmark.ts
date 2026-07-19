@@ -73,6 +73,14 @@ export type SdkBuildMetrics = {
   outputTokens: number;
   durationMs: number;
 };
+export type SdkBuildAttempt = {
+  attempt: number;
+  maxIterations: number;
+  status: SdkBuildArmStatus;
+  artifactKey: string;
+  completedAt?: string;
+  error?: string;
+};
 export type SdkBuildArmState = {
   slot: 1 | 2;
   status: SdkBuildArmStatus;
@@ -84,6 +92,10 @@ export type SdkBuildArmState = {
   error?: string;
   metrics?: SdkBuildMetrics;
   previewRoot?: string;
+  artifactKey?: string;
+  attempt?: number;
+  maxIterations?: number;
+  previousAttempts?: SdkBuildAttempt[];
 };
 export type SdkBuildJudgement = {
   scoreA: number;
@@ -105,5 +117,6 @@ export type SdkBuildBenchmarkState = {
   executionOrder?: SdkBuildArm[];
   labels?: { a: SdkBuildArm; b: SdkBuildArm };
   arms: Record<SdkBuildArm, SdkBuildArmState>;
+  retry?: { candidate: "a" | "b"; attempt: number; maxIterations: number; requestedAt: string };
   judgement?: SdkBuildJudgement;
 };

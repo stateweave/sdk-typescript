@@ -31,6 +31,34 @@ describe("SDK build benchmark API", () => {
     expect(request).not.toHaveProperty("prompt");
   });
 
+  it("queues only the failed blind candidate for a disclosed 3000-iteration retry", async () => {
+    const root = await temporaryRoot();
+    const state: SdkBuildBenchmarkState = {
+      ...readyState(),
+      status: "completed",
+      message: "One candidate failed.",
+      runId: "run_retry",
+      executionOrder: ["transcript", "graph"],
+      labels: { a: "transcript", b: "graph" },
+      arms: {
+        graph: { slot: 2, status: "failed", error: "Recursion limit reached" },
+        transcript: { slot: 1, status: "completed", finalAnswer: "Done" }
+      }
+    };
+    await writeState(root, state);
+    await mkdir(path.join(root, "runs/run_retry"), { recursive: true });
+    const api = new SdkBuildBenchmarkApi(root);
+    const blind = await api.publicState();
+    expect(blind).toMatchObject({ canRetryFailed: true, failedCandidate: "b" });
+    expect((await api.retryFailed({ candidate: "a", maxIterations: 3_000 })).status).toBe(409);
+    expect((await api.retryFailed({ candidate: "b", maxIterations: 300 })).status).toBe(400);
+    expect((await api.retryFailed({ candidate: "b", maxIterations: 3_000 })).status).toBe(202);
+    expect((await api.retryFailed({ candidate: "b", maxIterations: 3_000 })).status).toBe(409);
+    const request = JSON.parse(await readFile(path.join(root, "requests/retry-failed.json"), "utf8"));
+    expect(request).toMatchObject({ candidate: "b", maxIterations: 3_000 });
+    expect(request).not.toHaveProperty("arm");
+  });
+
   it("serves candidate output through a sandboxed no-store preview response", async () => {
     const root = await temporaryRoot();
     const state: SdkBuildBenchmarkState = {
@@ -41,12 +69,12 @@ describe("SDK build benchmark API", () => {
       executionOrder: ["graph", "transcript"],
       labels: { a: "graph", b: "transcript" },
       arms: {
-        graph: { slot: 1, status: "completed", previewRoot: "dist" },
+        graph: { slot: 1, status: "completed", previewRoot: "dist", artifactKey: "graph-attempt-2" },
         transcript: { slot: 2, status: "completed" }
       }
     };
     await writeState(root, state);
-    const previewDir = path.join(root, "runs/run_preview/artifacts/graph/workspace/dist");
+    const previewDir = path.join(root, "runs/run_preview/artifacts/graph-attempt-2/workspace/dist");
     await mkdir(previewDir, { recursive: true });
     await writeFile(path.join(previewDir, "index.html"), '<!doctype html><script type="module" src="/assets/app.js"></script>');
     const api = new SdkBuildBenchmarkApi(root);
