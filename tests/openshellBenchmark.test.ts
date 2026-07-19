@@ -33,6 +33,8 @@ describe("OpenShell SDK build benchmark", () => {
     expect(worker).toContain('Math.random() < 0.5');
     expect(worker).toContain("security-probe.mjs");
     expect(worker).toContain('"3Gi"');
+    expect(worker).toContain('"sleep", "infinity"');
+    expect(worker).not.toContain('"/bin/true"');
     expect(worker).not.toMatch(/processRun\(\)\s*;\s*$/m);
   });
 

@@ -141,7 +141,7 @@ async function prepareSandbox(arm, sandboxName) {
   armState.progress = progress(0, "preparing", "Creating isolated OpenShell sandbox", 0, 0);
   await saveState();
   await runCommand("openshell", ["sandbox", "delete", sandboxName], { allowFailure: true, timeoutMs: 60_000 });
-  await runCommand("openshell", ["sandbox", "create", "--name", sandboxName, "--from", sandboxImage, "--cpu", "1", "--memory", "3Gi", "--policy", policyPath, "--no-tty", "--", "/bin/true"], { timeoutMs: 180_000 });
+  await runCommand("openshell", ["sandbox", "create", "--name", sandboxName, "--from", sandboxImage, "--cpu", "1", "--memory", "3Gi", "--policy", policyPath, "--no-tty", "--", "sleep", "infinity"], { timeoutMs: 180_000 });
   armState.progress = progress(0, "preparing", "Uploading identical benchmark runtime", 0, 0);
   await saveState();
   await runCommand("openshell", ["sandbox", "upload", "--no-git-ignore", sandboxName, payloadDir, "/sandbox/benchmark"], { timeoutMs: 300_000 });
