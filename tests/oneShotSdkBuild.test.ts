@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { oneShotPromptStats, oneShotSdkBuildPrompt } from "../web/src/oneShotSdkBuild.js";
+import { oneShotPromptStats, oneShotSdkBuildPrompt } from "../src/evals/oneShotSdkBenchmark.js";
 
 describe("one-shot SDK build prompt", () => {
   it("is neutral and contains no experiment identity", () => {

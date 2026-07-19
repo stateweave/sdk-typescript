@@ -1,0 +1,19 @@
+[Unit]
+Description=StateWeave one-shot SDK OpenShell benchmark worker
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/stateweave-sdk-benchmark/payload/runtime
+Environment=BENCHMARK_CONTROL_DIR=/var/lib/docker/volumes/stateweave-web-development-zrzoej_stateweave-web-data/_data/sdk-build-benchmark
+Environment=BENCHMARK_PAYLOAD_DIR=/root/stateweave-sdk-benchmark/payload
+ExecStart=/usr/bin/node ops/openshell-benchmark/worker.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0022
+
+[Install]
+WantedBy=multi-user.target

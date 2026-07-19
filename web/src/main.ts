@@ -3,7 +3,7 @@ import { renderMarkdown } from "./markdown.js";
 import { scoreEvalRecords, type EvalPrimitive as Primitive, type EvalVote as Vote, type ScoreBreakdown } from "./evalScores.js";
 import { promptFiveCases, promptFiveCategoryOrder, type PromptFiveCategory } from "./promptFive.js";
 import { promptSixCases, promptSixCategoryOrder, promptSixHypothesis, type PromptSixCategory, type PromptSixHypothesis } from "./promptSix.js";
-import { oneShotPromptStats, oneShotSdkBuildPrompt } from "./oneShotSdkBuild.js";
+import { oneShotPromptStats, oneShotSdkBuildPrompt } from "../../src/evals/oneShotSdkBenchmark.js";
 import "./styles.css";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -29,6 +29,27 @@ type CompareResponse = StateWeaveResponse & {
 };
 
 type PageName = "state" | "quickstart" | "ab" | "sdk-build" | "infinite" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
+type SdkBuildEnvironment = { slot: number; status: string; progress?: { iteration: number; phase: string; modelCalls: number; toolCalls: number; detail: string; updatedAt: string } };
+type SdkBuildCandidate = { status: string; finalAnswer?: string; error?: string; previewReady: boolean };
+type SdkBuildPublicState = {
+  status: string;
+  underlyingStatus?: string;
+  message: string;
+  canStart: boolean;
+  canStop: boolean;
+  workerOnline?: boolean;
+  runId?: string;
+  environments: SdkBuildEnvironment[];
+  candidates?: { a: SdkBuildCandidate; b: SdkBuildCandidate };
+  judgement?: {
+    scoreA: number;
+    scoreB: number;
+    notes: string;
+    submittedAt: string;
+    reveal: { a: string; b: string };
+    metrics?: { a?: Record<string, number>; b?: Record<string, number> };
+  };
+};
 type SuiteId = "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
 type EvalCategory = "memory" | "logical" | "holistic" | PromptFiveCategory | PromptSixCategory;
 type MultiCase = { prompt: string; expect: string; categories?: EvalCategory[] };
@@ -92,6 +113,9 @@ type LiveStreamStep = {
 type LiveStreamLog = { metadata?: StateWeaveRunMetadata; steps: Map<number, LiveStreamStep>; events: string[]; prompt?: string; latestStep?: number; finalAnswer?: string };
 
 let activePage: PageName = pageFromHash();
+let sdkBuildState: SdkBuildPublicState | undefined;
+let sdkBuildPollTimer: number | undefined;
+let sdkBuildPreviewRunId: string | undefined;
 let multiSuiteId: SuiteId = suiteIdForPage(activePage) ?? "prompt-one";
 let stateFrame: GraphFrame | undefined;
 let abStateFrame: GraphFrame | undefined;
@@ -476,6 +500,25 @@ const infinitePage = element<HTMLElement>("infinite-page");
 const sdkBuildPrompt = element<HTMLElement>("sdk-build-prompt");
 const sdkBuildPromptStats = element<HTMLElement>("sdk-build-prompt-stats");
 const sdkBuildCopy = element<HTMLButtonElement>("sdk-build-copy");
+const sdkBuildLiveBadge = element<HTMLElement>("sdk-build-live-badge");
+const sdkBuildMessage = element<HTMLElement>("sdk-build-message");
+const sdkBuildStart = element<HTMLButtonElement>("sdk-build-start");
+const sdkBuildStop = element<HTMLButtonElement>("sdk-build-stop");
+const sdkBuildEnvironmentOne = element<HTMLElement>("sdk-build-environment-1");
+const sdkBuildEnvironmentTwo = element<HTMLElement>("sdk-build-environment-2");
+const sdkBuildReview = element<HTMLElement>("sdk-build-review");
+const sdkBuildPreviewA = element<HTMLIFrameElement>("sdk-build-preview-a");
+const sdkBuildPreviewB = element<HTMLIFrameElement>("sdk-build-preview-b");
+const sdkBuildOpenA = element<HTMLAnchorElement>("sdk-build-open-a");
+const sdkBuildOpenB = element<HTMLAnchorElement>("sdk-build-open-b");
+const sdkBuildAnswerA = element<HTMLElement>("sdk-build-answer-a");
+const sdkBuildAnswerB = element<HTMLElement>("sdk-build-answer-b");
+const sdkBuildScoreForm = element<HTMLFormElement>("sdk-build-score-form");
+const sdkBuildScoreA = element<HTMLInputElement>("sdk-build-score-a");
+const sdkBuildScoreB = element<HTMLInputElement>("sdk-build-score-b");
+const sdkBuildScoreNotes = element<HTMLTextAreaElement>("sdk-build-score-notes");
+const sdkBuildSubmitScore = element<HTMLButtonElement>("sdk-build-submit-score");
+const sdkBuildReveal = element<HTMLElement>("sdk-build-reveal");
 const infiniteLiveBadge = element<HTMLElement>("infinite-live-badge");
 const infiniteMetrics = element<HTMLElement>("infinite-metrics");
 const infiniteTurns = element<HTMLElement>("infinite-turns");
@@ -545,7 +588,7 @@ const multiStage = element<HTMLElement>("multi-stage");
 
 sdkBuildPrompt.textContent = oneShotSdkBuildPrompt;
 const sdkPromptStats = oneShotPromptStats();
-sdkBuildPromptStats.textContent = `${sdkPromptStats.words.toLocaleString()} words · ${sdkPromptStats.characters.toLocaleString()} characters · execution disabled`;
+sdkBuildPromptStats.textContent = `${sdkPromptStats.words.toLocaleString()} words · ${sdkPromptStats.characters.toLocaleString()} characters · fixed for both participants`;
 
 setActivePage(activePage, false);
 renderAgentSettings();
@@ -567,6 +610,12 @@ multiSixTab.addEventListener("click", () => setActivePage("prompt-six"));
 sdkBuildTab.addEventListener("click", () => setActivePage("sdk-build"));
 infiniteTab.addEventListener("click", () => setActivePage("infinite"));
 sdkBuildCopy.addEventListener("click", () => void copyText(oneShotSdkBuildPrompt, sdkBuildCopy));
+sdkBuildStart.addEventListener("click", () => void startSdkBuildBenchmark());
+sdkBuildStop.addEventListener("click", () => void stopSdkBuildBenchmark());
+sdkBuildScoreForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void submitSdkBuildScores();
+});
 infiniteOpenGraph.addEventListener("click", () => void openInfiniteGraph());
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -864,10 +913,175 @@ function setActivePage(page: PageName, updateHash = true): void {
   } else {
     stopSwLoopPoll();
   }
+  if (isSdkBuild) startSdkBuildPoll();
+  else stopSdkBuildPoll();
   if (isState) input.focus();
   else if (isAb) abInput.focus();
   else if (isSdkBuild) sdkBuildCopy.focus();
   else if (isMulti) multiStart.focus();
+}
+
+function startSdkBuildPoll(): void {
+  if (sdkBuildPollTimer !== undefined) return;
+  void loadSdkBuildState();
+  sdkBuildPollTimer = window.setInterval(() => void loadSdkBuildState(), 2_500);
+}
+
+function stopSdkBuildPoll(): void {
+  if (sdkBuildPollTimer !== undefined) window.clearInterval(sdkBuildPollTimer);
+  sdkBuildPollTimer = undefined;
+}
+
+async function loadSdkBuildState(): Promise<void> {
+  try {
+    const response = await fetch(`${apiBase}/api/sdk-build/state`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`State request failed (${response.status})`);
+    sdkBuildState = await response.json() as SdkBuildPublicState;
+    renderSdkBuildState(sdkBuildState);
+  } catch (error) {
+    renderSdkBuildState({
+      status: "worker_offline",
+      message: error instanceof Error ? error.message : String(error),
+      canStart: false,
+      canStop: false,
+      environments: [{ slot: 1, status: "unknown" }, { slot: 2, status: "unknown" }]
+    });
+  }
+}
+
+function renderSdkBuildState(state: SdkBuildPublicState): void {
+  sdkBuildLiveBadge.textContent = sdkBuildStatusLabel(state.status);
+  sdkBuildLiveBadge.classList.toggle("live", state.status === "running" || state.status === "preparing" || state.status === "queued");
+  sdkBuildLiveBadge.classList.toggle("ready", state.status === "ready");
+  sdkBuildLiveBadge.classList.toggle("warn", state.status === "failed" || state.status === "worker_offline" || state.status === "stopped");
+  sdkBuildMessage.textContent = state.message;
+  sdkBuildStart.disabled = !state.canStart;
+  sdkBuildStop.disabled = !state.canStop;
+  renderSdkBuildEnvironment(sdkBuildEnvironmentOne, state.environments.find((environment) => environment.slot === 1));
+  renderSdkBuildEnvironment(sdkBuildEnvironmentTwo, state.environments.find((environment) => environment.slot === 2));
+  renderSdkBuildReview(state);
+}
+
+function renderSdkBuildEnvironment(element: HTMLElement, environment: SdkBuildEnvironment | undefined): void {
+  const status = element.querySelector<HTMLElement>("[data-environment-status]");
+  const progress = element.querySelector<HTMLElement>("[data-environment-progress]");
+  if (!status || !progress) return;
+  const value = environment?.status ?? "unknown";
+  status.textContent = sdkBuildStatusLabel(value);
+  status.className = `sdk-build-status ${sdkBuildStatusClass(value)}`;
+  progress.textContent = environment?.progress
+    ? `${environment.progress.detail} · ${environment.progress.modelCalls} model / ${environment.progress.toolCalls} tool calls`
+    : "";
+}
+
+function renderSdkBuildReview(state: SdkBuildPublicState): void {
+  if (!state.candidates || !state.runId) {
+    sdkBuildReview.hidden = true;
+    return;
+  }
+  sdkBuildReview.hidden = false;
+  renderSdkBuildCandidate("a", state.runId, state.candidates.a, sdkBuildPreviewA, sdkBuildOpenA, sdkBuildAnswerA);
+  renderSdkBuildCandidate("b", state.runId, state.candidates.b, sdkBuildPreviewB, sdkBuildOpenB, sdkBuildAnswerB);
+  const judged = Boolean(state.judgement);
+  for (const field of [sdkBuildScoreA, sdkBuildScoreB, sdkBuildScoreNotes, sdkBuildSubmitScore]) field.disabled = judged;
+  if (!state.judgement) {
+    sdkBuildReveal.hidden = true;
+    return;
+  }
+  sdkBuildScoreA.value = String(state.judgement.scoreA);
+  sdkBuildScoreB.value = String(state.judgement.scoreB);
+  sdkBuildScoreNotes.value = state.judgement.notes;
+  sdkBuildReveal.hidden = false;
+  sdkBuildReveal.innerHTML = `
+    <h3>Identity revealed</h3>
+    <div class="sdk-build-reveal-grid">
+      ${sdkBuildRevealCard("Candidate A", state.judgement.scoreA, state.judgement.reveal.a, state.judgement.metrics?.a)}
+      ${sdkBuildRevealCard("Candidate B", state.judgement.scoreB, state.judgement.reveal.b, state.judgement.metrics?.b)}
+    </div>`;
+}
+
+function renderSdkBuildCandidate(label: "a" | "b", runId: string, candidate: SdkBuildCandidate, frame: HTMLIFrameElement, link: HTMLAnchorElement, answer: HTMLElement): void {
+  const previewUrl = `${apiBase}/api/sdk-build/preview/${label}/`;
+  link.href = previewUrl;
+  link.hidden = !candidate.previewReady;
+  answer.textContent = candidate.finalAnswer || candidate.error || "No final response was recorded.";
+  if (sdkBuildPreviewRunId !== runId) {
+    if (candidate.previewReady) {
+      frame.removeAttribute("srcdoc");
+      frame.src = previewUrl;
+    } else {
+      frame.removeAttribute("src");
+      frame.srcdoc = `<p style="font:16px system-ui;padding:24px">This candidate did not produce a previewable application.</p>`;
+    }
+  }
+  if (label === "b") sdkBuildPreviewRunId = runId;
+}
+
+function sdkBuildRevealCard(label: string, score: number, identity: string, metrics: Record<string, number> | undefined): string {
+  const metricText = metrics
+    ? `${metrics.modelCalls ?? 0} model calls · ${metrics.toolCalls ?? 0} tool calls · ${formatSdkBuildDuration(metrics.durationMs ?? 0)}`
+    : "Metrics unavailable";
+  return `<article><span>${escapeHtml(label)} · ${score.toFixed(1)}</span><strong>${escapeHtml(identity)}</strong><p>${escapeHtml(metricText)}</p></article>`;
+}
+
+async function startSdkBuildBenchmark(): Promise<void> {
+  if (!sdkBuildState?.canStart || !window.confirm("Start both one-shot OpenShell participants now? This can take a long time and cannot be restarted from this page.")) return;
+  sdkBuildStart.disabled = true;
+  sdkBuildMessage.textContent = "Queueing benchmark…";
+  await postSdkBuildAction("start");
+}
+
+async function stopSdkBuildBenchmark(): Promise<void> {
+  if (!sdkBuildState?.canStop || !window.confirm("Stop the active benchmark and preserve partial artifacts?")) return;
+  sdkBuildStop.disabled = true;
+  await postSdkBuildAction("stop");
+}
+
+async function postSdkBuildAction(action: "start" | "stop"): Promise<void> {
+  try {
+    const response = await fetch(`${apiBase}/api/sdk-build/${action}`, { method: "POST" });
+    const body = await response.json() as { error?: string };
+    if (!response.ok) throw new Error(body.error ?? `Request failed (${response.status})`);
+    await loadSdkBuildState();
+  } catch (error) {
+    sdkBuildMessage.textContent = error instanceof Error ? error.message : String(error);
+    await loadSdkBuildState();
+  }
+}
+
+async function submitSdkBuildScores(): Promise<void> {
+  sdkBuildSubmitScore.disabled = true;
+  try {
+    const response = await fetch(`${apiBase}/api/sdk-build/judge`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ scoreA: sdkBuildScoreA.value, scoreB: sdkBuildScoreB.value, notes: sdkBuildScoreNotes.value })
+    });
+    const body = await response.json() as { error?: string };
+    if (!response.ok) throw new Error(body.error ?? `Scoring failed (${response.status})`);
+    await loadSdkBuildState();
+  } catch (error) {
+    sdkBuildMessage.textContent = error instanceof Error ? error.message : String(error);
+    sdkBuildSubmitScore.disabled = false;
+  }
+}
+
+function sdkBuildStatusLabel(value: string): string {
+  return value.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function sdkBuildStatusClass(value: string): string {
+  if (value === "completed" || value === "ready") return "success";
+  if (value === "failed" || value === "stopped" || value === "worker_offline") return "error";
+  if (value === "running" || value === "preparing" || value === "queued") return "working";
+  return "idle";
+}
+
+function formatSdkBuildDuration(value: number): string {
+  const seconds = Math.max(0, Math.round(value / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ${seconds % 60}s`;
 }
 
 async function sendStateWeaveMessage(): Promise<void> {

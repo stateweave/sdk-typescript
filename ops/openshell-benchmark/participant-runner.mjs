@@ -1,0 +1,203 @@
+import { execFile } from "node:child_process";
+import { cp, lstat, mkdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { promisify } from "node:util";
+import { z } from "zod";
+import { StateWeaveAgent } from "../../dist/agent/stateweaveAgent.js";
+import { AgenticBaseline } from "../../dist/evals/agenticBaseline.js";
+import { oneShotSdkBuildPrompt } from "../../dist/evals/oneShotSdkBenchmark.js";
+import { AnthropicModel } from "../../dist/llm/anthropicModel.js";
+import { estimateStateWeaveTokens } from "../../dist/llm/tokenizer.js";
+import { createFileSystemTools } from "../../dist/tools/fileSystemTools.js";
+
+const execFileAsync = promisify(execFile);
+const workspace = "/sandbox/workspace";
+const outputDir = "/sandbox/output";
+const payloadRoot = "/sandbox/benchmark/payload";
+const mode = process.env.PARTICIPANT_MODE;
+if (mode !== "graph" && mode !== "transcript") throw new Error("PARTICIPANT_MODE must be graph or transcript.");
+delete process.env.PARTICIPANT_MODE;
+
+if (typeof process.getuid === "function" && process.getuid() === 0) throw new Error("Benchmark participant must not run as root.");
+if (process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== "unused") throw new Error("A real model credential reached the sandbox.");
+
+const abortController = new AbortController();
+let progressWriteQueue = Promise.resolve();
+for (const signalName of ["SIGTERM", "SIGINT"]) process.once(signalName, () => abortController.abort(new Error(`Received ${signalName}`)));
+
+await mkdir(outputDir, { recursive: true });
+await prepareWorkspace();
+
+const model = new AnthropicModel({
+  apiKey: "unused",
+  baseUrl: "https://inference.local",
+  model: "openshell-managed",
+  maxTokens: 4096,
+  temperature: 0,
+  timeoutMs: 300_000
+});
+const tools = [
+  ...createFileSystemTools({ rootDir: workspace, timeoutMs: 60_000, maxOutputBytes: 64_000 }).filter((tool) => tool.name !== "bash_command"),
+  createOpenShellTool(abortController.signal)
+];
+const providerSystem = [
+  "You are a persistent senior coding agent inside one private NVIDIA OpenShell workspace.",
+  "Complete the supplied task autonomously using the available file and shell tools.",
+  "Treat filesystem, process, network, and inference policy denials as hard boundaries.",
+  "Operate only inside /sandbox/workspace, inspect current files before changing them, and verify the result before finishing.",
+  "Never seek credentials, host resources, another workspace, or information about any surrounding evaluation."
+].join(" ");
+const systemPrompt = "Build the requested project completely in the supplied workspace. Use tools until the implementation and its checks are genuinely complete, then return a concise factual summary.";
+const startedAt = Date.now();
+
+try {
+  const outcome = mode === "graph"
+    ? await runGraphParticipant({ model, tools, providerSystem, systemPrompt, signal: abortController.signal })
+    : await runTranscriptParticipant({ model, tools, providerSystem, systemPrompt, signal: abortController.signal });
+  await removeDependencyLink();
+  const report = { ok: true, mode, finalAnswer: outcome.finalAnswer, metrics: { ...outcome.metrics, durationMs: Date.now() - startedAt } };
+  await writeJson(`${outputDir}/result.json`, report);
+  if (outcome.frame) await writeJson(`${outputDir}/frame.json`, outcome.frame);
+  if (outcome.messages) await writeJson(`${outputDir}/messages.json`, outcome.messages);
+  emitProgress({ iteration: outcome.metrics.modelCalls, phase: "completed", modelCalls: outcome.metrics.modelCalls, toolCalls: outcome.metrics.toolCalls, detail: "Participant completed the project and returned a final answer." });
+  console.log(`RESULT ${JSON.stringify(report)}`);
+} catch (error) {
+  await removeDependencyLink().catch(() => undefined);
+  const stopped = abortController.signal.aborted;
+  const report = { ok: false, mode, stopped, error: error instanceof Error ? error.message : String(error), metrics: { modelCalls: 0, toolCalls: 0, latestContextTokens: 0, totalInputTokens: 0, outputTokens: 0, durationMs: Date.now() - startedAt } };
+  await writeJson(`${outputDir}/result.json`, report);
+  emitProgress({ iteration: 0, phase: stopped ? "stopped" : "failed", modelCalls: 0, toolCalls: 0, detail: report.error });
+  console.log(`RESULT ${JSON.stringify(report)}`);
+  process.exitCode = stopped ? 130 : 1;
+}
+
+async function runGraphParticipant({ model, tools, providerSystem, systemPrompt, signal }) {
+  const agent = new StateWeaveAgent({
+    model,
+    tools,
+    maxIterations: 300,
+    maxPromptTokens: 250_000,
+    systemPrompt,
+    nodeTypes: ["task", "file", "symbol", "decision", "constraint", "test_result"],
+    traceMode: "compact",
+    blindIdentity: true,
+    providerSystem
+  });
+  let result;
+  let modelCalls = 0;
+  let toolCalls = 0;
+  for await (const event of agent.stream(oneShotSdkBuildPrompt, { signal })) {
+    if (event.type === "frame" && event.phase === "before") {
+      modelCalls = Math.max(modelCalls, event.step);
+      emitProgress({ iteration: event.step, phase: "model", modelCalls, toolCalls, detail: `Model iteration ${event.step}` });
+    }
+    if (event.type === "ops") {
+      toolCalls += event.ops.filter((op) => op.op === "call_tool").length;
+      const tool = event.ops.find((op) => op.op === "call_tool");
+      if (tool?.op === "call_tool") emitProgress({ iteration: event.step, phase: "tool", modelCalls, toolCalls, detail: `Running ${tool.tool}` });
+    }
+    if (event.type === "error") emitProgress({ iteration: event.step, phase: "retrying", modelCalls, toolCalls, detail: event.message.slice(0, 400) });
+    if (event.type === "final") result = event.result;
+  }
+  if (!result) throw new Error("Graph-memory participant ended without a final result.");
+  const latestContextTokens = result.trace.at(-1)?.tokenEstimate.estimatedTokens ?? 0;
+  const totalInputTokens = result.trace.reduce((sum, step) => sum + step.tokenEstimate.estimatedTokens, 0);
+  const outputTokens = result.trace.reduce((sum, step) => sum + estimateStateWeaveTokens(step.rawModelOutput).estimatedTokens, 0);
+  return { finalAnswer: result.finalAnswer, frame: result.frame, metrics: { modelCalls: result.metadata.stepCount, toolCalls, latestContextTokens, totalInputTokens, outputTokens } };
+}
+
+async function runTranscriptParticipant({ model, tools, providerSystem, systemPrompt, signal }) {
+  const agent = new AgenticBaseline({
+    model,
+    tools,
+    systemPrompt,
+    maxIterations: 300,
+    maxContextTokens: 250_000,
+    compaction: { thresholdTokens: 250_000, retainMessages: 12 },
+    providerSystem,
+    enforceCompletionEvidence: false
+  });
+  const result = await agent.run(oneShotSdkBuildPrompt, {
+    signal,
+    onProgress(progress) {
+      emitProgress({ iteration: progress.iteration, phase: progress.phase, modelCalls: progress.modelCalls, toolCalls: progress.toolCalls, detail: progress.detail });
+    }
+  });
+  if (!result.completed) throw new Error(result.error ?? result.answer);
+  return {
+    finalAnswer: result.answer,
+    messages: agent.getMessages(),
+    metrics: { modelCalls: result.modelCalls, toolCalls: result.toolCalls, latestContextTokens: result.contextTokens, totalInputTokens: result.totalInputTokens, outputTokens: result.outputTokens }
+  };
+}
+
+function createOpenShellTool(signal) {
+  const schema = z.object({ command: z.string().min(1).max(50_000), timeout_seconds: z.coerce.number().int().min(1).max(180).optional() });
+  return {
+    name: "shell_command",
+    description: "Run a full shell command inside the isolated OpenShell workspace. Use it to create files, inspect the project, run npm scripts, tests, and builds. The command starts in /sandbox/workspace. Args: command, optional timeout_seconds (1-180).",
+    schema,
+    async execute(args) {
+      const parsed = schema.parse(args);
+      try {
+        const result = await execFileAsync("/bin/bash", ["--noprofile", "--norc", "-lc", parsed.command], {
+          cwd: workspace,
+          env: {
+            PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
+            HOME: `${workspace}/.home`,
+            TMPDIR: "/tmp",
+            CI: "1",
+            NO_COLOR: "1",
+            npm_config_cache: `${workspace}/.npm-cache`
+          },
+          timeout: (parsed.timeout_seconds ?? 120) * 1000,
+          maxBuffer: 256_000,
+          signal
+        });
+        return { ok: true, exitCode: 0, stdout: truncate(result.stdout), stderr: truncate(result.stderr) };
+      } catch (error) {
+        const failure = error;
+        return {
+          ok: false,
+          exitCode: typeof failure.code === "number" ? failure.code : 1,
+          signal: failure.signal,
+          stdout: truncate(failure.stdout ?? ""),
+          stderr: truncate(failure.stderr ?? failure.message ?? String(failure))
+        };
+      }
+    }
+  };
+}
+
+async function prepareWorkspace() {
+  await rm(workspace, { recursive: true, force: true });
+  await mkdir(workspace, { recursive: true });
+  await cp(`${payloadRoot}/workspace-seed`, workspace, { recursive: true });
+  await mkdir(`${workspace}/.home`, { recursive: true });
+  await symlink(`${payloadRoot}/deps/node_modules`, `${workspace}/node_modules`, "dir");
+}
+
+async function removeDependencyLink() {
+  const target = `${workspace}/node_modules`;
+  const info = await lstat(target).catch(() => undefined);
+  if (!info?.isSymbolicLink()) return;
+  const link = await readlink(target);
+  if (link === `${payloadRoot}/deps/node_modules`) await rm(target);
+}
+
+function emitProgress(progress) {
+  const event = { ...progress, updatedAt: new Date().toISOString() };
+  console.log(`PROGRESS ${JSON.stringify(event)}`);
+  progressWriteQueue = progressWriteQueue.catch(() => undefined).then(() => writeJson(`${outputDir}/progress.json`, event));
+}
+
+async function writeJson(filePath, value) {
+  const temporary = `${filePath}.${process.pid}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await rm(filePath, { force: true });
+  await import("node:fs/promises").then(({ rename }) => rename(temporary, filePath));
+}
+
+function truncate(value) {
+  const text = String(value ?? "");
+  return text.length <= 64_000 ? text : `${text.slice(0, 64_000)}\n...[truncated]`;
+}
