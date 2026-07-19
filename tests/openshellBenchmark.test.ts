@@ -43,5 +43,7 @@ describe("OpenShell SDK build benchmark", () => {
     const notes = await readFile(new URL("workspace-seed/WORKSPACE.md", root), "utf8");
     expect(notes).toContain("vendor/desmos.js");
     expect(notes).toContain("outbound network access is denied");
+    const prepare = await readFile(new URL("prepare-payload.sh", root), "utf8");
+    expect(prepare).toContain('cp -a ops/openshell-benchmark/workspace-seed/. "$target_root/workspace-seed/"');
   });
 });
