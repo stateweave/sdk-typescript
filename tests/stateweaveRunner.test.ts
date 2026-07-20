@@ -110,6 +110,24 @@ it("records failed mutations as rejected evidence without committing proposed se
   }
 });
 
+it("counts full-shell workspace changes as mutation evidence", async () => {
+  const bashTool: Tool = {
+    name: "bash_command",
+    description: "Run a full shell command.",
+    schema: z.object({ command: z.string() }),
+    execute: async () => ({ exitCode: 0, workspace_mutated: true, mutated_paths: ["app.js"], stdout: "", stderr: "" })
+  };
+  const model = new SequenceModel([
+    "SWX/1\n@node task_app task \"Build app\" status=active\n@edge user_input_1 addresses task_app\n@tool bash_command command=\"printf ready > app.js\"",
+    "SWX/1\n@update task_app status=resolved\n@final \"Created app.js through the sandbox shell.\""
+  ]);
+
+  const result = await runStateWeave({ model, tools: [bashTool], nodeTypes: ["task"], maxIterations: 2, maxNoProgressIterations: 1 }, "Create app.js");
+
+  expect(result.finalAnswer).toContain("Created app.js");
+  expect(result.graph.nodes).toContainEqual(expect.objectContaining({ type: "tool_result", data: expect.objectContaining({ result: expect.objectContaining({ mutated_paths: ["app.js"] }) }) }));
+});
+
 it("accepts a successful post-mutation read as verification evidence", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-read-verification-"));
   try {

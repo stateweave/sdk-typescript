@@ -1,4 +1,4 @@
-import { cp, lstat, mkdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, readlink, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { z } from "zod";
 import { StateWeaveAgent } from "../../dist/agent/stateweaveAgent.js";
 import { AgenticBaseline } from "../../dist/evals/agenticBaseline.js";
@@ -166,7 +166,8 @@ function createOpenShellTool(signal) {
     async execute(args) {
       const parsed = schema.parse(args);
       await writeFile("/tmp/.stateweave-null", "", "utf8");
-      return await runSandboxShell({
+      const before = await snapshotWorkspace();
+      const result = await runSandboxShell({
         command: parsed.command.replaceAll("/dev/null", "/tmp/.stateweave-null"),
         cwd: workspace,
         env: {
@@ -180,8 +181,40 @@ function createOpenShellTool(signal) {
         timeoutMs: (parsed.timeout_seconds ?? 120) * 1000,
         signal
       });
+      const after = await snapshotWorkspace();
+      const mutatedPaths = changedWorkspacePaths(before, after);
+      return { ...result, workspace_mutated: mutatedPaths.length > 0, mutated_paths: mutatedPaths };
     }
   };
+}
+
+async function snapshotWorkspace() {
+  const files = new Map();
+  const ignored = new Set(["node_modules", ".home", ".npm-cache", "dist", "build", "coverage"]);
+  const walk = async (directory, relative = "") => {
+    for (const entry of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
+      const nextRelative = relative ? `${relative}/${entry.name}` : entry.name;
+      if (!relative && ignored.has(entry.name)) continue;
+      const absolute = `${directory}/${entry.name}`;
+      if (entry.isSymbolicLink()) continue;
+      if (entry.isDirectory()) {
+        await walk(absolute, nextRelative);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const info = await lstat(absolute);
+      files.set(nextRelative, `${info.size}:${info.mtimeMs}`);
+    }
+  };
+  await walk(workspace);
+  return files;
+}
+
+function changedWorkspacePaths(before, after) {
+  return [...new Set([...before.keys(), ...after.keys()])]
+    .filter((filePath) => before.get(filePath) !== after.get(filePath))
+    .sort()
+    .slice(0, 1_000);
 }
 
 async function prepareWorkspace() {
