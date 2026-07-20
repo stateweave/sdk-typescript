@@ -16,7 +16,9 @@ describe("OpenShell SDK build benchmark", () => {
     expect(runner).toContain("thresholdTokens: 250_000");
     expect(runner).toContain('name: "bash_command"');
     expect(runner).toContain("runSandboxShell");
-    expect(runner).toContain("convergence_guard");
+    expect(runner).toContain('maxNoProgressIterations: 300');
+    expect(runner).toContain('replaceAll("/dev/null", "/tmp/.stateweave-null")');
+    expect(runner).not.toContain("convergence_guard");
     expect(runner).toContain("frame.checkpoint.json");
     expect(runner).not.toContain(oneShotSdkBuildPrompt);
   });

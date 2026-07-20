@@ -35,33 +35,18 @@ const model = new AnthropicModel({
   temperature: 0,
   timeoutMs: 300_000
 });
-let workspaceMutationGeneration = 0;
-const fileTools = createFileSystemTools({ rootDir: workspace, timeoutMs: 60_000, maxOutputBytes: 64_000 })
-  .filter((tool) => tool.name !== "bash_command")
-  .map((tool) => tool.name === "write_file" || tool.name === "edit_file"
-    ? {
-        ...tool,
-        async execute(args) {
-          const result = await tool.execute(args);
-          if (!result || typeof result !== "object" || result.ok !== false) workspaceMutationGeneration += 1;
-          return result;
-        }
-      }
-    : tool);
 const tools = [
-  ...fileTools,
-  createOpenShellTool(abortController.signal, () => workspaceMutationGeneration)
+  ...createFileSystemTools({ rootDir: workspace, timeoutMs: 60_000, maxOutputBytes: 64_000 }).filter((tool) => tool.name !== "bash_command"),
+  createOpenShellTool(abortController.signal)
 ];
 const providerSystem = [
   "You are a persistent senior coding agent inside one private NVIDIA OpenShell workspace.",
   "Complete the supplied task autonomously using the available file and shell tools.",
-  "Use write_file and edit_file for project mutations so completion evidence is tracked; use bash_command for tests, builds, and bounded inspection, not for creating project files.",
   "Treat filesystem, process, network, and inference policy denials as hard boundaries.",
   "Operate only inside /sandbox/workspace, inspect current files before changing them, and verify the result before finishing.",
-  "Never seek credentials, host resources, another workspace, or information about any surrounding evaluation.",
-  "Converge deliberately: inspect a failed check, fix its root cause through the file tools, and never rerun an unchanged check repeatedly."
+  "Never seek credentials, host resources, another workspace, or information about any surrounding evaluation."
 ].join(" ");
-const systemPrompt = "Build the requested project completely in the supplied workspace. Aim to finish within 250 model turns. Use file tools for implementation, diagnose check failures instead of cycling, and once the deliverables and checks are genuinely complete, return a concise factual summary immediately.";
+const systemPrompt = "Build the requested project completely in the supplied workspace. Use tools until the implementation and its checks are genuinely complete, then return a concise factual summary.";
 const startedAt = Date.now();
 
 try {
@@ -92,7 +77,8 @@ try {
   const report = { ok: false, mode, maxIterations, stopped, error: error instanceof Error ? error.message : String(error), metrics: failureMetrics };
   await writeJson(`${outputDir}/result.json`, report);
   if (error?.frame) await writeJson(`${outputDir}/frame.failed.json`, error.frame);
-  emitProgress({ iteration: 0, phase: stopped ? "stopped" : "failed", modelCalls: 0, toolCalls: 0, detail: report.error });
+  if (failureTrace.length) await writeJson(`${outputDir}/trace.diagnostics.json`, failureTrace.map(traceDiagnostic));
+  emitProgress({ iteration: failureMetrics.modelCalls, phase: stopped ? "stopped" : "failed", modelCalls: failureMetrics.modelCalls, toolCalls: failureMetrics.toolCalls, totalInputTokens: failureMetrics.totalInputTokens, outputTokens: failureMetrics.outputTokens, detail: report.error });
   console.log(`RESULT ${JSON.stringify(report)}`);
   process.exitCode = stopped ? 130 : 1;
 }
@@ -102,6 +88,7 @@ async function runGraphParticipant({ model, tools, providerSystem, systemPrompt,
     model,
     tools,
     maxIterations,
+    maxNoProgressIterations: 300,
     maxPromptTokens: 250_000,
     systemPrompt,
     nodeTypes: ["task", "file", "symbol", "decision", "constraint", "test_result"],
@@ -170,8 +157,7 @@ async function runTranscriptParticipant({ model, tools, providerSystem, systemPr
   };
 }
 
-function createOpenShellTool(signal, mutationGeneration) {
-  const repeatedCommands = new Map();
+function createOpenShellTool(signal) {
   const schema = z.object({ command: z.string().min(1).max(50_000), timeout_seconds: z.coerce.number().int().min(1).max(180).optional() });
   return {
     name: "bash_command",
@@ -179,22 +165,9 @@ function createOpenShellTool(signal, mutationGeneration) {
     schema,
     async execute(args) {
       const parsed = schema.parse(args);
-      const normalizedCommand = parsed.command.trim().replace(/\s+/g, " ");
-      const commandKey = `${mutationGeneration()}:${normalizedCommand}`;
-      const attempts = (repeatedCommands.get(commandKey) ?? 0) + 1;
-      repeatedCommands.set(commandKey, attempts);
-      if (attempts > 2) {
-        return {
-          ok: false,
-          exitCode: 2,
-          stdout: "",
-          stderr: "convergence_guard: This unchanged command already ran twice without a successful write_file/edit_file mutation. Inspect the failure, fix the root cause through the file tools, then run the check again.",
-          timedOut: false,
-          aborted: false
-        };
-      }
+      await writeFile("/tmp/.stateweave-null", "", "utf8");
       return await runSandboxShell({
-        command: parsed.command,
+        command: parsed.command.replaceAll("/dev/null", "/tmp/.stateweave-null"),
         cwd: workspace,
         env: {
           PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
@@ -238,6 +211,28 @@ async function writeJson(filePath, value) {
   await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   await rm(filePath, { force: true });
   await import("node:fs/promises").then(({ rename }) => rename(temporary, filePath));
+}
+
+function traceDiagnostic(step) {
+  return {
+    step: step.step,
+    durationMs: step.durationMs,
+    inputTokens: step.tokenEstimate?.estimatedTokens ?? 0,
+    error: step.error,
+    operations: step.parsedOps.map((op) => op.op === "call_tool"
+      ? { op: op.op, tool: op.tool, args: diagnosticToolArgs(op.args) }
+      : op.op === "final"
+        ? { op: op.op, answerPreview: op.answer.slice(0, 500) }
+        : { op: op.op })
+  };
+}
+
+function diagnosticToolArgs(args) {
+  return Object.fromEntries(Object.entries(args ?? {}).map(([key, value]) => {
+    if (typeof value !== "string") return [key, value];
+    const limit = key === "command" ? 2_000 : 500;
+    return [key, value.length <= limit ? value : { chars: value.length, preview: `${value.slice(0, limit)}…` }];
+  }));
 }
 
 function anthropicInputTokens(usage) {
