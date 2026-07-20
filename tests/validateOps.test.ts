@@ -97,6 +97,27 @@ it("accepts name= as a tolerant @tool name form", () => {
   expect(ops).toContainEqual({ op: "call_tool", tool: "bash_command", args: { command: "pwd" } });
 });
 
+it("preserves shell-significant quotes in unwrapped tool arguments", () => {
+  const [op] = parseAndValidateOps(`SWX/1
+@tool bash_command command=node --input-type=module -e "import('./src/model.js').then(m => console.log(m.solve()))" timeout_ms=1000`);
+
+  expect(op).toEqual({
+    op: "call_tool",
+    tool: "bash_command",
+    args: {
+      command: `node --input-type=module -e "import('./src/model.js').then(m => console.log(m.solve()))"`,
+      timeout_ms: 1000
+    }
+  });
+});
+
+it("decodes explicitly wrapped tool arguments without consuming nested quotes", () => {
+  const [op] = parseAndValidateOps(`SWX/1
+@tool bash_command command="node -e \\"console.log('ready')\\""`);
+
+  expect(op).toEqual({ op: "call_tool", tool: "bash_command", args: { command: `node -e "console.log('ready')"` } });
+});
+
 it("parses multiline @tool args through block refs without creating artifact ops", () => {
   const ops = parseAndValidateOps(`SWX/1
 @edge system_root follows user_input_1
