@@ -143,7 +143,7 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
       restartSucceeded ||= toolOutcome.restartSucceeded;
       smokeSucceeded ||= toolOutcome.smokeSucceeded;
       if (toolOutcome.inspectedPath) inspectedPaths.add(toolOutcome.inspectedPath);
-      if (toolOutcome.mutatedPath) mutatedPaths.add(toolOutcome.mutatedPath);
+      for (const mutatedPath of toolOutcome.mutatedPaths ?? []) mutatedPaths.add(mutatedPath);
       if (hasWorkers(parsedOps)) {
         const scheduler = scheduleWorkers(frame, parsedOps, args, step, maxIterations, options?.signal);
         frame = scheduler.frame;
@@ -272,7 +272,7 @@ type ToolOutcome = {
   restartSucceeded: boolean;
   smokeSucceeded: boolean;
   inspectedPath?: string;
-  mutatedPath?: string;
+  mutatedPaths?: string[];
 };
 
 const emptyToolOutcome = (frame: GraphFrame): ToolOutcome => ({
@@ -296,9 +296,10 @@ async function runToolOps(originalFrame: GraphFrame, candidateFrame: GraphFrame,
     const result = await tool.execute(parsedArgs);
     if (!toolExecutionSucceeded(op.tool, result)) return failedToolOutcome(originalFrame, op, result, step, toolFailureMessage(op.tool, result));
     const taskAnchorId = semanticTaskAnchorId(candidateFrame);
+    const mutationPaths = toolMutationPaths(op.tool, op.args, result);
     const next = { ...candidateFrame, graph: addToolResult(candidateFrame.graph, { tool: op.tool, toolArgs: op.args, result, step, ok: true, anchorId: taskAnchorId }) };
     next.frame.currentFocus = `The ${op.tool} operation succeeded. Inspect its typed tool_result before deciding whether to verify or finalize.`;
-    next.frame.nextExpectedOutput = isMutatingTool(op.tool)
+    next.frame.nextExpectedOutput = mutationPaths.length
       ? "Verify the mutation with the requested check/restart/smoke action, record the resolved test_result, then return a factual final answer."
       : "Use this observation as ground truth, update the semantic task record, and choose one next operation or a supported final answer.";
     const appAction = op.tool === "app_control" && typeof op.args.action === "string" ? op.args.action : undefined;
@@ -306,14 +307,14 @@ async function runToolOps(originalFrame: GraphFrame, candidateFrame: GraphFrame,
     return {
       frame: next,
       toolActivitySucceeded: true,
-      mutationSucceeded: isMutatingTool(op.tool),
+      mutationSucceeded: mutationPaths.length > 0,
       inspectionSucceeded: op.tool === "read_file",
       verificationSucceeded: op.tool === "read_file" || op.tool === "bash_command" || op.tool === "app_control",
       checkSucceeded: op.tool === "bash_command" || (op.tool === "app_control" && appAction === "check"),
       restartSucceeded: op.tool === "app_control" && appAction === "restart",
       smokeSucceeded: op.tool === "app_control" && (appAction === "smoke" || appAction === "restart"),
       ...(op.tool === "read_file" && path ? { inspectedPath: path } : {}),
-      ...(isMutatingTool(op.tool) && path ? { mutatedPath: path } : {})
+      ...(mutationPaths.length ? { mutatedPaths: mutationPaths } : {})
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -328,7 +329,18 @@ function failedToolOutcome(originalFrame: GraphFrame, op: Extract<GraphOp, { op:
   next.frame.lastGraphOpsError = `Tool ${op.tool} failed: ${message}`;
   next.frame.currentFocus = `The ${op.tool} operation failed without committing its proposed semantic GraphOps. Use the rejected tool_result and current file evidence to correct the call.`;
   next.frame.nextExpectedOutput = "Do not claim success. Address the concrete failure, re-read stale files when needed, then retry one corrected tool operation.";
-  return emptyToolOutcome(next);
+  const mutationPaths = toolMutationPaths(op.tool, op.args, result);
+  return { ...emptyToolOutcome(next), mutationSucceeded: mutationPaths.length > 0, ...(mutationPaths.length ? { mutatedPaths: mutationPaths } : {}) };
+}
+
+function toolMutationPaths(tool: string, args: Record<string, unknown>, result: unknown): string[] {
+  if (isMutatingTool(tool)) {
+    const path = toolPath(args);
+    return path ? [path] : [];
+  }
+  if (!result || typeof result !== "object") return [];
+  const paths = (result as Record<string, unknown>).mutated_paths;
+  return Array.isArray(paths) ? paths.filter((value): value is string => typeof value === "string" && value.length > 0).slice(0, 1_000) : [];
 }
 
 type WorkerPlan = {

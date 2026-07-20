@@ -134,6 +134,7 @@ async function processRun() {
     for (const arm of armOrder) {
       if (await stopRequested()) throw new StopRequestedError();
       await runArm(arm, sandboxByArm[arm], runDir, { maxIterations: 300, artifactKey: arm });
+      if (await stopRequested()) throw new StopRequestedError();
     }
 
     state.status = "completed";
@@ -206,6 +207,7 @@ async function processRetry() {
     state.status = "running";
     await saveState(`Candidate ${request.candidate.toUpperCase()} retry attempt ${attempt} is running with a ${request.maxIterations.toLocaleString()}-iteration ceiling.`);
     await runArm(arm, sandboxName, runDir, { maxIterations: request.maxIterations, artifactKey });
+    if (await stopRequested()) throw new StopRequestedError();
     state.status = "completed";
     state.completedAt = new Date().toISOString();
     const succeeded = armState.status === "completed";
