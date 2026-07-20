@@ -62,6 +62,8 @@ export type SdkBuildProgress = {
   phase: string;
   modelCalls: number;
   toolCalls: number;
+  totalInputTokens?: number;
+  outputTokens?: number;
   detail: string;
   updatedAt: string;
 };

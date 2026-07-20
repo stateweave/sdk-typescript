@@ -29,7 +29,7 @@ type CompareResponse = StateWeaveResponse & {
 };
 
 type PageName = "state" | "quickstart" | "ab" | "sdk-build" | "infinite" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
-type SdkBuildEnvironment = { slot: number; status: string; progress?: { iteration: number; phase: string; modelCalls: number; toolCalls: number; detail: string; updatedAt: string } };
+type SdkBuildEnvironment = { slot: number; status: string; progress?: { iteration: number; phase: string; modelCalls: number; toolCalls: number; totalInputTokens?: number; outputTokens?: number; detail: string; updatedAt: string } };
 type SdkBuildCandidate = { status: string; finalAnswer?: string; error?: string; previewReady: boolean; attempt?: number; maxIterations?: number; previousAttempts?: { attempt: number; maxIterations: number; status: string }[] };
 type SdkBuildPublicState = {
   status: string;
@@ -971,7 +971,7 @@ function renderSdkBuildEnvironment(element: HTMLElement, environment: SdkBuildEn
   status.textContent = sdkBuildStatusLabel(value);
   status.className = `sdk-build-status ${sdkBuildStatusClass(value)}`;
   progress.textContent = environment?.progress
-    ? `${environment.progress.detail} · ${environment.progress.modelCalls} model / ${environment.progress.toolCalls} tool calls`
+    ? `${environment.progress.detail} · ${environment.progress.modelCalls} model / ${environment.progress.toolCalls} tool calls${environment.progress.outputTokens !== undefined ? ` · ${environment.progress.outputTokens.toLocaleString()} output tokens` : ""}`
     : "";
 }
 

@@ -14,7 +14,10 @@ describe("OpenShell SDK build benchmark", () => {
     expect(runner).toContain("maxIterations > 3_000");
     expect(runner).toContain("maxPromptTokens: 250_000");
     expect(runner).toContain("thresholdTokens: 250_000");
-    expect(runner).toContain('name: "shell_command"');
+    expect(runner).toContain('name: "bash_command"');
+    expect(runner).toContain("runSandboxShell");
+    expect(runner).toContain("convergence_guard");
+    expect(runner).toContain("frame.checkpoint.json");
     expect(runner).not.toContain(oneShotSdkBuildPrompt);
   });
 
@@ -38,6 +41,7 @@ describe("OpenShell SDK build benchmark", () => {
     expect(worker).toContain('"3Gi"');
     expect(worker).toContain('"/bin/true"');
     expect(worker).toContain('stdio: ["ignore", "pipe", "pipe"]');
+    expect(worker).toContain("{{.State.OOMKilled}}");
     expect(worker).not.toMatch(/processRun\(\)\s*;\s*$/m);
   });
 
