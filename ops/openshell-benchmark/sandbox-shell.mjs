@@ -2,12 +2,15 @@ import { spawn } from "node:child_process";
 
 export function runSandboxShell({ command, cwd, env, timeoutMs, signal, maxOutputBytes = 256_000 }) {
   return new Promise((resolve) => {
-    const child = spawn("/bin/bash", ["--noprofile", "--norc", "-lc", command], {
+    const child = spawn("/usr/bin/bash", ["--noprofile", "--norc", "-lc", command], {
       cwd,
       env,
       detached: true,
-      stdio: ["ignore", "pipe", "pipe"]
+      // Use a pipe rather than `ignore`: Node implements ignored stdin through
+      // /dev/null, which hard-Landlock intentionally does not expose.
+      stdio: ["pipe", "pipe", "pipe"]
     });
+    child.stdin.end();
     let stdout = "";
     let stderr = "";
     let timedOut = false;
