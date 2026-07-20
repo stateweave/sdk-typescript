@@ -163,7 +163,8 @@ async function processRetry() {
   if (await exists(path.join(runDir, "judgement.json"))) throw new Error("A scored benchmark cannot be retried.");
   const arm = state.labels[request.candidate];
   const armState = state.arms[arm];
-  if (armState.status !== "failed") throw new Error(`Candidate ${request.candidate.toUpperCase()} is not failed.`);
+  const runtimeCorrection = request.runtimeCorrection === true && armState.status === "completed";
+  if (armState.status !== "failed" && !runtimeCorrection) throw new Error(`Candidate ${request.candidate.toUpperCase()} is not failed and no operator runtime-correction retry was requested.`);
 
   const attempt = (armState.attempt ?? 1) + 1;
   const previousArtifactKey = armState.artifactKey ?? arm;
@@ -195,10 +196,10 @@ async function processRetry() {
   armState.metrics = undefined;
   armState.previewRoot = undefined;
   armState.progress = progress(0, "preparing", `Preparing candidate retry attempt ${attempt}`, 0, 0);
-  state.retry = { candidate: request.candidate, attempt, maxIterations: request.maxIterations, requestedAt: request.createdAt ?? new Date().toISOString() };
+  state.retry = { candidate: request.candidate, attempt, maxIterations: request.maxIterations, requestedAt: request.createdAt ?? new Date().toISOString(), reason: runtimeCorrection ? "runtime-correction" : "failed-candidate" };
   state.status = "preparing";
   state.completedAt = undefined;
-  await writeJson(path.join(runDir, `retry-${attempt}.json`), { candidate: request.candidate, arm, attempt, maxIterations: request.maxIterations, previousArtifactKey, artifactKey, sandboxName, requestedAt: state.retry.requestedAt });
+  await writeJson(path.join(runDir, `retry-${attempt}.json`), { candidate: request.candidate, arm, attempt, maxIterations: request.maxIterations, previousArtifactKey, artifactKey, sandboxName, requestedAt: state.retry.requestedAt, reason: state.retry.reason });
   await saveState(`Retrying Candidate ${request.candidate.toUpperCase()} only with a ${request.maxIterations.toLocaleString()}-iteration ceiling. Original attempt preserved.`);
 
   try {

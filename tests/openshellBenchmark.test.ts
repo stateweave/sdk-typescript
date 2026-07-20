@@ -37,6 +37,9 @@ describe("OpenShell SDK build benchmark", () => {
     expect(worker).toContain('exists(startRequestPath)');
     expect(worker).toContain('exists(retryRequestPath)');
     expect(worker).toContain('request.maxIterations !== 3_000');
+    expect(worker).toContain('request.runtimeCorrection === true && armState.status === "completed"');
+    expect(worker).toContain('reason: runtimeCorrection ? "runtime-correction" : "failed-candidate"');
+    expect(worker).toContain('exists(path.join(runDir, "judgement.json"))');
     expect(worker).toContain('state.status !== "ready"');
     expect(worker).toContain('Math.random() < 0.5');
     expect(worker).toContain("security-probe.mjs");

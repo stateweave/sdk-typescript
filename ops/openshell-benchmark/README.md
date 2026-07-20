@@ -39,6 +39,8 @@ The worker uses:
 - shared control/state: `/var/lib/docker/volumes/stateweave-web-development-zrzoej_stateweave-web-data/_data/sdk-build-benchmark`
 - service: `stateweave-sdk-benchmark.service`
 
+The public endpoint can retry only a failed, unscored candidate. After a reviewed runtime correction, an operator may rerun a completed candidate without touching its preserved artifact by atomically placing the same marker with `"runtimeCorrection": true`; the worker records the prior completed attempt and exposes `reason: "runtime-correction"`. This operator-only path remains blocked after judgement and still requires the fixed 3,000-iteration ceiling.
+
 ## Verification
 
 1. `node --check` passes for worker and participant runner.
