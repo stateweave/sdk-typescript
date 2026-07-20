@@ -8,6 +8,14 @@ const roots = [];
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
 describe("benchmark sandbox shell", () => {
+  it("closes piped stdin without opening Landlock-denied /dev/null", async () => {
+    const source = await readFile(new URL("../ops/openshell-benchmark/sandbox-shell.mjs", import.meta.url), "utf8");
+    expect(source).toContain('spawn("/usr/bin/bash"');
+    expect(source).toContain('stdio: ["pipe", "pipe", "pipe"]');
+    expect(source).toContain("child.stdin.end()");
+    expect(source).not.toContain('stdio: ["ignore"');
+  });
+
   it("returns output for a successful bounded command", async () => {
     const result = await runSandboxShell({ command: "printf shell-ok", cwd: process.cwd(), env: process.env, timeoutMs: 5_000 });
     expect(result).toMatchObject({ ok: true, exitCode: 0, stdout: "shell-ok", timedOut: false, aborted: false });
