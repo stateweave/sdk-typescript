@@ -279,7 +279,8 @@ async function runArm(arm, sandboxName, runDir, { maxIterations, artifactKey }) 
     armState.progress = progress(report.metrics?.modelCalls ?? 0, "completed", "Participant completed", report.metrics?.modelCalls ?? 0, report.metrics?.toolCalls ?? 0);
   } else {
     armState.status = report?.stopped ? "stopped" : "failed";
-    armState.error = String(report?.error ?? outcome.stderr ?? `Participant exited with code ${outcome.code}`).slice(0, 4_000);
+    const exitDiagnostic = report?.error ? undefined : await participantExitDiagnostic(sandboxName, outcome);
+    armState.error = String(report?.error ?? exitDiagnostic ?? `Participant exited with code ${outcome.code}`).slice(0, 4_000);
     armState.metrics = report?.metrics;
     armState.previewRoot = await findPreviewRoot(workspaceDir);
     armState.progress = progress(armState.progress?.iteration ?? 0, armState.status, armState.error, armState.progress?.modelCalls ?? 0, armState.progress?.toolCalls ?? 0);
@@ -340,6 +341,17 @@ async function runCommand(command, args, options = {}) {
   });
   if (result.code !== 0 && !options.allowFailure) throw new Error(`${command} ${args.slice(0, 4).join(" ")} failed (${result.code}): ${stripAnsi(result.stderr || result.stdout).slice(-2_000)}`);
   return result;
+}
+
+async function participantExitDiagnostic(sandboxName, outcome) {
+  const containers = await runCommand("docker", ["ps", "-aq", "--filter", `name=openshell-${sandboxName}-`], { allowFailure: true, timeoutMs: 15_000 });
+  const containerId = containers.stdout.trim().split(/\s+/)[0];
+  if (containerId) {
+    const inspection = await runCommand("docker", ["inspect", "--format", "{{.State.OOMKilled}}", containerId], { allowFailure: true, timeoutMs: 15_000 });
+    if (inspection.stdout.trim() === "true") return "Participant process was killed after exhausting the OpenShell sandbox memory limit. Partial workspace artifacts were preserved.";
+  }
+  const detail = stripAnsi(outcome.stderr || outcome.stdout).trim().slice(-2_000);
+  return `Participant exited unexpectedly with code ${outcome.code}${outcome.signal ? ` (${outcome.signal})` : ""}.${detail ? ` Last output: ${detail}` : ""}`;
 }
 
 async function findPreviewRoot(workspaceDir) {
