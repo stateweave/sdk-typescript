@@ -128,6 +128,21 @@ it("counts full-shell workspace changes as mutation evidence", async () => {
   expect(result.graph.nodes).toContainEqual(expect.objectContaining({ type: "tool_result", data: expect.objectContaining({ result: expect.objectContaining({ mutated_paths: ["app.js"] }) }) }));
 });
 
+it("does not let generated test logs reset the no-progress watchdog", async () => {
+  const bashTool: Tool = {
+    name: "bash_command",
+    description: "Run a full shell command.",
+    schema: z.object({ command: z.string() }),
+    execute: async () => ({ exitCode: 0, workspace_mutated: true, mutated_paths: ["vitest_single.log"], stdout: "", stderr: "" })
+  };
+  const model = new SequenceModel([
+    "SWX/1\n@node task_app task \"Build app\" status=active\n@edge user_input_1 addresses task_app\n@tool bash_command command=\"npm test > vitest_single.log\""
+  ]);
+
+  await expect(runStateWeave({ model, tools: [bashTool], nodeTypes: ["task"], maxIterations: 2, maxNoProgressIterations: 1 }, "Create app.js"))
+    .rejects.toThrow("No successful workspace mutation occurred in 1 consecutive model iterations");
+});
+
 it("accepts a successful post-mutation read as verification evidence", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-read-verification-"));
   try {

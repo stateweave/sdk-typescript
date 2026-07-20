@@ -336,11 +336,22 @@ function failedToolOutcome(originalFrame: GraphFrame, op: Extract<GraphOp, { op:
 function toolMutationPaths(tool: string, args: Record<string, unknown>, result: unknown): string[] {
   if (isMutatingTool(tool)) {
     const path = toolPath(args);
-    return path ? [path] : [];
+    return path && isMeaningfulMutationPath(path) ? [path] : [];
   }
   if (!result || typeof result !== "object") return [];
   const paths = (result as Record<string, unknown>).mutated_paths;
-  return Array.isArray(paths) ? paths.filter((value): value is string => typeof value === "string" && value.length > 0).slice(0, 1_000) : [];
+  return Array.isArray(paths)
+    ? paths.filter((value): value is string => typeof value === "string" && value.length > 0 && isMeaningfulMutationPath(value)).slice(0, 1_000)
+    : [];
+}
+
+function isMeaningfulMutationPath(filePath: string): boolean {
+  const segments = filePath.replaceAll("\\", "/").split("/").filter(Boolean);
+  const generatedDirectories = new Set(["node_modules", ".home", ".npm-cache", ".cache", ".vite", "dist", "build", "coverage", "logs", "tmp"]);
+  if (segments.some((segment) => generatedDirectories.has(segment))) return false;
+  const name = segments.at(-1) ?? filePath;
+  return !/(?:\.log|\.pid|\.tmp|\.cache|\.tsbuildinfo)$/i.test(name)
+    && !/^(?:test|vitest|build|npm)[-_].*\.(?:log|txt|json)$/i.test(name);
 }
 
 type WorkerPlan = {

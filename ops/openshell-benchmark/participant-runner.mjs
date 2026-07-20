@@ -190,24 +190,30 @@ function createOpenShellTool(signal) {
 
 async function snapshotWorkspace() {
   const files = new Map();
-  const ignored = new Set(["node_modules", ".home", ".npm-cache", "dist", "build", "coverage"]);
+  const ignored = new Set(["node_modules", ".home", ".npm-cache", ".cache", ".vite", "dist", "build", "coverage", "logs", "tmp"]);
   const walk = async (directory, relative = "") => {
     for (const entry of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
       const nextRelative = relative ? `${relative}/${entry.name}` : entry.name;
-      if (!relative && ignored.has(entry.name)) continue;
       const absolute = `${directory}/${entry.name}`;
       if (entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) {
+        if (ignored.has(entry.name)) continue;
         await walk(absolute, nextRelative);
         continue;
       }
-      if (!entry.isFile()) continue;
+      if (!entry.isFile() || isGeneratedWorkspacePath(nextRelative)) continue;
       const info = await lstat(absolute);
       files.set(nextRelative, `${info.size}:${info.mtimeMs}`);
     }
   };
   await walk(workspace);
   return files;
+}
+
+function isGeneratedWorkspacePath(filePath) {
+  const name = filePath.split("/").at(-1) ?? filePath;
+  return /(?:\.log|\.pid|\.tmp|\.cache|\.tsbuildinfo)$/i.test(name)
+    || /^(?:test|vitest|build|npm)[-_].*\.(?:log|txt|json)$/i.test(name);
 }
 
 function changedWorkspacePaths(before, after) {
