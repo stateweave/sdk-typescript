@@ -137,6 +137,20 @@ it("surfaces structured acceptance failures in tool evidence", () => {
   }));
 });
 
+it("preserves bounded tool arguments needed to interpret later results", () => {
+  const frame = createInitialGraphFrame({ objective: "Inspect", input: "Run a check", availableActions: [] });
+  const graph = addToolResult(frame.graph, {
+    tool: "bash_command",
+    toolArgs: { command: "npm test 2>&1 | tail -40", content: "x".repeat(5_000) },
+    result: { exitCode: 1, stderr: "test failed" },
+    step: 1,
+    ok: false
+  });
+  const call = graph.nodes.find((node) => node.type === "tool_call");
+  expect(call?.data).toMatchObject({ tool: "bash_command", args: { command: "npm test 2>&1 | tail -40", content: { chars: 5_000 } } });
+  expect(JSON.stringify(call?.data)).not.toContain("x".repeat(2_000));
+});
+
 it("adds deterministic tool evidence and versions canonical file state", () => {
   const frame = createInitialGraphFrame({ objective: "Fix login", input: "Login fails", availableActions: [] });
   let graph = addToolResult(frame.graph, { tool: "read_file", result: { file_path: "config.json", content_hash: "aaaaaaaaaaaaaaaa" }, step: 1 });

@@ -16,6 +16,7 @@ export type StateWeaveAgentArgs = {
   model: Model;
   tools?: Tool[];
   maxIterations?: number;
+  maxNoProgressIterations?: number;
   maxPromptTokens?: number;
   systemPrompt?: string;
   nodeTypes?: string[];
@@ -30,6 +31,7 @@ export class StateWeaveAgent {
   private model: Model;
   private tools: Tool[];
   private maxIterations: number;
+  private maxNoProgressIterations?: number;
   private maxPromptTokens: number;
   private systemPrompt?: string;
   private nodeTypes: string[];
@@ -45,6 +47,7 @@ export class StateWeaveAgent {
     this.model = args.model;
     this.tools = args.tools ?? createDefaultTools();
     this.maxIterations = args.maxIterations ?? defaultMaxIterations;
+    this.maxNoProgressIterations = args.maxNoProgressIterations;
     this.maxPromptTokens = args.maxPromptTokens ?? 64_000;
     this.systemPrompt = args.systemPrompt;
     this.nodeTypes = normalizeNodeTypes(args.nodeTypes ?? []);
@@ -123,7 +126,7 @@ export class StateWeaveAgent {
 
   private async runOnce(input: StateWeaveInput, options: StateWeaveRunOptions | undefined): Promise<AgentResult> {
     try {
-      const result = await runStateWeave({ model: this.model, tools: this.tools, maxIterations: this.maxIterations, maxPromptTokens: this.maxPromptTokens, systemPrompt: this.systemPrompt, nodeTypes: this.nodeTypes, traceMode: this.traceMode, blindIdentity: this.blindIdentity, providerSystem: this.providerSystem }, input, options);
+      const result = await runStateWeave({ model: this.model, tools: this.tools, maxIterations: this.maxIterations, maxNoProgressIterations: this.maxNoProgressIterations, maxPromptTokens: this.maxPromptTokens, systemPrompt: this.systemPrompt, nodeTypes: this.nodeTypes, traceMode: this.traceMode, blindIdentity: this.blindIdentity, providerSystem: this.providerSystem }, input, options);
       if (this.traceDir) await this.saveTrace(traceObjective(result.trace), result.trace);
       return result;
     } catch (error) {
@@ -134,7 +137,7 @@ export class StateWeaveAgent {
 
   private async *streamOnce(input: StateWeaveInput, options: StateWeaveRunOptions | undefined): AsyncIterable<StateWeaveStreamEvent> {
     try {
-      for await (const event of streamStateWeave({ model: this.model, tools: this.tools, maxIterations: this.maxIterations, maxPromptTokens: this.maxPromptTokens, systemPrompt: this.systemPrompt, nodeTypes: this.nodeTypes, traceMode: this.traceMode, blindIdentity: this.blindIdentity, providerSystem: this.providerSystem }, input, options)) {
+      for await (const event of streamStateWeave({ model: this.model, tools: this.tools, maxIterations: this.maxIterations, maxNoProgressIterations: this.maxNoProgressIterations, maxPromptTokens: this.maxPromptTokens, systemPrompt: this.systemPrompt, nodeTypes: this.nodeTypes, traceMode: this.traceMode, blindIdentity: this.blindIdentity, providerSystem: this.providerSystem }, input, options)) {
         if (event.type === "final" && this.traceDir) await this.saveTrace(traceObjective(event.result.trace), event.result.trace);
         yield event;
       }

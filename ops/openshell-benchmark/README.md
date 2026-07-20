@@ -14,8 +14,9 @@ The public lab can write only fixed start/stop markers under the existing named 
 - Ordinary network is default-deny; inference uses managed `inference.local`.
 - A security probe must pass independently in both sandboxes before either participant starts.
 - The full `bash_command` tool executes inside the sandbox, never on the host or web container. It uses a dedicated process group and terminates every descendant on completion, timeout, or abort so npm/Vitest workers cannot leak across calls.
-- Project mutations must use `write_file`/`edit_file`; this keeps StateWeave's mutation/check evidence accounting aligned with the tool protocol. An unchanged shell command is blocked after two runs until a successful file mutation prevents non-convergent check loops.
-- Long graph attempts checkpoint frame and live provider token totals every 50 iterations; failed attempts serialize their last available frame and trace metrics when the process can exit cleanly.
+- Project mutations must use `write_file`/`edit_file`; this keeps StateWeave's mutation/check evidence accounting aligned with the tool protocol. Hard-Landlock `/dev/null` references are redirected to a fresh private `/tmp/.stateweave-null` file for each shell call.
+- Tool-call nodes preserve bounded arguments, and the graph projection renders a dedicated 32,000-character latest-tool-evidence window so file reads and shell failures remain actionable instead of collapsing to a 1,200-character nested preview.
+- Graph attempts stop after 300 consecutive model iterations without a successful workspace mutation, checkpoint frame and live provider token totals every 50 iterations, and serialize bounded per-step tool/error diagnostics plus frame/trace metrics on catchable failures.
 - The downloaded candidate workspace excludes the preinstalled dependency symlink.
 - The source prompt contains no treatment, comparison, score, or reference identity.
 

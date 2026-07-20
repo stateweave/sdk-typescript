@@ -107,6 +107,21 @@ it("always projects the latest tool call and result even when a large neighborho
   expect(prompt).toContain("LATEST_TOOL_EVIDENCE");
 });
 
+it("renders exact latest tool arguments and substantially more than the generic 1200-character result preview", () => {
+  const frame = createInitialGraphFrame({ objective: "Inspect", input: "Inspect the complete source", availableActions: [] });
+  const content = `EVIDENCE_START ${"x".repeat(5_000)} EVIDENCE_END`;
+  frame.graph.nodes.push({ id: "tool_call_latest", type: "tool_call", text: "Called read_file", data: { tool: "read_file", args: { file_path: "src/app.js", offset: 0, limit: 500 } }, status: "resolved", createdAt: new Date(1_000).toISOString() });
+  frame.graph.nodes.push({ id: "tool_result_latest", type: "tool_result", text: "read_file succeeded", data: { tool: "read_file", result: { path: "src/app.js", content, content_hash: "abc123" }, ok: true }, status: "active", createdAt: new Date(1_001).toISOString() });
+  frame.graph.edges.push({ id: "edge_latest_call", from: "user_input_1", to: "tool_call_latest", type: "relates_to", createdAt: "" });
+  frame.graph.edges.push({ id: "edge_latest_result", from: "tool_call_latest", to: "tool_result_latest", type: "explains", createdAt: "" });
+
+  const prompt = serializeGraphFrame(frame, { maxTokens: 16_000 });
+  expect(prompt).toContain("<LATEST_TOOL_EVIDENCE>");
+  expect(prompt).toContain('"file_path": "src/app.js"');
+  expect(prompt).toContain("EVIDENCE_START");
+  expect(prompt).toContain("EVIDENCE_END");
+});
+
 it("bounds nested tool payloads by prompt tokens while preserving active evidence", () => {
   const frame = createInitialGraphFrame({ objective: "Inspect", input: "Summarize the current large report", availableActions: [] });
   frame.graph.nodes.push({

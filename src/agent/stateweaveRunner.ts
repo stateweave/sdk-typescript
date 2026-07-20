@@ -10,7 +10,7 @@ import type { Tool } from "../tools/types.js";
 
 export type StateWeaveInput = TaskInput;
 export type StateWeaveRunOptions = { frame?: GraphFrame; inputAlreadyAppended?: boolean; signal?: AbortSignal };
-export type StateWeaveRunnerArgs = { model: Model; tools: Tool[]; maxIterations?: number; maxPromptTokens?: number; systemPrompt?: string; nodeTypes?: string[]; traceMode?: "full" | "compact"; blindIdentity?: boolean; providerSystem?: string };
+export type StateWeaveRunnerArgs = { model: Model; tools: Tool[]; maxIterations?: number; maxNoProgressIterations?: number; maxPromptTokens?: number; systemPrompt?: string; nodeTypes?: string[]; traceMode?: "full" | "compact"; blindIdentity?: boolean; providerSystem?: string };
 
 export class StateWeaveRunError extends Error {
   trace: TraceStep[];
@@ -64,6 +64,8 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
   let restartSucceeded = false;
   let smokeSucceeded = false;
   let toolActivitySucceeded = false;
+  let lastWorkspaceMutationStep = 0;
+  const maxNoProgressIterations = args.maxNoProgressIterations;
   const mutatedPaths = new Set<string>();
   const inspectedPaths = new Set<string>();
   const taskText = `${task.objective}\n${task.input}`;
@@ -128,6 +130,7 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
       frame = toolOutcome.frame;
       if (toolOutcome.mutationSucceeded) {
         mutationSucceeded = true;
+        lastWorkspaceMutationStep = step;
         verificationSucceeded = false;
         checkSucceeded = false;
         restartSucceeded = false;
@@ -168,6 +171,14 @@ export async function* streamStateWeave(args: StateWeaveRunnerArgs, input: State
     trace.push(traceStep({ step, startedAt: stepStartedAt, frameBefore, prompt, streamedTokens, modelMetadata, rawModelOutput, parsedOps, frameAfter }, args.traceMode));
     yield { type: "frame", step, phase: "after", frame: frameAfter };
     if (finalAnswer) break;
+    if (maxNoProgressIterations && step - lastWorkspaceMutationStep >= maxNoProgressIterations) {
+      throw new StateWeaveRunError(
+        `No successful workspace mutation occurred in ${maxNoProgressIterations} consecutive model iterations; stopping the non-convergent run with its frame and trace preserved.`,
+        trace,
+        runMetadata(runId, toolInfo, startedAt, maxIterations, maxPromptTokens, trace, retryCount, "error"),
+        frame
+      );
+    }
   }
 
   if (!finalAnswer) {
@@ -285,7 +296,7 @@ async function runToolOps(originalFrame: GraphFrame, candidateFrame: GraphFrame,
     const result = await tool.execute(parsedArgs);
     if (!toolExecutionSucceeded(op.tool, result)) return failedToolOutcome(originalFrame, op, result, step, toolFailureMessage(op.tool, result));
     const taskAnchorId = semanticTaskAnchorId(candidateFrame);
-    const next = { ...candidateFrame, graph: addToolResult(candidateFrame.graph, { tool: op.tool, result, step, ok: true, anchorId: taskAnchorId }) };
+    const next = { ...candidateFrame, graph: addToolResult(candidateFrame.graph, { tool: op.tool, toolArgs: op.args, result, step, ok: true, anchorId: taskAnchorId }) };
     next.frame.currentFocus = `The ${op.tool} operation succeeded. Inspect its typed tool_result before deciding whether to verify or finalize.`;
     next.frame.nextExpectedOutput = isMutatingTool(op.tool)
       ? "Verify the mutation with the requested check/restart/smoke action, record the resolved test_result, then return a factual final answer."
@@ -313,7 +324,7 @@ async function runToolOps(originalFrame: GraphFrame, candidateFrame: GraphFrame,
 
 function failedToolOutcome(originalFrame: GraphFrame, op: Extract<GraphOp, { op: "call_tool" }>, result: unknown, step: number, message: string): ToolOutcome {
   const next = forkFrameMetadataOnly(originalFrame);
-  next.graph = addToolResult(next.graph, { tool: op.tool, result, step, ok: false, anchorId: semanticTaskAnchorId(originalFrame) });
+  next.graph = addToolResult(next.graph, { tool: op.tool, toolArgs: op.args, result, step, ok: false, anchorId: semanticTaskAnchorId(originalFrame) });
   next.frame.lastGraphOpsError = `Tool ${op.tool} failed: ${message}`;
   next.frame.currentFocus = `The ${op.tool} operation failed without committing its proposed semantic GraphOps. Use the rejected tool_result and current file evidence to correct the call.`;
   next.frame.nextExpectedOutput = "Do not claim success. Address the concrete failure, re-read stale files when needed, then retry one corrected tool operation.";

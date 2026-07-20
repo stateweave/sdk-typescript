@@ -298,6 +298,21 @@ it("spawns graph workers, streams scheduler events, merges results, and synthesi
   expect(final.result.trace[1].prompt).toContain("worker_result_ui");
 });
 
+it("stops a tool run after a bounded interval without workspace mutation", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-no-progress-"));
+  try {
+    const model = new SequenceModel([
+      "SWX/1\n@node task_1 task \"Build\" status=active\n@edge user_input_1 addresses task_1\n@tool write_file file_path=app.js content=ready",
+      "SWX/1\n@node thought_2 note \"still thinking\"",
+      "SWX/1\n@node thought_3 note \"still thinking again\""
+    ]);
+    await expect(runStateWeave({ model, tools: createFileSystemTools({ rootDir: root }), maxIterations: 10, maxNoProgressIterations: 2 }, "Build app.js"))
+      .rejects.toThrow(/No successful workspace mutation occurred in 2 consecutive model iterations/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it("throws a clear recursion-limit error when maxIterations is exhausted", async () => {
   const output = "SWX/1\n@edge system_root follows user_input_1\n@node note_1 note \"Still working\"\n@edge user_input_1 creates note_1";
 

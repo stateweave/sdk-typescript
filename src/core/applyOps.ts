@@ -94,7 +94,7 @@ export function applyOps(frame: GraphFrame, ops: GraphOp[]): GraphFrame {
   return next;
 }
 
-export function addToolResult(graph: StateGraph, args: { tool: string; result: unknown; step: number; ok?: boolean; anchorId?: string }): StateGraph {
+export function addToolResult(graph: StateGraph, args: { tool: string; toolArgs?: Record<string, unknown>; result: unknown; step: number; ok?: boolean; anchorId?: string }): StateGraph {
   const next = forkGraph(graph);
   const anchor = (args.anchorId ? next.nodes.find((node) => node.id === args.anchorId) : undefined)
     ?? latestUserInput(next.nodes)
@@ -109,7 +109,7 @@ export function addToolResult(graph: StateGraph, args: { tool: string; result: u
       id: callId,
       type: "tool_call",
       text: `Called ${args.tool}`,
-      data: { tool: args.tool },
+      data: { tool: args.tool, args: summarizeToolArgs(args.toolArgs) },
       status: ok ? "resolved" : "rejected",
       createdAt
     },
@@ -158,6 +158,24 @@ function addVersionedFileState(graph: StateGraph, resultId: string, result: unkn
   const id = uniqueNodeId(graph.nodes, `file_state_${filePath}_${hash.slice(0, 10)}`.replace(/[^a-zA-Z0-9_]/g, "_"));
   graph.nodes.push({ id, type: "file", text: `${filePath} current content version ${hash.slice(0, 12)}`, data: { path: filePath, contentHash: hash, canonical: true }, status: "active", confidence: 1, createdAt });
   addEdge(graph, resultId, id, "validates");
+}
+
+function summarizeToolArgs(args: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!args) return {};
+  return Object.fromEntries(Object.entries(args).slice(0, 32).map(([key, value]) => [key, summarizeToolArgValue(key, value, 0)]));
+}
+
+function summarizeToolArgValue(key: string, value: unknown, depth: number): unknown {
+  if (typeof value === "string") {
+    const contentLike = /(?:^|_)(?:content|old_string|new_string|oldText|newText)(?:$|_)/.test(key);
+    const limit = key === "command" ? 8_000 : contentLike ? 1_000 : 2_000;
+    return value.length <= limit ? value : { chars: value.length, preview: `${value.slice(0, limit)}…` };
+  }
+  if (value === null || typeof value === "number" || typeof value === "boolean") return value;
+  if (depth >= 2) return Array.isArray(value) ? { items: value.length } : { keys: Object.keys(value as object).slice(0, 16) };
+  if (Array.isArray(value)) return value.slice(0, 20).map((item) => summarizeToolArgValue(key, item, depth + 1));
+  if (typeof value === "object") return Object.fromEntries(Object.entries(value as Record<string, unknown>).slice(0, 32).map(([childKey, child]) => [childKey, summarizeToolArgValue(childKey, child, depth + 1)]));
+  return String(value);
 }
 
 function toolResultSummary(tool: string, result: unknown, ok: boolean): string {
