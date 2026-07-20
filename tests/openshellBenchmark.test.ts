@@ -18,6 +18,8 @@ describe("OpenShell SDK build benchmark", () => {
     expect(runner).toContain("runSandboxShell");
     expect(runner).toContain('maxNoProgressIterations: 300');
     expect(runner).toContain('replaceAll("/dev/null", "/tmp/.stateweave-null")');
+    expect(runner).toContain("isGeneratedWorkspacePath");
+    expect(runner).toContain('"logs", "tmp"');
     expect(runner).not.toContain("convergence_guard");
     expect(runner).toContain("frame.checkpoint.json");
     expect(runner).not.toContain(oneShotSdkBuildPrompt);
@@ -47,6 +49,7 @@ describe("OpenShell SDK build benchmark", () => {
     expect(worker).toContain('"/bin/true"');
     expect(worker).toContain('stdio: ["ignore", "pipe", "pipe"]');
     expect(worker).toContain("{{.State.OOMKilled}}");
+    expect(worker.indexOf("class StopRequestedError")).toBeLessThan(worker.indexOf("while (!stopping)"));
     expect(worker).not.toMatch(/processRun\(\)\s*;\s*$/m);
   });
 

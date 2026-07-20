@@ -23,6 +23,8 @@ let activeRun;
 let currentExec;
 let stopping = false;
 
+class StopRequestedError extends Error {}
+
 await mkdir(path.join(controlDir, "requests"), { recursive: true });
 await mkdir(path.join(controlDir, "runs"), { recursive: true });
 await assertPayload();
@@ -423,5 +425,3 @@ function progress(iteration, phase, detail, modelCalls, toolCalls) { return { it
 function truncate(value) { const text = String(value ?? ""); return text.length <= 128_000 ? text : `${text.slice(0, 128_000)}\n...[truncated]`; }
 function stripAnsi(value) { return String(value).replace(/\x1b\[[0-9;]*m/g, ""); }
 function parseLastJson(value) { for (const line of stripAnsi(value).trim().split(/\r?\n/).reverse()) { try { return JSON.parse(line); } catch {} } return undefined; }
-
-class StopRequestedError extends Error {}
