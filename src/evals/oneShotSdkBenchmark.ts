@@ -119,6 +119,6 @@ export type SdkBuildBenchmarkState = {
   executionOrder?: SdkBuildArm[];
   labels?: { a: SdkBuildArm; b: SdkBuildArm };
   arms: Record<SdkBuildArm, SdkBuildArmState>;
-  retry?: { candidate: "a" | "b"; attempt: number; maxIterations: number; requestedAt: string };
+  retry?: { candidate: "a" | "b"; attempt: number; maxIterations: number; requestedAt: string; reason?: "failed-candidate" | "runtime-correction" };
   judgement?: SdkBuildJudgement;
 };
