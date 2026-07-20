@@ -143,11 +143,8 @@ function parseSwx(raw: string): GraphOp[] {
     }
 
     if (command === "@tool") {
-      const rawTool = tokens[1];
-      if (!rawTool) throw new Error(`Invalid SWX @tool command: ${trimmed}`);
-      const tool = rawTool.startsWith("name=") ? rawTool.slice("name=".length) : rawTool;
-      if (!tool) throw new Error(`Invalid SWX @tool command: ${trimmed}`);
-      const { args, blockIds } = parseToolArgs(tokens.slice(2), blocks);
+      const { tool, argText } = parseRawToolCommand(trimmed);
+      const { args, blockIds } = parseToolArgsFromRaw(argText, blocks);
       for (const id of blockIds) toolArgBlockIds.add(id);
       otherOps.push({ op: "call_tool", tool, args });
       continue;
@@ -344,8 +341,17 @@ function parseWorker(tokens: string[], raw: string): Extract<GraphOp, { op: "spa
   return withoutUndefined({ op: "spawn_worker", id, objective, focusNodeId, input, maxIterations });
 }
 
-function parseToolArgs(tokens: string[], blocks: SwxBlock[]): { args: Record<string, unknown>; blockIds: Set<string> } {
-  const attrs = parseToolAttrs(tokens);
+function parseRawToolCommand(line: string): { tool: string; argText: string } {
+  const body = line.slice("@tool".length).trim();
+  const boundary = body.search(/\s/);
+  const rawTool = boundary < 0 ? body : body.slice(0, boundary);
+  const tool = rawTool.startsWith("name=") ? rawTool.slice("name=".length) : rawTool;
+  if (!tool) throw new Error(`Invalid SWX @tool command: ${line}`);
+  return { tool, argText: boundary < 0 ? "" : body.slice(boundary).trim() };
+}
+
+function parseToolArgsFromRaw(argText: string, blocks: SwxBlock[]): { args: Record<string, unknown>; blockIds: Set<string> } {
+  const attrs = parseRawToolAttrs(argText);
   const blocksById = new Map(blocks.map((block) => [block.id, block]));
   const blockIds = new Set<string>();
 
@@ -364,13 +370,53 @@ function parseToolArgs(tokens: string[], blocks: SwxBlock[]): { args: Record<str
   return { args: attrs, blockIds };
 }
 
-function parseToolAttrs(tokens: string[]): Record<string, unknown> {
-  const grouped: string[] = [];
-  for (const token of tokens) {
-    if (isAttrToken(token) || !grouped.length) grouped.push(token);
-    else grouped[grouped.length - 1] += ` ${token}`;
+function parseRawToolAttrs(text: string): Record<string, unknown> {
+  const markers: { key: string; start: number; valueStart: number }[] = [];
+  let quote: string | undefined;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (char === "\\" && index + 1 < text.length) { index++; continue; }
+    if (quote) {
+      if (char === quote) quote = undefined;
+      continue;
+    }
+    if (char === "'" || char === '"') { quote = char; continue; }
+    if (index > 0 && !/\s/.test(text[index - 1])) continue;
+    const match = text.slice(index).match(/^([A-Za-z_][A-Za-z0-9_-]*)=/);
+    if (!match) continue;
+    markers.push({ key: match[1], start: index, valueStart: index + match[0].length });
+    index += match[0].length - 1;
   }
-  return parseAttrs(grouped);
+
+  const attrs: Record<string, unknown> = {};
+  for (let index = 0; index < markers.length; index++) {
+    const marker = markers[index];
+    const end = markers[index + 1]?.start ?? text.length;
+    attrs[marker.key] = parseRawToolScalar(text.slice(marker.valueStart, end).trim());
+  }
+  return attrs;
+}
+
+function parseRawToolScalar(value: string): unknown {
+  const quote = value[0];
+  if ((quote === '"' || quote === "'") && value.length >= 2 && value[value.length - 1] === quote) {
+    let decoded = "";
+    for (let index = 1; index < value.length - 1; index++) {
+      const char = value[index];
+      if (char === "\\" && index + 1 < value.length - 1) {
+        const escaped = value[index + 1];
+        if (escaped === quote || escaped === "\\") { decoded += escaped; index++; continue; }
+        if (escaped === "n" || escaped === "r" || escaped === "t") {
+          decoded += escaped === "n" ? "\n" : escaped === "r" ? "\r" : "\t";
+          index++;
+          continue;
+        }
+      }
+      decoded += char;
+    }
+    return parsePrimitive(decoded);
+  }
+  return parseScalar(value);
 }
 
 function parseAttrs(tokens: string[]): Record<string, unknown> {
@@ -428,12 +474,15 @@ function tokenize(line: string): string[] {
 }
 
 function parseScalar(value: string): unknown {
-  const unquoted = unquote(value);
-  if (unquoted === "true") return true;
-  if (unquoted === "false") return false;
-  const numeric = Number(unquoted);
-  if (/^-?\d+(?:\.\d+)?$/.test(unquoted) && Number.isFinite(numeric)) return numeric;
-  return unquoted;
+  return parsePrimitive(unquote(value));
+}
+
+function parsePrimitive(value: string): unknown {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  const numeric = Number(value);
+  if (/^-?\d+(?:\.\d+)?$/.test(value) && Number.isFinite(numeric)) return numeric;
+  return value;
 }
 
 function unquote(value: string): string {
