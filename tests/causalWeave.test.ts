@@ -88,6 +88,41 @@ describe("Causal Weave", () => {
     expect(compiled.tokenEstimate.estimatedTokens).toBeLessThan(4_000);
   });
 
+  it("indexes the whole graph while superseding redundant detailed evidence", () => {
+    const weave = new CausalWeave();
+    const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
+    weave.append({ kind: "goal", payload: "finish the application with tests and documentation", parents: [system.id] });
+    const note = weave.append({
+      kind: "inference",
+      payload: "The SDK is implemented. I still need to create the browser entry point, focused tests, and README before verification.",
+      parents: weave.frontier()
+    });
+    weave.append({ kind: "protocol_error", payload: "Return one action.", parents: [note.id] });
+    const repeatedContent = `UNIQUE_CURRENT_SOURCE\n${"export const value = 1;\n".repeat(320)}`;
+    for (let index = 0; index < 60; index++) {
+      const call = weave.append({ kind: "tool_call", payload: { name: "read_file", args: { file_path: "src/model.js" } }, parents: weave.frontier() });
+      const result = weave.append({
+        kind: "tool_result",
+        payload: { tool: "read_file", result: { path: "src/model.js", content_hash: "same", content: repeatedContent } },
+        parents: [call.id]
+      });
+      weave.append({
+        kind: "resource",
+        payload: { path: "src/model.js", operation: "read_file", contentHash: "same", succeeded: true },
+        parents: [result.id],
+        resourceKey: "src/model.js"
+      });
+    }
+
+    const compiled = weave.compile({ query: "finish application tests documentation", maxTokens: 20_000, targetTokens: 6_000, maxNodes: 48 });
+
+    expect(compiled.prompt).toContain("GRAPH_DIGEST");
+    expect(compiled.prompt).toContain("src/model.js | total=60 reads=60");
+    expect(compiled.prompt).toContain("I still need to create the browser entry point");
+    expect(compiled.prompt.match(/UNIQUE_CURRENT_SOURCE/g)).toHaveLength(1);
+    expect(compiled.tokenEstimate.estimatedTokens).toBeLessThanOrEqual(6_200);
+  });
+
   it("grows from ordinary tool actions without model-authored graph operations", async () => {
     const calls: unknown[] = [];
     const model = new SequenceModel([
