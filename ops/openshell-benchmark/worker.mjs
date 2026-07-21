@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { access, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { oneShotPromptStats, oneShotSdkBuildPrompt, sdkBuildBenchmarkVersion } from "../../dist/evals/oneShotSdkBenchmark.js";
+import { causalWeaveVariantVersion, oneShotPromptStats, oneShotSdkBuildPrompt, sdkBuildBenchmarkVersion } from "../../dist/evals/oneShotSdkBenchmark.js";
 
 const controlDir = path.resolve(process.env.BENCHMARK_CONTROL_DIR ?? "/var/lib/docker/volumes/stateweave-web-development-zrzoej_stateweave-web-data/_data/sdk-build-benchmark");
 const payloadDir = path.resolve(process.env.BENCHMARK_PAYLOAD_DIR ?? "/root/stateweave-sdk-benchmark/payload");
@@ -13,6 +13,8 @@ const processingRequestPath = path.join(controlDir, "requests", "start.processin
 const stopRequestPath = path.join(controlDir, "requests", "stop.json");
 const retryRequestPath = path.join(controlDir, "requests", "retry-failed.json");
 const retryProcessingPath = path.join(controlDir, "requests", "retry-failed.processing.json");
+const variantCRequestPath = path.join(controlDir, "requests", "variant-c.json");
+const variantCProcessingPath = path.join(controlDir, "requests", "variant-c.processing.json");
 const promptSha256 = createHash("sha256").update(oneShotSdkBuildPrompt).digest("hex");
 const promptWords = oneShotPromptStats().words;
 const workerVersion = "sdk-build-openshell-v1";
@@ -31,8 +33,16 @@ await assertPayload();
 state = await readJson(statePath);
 if (!state) state = readyState("OpenShell worker is ready. No benchmark has run.");
 else if (["queued", "preparing", "running", "stopping"].includes(state.status)) {
-  state.status = "failed";
-  state.message = "Worker restarted during an active benchmark. Sandboxes and artifacts were preserved for operator inspection; the run was not resumed silently.";
+  const variantCActive = state.variantC && ["waiting", "preparing", "running"].includes(state.variantC.status);
+  if (variantCActive) {
+    state.variantC.status = "failed";
+    state.variantC.error = "Worker restarted during the active Variant C run; partial artifacts were preserved and execution was not resumed silently.";
+    state.status = "completed";
+    state.message = `${state.variantC.error} Original A/B artifacts remain available.`;
+  } else {
+    state.status = "failed";
+    state.message = "Worker restarted during an active benchmark. Sandboxes and artifacts were preserved for operator inspection; the run was not resumed silently.";
+  }
   state.completedAt = new Date().toISOString();
 }
 await saveState();
@@ -55,6 +65,26 @@ for (const signalName of ["SIGTERM", "SIGINT"]) {
 
 while (!stopping) {
   await handleStopRequest();
+  if (!activeRun && await exists(variantCRequestPath)) {
+    await rm(variantCProcessingPath, { force: true });
+    await rename(variantCRequestPath, variantCProcessingPath).catch(() => undefined);
+    if (await exists(variantCProcessingPath)) {
+      activeRun = processVariantC().catch(async (error) => {
+        if (state.variantC) {
+          state.variantC.status = "failed";
+          state.variantC.error = error instanceof Error ? error.message : String(error);
+        }
+        state.status = "completed";
+        state.completedAt = new Date().toISOString();
+        await saveState(`Variant C worker failed: ${error instanceof Error ? error.message : String(error)} Original A/B artifacts remain preserved.`);
+      }).finally(async () => {
+        activeRun = undefined;
+        currentExec = undefined;
+        await rm(variantCProcessingPath, { force: true });
+        await rm(stopRequestPath, { force: true });
+      });
+    }
+  }
   if (!activeRun && await exists(retryRequestPath)) {
     await rm(retryProcessingPath, { force: true });
     await rename(retryRequestPath, retryProcessingPath).catch(() => undefined);
@@ -156,6 +186,70 @@ async function processRun() {
   }
 }
 
+async function processVariantC() {
+  const request = await readJson(variantCProcessingPath);
+  if (!request || state.status !== "completed" || !state.runId || !state.labels) return;
+  if (request.maxIterations !== 3_000) throw new Error("Variant C iteration limit must be exactly 3000.");
+  if (request.version !== causalWeaveVariantVersion) throw new Error("Variant C request version does not match the deployed runtime.");
+  const runDir = path.join(controlDir, "runs", state.runId);
+  if (await exists(path.join(runDir, "judgement.json"))) throw new Error("A scored benchmark cannot add Variant C.");
+  if (state.variantC?.status === "completed" || state.variantC?.status === "running" || state.variantC?.status === "preparing") throw new Error("Variant C already exists or is active for this run.");
+
+  const sandboxName = `sdkb-${state.runId.slice(-8)}-causal-v1`;
+  const artifactKey = "causal-variant-c";
+  const requestedAt = request.createdAt ?? new Date().toISOString();
+  state.variantC = {
+    version: causalWeaveVariantVersion,
+    requestedAt,
+    slot: 3,
+    status: "preparing",
+    sandboxName,
+    attempt: 1,
+    maxIterations: request.maxIterations,
+    artifactKey,
+    progress: progress(0, "preparing", "Preparing Causal Weave Variant C", 0, 0)
+  };
+  state.status = "preparing";
+  state.completedAt = undefined;
+  await writeJson(path.join(runDir, "variant-c-protocol.json"), {
+    version: causalWeaveVariantVersion,
+    workerVersion,
+    sandboxImage,
+    promptSha256,
+    promptWords,
+    maxIterations: request.maxIterations,
+    sandboxName,
+    artifactKey,
+    requestedAt
+  });
+  await saveState("Preparing Variant C in one fresh isolated workspace. Original A/B artifacts remain untouched.");
+
+  try {
+    await prepareParticipant(state.variantC, sandboxName);
+    if (await stopRequested()) throw new StopRequestedError();
+    state.status = "running";
+    await saveState("Variant C is running the unchanged task with the same model and tools through Causal Weave.");
+    await runParticipant(state.variantC, "causal", sandboxName, runDir, { maxIterations: request.maxIterations, artifactKey });
+    if (await stopRequested()) throw new StopRequestedError();
+    state.status = "completed";
+    state.completedAt = new Date().toISOString();
+    await saveState(state.variantC.status === "completed"
+      ? "Variant C completed. Its Causal Weave, workspace, preview, and efficiency metrics are ready for review."
+      : `Variant C finished with status ${state.variantC.status}. Original A/B artifacts remain preserved.`);
+  } catch (error) {
+    const stopped = error instanceof StopRequestedError;
+    if (currentExec) currentExec.kill("SIGTERM");
+    await terminateSandboxRuns([sandboxName]);
+    state.variantC.status = stopped ? "stopped" : "failed";
+    state.variantC.error = stopped ? "Variant C was stopped by the operator." : error instanceof Error ? error.message : String(error);
+    state.status = "completed";
+    state.completedAt = new Date().toISOString();
+    await saveState(stopped
+      ? "Variant C stopped; its partial artifacts and the original A/B run were preserved."
+      : `Variant C infrastructure failed: ${state.variantC.error}. Original A/B artifacts remain preserved.`);
+  }
+}
+
 async function processRetry() {
   const request = await readJson(retryProcessingPath);
   if (!request || state.status !== "completed" || !state.runId || !state.labels) return;
@@ -229,7 +323,10 @@ async function processRetry() {
 }
 
 async function prepareSandbox(arm, sandboxName) {
-  const armState = state.arms[arm];
+  return prepareParticipant(state.arms[arm], sandboxName);
+}
+
+async function prepareParticipant(armState, sandboxName) {
   armState.status = "preparing";
   armState.progress = progress(0, "preparing", "Creating isolated OpenShell sandbox", 0, 0);
   await saveState();
@@ -248,15 +345,18 @@ async function prepareSandbox(arm, sandboxName) {
   await saveState();
 }
 
-async function runArm(arm, sandboxName, runDir, { maxIterations, artifactKey }) {
-  const armState = state.arms[arm];
+async function runArm(arm, sandboxName, runDir, options) {
+  return runParticipant(state.arms[arm], arm, sandboxName, runDir, options);
+}
+
+async function runParticipant(armState, mode, sandboxName, runDir, { maxIterations, artifactKey }) {
   armState.maxIterations = maxIterations;
   armState.artifactKey = artifactKey;
   armState.status = "running";
   armState.startedAt = new Date().toISOString();
   armState.progress = progress(0, "starting", "Starting participant", 0, 0);
   await saveState(`Participant ${armState.slot} is working.`);
-  const args = ["sandbox", "exec", "-n", sandboxName, "--timeout", "0", "--workdir", "/sandbox/benchmark/payload/runtime", "--", "env", `PARTICIPANT_MODE=${arm}`, `PARTICIPANT_MAX_ITERATIONS=${maxIterations}`, "node", "ops/openshell-benchmark/participant-runner.mjs"];
+  const args = ["sandbox", "exec", "-n", sandboxName, "--timeout", "0", "--workdir", "/sandbox/benchmark/payload/runtime", "--", "env", `PARTICIPANT_MODE=${mode}`, `PARTICIPANT_MAX_ITERATIONS=${maxIterations}`, "node", "ops/openshell-benchmark/participant-runner.mjs"];
   const outcome = await spawnStreaming("openshell", args, (line) => {
     if (!line.startsWith("PROGRESS ")) return;
     try {
@@ -298,7 +398,7 @@ async function handleStopRequest() {
   state.status = "stopping";
   await saveState("Stopping the active participant and preserving artifacts.");
   if (currentExec) currentExec.kill("SIGTERM");
-  await terminateSandboxRuns(Object.values(state.arms).map((arm) => arm.sandboxName).filter(Boolean));
+  await terminateSandboxRuns([...Object.values(state.arms), state.variantC].filter(Boolean).map((arm) => arm.sandboxName).filter(Boolean));
 }
 
 async function terminateSandboxRuns(sandboxNames) {

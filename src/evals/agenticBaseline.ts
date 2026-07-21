@@ -74,7 +74,7 @@ export class AgenticBaseline {
     let repeatedInvalidCount = 0;
     let repeatedMissingEvidence = "";
     let repeatedMissingEvidenceCount = 0;
-    const evidence: CompletionEvidence = { inspected: false, inspectedPaths: new Set(), mutated: false, mutatedPaths: new Set(), mutationBeforeInspection: false, checked: false, restarted: false, smoked: false };
+    const evidence = createCompletionEvidence();
     const progress = (iteration: number, phase: AgenticProgress["phase"], detail: string): void => {
       options.onProgress?.({ iteration, phase, modelCalls, toolCalls, detail });
     };
@@ -153,18 +153,9 @@ export class AgenticBaseline {
       // only the first requested action and retain a canonical envelope, never the
       // fabricated results or later calls.
       this.messages[this.messages.length - 1] = { role: "assistant", content: `TOOL_CALL ${JSON.stringify({ name: call.name, args: call.args })}` };
-      const tool = this.tools.get(call.name);
-      let result: unknown;
       progress(iteration, "tool", `Running native tool ${call.name}`);
       options.signal?.throwIfAborted();
-      if (!tool) result = { error: `Unknown tool: ${call.name}`, availableTools: [...this.tools.keys()] };
-      else {
-        try {
-          result = await tool.execute(tool.schema.parse(call.args));
-        } catch (error) {
-          result = { error: error instanceof Error ? error.message : String(error) };
-        }
-      }
+      const result = await executeAgentTool(this.tools, call);
       options.signal?.throwIfAborted();
       toolCalls += 1;
       recordCompletionEvidence(evidence, call.name, call.args, result);
@@ -228,7 +219,17 @@ export function serializeAgenticMessages(messages: AgenticMessage[]): string {
   return messages.map((message) => `${message.role.toUpperCase()}: ${message.content}`).join("\n\n");
 }
 
-type CompletionEvidence = {
+export async function executeAgentTool(tools: Map<string, Tool>, call: { name: string; args: unknown }): Promise<unknown> {
+  const tool = tools.get(call.name);
+  if (!tool) return { error: `Unknown tool: ${call.name}`, availableTools: [...tools.keys()] };
+  try {
+    return await tool.execute(tool.schema.parse(call.args));
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export type CompletionEvidence = {
   inspected: boolean;
   inspectedPaths: Set<string>;
   mutated: boolean;
@@ -239,7 +240,11 @@ type CompletionEvidence = {
   smoked: boolean;
 };
 
-function recordCompletionEvidence(evidence: CompletionEvidence, toolName: string, args: unknown, result: unknown): void {
+export function createCompletionEvidence(): CompletionEvidence {
+  return { inspected: false, inspectedPaths: new Set(), mutated: false, mutatedPaths: new Set(), mutationBeforeInspection: false, checked: false, restarted: false, smoked: false };
+}
+
+export function recordCompletionEvidence(evidence: CompletionEvidence, toolName: string, args: unknown, result: unknown): void {
   if (!toolResultSucceeded(result)) return;
   const toolArgs = args && typeof args === "object" ? args as Record<string, unknown> : {};
   const filePath = String(toolArgs.file_path ?? toolArgs.path ?? "");
@@ -273,7 +278,7 @@ function toolResultSucceeded(result: unknown): boolean {
   return typeof record.exitCode !== "number" || record.exitCode === 0;
 }
 
-function completionEvidenceGaps(task: string, evidence: CompletionEvidence, answer: string): string[] {
+export function completionEvidenceGaps(task: string, evidence: CompletionEvidence, answer: string): string[] {
   const lower = task.toLowerCase();
   const alreadySatisfied = /already (?:satisfied|implemented|present|complete)|no changes? (?:were )?(?:needed|required)/i.test(answer);
   const gaps: string[] = [];
@@ -286,15 +291,15 @@ function completionEvidenceGaps(task: string, evidence: CompletionEvidence, answ
   return gaps;
 }
 
-function providerSystem(common: string | undefined, instruction: string): string {
+export function providerSystem(common: string | undefined, instruction: string): string {
   return common ?? instruction;
 }
 
-function baselineSystemPrompt(systemPrompt: string, tools: Tool[]): string {
+export function baselineSystemPrompt(systemPrompt: string, tools: Tool[]): string {
   return [
     systemPrompt,
     "You have a persistent workspace and must use tools to inspect current files before changing them.",
-    "Use the transcript and any compacted working-memory summary deliberately: preserve active tasks, constraints, file paths, implementation decisions, failures, and successful check evidence, while treating current workspace reads as authoritative.",
+    "Use the supplied working context deliberately: preserve active tasks, constraints, file paths, implementation decisions, failures, and successful check evidence, while treating current workspace reads as authoritative.",
     "For one tool action, return exactly TOOL_CALL followed by one JSON object: {\"name\":\"tool_name\",\"args\":{...}}. Keep each write_file content value under 2,500 characters and build longer artifacts through multiple write/edit calls so the JSON envelope cannot be truncated.",
     "After a TOOL result, either call another tool or finish with exactly FINAL: followed by a concise human answer.",
     "Never claim a file changed unless a write_file or edit_file result confirms it. Prefer read_file before edit_file. bash_command is read-only and allowlisted.",
@@ -303,7 +308,7 @@ function baselineSystemPrompt(systemPrompt: string, tools: Tool[]): string {
   ].join("\n");
 }
 
-function parseToolCall(text: string): { name: string; args: unknown } | undefined {
+export function parseToolCall(text: string): { name: string; args: unknown } | undefined {
   const envelope = text.match(/^\s*TOOL_CALL\s*/i);
   if (!envelope) return undefined;
   const start = envelope[0].length;

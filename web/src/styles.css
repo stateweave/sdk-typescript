@@ -2650,15 +2650,95 @@ label {
 
 .sdk-build-contract,
 .sdk-build-prompt-panel,
-.sdk-build-review {
+.sdk-build-review,
+.sdk-build-variant-c {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: #fff;
   overflow: hidden;
 }
 
-.sdk-build-contract {
+.sdk-build-contract,
+.sdk-build-variant-c {
   padding: 16px;
+}
+
+.sdk-build-variant-c {
+  border-color: #bfdbfe;
+  background: linear-gradient(145deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.sdk-build-variant-c-status {
+  display: inline-flex;
+  margin-top: 14px;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.sdk-build-variant-c .sdk-build-reveal-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 12px;
+}
+
+.sdk-build-variant-c .sdk-build-reveal-metrics span {
+  color: var(--muted-foreground);
+  font-size: 0.76rem;
+}
+
+.sdk-build-variant-c .sdk-build-reveal-metrics strong {
+  color: var(--foreground);
+}
+
+.sdk-build-variant-c-result {
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.sdk-build-variant-c-result > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sdk-build-variant-c-result iframe {
+  display: block;
+  width: 100%;
+  min-height: min(68dvh, 760px);
+  border: 0;
+  background: #fff;
+}
+
+.sdk-build-variant-c-result details {
+  border-top: 1px solid var(--border);
+}
+
+.sdk-build-variant-c-result summary {
+  padding: 9px 12px;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sdk-build-variant-c-result pre {
+  max-height: 240px;
+  margin: 0;
+  overflow: auto;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 0.75rem/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .sdk-build-contract-heading h3,

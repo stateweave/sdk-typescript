@@ -1,5 +1,6 @@
 import { cp, lstat, mkdir, readlink, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { z } from "zod";
+import { CausalWeaveAgent } from "../../dist/agent/causalWeaveAgent.js";
 import { StateWeaveAgent } from "../../dist/agent/stateweaveAgent.js";
 import { AgenticBaseline } from "../../dist/evals/agenticBaseline.js";
 import { oneShotSdkBuildPrompt } from "../../dist/evals/oneShotSdkBenchmark.js";
@@ -11,7 +12,7 @@ const workspace = "/sandbox/workspace";
 const outputDir = "/sandbox/output";
 const payloadRoot = "/sandbox/benchmark/payload";
 const mode = process.env.PARTICIPANT_MODE;
-if (mode !== "graph" && mode !== "transcript") throw new Error("PARTICIPANT_MODE must be graph or transcript.");
+if (mode !== "graph" && mode !== "transcript" && mode !== "causal") throw new Error("PARTICIPANT_MODE must be graph, transcript, or causal.");
 const maxIterations = Number(process.env.PARTICIPANT_MAX_ITERATIONS ?? "300");
 if (!Number.isInteger(maxIterations) || maxIterations < 1 || maxIterations > 3_000) throw new Error("PARTICIPANT_MAX_ITERATIONS must be an integer from 1 to 3000.");
 delete process.env.PARTICIPANT_MODE;
@@ -52,11 +53,14 @@ const startedAt = Date.now();
 try {
   const outcome = mode === "graph"
     ? await runGraphParticipant({ model, tools, providerSystem, systemPrompt, maxIterations, signal: abortController.signal })
-    : await runTranscriptParticipant({ model, tools, providerSystem, systemPrompt, maxIterations, signal: abortController.signal });
+    : mode === "causal"
+      ? await runCausalParticipant({ model, tools, providerSystem, systemPrompt, maxIterations, signal: abortController.signal })
+      : await runTranscriptParticipant({ model, tools, providerSystem, systemPrompt, maxIterations, signal: abortController.signal });
   await removeDependencyLink();
   const report = { ok: true, mode, maxIterations, finalAnswer: outcome.finalAnswer, metrics: { ...outcome.metrics, durationMs: Date.now() - startedAt } };
   await writeJson(`${outputDir}/result.json`, report);
   if (outcome.frame) await writeJson(`${outputDir}/frame.json`, outcome.frame);
+  if (outcome.weave) await writeJson(`${outputDir}/weave.json`, outcome.weave);
   if (outcome.messages) await writeJson(`${outputDir}/messages.json`, outcome.messages);
   emitProgress({ iteration: outcome.metrics.modelCalls, phase: "completed", modelCalls: outcome.metrics.modelCalls, toolCalls: outcome.metrics.toolCalls, detail: "Participant completed the project and returned a final answer." });
   console.log(`RESULT ${JSON.stringify(report)}`);
@@ -64,19 +68,22 @@ try {
   await removeDependencyLink().catch(() => undefined);
   const stopped = abortController.signal.aborted;
   const failureTrace = Array.isArray(error?.trace) ? error.trace : [];
-  const failureMetrics = failureTrace.length
-    ? {
-        modelCalls: failureTrace.length,
-        toolCalls: failureTrace.reduce((sum, step) => sum + step.parsedOps.filter((op) => op.op === "call_tool").length, 0),
-        latestContextTokens: failureTrace.at(-1)?.tokenEstimate?.estimatedTokens ?? 0,
-        totalInputTokens: failureTrace.reduce((sum, step) => sum + (step.tokenEstimate?.estimatedTokens ?? 0), 0),
-        outputTokens: failureTrace.reduce((sum, step) => sum + estimateStateWeaveTokens(step.rawModelOutput ?? "").estimatedTokens, 0),
-        durationMs: Date.now() - startedAt
-      }
-    : { modelCalls: 0, toolCalls: 0, latestContextTokens: 0, totalInputTokens: 0, outputTokens: 0, durationMs: Date.now() - startedAt };
+  const failureMetrics = error?.metrics && typeof error.metrics === "object"
+    ? { ...error.metrics, durationMs: Date.now() - startedAt }
+    : failureTrace.length
+      ? {
+          modelCalls: failureTrace.length,
+          toolCalls: failureTrace.reduce((sum, step) => sum + (Array.isArray(step.parsedOps) ? step.parsedOps.filter((op) => op.op === "call_tool").length : step.action === "tool" ? 1 : 0), 0),
+          latestContextTokens: failureTrace.at(-1)?.tokenEstimate?.estimatedTokens ?? failureTrace.at(-1)?.contextTokens ?? 0,
+          totalInputTokens: failureTrace.reduce((sum, step) => sum + (step.tokenEstimate?.estimatedTokens ?? step.contextTokens ?? 0), 0),
+          outputTokens: failureTrace.reduce((sum, step) => sum + estimateStateWeaveTokens(step.rawModelOutput ?? "").estimatedTokens, 0),
+          durationMs: Date.now() - startedAt
+        }
+      : { modelCalls: 0, toolCalls: 0, latestContextTokens: 0, totalInputTokens: 0, outputTokens: 0, durationMs: Date.now() - startedAt };
   const report = { ok: false, mode, maxIterations, stopped, error: error instanceof Error ? error.message : String(error), metrics: failureMetrics };
   await writeJson(`${outputDir}/result.json`, report);
   if (error?.frame) await writeJson(`${outputDir}/frame.failed.json`, error.frame);
+  if (error?.weave) await writeJson(`${outputDir}/weave.failed.json`, error.weave);
   if (failureTrace.length) await writeJson(`${outputDir}/trace.diagnostics.json`, failureTrace.map(traceDiagnostic));
   emitProgress({ iteration: failureMetrics.modelCalls, phase: stopped ? "stopped" : "failed", modelCalls: failureMetrics.modelCalls, toolCalls: failureMetrics.toolCalls, totalInputTokens: failureMetrics.totalInputTokens, outputTokens: failureMetrics.outputTokens, detail: report.error });
   console.log(`RESULT ${JSON.stringify(report)}`);
@@ -130,6 +137,46 @@ async function runGraphParticipant({ model, tools, providerSystem, systemPrompt,
   const totalInputTokens = result.trace.reduce((sum, step) => sum + step.tokenEstimate.estimatedTokens, 0);
   const outputTokens = result.trace.reduce((sum, step) => sum + estimateStateWeaveTokens(step.rawModelOutput).estimatedTokens, 0);
   return { finalAnswer: result.finalAnswer, frame: result.frame, metrics: { modelCalls: result.metadata.stepCount, toolCalls, latestContextTokens, totalInputTokens: providerInputTokens || totalInputTokens, outputTokens: providerOutputTokens || outputTokens } };
+}
+
+async function runCausalParticipant({ model, tools, providerSystem, systemPrompt, maxIterations, signal }) {
+  const agent = new CausalWeaveAgent({
+    model,
+    tools,
+    systemPrompt,
+    maxIterations,
+    maxContextTokens: 250_000,
+    maxNoProgressIterations: 300,
+    providerSystem,
+    enforceCompletionEvidence: false
+  });
+  const result = await agent.run(oneShotSdkBuildPrompt, {
+    signal,
+    onProgress(progress) {
+      emitProgress({
+        iteration: progress.iteration,
+        phase: progress.phase,
+        modelCalls: progress.modelCalls,
+        toolCalls: progress.toolCalls,
+        totalInputTokens: progress.totalInputTokens,
+        outputTokens: progress.outputTokens,
+        detail: progress.detail
+      });
+      if (progress.phase === "model" && progress.iteration > 0 && progress.iteration % 50 === 0) {
+        progressWriteQueue = progressWriteQueue.catch(() => undefined).then(async () => {
+          await writeJson(`${outputDir}/weave.checkpoint.json`, agent.snapshot());
+          await writeJson(`${outputDir}/metrics.checkpoint.json`, {
+            modelCalls: progress.modelCalls,
+            toolCalls: progress.toolCalls,
+            totalInputTokens: progress.totalInputTokens,
+            outputTokens: progress.outputTokens,
+            updatedAt: new Date().toISOString()
+          });
+        });
+      }
+    }
+  });
+  return { finalAnswer: result.finalAnswer, weave: result.weave, metrics: result.metrics };
 }
 
 async function runTranscriptParticipant({ model, tools, providerSystem, systemPrompt, maxIterations, signal }) {
@@ -253,16 +300,19 @@ async function writeJson(filePath, value) {
 }
 
 function traceDiagnostic(step) {
-  return {
-    step: step.step,
-    durationMs: step.durationMs,
-    inputTokens: step.tokenEstimate?.estimatedTokens ?? 0,
-    error: step.error,
-    operations: step.parsedOps.map((op) => op.op === "call_tool"
+  const operations = Array.isArray(step.parsedOps)
+    ? step.parsedOps.map((op) => op.op === "call_tool"
       ? { op: op.op, tool: op.tool, args: diagnosticToolArgs(op.args) }
       : op.op === "final"
         ? { op: op.op, answerPreview: op.answer.slice(0, 500) }
         : { op: op.op })
+    : [{ action: step.action, tool: step.tool, outputPreview: String(step.rawModelOutput ?? "").slice(0, 500) }];
+  return {
+    step: step.step,
+    durationMs: step.durationMs,
+    inputTokens: step.tokenEstimate?.estimatedTokens ?? step.contextTokens ?? 0,
+    error: step.error,
+    operations
   };
 }
 

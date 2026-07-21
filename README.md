@@ -12,6 +12,8 @@ GraphFrame -> model -> GraphOps -> StateGraph
 
 The model is still a normal transformer. StateWeave changes the runtime primitive around it: the SDK serializes a structured graph frame, asks the model for validated operations, applies them to an in-memory graph, and exposes every state transition for inspection.
 
+Experimental **Causal Weave (Variant C)** explores a second graph-native primitive: immutable content-addressed causal nodes, an active frontier, and ordinary tool actions whose parents are exactly the graph nodes compiled for that inference. It does not use `messages[]` or model-authored GraphOps. See [`docs/causal-weave.md`](./docs/causal-weave.md).
+
 The current runtime uses a Cortex-style focus model: `system_root` anchors the graph, new user inputs enter as pending nodes, and `GraphFrame` carries `focusNodeId`, `activeUserInputNodeId`, and candidate focus points. The model then returns GraphOps edges deciding whether the input starts a new root-level branch, continues a prior node, updates an output, or relates elsewhere. GraphOps apply transactionally: disconnected pending inputs or new semantic/output nodes are rejected and retried with structured error feedback. Runs expose trace metadata and can stream model-call frames, output tokens, parsed GraphOps, retry errors, and final results. Only runtime nodes are structural (`system`, `user_input`, `assistant_output`, `tool_call`, `tool_result`); all other node types are model-created semantic slugs.
 
 ## Why StateWeave?

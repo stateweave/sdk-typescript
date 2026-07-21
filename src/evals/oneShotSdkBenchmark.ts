@@ -54,6 +54,7 @@ export function oneShotPromptStats(): { characters: number; words: number } {
 }
 
 export const sdkBuildBenchmarkVersion = 1;
+export const causalWeaveVariantVersion = "causal-weave-v1";
 export type SdkBuildArm = "graph" | "transcript";
 export type SdkBuildRunStatus = "ready" | "queued" | "preparing" | "running" | "completed" | "failed" | "stopping" | "stopped";
 export type SdkBuildArmStatus = "waiting" | "preparing" | "running" | "completed" | "failed" | "stopped";
@@ -84,7 +85,7 @@ export type SdkBuildAttempt = {
   error?: string;
 };
 export type SdkBuildArmState = {
-  slot: 1 | 2;
+  slot: 1 | 2 | 3;
   status: SdkBuildArmStatus;
   sandboxName?: string;
   startedAt?: string;
@@ -120,5 +121,6 @@ export type SdkBuildBenchmarkState = {
   labels?: { a: SdkBuildArm; b: SdkBuildArm };
   arms: Record<SdkBuildArm, SdkBuildArmState>;
   retry?: { candidate: "a" | "b"; attempt: number; maxIterations: number; requestedAt: string; reason?: "failed-candidate" | "runtime-correction" };
+  variantC?: SdkBuildArmState & { version: string; requestedAt: string };
   judgement?: SdkBuildJudgement;
 };

@@ -31,16 +31,19 @@ type CompareResponse = StateWeaveResponse & {
 type PageName = "state" | "quickstart" | "ab" | "sdk-build" | "infinite" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
 type SdkBuildEnvironment = { slot: number; status: string; progress?: { iteration: number; phase: string; modelCalls: number; toolCalls: number; totalInputTokens?: number; outputTokens?: number; detail: string; updatedAt: string } };
 type SdkBuildCandidate = { status: string; finalAnswer?: string; error?: string; previewReady: boolean; attempt?: number; maxIterations?: number; previousAttempts?: { attempt: number; maxIterations: number; status: string }[] };
+type SdkBuildVariantC = { version: string; status: string; progress?: SdkBuildEnvironment["progress"]; finalAnswer?: string; error?: string; metrics?: Record<string, number>; previewReady: boolean; maxIterations?: number; requestedAt?: string; startedAt?: string; completedAt?: string };
 type SdkBuildPublicState = {
   status: string;
   underlyingStatus?: string;
   message: string;
   canStart: boolean;
   canStop: boolean;
+  canStartVariantC?: boolean;
   workerOnline?: boolean;
   runId?: string;
   environments: SdkBuildEnvironment[];
   candidates?: { a: SdkBuildCandidate; b: SdkBuildCandidate };
+  variantC?: SdkBuildVariantC;
   retry?: { candidate: "a" | "b"; attempt: number; maxIterations: number; requestedAt: string };
   judgement?: {
     scoreA: number;
@@ -117,6 +120,7 @@ let activePage: PageName = pageFromHash();
 let sdkBuildState: SdkBuildPublicState | undefined;
 let sdkBuildPollTimer: number | undefined;
 let sdkBuildPreviewRunId: string | undefined;
+let sdkBuildPreviewCRunId: string | undefined;
 let multiSuiteId: SuiteId = suiteIdForPage(activePage) ?? "prompt-one";
 let stateFrame: GraphFrame | undefined;
 let abStateFrame: GraphFrame | undefined;
@@ -507,6 +511,13 @@ const sdkBuildStart = element<HTMLButtonElement>("sdk-build-start");
 const sdkBuildStop = element<HTMLButtonElement>("sdk-build-stop");
 const sdkBuildEnvironmentOne = element<HTMLElement>("sdk-build-environment-1");
 const sdkBuildEnvironmentTwo = element<HTMLElement>("sdk-build-environment-2");
+const sdkBuildStartC = element<HTMLButtonElement>("sdk-build-start-c");
+const sdkBuildCStatus = element<HTMLElement>("sdk-build-c-status");
+const sdkBuildCMetrics = element<HTMLElement>("sdk-build-c-metrics");
+const sdkBuildCResult = element<HTMLElement>("sdk-build-c-result");
+const sdkBuildPreviewC = element<HTMLIFrameElement>("sdk-build-preview-c");
+const sdkBuildOpenC = element<HTMLAnchorElement>("sdk-build-open-c");
+const sdkBuildAnswerC = element<HTMLElement>("sdk-build-answer-c");
 const sdkBuildReview = element<HTMLElement>("sdk-build-review");
 const sdkBuildPreviewA = element<HTMLIFrameElement>("sdk-build-preview-a");
 const sdkBuildPreviewB = element<HTMLIFrameElement>("sdk-build-preview-b");
@@ -612,6 +623,7 @@ sdkBuildTab.addEventListener("click", () => setActivePage("sdk-build"));
 infiniteTab.addEventListener("click", () => setActivePage("infinite"));
 sdkBuildCopy.addEventListener("click", () => void copyText(oneShotSdkBuildPrompt, sdkBuildCopy));
 sdkBuildStart.addEventListener("click", () => void startSdkBuildBenchmark());
+sdkBuildStartC.addEventListener("click", () => void startSdkBuildVariantC());
 sdkBuildStop.addEventListener("click", () => void stopSdkBuildBenchmark());
 sdkBuildScoreForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -961,6 +973,7 @@ function renderSdkBuildState(state: SdkBuildPublicState): void {
   renderSdkBuildEnvironment(sdkBuildEnvironmentOne, state.environments.find((environment) => environment.slot === 1));
   renderSdkBuildEnvironment(sdkBuildEnvironmentTwo, state.environments.find((environment) => environment.slot === 2));
   renderSdkBuildReview(state);
+  renderSdkBuildVariantC(state);
 }
 
 function renderSdkBuildEnvironment(element: HTMLElement, environment: SdkBuildEnvironment | undefined): void {
@@ -1022,6 +1035,41 @@ function renderSdkBuildCandidate(label: "a" | "b", runId: string, candidate: Sdk
   if (label === "b") sdkBuildPreviewRunId = runId;
 }
 
+function renderSdkBuildVariantC(state: SdkBuildPublicState): void {
+  const variant = state.variantC;
+  sdkBuildStartC.disabled = !state.canStartVariantC;
+  const status = variant?.status ?? "not_started";
+  sdkBuildCStatus.textContent = variant?.progress
+    ? `${sdkBuildStatusLabel(status)} · ${variant.progress.detail} · ${variant.progress.modelCalls.toLocaleString()} model / ${variant.progress.toolCalls.toLocaleString()} tool calls`
+    : variant?.error || sdkBuildStatusLabel(status);
+  sdkBuildCStatus.className = `sdk-build-variant-c-status sdk-build-status ${sdkBuildStatusClass(status)}`;
+  const metrics = variant?.metrics;
+  sdkBuildCMetrics.innerHTML = metrics
+    ? `<span><strong>${(metrics.totalInputTokens ?? 0).toLocaleString()}</strong> input tokens</span><span><strong>${(metrics.outputTokens ?? 0).toLocaleString()}</strong> output tokens</span><span><strong>${(metrics.modelCalls ?? 0).toLocaleString()}</strong> model calls</span><span><strong>${(metrics.toolCalls ?? 0).toLocaleString()}</strong> tool calls</span><span><strong>${formatSdkBuildDuration(metrics.durationMs ?? 0)}</strong> elapsed</span>`
+    : "";
+  const hasResult = Boolean(variant && state.runId && (variant.finalAnswer || variant.error || variant.previewReady));
+  sdkBuildCResult.hidden = !hasResult;
+  if (!variant || !state.runId || !hasResult) {
+    sdkBuildPreviewCRunId = undefined;
+    return;
+  }
+  const previewUrl = `${apiBase}/api/sdk-build/preview/c/`;
+  sdkBuildOpenC.href = previewUrl;
+  sdkBuildOpenC.hidden = !variant.previewReady;
+  sdkBuildAnswerC.textContent = variant.finalAnswer || variant.error || "No final response was recorded.";
+  const previewKey = `${state.runId}:${variant.completedAt ?? variant.status}`;
+  if (sdkBuildPreviewCRunId !== previewKey) {
+    if (variant.previewReady) {
+      sdkBuildPreviewC.removeAttribute("srcdoc");
+      sdkBuildPreviewC.src = previewUrl;
+    } else {
+      sdkBuildPreviewC.removeAttribute("src");
+      sdkBuildPreviewC.srcdoc = `<p style="font:16px system-ui;padding:24px">Variant C did not produce a previewable application.</p>`;
+    }
+    sdkBuildPreviewCRunId = previewKey;
+  }
+}
+
 function sdkBuildRevealCard(label: string, score: number, identity: string, metrics: Record<string, number> | undefined): string {
   const metricText = metrics
     ? `${metrics.modelCalls ?? 0} model calls · ${metrics.toolCalls ?? 0} tool calls · ${formatSdkBuildDuration(metrics.durationMs ?? 0)}`
@@ -1034,6 +1082,21 @@ async function startSdkBuildBenchmark(): Promise<void> {
   sdkBuildStart.disabled = true;
   sdkBuildMessage.textContent = "Queueing benchmark…";
   await postSdkBuildAction("start");
+}
+
+async function startSdkBuildVariantC(): Promise<void> {
+  if (!sdkBuildState?.canStartVariantC || !window.confirm("Run Variant C now in one fresh OpenShell sandbox? It will use the unchanged task, model, tools, and a 3,000-iteration ceiling.")) return;
+  sdkBuildStartC.disabled = true;
+  sdkBuildCStatus.textContent = "Queueing Variant C…";
+  try {
+    const response = await fetch(`${apiBase}/api/sdk-build/variant-c/start`, { method: "POST" });
+    const body = await response.json() as { error?: string };
+    if (!response.ok) throw new Error(body.error ?? `Request failed (${response.status})`);
+    await loadSdkBuildState();
+  } catch (error) {
+    sdkBuildCStatus.textContent = error instanceof Error ? error.message : String(error);
+    await loadSdkBuildState();
+  }
 }
 
 async function stopSdkBuildBenchmark(): Promise<void> {
