@@ -41,6 +41,8 @@ describe("OpenShell SDK build benchmark", () => {
     expect(worker).toContain('exists(retryRequestPath)');
     expect(worker).toContain('exists(variantCRequestPath)');
     expect(worker).toContain('runParticipant(state.variantC, "causal"');
+    expect(worker).toContain('request.runtimeCorrection === true && previous');
+    expect(worker).toContain('causal-variant-c-attempt-${attempt}');
     expect(worker).toContain('request.maxIterations !== 3_000');
     expect(worker).toContain('request.runtimeCorrection === true && armState.status === "completed"');
     expect(worker).toContain('reason: runtimeCorrection ? "runtime-correction" : "failed-candidate"');

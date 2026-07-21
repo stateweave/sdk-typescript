@@ -56,8 +56,10 @@ Selection combines:
 - current frontier;
 - current resource heads;
 - a short recent evidence window;
-- bounded parent closure;
+- bounded **operational** closure (`resource → result → call`, `protocol_error → inference`);
 - generic lexical relevance, recency, and evidence authority.
+
+Inference/action nodes keep their complete read sets as provenance, but the compiler deliberately does not recursively expand those provenance parents. Doing so would reintroduce the full linear-history cost through transitive closure. Provenance remains queryable in storage while operational evidence alone receives automatic projection closure.
 
 The full graph remains lossless. Per-node rendering and the final compiled view are bounded before inference.
 
@@ -85,7 +87,7 @@ Causal Weave adds no memory tool and no graph-only action. The model may choose 
 
 ## Benchmark operation
 
-After an unscored completed A/B SDK-build run, Variant C can be launched once through the lab or `POST /api/sdk-build/variant-c/start`. It receives a fresh sandbox and a fixed exploratory 3,000-iteration ceiling. Original A/B artifacts, labels, scores, and metrics are untouched. The worker persists:
+After an unscored completed A/B SDK-build run, Variant C can be launched through the lab or `POST /api/sdk-build/variant-c/start`. It receives a fresh sandbox and a fixed exploratory 3,000-iteration ceiling. A reviewed runtime correction may launch another attempt only through the root-owned request marker; prior C artifacts are preserved under attempt-specific keys. Original A/B artifacts, labels, scores, and metrics are untouched. The worker persists:
 
 - `workspace/`;
 - `output/result.json`;

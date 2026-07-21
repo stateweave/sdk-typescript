@@ -193,26 +193,46 @@ async function processVariantC() {
   if (request.version !== causalWeaveVariantVersion) throw new Error("Variant C request version does not match the deployed runtime.");
   const runDir = path.join(controlDir, "runs", state.runId);
   if (await exists(path.join(runDir, "judgement.json"))) throw new Error("A scored benchmark cannot add Variant C.");
-  if (state.variantC?.status === "completed" || state.variantC?.status === "running" || state.variantC?.status === "preparing") throw new Error("Variant C already exists or is active for this run.");
+  const previous = state.variantC;
+  const correctionRetry = request.runtimeCorrection === true && previous && ["completed", "failed", "stopped"].includes(previous.status);
+  if (previous && !correctionRetry) throw new Error("Variant C already exists or is active for this run.");
 
-  const sandboxName = `sdkb-${state.runId.slice(-8)}-causal-v1`;
-  const artifactKey = "causal-variant-c";
+  const attempt = (previous?.attempt ?? 0) + 1;
+  const sandboxName = `sdkb-${state.runId.slice(-8)}-causal-v${attempt}`;
+  const artifactKey = attempt === 1 ? "causal-variant-c" : `causal-variant-c-attempt-${attempt}`;
   const requestedAt = request.createdAt ?? new Date().toISOString();
+  const previousAttempts = previous
+    ? [
+        ...(previous.previousAttempts ?? []),
+        {
+          attempt: previous.attempt ?? 1,
+          maxIterations: previous.maxIterations ?? 3_000,
+          status: previous.status,
+          artifactKey: previous.artifactKey ?? "causal-variant-c",
+          completedAt: previous.completedAt,
+          error: previous.error
+        }
+      ]
+    : undefined;
+  if (previous?.sandboxName) await runCommand("openshell", ["sandbox", "delete", previous.sandboxName], { allowFailure: true, timeoutMs: 60_000 });
   state.variantC = {
     version: causalWeaveVariantVersion,
     requestedAt,
     slot: 3,
     status: "preparing",
     sandboxName,
-    attempt: 1,
+    attempt,
     maxIterations: request.maxIterations,
     artifactKey,
-    progress: progress(0, "preparing", "Preparing Causal Weave Variant C", 0, 0)
+    ...(previousAttempts ? { previousAttempts } : {}),
+    progress: progress(0, "preparing", `Preparing Causal Weave Variant C attempt ${attempt}`, 0, 0)
   };
   state.status = "preparing";
   state.completedAt = undefined;
-  await writeJson(path.join(runDir, "variant-c-protocol.json"), {
+  await writeJson(path.join(runDir, attempt === 1 ? "variant-c-protocol.json" : `variant-c-protocol-attempt-${attempt}.json`), {
     version: causalWeaveVariantVersion,
+    attempt,
+    reason: correctionRetry ? "runtime-correction" : "initial",
     workerVersion,
     sandboxImage,
     promptSha256,
@@ -222,7 +242,7 @@ async function processVariantC() {
     artifactKey,
     requestedAt
   });
-  await saveState("Preparing Variant C in one fresh isolated workspace. Original A/B artifacts remain untouched.");
+  await saveState(`Preparing Variant C attempt ${attempt} in one fresh isolated workspace. Original A/B and prior C artifacts remain untouched.`);
 
   try {
     await prepareParticipant(state.variantC, sandboxName);
