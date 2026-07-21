@@ -196,6 +196,12 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     return;
   }
 
+  if (url.pathname === "/api/sdk-build/variant-c/start" && request.method === "POST") {
+    const result = await sdkBuildBenchmark.startVariantC();
+    json(response, result.status, result.body);
+    return;
+  }
+
   if (url.pathname === "/api/sdk-build/stop" && request.method === "POST") {
     const result = await sdkBuildBenchmark.stop();
     json(response, result.status, result.body);
@@ -214,9 +220,9 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     return;
   }
 
-  const sdkBuildPreviewMatch = url.pathname.match(/^\/api\/sdk-build\/preview\/(a|b)(?:\/(.*))?$/);
+  const sdkBuildPreviewMatch = url.pathname.match(/^\/api\/sdk-build\/preview\/(a|b|c)(?:\/(.*))?$/);
   if (sdkBuildPreviewMatch && (request.method === "GET" || request.method === "HEAD")) {
-    await sdkBuildBenchmark.servePreview(response, sdkBuildPreviewMatch[1] as "a" | "b", sdkBuildPreviewMatch[2] ?? "", request.method === "HEAD");
+    await sdkBuildBenchmark.servePreview(response, sdkBuildPreviewMatch[1] as "a" | "b" | "c", sdkBuildPreviewMatch[2] ?? "", request.method === "HEAD");
     return;
   }
 

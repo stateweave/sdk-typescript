@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { oneShotPromptStats, oneShotSdkBuildPrompt, sdkBuildBenchmarkVersion, type SdkBuildBenchmarkState } from "../src/evals/oneShotSdkBenchmark.js";
+import { causalWeaveVariantVersion, oneShotPromptStats, oneShotSdkBuildPrompt, sdkBuildBenchmarkVersion, type SdkBuildBenchmarkState } from "../src/evals/oneShotSdkBenchmark.js";
 import { SdkBuildBenchmarkApi } from "../src/web/sdkBuildBenchmark.js";
 
 const roots: string[] = [];
@@ -59,6 +59,33 @@ describe("SDK build benchmark API", () => {
     expect(request).not.toHaveProperty("arm");
   });
 
+  it("queues one explicit Variant C run without changing the completed A/B artifacts", async () => {
+    const root = await temporaryRoot();
+    const state: SdkBuildBenchmarkState = {
+      ...readyState(),
+      status: "completed",
+      message: "A/B complete.",
+      runId: "run_variant_c",
+      executionOrder: ["graph", "transcript"],
+      labels: { a: "graph", b: "transcript" },
+      arms: {
+        graph: { slot: 1, status: "completed", finalAnswer: "A" },
+        transcript: { slot: 2, status: "completed", finalAnswer: "B" }
+      }
+    };
+    await writeState(root, state);
+    await mkdir(path.join(root, "runs/run_variant_c"), { recursive: true });
+    const api = new SdkBuildBenchmarkApi(root);
+
+    expect(await api.publicState()).toMatchObject({ canStartVariantC: true, variantC: { version: causalWeaveVariantVersion, status: "not_started" } });
+    expect((await api.startVariantC()).status).toBe(202);
+    expect((await api.startVariantC()).status).toBe(409);
+    const request = JSON.parse(await readFile(path.join(root, "requests/variant-c.json"), "utf8"));
+    expect(request).toMatchObject({ version: causalWeaveVariantVersion, maxIterations: 3_000 });
+    expect(state.arms.graph.finalAnswer).toBe("A");
+    expect(state.arms.transcript.finalAnswer).toBe("B");
+  });
+
   it("serves candidate output through a sandboxed no-store preview response", async () => {
     const root = await temporaryRoot();
     const state: SdkBuildBenchmarkState = {
@@ -89,6 +116,44 @@ describe("SDK build benchmark API", () => {
       expect(response.headers.get("content-security-policy")).toContain("sandbox allow-scripts");
       expect(response.headers.get("access-control-allow-origin")).toBe("*");
       expect(await response.text()).toContain('src="./assets/app.js"');
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it("serves Variant C from its separate preserved artifact", async () => {
+    const root = await temporaryRoot();
+    const state: SdkBuildBenchmarkState = {
+      ...readyState(),
+      status: "completed",
+      message: "Variant C complete.",
+      runId: "run_c_preview",
+      executionOrder: ["graph", "transcript"],
+      labels: { a: "graph", b: "transcript" },
+      arms: { graph: { slot: 1, status: "completed" }, transcript: { slot: 2, status: "completed" } },
+      variantC: {
+        version: causalWeaveVariantVersion,
+        requestedAt: new Date().toISOString(),
+        slot: 3,
+        status: "completed",
+        artifactKey: "causal-variant-c",
+        previewRoot: "dist",
+        metrics: metrics(4, 3)
+      }
+    };
+    await writeState(root, state);
+    const previewDir = path.join(root, "runs/run_c_preview/artifacts/causal-variant-c/workspace/dist");
+    await mkdir(previewDir, { recursive: true });
+    await writeFile(path.join(previewDir, "index.html"), "<!doctype html><h1>Causal</h1>");
+    const api = new SdkBuildBenchmarkApi(root);
+    const server = createServer((request, response) => void api.servePreview(response, "c", "", request.method === "HEAD"));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("Expected TCP address");
+      const response = await fetch(`http://127.0.0.1:${address.port}/`);
+      expect(await response.text()).toContain("Causal");
+      expect(await api.publicState()).toMatchObject({ variantC: { status: "completed", metrics: { modelCalls: 4, toolCalls: 3 } } });
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

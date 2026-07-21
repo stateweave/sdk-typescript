@@ -9,6 +9,7 @@ describe("OpenShell SDK build benchmark", () => {
     const runner = await readFile(new URL("participant-runner.mjs", root), "utf8");
     expect(runner).toContain("StateWeaveAgent");
     expect(runner).toContain("AgenticBaseline");
+    expect(runner).toContain("CausalWeaveAgent");
     expect(runner).toContain("oneShotSdkBuildPrompt");
     expect(runner).toContain('PARTICIPANT_MAX_ITERATIONS ?? "300"');
     expect(runner).toContain("maxIterations > 3_000");
@@ -38,6 +39,8 @@ describe("OpenShell SDK build benchmark", () => {
     const worker = await readFile(new URL("worker.mjs", root), "utf8");
     expect(worker).toContain('exists(startRequestPath)');
     expect(worker).toContain('exists(retryRequestPath)');
+    expect(worker).toContain('exists(variantCRequestPath)');
+    expect(worker).toContain('runParticipant(state.variantC, "causal"');
     expect(worker).toContain('request.maxIterations !== 3_000');
     expect(worker).toContain('request.runtimeCorrection === true && armState.status === "completed"');
     expect(worker).toContain('reason: runtimeCorrection ? "runtime-correction" : "failed-candidate"');

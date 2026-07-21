@@ -4,6 +4,8 @@ This is a separate dev-only paired artifact benchmark. It does not share state, 
 
 Two fresh OpenShell sandboxes receive byte-identical payloads and the same fixed participant prompt. One sandbox runs the graph-memory agent and one runs the transcript-memory agent. Execution and blind A/B labels are independently randomized. The model, provider system, file tools, full sandbox shell tool, 300-step cap, 250k context ceiling, CPU, memory, dependency payload, and starting files are otherwise matched.
 
+After an unscored completed A/B run, the operator may explicitly launch one separate **Variant C** workspace at the fixed 3,000-step exploratory ceiling. Variant C uses the same prompt, provider system, model, tool objects, executor, sandbox policy, dependencies, and seed workspace. Its only new primitive is Causal Weave: immutable content-addressed causal nodes, an active frontier, and a bounded graph compiler; model output remains the same ordinary `TOOL_CALL`/`FINAL` protocol as the transcript agent. Variant C never overwrites A/B artifacts or participates in their blind labels.
+
 The public lab can write only fixed start/stop markers under the existing named `/data` volume. A root host worker consumes those markers and manages OpenShell through its local mTLS gateway. No OpenShell credentials, Docker socket, host path, provider credential, or arbitrary task reaches the web container.
 
 ## Security
@@ -49,6 +51,6 @@ The public endpoint can retry only a failed, unscored candidate. After a reviewe
 4. Lab state endpoint reports two unprovisioned slots and execution enabled only while worker heartbeat is fresh.
 5. Starting is explicit; deployment alone never starts a run.
 6. During a run, both sandboxes pass the security probe before the randomized first participant begins.
-7. Completed workspaces download under the run directory and render only through sandboxed, CSP-restricted blind preview routes.
-8. Human scores are recorded before graph/transcript labels are revealed.
+7. Completed workspaces download under the run directory and render only through sandboxed, CSP-restricted preview routes. Variant C additionally preserves `weave.json` and periodic weave checkpoints.
+8. Human scores are recorded before graph/transcript labels are revealed; Variant C is explicitly identified as exploratory and does not alter those scores.
 9. Infinite v8 remains stopped/unchanged and its named `/data` state survives deployment.

@@ -3,7 +3,7 @@ import { createReadStream } from "node:fs";
 import { lstat, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import type { ServerResponse } from "node:http";
 import path from "node:path";
-import { oneShotPromptStats, oneShotSdkBuildPrompt, sdkBuildBenchmarkVersion, type SdkBuildArm, type SdkBuildBenchmarkState, type SdkBuildJudgement } from "../evals/oneShotSdkBenchmark.js";
+import { causalWeaveVariantVersion, oneShotPromptStats, oneShotSdkBuildPrompt, sdkBuildBenchmarkVersion, type SdkBuildArm, type SdkBuildBenchmarkState, type SdkBuildJudgement } from "../evals/oneShotSdkBenchmark.js";
 
 const expectedPromptSha256 = createHash("sha256").update(oneShotSdkBuildPrompt).digest("hex");
 const activeStatuses = new Set(["queued", "preparing", "running", "stopping"]);
@@ -54,12 +54,16 @@ export class SdkBuildBenchmarkApi {
         ? ordered.map((arm) => ({ slot: arm.slot, status: arm.status, progress: arm.progress ? { ...arm.progress, detail: safeProgressDetail(arm.progress.detail) } : undefined }))
         : defaultEnvironments("not_provisioned")
     };
+    const existingJudgement = state.runId ? await this.readJudgement(state.runId) : undefined;
+    const originalCompleted = Boolean(state.runId && state.labels && Object.values(state.arms).every((arm) => arm.status === "completed"));
+    publicState.canStartVariantC = workerOnline && promptMatches && state.status === "completed" && originalCompleted && !existingJudgement && !state.variantC;
+    publicState.variantC = state.variantC ? variantCPublicState(state.variantC) : { version: causalWeaveVariantVersion, status: "not_started", previewReady: false };
     if (state.status === "completed" && state.labels && state.runId) {
       publicState.candidates = {
         a: candidatePublicState(state, state.labels.a),
         b: candidatePublicState(state, state.labels.b)
       };
-      const judgement = await this.readJudgement(state.runId);
+      const judgement = existingJudgement;
       const failedCandidate = (["a", "b"] as const).find((candidate) => state.arms[state.labels![candidate]].status === "failed");
       publicState.canRetryFailed = workerOnline && !judgement && Boolean(failedCandidate);
       publicState.failedCandidate = failedCandidate;
@@ -94,6 +98,24 @@ export class SdkBuildBenchmarkApi {
       throw error;
     }
     return { status: 202, body: { ok: true, message: "Benchmark queued. The page will update as both isolated sandboxes are prepared." } };
+  }
+
+  async startVariantC(): Promise<{ status: number; body: unknown }> {
+    const state = await this.readState();
+    if (!state?.runId || state.status !== "completed" || !state.labels) return { status: 409, body: { error: "A completed A/B run is required before Variant C can start." } };
+    if (Date.now() - Date.parse(state.workerHeartbeatAt) > heartbeatFreshMs) return { status: 503, body: { error: "OpenShell benchmark worker heartbeat is stale." } };
+    if (state.version !== sdkBuildBenchmarkVersion || state.promptSha256 !== expectedPromptSha256 || state.promptWords !== oneShotPromptStats().words) return { status: 409, body: { error: "Worker and web benchmark protocol differ. Rebuild the worker payload before starting Variant C." } };
+    if (!Object.values(state.arms).every((arm) => arm.status === "completed")) return { status: 409, body: { error: "Both original candidates must be complete before Variant C starts." } };
+    if (await this.readJudgement(state.runId)) return { status: 409, body: { error: "A scored benchmark cannot add Variant C." } };
+    if (state.variantC) return { status: 409, body: { error: `Variant C already has status ${state.variantC.status}.` } };
+    await mkdir(this.requestDir, { recursive: true });
+    try {
+      await writeFile(path.join(this.requestDir, "variant-c.json"), `${JSON.stringify({ requestId: randomUUID(), version: causalWeaveVariantVersion, maxIterations: 3_000, createdAt: new Date().toISOString() })}\n`, { encoding: "utf8", flag: "wx", mode: 0o644 });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") return { status: 409, body: { error: "A Variant C request is already queued." } };
+      throw error;
+    }
+    return { status: 202, body: { ok: true, message: "Variant C queued in one fresh OpenShell workspace with the unchanged prompt, model, and tools." } };
   }
 
   async stop(): Promise<{ status: number; body: unknown }> {
@@ -145,13 +167,14 @@ export class SdkBuildBenchmarkApi {
     return { status: 200, body: { ok: true, judgement: { ...judgement, reveal: { a: revealName(state.labels.a), b: revealName(state.labels.b) } } } };
   }
 
-  async servePreview(response: ServerResponse, candidate: "a" | "b", requestedPath: string, headOnly: boolean): Promise<void> {
+  async servePreview(response: ServerResponse, candidate: "a" | "b" | "c", requestedPath: string, headOnly: boolean): Promise<void> {
     const state = await this.readState();
-    if (!state?.runId || state.status !== "completed" || !state.labels) return json(response, 404, { error: "Blind candidate previews are not ready." });
-    const arm = state.labels[candidate];
-    const previewRoot = state.arms[arm].previewRoot;
+    if (!state?.runId || state.status !== "completed" || !state.labels) return json(response, 404, { error: "Candidate previews are not ready." });
+    const candidateState = candidate === "c" ? state.variantC : state.arms[state.labels[candidate]];
+    if (!candidateState) return json(response, 404, { error: "Candidate does not exist." });
+    const previewRoot = candidateState.previewRoot;
     if (!previewRoot) return json(response, 404, { error: "Candidate did not produce a previewable index.html." });
-    const workspaceRoot = path.join(this.rootDir, "runs", state.runId, "artifacts", state.arms[arm].artifactKey ?? arm, "workspace");
+    const workspaceRoot = path.join(this.rootDir, "runs", state.runId, "artifacts", candidateState.artifactKey ?? (candidate === "c" ? "causal-variant-c" : state.labels[candidate]), "workspace");
     const root = path.resolve(workspaceRoot, previewRoot);
     const relative = safeRelativePath(requestedPath || "index.html");
     let filePath = path.resolve(root, relative);
@@ -206,6 +229,22 @@ function candidatePublicState(state: SdkBuildBenchmarkState, arm: SdkBuildArm): 
     attempt: value.attempt ?? 1,
     maxIterations: value.maxIterations ?? 300,
     previousAttempts: value.previousAttempts?.map((attempt) => ({ attempt: attempt.attempt, maxIterations: attempt.maxIterations, status: attempt.status }))
+  };
+}
+
+function variantCPublicState(value: NonNullable<SdkBuildBenchmarkState["variantC"]>): Record<string, unknown> {
+  return {
+    version: value.version,
+    status: value.status,
+    progress: value.progress ? { ...value.progress, detail: safeProgressDetail(value.progress.detail) } : undefined,
+    finalAnswer: value.finalAnswer,
+    error: value.error,
+    metrics: value.metrics,
+    previewReady: Boolean(value.previewRoot),
+    maxIterations: value.maxIterations,
+    requestedAt: value.requestedAt,
+    startedAt: value.startedAt,
+    completedAt: value.completedAt
   };
 }
 
