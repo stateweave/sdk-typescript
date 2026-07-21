@@ -2710,6 +2710,29 @@ label {
   border-bottom: 1px solid var(--border);
 }
 
+.sdk-build-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.sdk-build-c-repair-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.sdk-build-c-repair-note code {
+  border-radius: 4px;
+  background: rgb(255 255 255 / 72%);
+  padding: 1px 4px;
+}
+
 .sdk-build-variant-c-result iframe {
   display: block;
   width: 100%;

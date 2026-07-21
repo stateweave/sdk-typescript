@@ -220,9 +220,11 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     return;
   }
 
-  const sdkBuildPreviewMatch = url.pathname.match(/^\/api\/sdk-build\/preview\/(a|b|c)(?:\/(.*))?$/);
+  const sdkBuildPreviewMatch = url.pathname.match(/^\/api\/sdk-build\/preview\/(a|b|c|c-repaired)(?:\/(.*))?$/);
   if (sdkBuildPreviewMatch && (request.method === "GET" || request.method === "HEAD")) {
-    await sdkBuildBenchmark.servePreview(response, sdkBuildPreviewMatch[1] as "a" | "b" | "c", sdkBuildPreviewMatch[2] ?? "", request.method === "HEAD");
+    const previewLabel = sdkBuildPreviewMatch[1];
+    const candidate = previewLabel === "c-repaired" ? "c" : previewLabel as "a" | "b" | "c";
+    await sdkBuildBenchmark.servePreview(response, candidate, sdkBuildPreviewMatch[2] ?? "", request.method === "HEAD", previewLabel === "c-repaired");
     return;
   }
 

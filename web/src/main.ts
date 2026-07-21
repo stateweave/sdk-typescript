@@ -31,7 +31,7 @@ type CompareResponse = StateWeaveResponse & {
 type PageName = "state" | "quickstart" | "ab" | "sdk-build" | "infinite" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
 type SdkBuildEnvironment = { slot: number; status: string; progress?: { iteration: number; phase: string; modelCalls: number; toolCalls: number; totalInputTokens?: number; outputTokens?: number; detail: string; updatedAt: string } };
 type SdkBuildCandidate = { status: string; finalAnswer?: string; error?: string; previewReady: boolean; attempt?: number; maxIterations?: number; previousAttempts?: { attempt: number; maxIterations: number; status: string }[] };
-type SdkBuildVariantC = { version: string; status: string; progress?: SdkBuildEnvironment["progress"]; finalAnswer?: string; error?: string; metrics?: Record<string, number>; previewReady: boolean; attempt?: number; maxIterations?: number; previousAttempts?: { attempt: number; maxIterations: number; status: string }[]; requestedAt?: string; startedAt?: string; completedAt?: string };
+type SdkBuildVariantC = { version: string; status: string; progress?: SdkBuildEnvironment["progress"]; finalAnswer?: string; error?: string; metrics?: Record<string, number>; previewReady: boolean; importRepairedPreviewReady?: boolean; attempt?: number; maxIterations?: number; previousAttempts?: { attempt: number; maxIterations: number; status: string }[]; requestedAt?: string; startedAt?: string; completedAt?: string };
 type SdkBuildPublicState = {
   status: string;
   underlyingStatus?: string;
@@ -517,6 +517,8 @@ const sdkBuildCMetrics = element<HTMLElement>("sdk-build-c-metrics");
 const sdkBuildCResult = element<HTMLElement>("sdk-build-c-result");
 const sdkBuildPreviewC = element<HTMLIFrameElement>("sdk-build-preview-c");
 const sdkBuildOpenC = element<HTMLAnchorElement>("sdk-build-open-c");
+const sdkBuildOpenCRaw = element<HTMLAnchorElement>("sdk-build-open-c-raw");
+const sdkBuildCRepairNote = element<HTMLElement>("sdk-build-c-repair-note");
 const sdkBuildAnswerC = element<HTMLElement>("sdk-build-answer-c");
 const sdkBuildReview = element<HTMLElement>("sdk-build-review");
 const sdkBuildPreviewA = element<HTMLIFrameElement>("sdk-build-preview-a");
@@ -1054,11 +1056,19 @@ function renderSdkBuildVariantC(state: SdkBuildPublicState): void {
     sdkBuildPreviewCRunId = undefined;
     return;
   }
-  const previewUrl = `${apiBase}/api/sdk-build/preview/c/`;
+  const rawPreviewUrl = `${apiBase}/api/sdk-build/preview/c/`;
+  const repairedPreviewUrl = `${apiBase}/api/sdk-build/preview/c-repaired/`;
+  const showRepaired = Boolean(variant.importRepairedPreviewReady);
+  const previewUrl = showRepaired ? repairedPreviewUrl : rawPreviewUrl;
   sdkBuildOpenC.href = previewUrl;
+  sdkBuildOpenC.textContent = showRepaired ? "Open repaired page" : "Open full page";
   sdkBuildOpenC.hidden = !variant.previewReady;
+  sdkBuildOpenCRaw.href = rawPreviewUrl;
+  sdkBuildOpenCRaw.hidden = !variant.previewReady || !showRepaired;
+  sdkBuildCRepairNote.hidden = !showRepaired;
+  sdkBuildPreviewC.title = showRepaired ? "Variant C import-repaired application preview" : "Variant C application preview";
   sdkBuildAnswerC.textContent = variant.finalAnswer || variant.error || "No final response was recorded.";
-  const previewKey = `${state.runId}:${variant.completedAt ?? variant.status}`;
+  const previewKey = `${state.runId}:${variant.completedAt ?? variant.status}:${showRepaired ? "repaired" : "raw"}`;
   if (sdkBuildPreviewCRunId !== previewKey) {
     if (variant.previewReady) {
       sdkBuildPreviewC.removeAttribute("srcdoc");

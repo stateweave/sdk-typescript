@@ -328,7 +328,14 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
             <div id="sdk-build-c-status" class="sdk-build-variant-c-status">Not started</div>
             <div id="sdk-build-c-metrics" class="sdk-build-reveal-metrics"></div>
             <article id="sdk-build-c-result" class="sdk-build-variant-c-result" hidden>
-              <header><h3>Variant C application</h3><a id="sdk-build-open-c" class="button secondary small-button" target="_blank" rel="noopener">Open full page</a></header>
+              <header>
+                <h3>Variant C application</h3>
+                <div class="sdk-build-preview-actions">
+                  <a id="sdk-build-open-c-raw" class="button secondary small-button" target="_blank" rel="noopener" hidden>Open raw artifact</a>
+                  <a id="sdk-build-open-c" class="button secondary small-button" target="_blank" rel="noopener">Open full page</a>
+                </div>
+              </header>
+              <p id="sdk-build-c-repair-note" class="sdk-build-c-repair-note" hidden><strong>Import-repaired preview.</strong> This view serves the preserved <code>vendor/desmos.js</code> at the built path the application requested. No candidate files were changed; the raw artifact remains available above.</p>
               <iframe id="sdk-build-preview-c" title="Variant C application preview" sandbox="allow-scripts"></iframe>
               <details><summary>Final response</summary><pre id="sdk-build-answer-c"></pre></details>
             </article>

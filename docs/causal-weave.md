@@ -91,7 +91,7 @@ Causal Weave adds no memory tool and no graph-only action. The model may choose 
 
 ## Benchmark operation
 
-After an unscored completed A/B SDK-build run, Variant C can be launched through the lab or `POST /api/sdk-build/variant-c/start`. It receives a fresh sandbox and a fixed exploratory 3,000-iteration ceiling. A reviewed runtime correction may launch another attempt only through the root-owned request marker; prior C artifacts are preserved under attempt-specific keys. Original A/B artifacts, labels, scores, and metrics are untouched. The worker persists:
+After an unscored completed A/B SDK-build run, Variant C can be launched through the lab or `POST /api/sdk-build/variant-c/start`. It receives a fresh sandbox and a fixed exploratory 3,000-iteration ceiling. A reviewed runtime correction may launch another attempt only through the root-owned request marker; prior C artifacts are preserved under attempt-specific keys. Original A/B artifacts, labels, scores, and metrics are untouched. If a completed C build references its preserved source `vendor/desmos.js` without copying it into `dist`, the lab may expose a clearly labeled import-repaired preview route that serves only that exact missing asset from the same read-only workspace. The raw artifact remains separately accessible, and no candidate file is modified. The worker persists:
 
 - `workspace/`;
 - `output/result.json`;
