@@ -54,7 +54,7 @@ export function oneShotPromptStats(): { characters: number; words: number } {
 }
 
 export const sdkBuildBenchmarkVersion = 1;
-export const causalWeaveVariantVersion = "causal-weave-v1";
+export const causalWeaveVariantVersion = "causal-weave-v2";
 export type SdkBuildArm = "graph" | "transcript";
 export type SdkBuildRunStatus = "ready" | "queued" | "preparing" | "running" | "completed" | "failed" | "stopping" | "stopped";
 export type SdkBuildArmStatus = "waiting" | "preparing" | "running" | "completed" | "failed" | "stopped";

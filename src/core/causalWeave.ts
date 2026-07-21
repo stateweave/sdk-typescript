@@ -117,7 +117,7 @@ export class CausalWeave {
     ];
     for (const id of mandatory) selected.add(id);
     const closureSeeds = new Set([...this.frontier(), ...this.order.slice(-10)]);
-    addCausalParents(closureSeeds, this.nodes, 2);
+    addOperationalParents(closureSeeds, this.nodes, 2);
     for (const id of closureSeeds) selected.add(id);
 
     const candidates = this.order
@@ -127,7 +127,7 @@ export class CausalWeave {
     for (const candidate of candidates) {
       if (selected.size >= maxNodes) break;
       const closure = new Set([candidate.id]);
-      addCausalParents(closure, this.nodes, 1);
+      addOperationalParents(closure, this.nodes, 2);
       for (const id of closure) selected.add(id);
     }
 
@@ -186,19 +186,22 @@ function relevanceScore(node: CausalWeaveNode, queryTerms: Set<string>, total: n
   return semantic * 0.55 + recency * 0.2 + authority;
 }
 
-function addCausalParents(selected: Set<string>, nodes: Map<string, CausalWeaveNode>, depth: number): void {
-  let frontier = [...selected];
-  for (let level = 0; level < depth; level++) {
-    const next: string[] = [];
-    for (const id of frontier) {
-      for (const parent of nodes.get(id)?.parents ?? []) {
-        if (selected.has(parent)) continue;
-        selected.add(parent);
-        next.push(parent);
-      }
+function addOperationalParents(selected: Set<string>, nodes: Map<string, CausalWeaveNode>, depth: number): void {
+  const queue = [...selected].map((id) => ({ id, remaining: depth }));
+  while (queue.length) {
+    const current = queue.shift()!;
+    if (current.remaining <= 0) continue;
+    const node = nodes.get(current.id);
+    if (!node || !followsOperationalParents(node.kind)) continue;
+    for (const parent of node.parents) {
+      if (!selected.has(parent)) selected.add(parent);
+      queue.push({ id: parent, remaining: current.remaining - 1 });
     }
-    frontier = next;
   }
+}
+
+function followsOperationalParents(kind: CausalNodeKind): boolean {
+  return kind === "tool_result" || kind === "resource" || kind === "verification" || kind === "protocol_error";
 }
 
 function isParentOfSelectedFrontier(id: string, selected: string[], nodes: Map<string, CausalWeaveNode>, frontier: Set<string>): boolean {
@@ -212,7 +215,9 @@ function isParentOfSelectedFrontier(id: string, selected: string[], nodes: Map<s
       const current = queue.shift()!;
       if (seen.has(current) || !selectedSet.has(current)) continue;
       seen.add(current);
-      for (const parent of nodes.get(current)?.parents ?? []) {
+      const node = nodes.get(current);
+      if (!node || !followsOperationalParents(node.kind)) continue;
+      for (const parent of node.parents) {
         if (parent === id) return true;
         queue.push(parent);
       }

@@ -71,6 +71,23 @@ describe("Causal Weave", () => {
     expect(compiled.nodeIds.length).toBeLessThanOrEqual(30);
   });
 
+  it("does not recursively resend prior inference read sets as causal closure", () => {
+    const weave = new CausalWeave();
+    const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
+    weave.append({ kind: "goal", payload: "long running task", parents: [system.id] });
+    for (let step = 0; step < 120; step++) {
+      const compiled = weave.compile({ query: "long running task", maxTokens: 8_000, maxNodes: 32 });
+      const call = weave.append({ kind: "tool_call", payload: { name: "read_file", args: { file_path: `file-${step % 4}.js` } }, parents: compiled.nodeIds });
+      weave.append({ kind: "tool_result", payload: { file_path: `file-${step % 4}.js`, content: `value-${step}` }, parents: [call.id] });
+    }
+
+    const compiled = weave.compile({ query: "long running task", maxTokens: 8_000, maxNodes: 32 });
+
+    expect(weave.snapshot().nodes.length).toBeGreaterThan(200);
+    expect(compiled.nodeIds.length).toBeLessThanOrEqual(40);
+    expect(compiled.tokenEstimate.estimatedTokens).toBeLessThan(4_000);
+  });
+
   it("grows from ordinary tool actions without model-authored graph operations", async () => {
     const calls: unknown[] = [];
     const model = new SequenceModel([

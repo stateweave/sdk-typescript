@@ -241,7 +241,9 @@ function variantCPublicState(value: NonNullable<SdkBuildBenchmarkState["variantC
     error: value.error,
     metrics: value.metrics,
     previewReady: Boolean(value.previewRoot),
+    attempt: value.attempt ?? 1,
     maxIterations: value.maxIterations,
+    previousAttempts: value.previousAttempts?.map((attempt) => ({ attempt: attempt.attempt, maxIterations: attempt.maxIterations, status: attempt.status })),
     requestedAt: value.requestedAt,
     startedAt: value.startedAt,
     completedAt: value.completedAt

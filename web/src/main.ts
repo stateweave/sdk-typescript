@@ -31,7 +31,7 @@ type CompareResponse = StateWeaveResponse & {
 type PageName = "state" | "quickstart" | "ab" | "sdk-build" | "infinite" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
 type SdkBuildEnvironment = { slot: number; status: string; progress?: { iteration: number; phase: string; modelCalls: number; toolCalls: number; totalInputTokens?: number; outputTokens?: number; detail: string; updatedAt: string } };
 type SdkBuildCandidate = { status: string; finalAnswer?: string; error?: string; previewReady: boolean; attempt?: number; maxIterations?: number; previousAttempts?: { attempt: number; maxIterations: number; status: string }[] };
-type SdkBuildVariantC = { version: string; status: string; progress?: SdkBuildEnvironment["progress"]; finalAnswer?: string; error?: string; metrics?: Record<string, number>; previewReady: boolean; maxIterations?: number; requestedAt?: string; startedAt?: string; completedAt?: string };
+type SdkBuildVariantC = { version: string; status: string; progress?: SdkBuildEnvironment["progress"]; finalAnswer?: string; error?: string; metrics?: Record<string, number>; previewReady: boolean; attempt?: number; maxIterations?: number; previousAttempts?: { attempt: number; maxIterations: number; status: string }[]; requestedAt?: string; startedAt?: string; completedAt?: string };
 type SdkBuildPublicState = {
   status: string;
   underlyingStatus?: string;
@@ -1039,9 +1039,10 @@ function renderSdkBuildVariantC(state: SdkBuildPublicState): void {
   const variant = state.variantC;
   sdkBuildStartC.disabled = !state.canStartVariantC;
   const status = variant?.status ?? "not_started";
+  const attemptLabel = variant && (variant.attempt ?? 1) > 1 ? `Attempt ${variant.attempt} · ` : "";
   sdkBuildCStatus.textContent = variant?.progress
-    ? `${sdkBuildStatusLabel(status)} · ${variant.progress.detail} · ${variant.progress.modelCalls.toLocaleString()} model / ${variant.progress.toolCalls.toLocaleString()} tool calls`
-    : variant?.error || sdkBuildStatusLabel(status);
+    ? `${attemptLabel}${sdkBuildStatusLabel(status)} · ${variant.progress.detail} · ${variant.progress.modelCalls.toLocaleString()} model / ${variant.progress.toolCalls.toLocaleString()} tool calls`
+    : `${attemptLabel}${variant?.error || sdkBuildStatusLabel(status)}`;
   sdkBuildCStatus.className = `sdk-build-variant-c-status sdk-build-status ${sdkBuildStatusClass(status)}`;
   const metrics = variant?.metrics;
   sdkBuildCMetrics.innerHTML = metrics
