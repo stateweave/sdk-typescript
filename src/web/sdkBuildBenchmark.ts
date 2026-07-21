@@ -57,7 +57,9 @@ export class SdkBuildBenchmarkApi {
     const existingJudgement = state.runId ? await this.readJudgement(state.runId) : undefined;
     const originalCompleted = Boolean(state.runId && state.labels && Object.values(state.arms).every((arm) => arm.status === "completed"));
     publicState.canStartVariantC = workerOnline && promptMatches && state.status === "completed" && originalCompleted && !existingJudgement && !state.variantC;
-    publicState.variantC = state.variantC ? variantCPublicState(state.variantC) : { version: causalWeaveVariantVersion, status: "not_started", previewReady: false };
+    const publicVariantC = state.variantC ? variantCPublicState(state.variantC) : { version: causalWeaveVariantVersion, status: "not_started", previewReady: false };
+    if (state.variantC) publicVariantC.importRepairedPreviewReady = await this.variantCImportRepairAvailable(state);
+    publicState.variantC = publicVariantC;
     if (state.status === "completed" && state.labels && state.runId) {
       publicState.candidates = {
         a: candidatePublicState(state, state.labels.a),
@@ -167,7 +169,8 @@ export class SdkBuildBenchmarkApi {
     return { status: 200, body: { ok: true, judgement: { ...judgement, reveal: { a: revealName(state.labels.a), b: revealName(state.labels.b) } } } };
   }
 
-  async servePreview(response: ServerResponse, candidate: "a" | "b" | "c", requestedPath: string, headOnly: boolean): Promise<void> {
+  async servePreview(response: ServerResponse, candidate: "a" | "b" | "c", requestedPath: string, headOnly: boolean, repairVariantCVendor = false): Promise<void> {
+    if (repairVariantCVendor && candidate !== "c") return json(response, 404, { error: "Import-repaired preview is available only for Variant C." });
     const state = await this.readState();
     if (!state?.runId || state.status !== "completed" || !state.labels) return json(response, 404, { error: "Candidate previews are not ready." });
     const candidateState = candidate === "c" ? state.variantC : state.arms[state.labels[candidate]];
@@ -177,10 +180,17 @@ export class SdkBuildBenchmarkApi {
     const workspaceRoot = path.join(this.rootDir, "runs", state.runId, "artifacts", candidateState.artifactKey ?? (candidate === "c" ? "causal-variant-c" : state.labels[candidate]), "workspace");
     const root = path.resolve(workspaceRoot, previewRoot);
     const relative = safeRelativePath(requestedPath || "index.html");
+    let containmentRoot = root;
     let filePath = path.resolve(root, relative);
-    const info = await stat(filePath).catch(() => undefined);
+    let info = await stat(filePath).catch(() => undefined);
+    if (repairVariantCVendor && relative === "vendor/desmos.js" && !info?.isFile()) {
+      containmentRoot = path.resolve(workspaceRoot);
+      filePath = path.resolve(containmentRoot, "vendor/desmos.js");
+      const sourceInfo = await lstat(filePath).catch(() => undefined);
+      info = sourceInfo?.isFile() && !sourceInfo.isSymbolicLink() ? sourceInfo : undefined;
+    }
     if (info?.isDirectory()) filePath = path.join(filePath, "index.html");
-    const canonicalRoot = await realpath(root);
+    const canonicalRoot = await realpath(containmentRoot);
     const canonicalFile = await realpath(filePath).catch(() => undefined);
     if (!canonicalFile || (canonicalFile !== canonicalRoot && !canonicalFile.startsWith(`${canonicalRoot}${path.sep}`))) return json(response, 404, { error: "Preview file not found." });
     const fileInfo = await lstat(canonicalFile);
@@ -208,6 +218,19 @@ export class SdkBuildBenchmarkApi {
       return;
     }
     createReadStream(canonicalFile).pipe(response);
+  }
+
+  private async variantCImportRepairAvailable(state: SdkBuildBenchmarkState): Promise<boolean> {
+    const variant = state.variantC;
+    if (!state.runId || !variant?.previewRoot) return false;
+    const workspaceRoot = path.join(this.rootDir, "runs", state.runId, "artifacts", variant.artifactKey ?? "causal-variant-c", "workspace");
+    const builtVendor = path.resolve(workspaceRoot, variant.previewRoot, "vendor/desmos.js");
+    const sourceVendor = path.resolve(workspaceRoot, "vendor/desmos.js");
+    const [builtInfo, sourceInfo] = await Promise.all([
+      lstat(builtVendor).catch(() => undefined),
+      lstat(sourceVendor).catch(() => undefined)
+    ]);
+    return !builtInfo && Boolean(sourceInfo?.isFile() && !sourceInfo.isSymbolicLink());
   }
 
   private async readState(): Promise<SdkBuildBenchmarkState | undefined> {

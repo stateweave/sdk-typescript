@@ -142,18 +142,30 @@ describe("SDK build benchmark API", () => {
       }
     };
     await writeState(root, state);
-    const previewDir = path.join(root, "runs/run_c_preview/artifacts/causal-variant-c/workspace/dist");
+    const workspaceDir = path.join(root, "runs/run_c_preview/artifacts/causal-variant-c/workspace");
+    const previewDir = path.join(workspaceDir, "dist");
+    await mkdir(path.join(workspaceDir, "vendor"), { recursive: true });
     await mkdir(previewDir, { recursive: true });
-    await writeFile(path.join(previewDir, "index.html"), "<!doctype html><h1>Causal</h1>");
+    await writeFile(path.join(previewDir, "index.html"), '<!doctype html><script src="./vendor/desmos.js"></script><h1>Causal</h1>');
+    await writeFile(path.join(workspaceDir, "vendor/desmos.js"), "globalThis.Desmos = { repaired: true };");
     const api = new SdkBuildBenchmarkApi(root);
-    const server = createServer((request, response) => void api.servePreview(response, "c", "", request.method === "HEAD"));
+    const server = createServer((request, response) => {
+      const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+      const repaired = pathname.startsWith("/repaired/");
+      const requestedPath = pathname.replace(/^\/(?:repaired\/)?/, "");
+      void api.servePreview(response, "c", requestedPath, request.method === "HEAD", repaired);
+    });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     try {
       const address = server.address();
       if (!address || typeof address === "string") throw new Error("Expected TCP address");
       const response = await fetch(`http://127.0.0.1:${address.port}/`);
       expect(await response.text()).toContain("Causal");
-      expect(await api.publicState()).toMatchObject({ variantC: { status: "completed", metrics: { modelCalls: 4, toolCalls: 3 } } });
+      expect((await fetch(`http://127.0.0.1:${address.port}/vendor/desmos.js`)).status).toBe(404);
+      const repairedVendor = await fetch(`http://127.0.0.1:${address.port}/repaired/vendor/desmos.js`);
+      expect(repairedVendor.status).toBe(200);
+      expect(await repairedVendor.text()).toContain("repaired: true");
+      expect(await api.publicState()).toMatchObject({ variantC: { status: "completed", importRepairedPreviewReady: true, metrics: { modelCalls: 4, toolCalls: 3 } } });
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
