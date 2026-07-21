@@ -146,6 +146,7 @@ async function runCausalParticipant({ model, tools, providerSystem, systemPrompt
     systemPrompt,
     maxIterations,
     maxContextTokens: 250_000,
+    projectionTargetTokens: 16_000,
     maxNoProgressIterations: 300,
     providerSystem,
     enforceCompletionEvidence: false

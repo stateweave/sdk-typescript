@@ -100,12 +100,18 @@ export class CausalWeave {
     };
   }
 
-  compile(args: { query?: string; maxTokens?: number; maxNodes?: number } = {}): CausalCompileResult {
+  compile(args: { query?: string; maxTokens?: number; targetTokens?: number; maxNodes?: number } = {}): CausalCompileResult {
     if (!this.order.length) throw new Error("Cannot compile an empty Causal Weave.");
     const maxTokens = args.maxTokens ?? 64_000;
+    const targetTokens = Math.min(args.targetTokens ?? maxTokens, maxTokens);
     const maxNodes = args.maxNodes ?? 48;
     const queryTerms = terms([args.query ?? "", ...this.frontier().map((id) => payloadText(this.nodes.get(id)?.payload))].join(" "));
     const selected = new Set<string>();
+    const latestEquivalent = latestProjectionEquivalents(this.order, this.nodes);
+    const recent = this.order.slice(-10).filter((id) => {
+      const key = projectionEquivalenceKey(this.nodes.get(id)!);
+      return !key || latestEquivalent.get(key) === id;
+    });
     const mandatory = [
       ...this.order.filter((id) => {
         const kind = this.nodes.get(id)?.kind;
@@ -113,15 +119,19 @@ export class CausalWeave {
       }),
       ...this.frontier(),
       ...this.resourceHeads.values(),
-      ...this.order.slice(-10)
+      ...recent
     ];
     for (const id of mandatory) selected.add(id);
-    const closureSeeds = new Set([...this.frontier(), ...this.order.slice(-10)]);
+    const closureSeeds = new Set([...this.frontier(), ...recent]);
     addOperationalParents(closureSeeds, this.nodes, 2);
     for (const id of closureSeeds) selected.add(id);
 
     const candidates = this.order
       .filter((id) => !selected.has(id))
+      .filter((id) => {
+        const key = projectionEquivalenceKey(this.nodes.get(id)!);
+        return !key || latestEquivalent.get(key) === id;
+      })
       .map((id) => ({ id, score: relevanceScore(this.nodes.get(id)!, queryTerms, this.order.length) }))
       .sort((a, b) => b.score - a.score || this.nodes.get(b.id)!.sequence - this.nodes.get(a.id)!.sequence);
     for (const candidate of candidates) {
@@ -132,16 +142,17 @@ export class CausalWeave {
     }
 
     let chosen = this.order.filter((id) => selected.has(id));
-    let prompt = renderCompiledWeave(chosen.map((id) => this.nodes.get(id)!), this.frontierIds);
+    const digest = renderGraphDigest(this.order.map((id) => this.nodes.get(id)!), this.resourceHeads);
+    let prompt = renderCompiledWeave(chosen.map((id) => this.nodes.get(id)!), this.frontierIds, digest);
     let estimate = estimateStateWeaveTokens(prompt);
-    while (estimate.estimatedTokens > maxTokens && chosen.length > 4) {
+    while (estimate.estimatedTokens > targetTokens && chosen.length > 4) {
       const removable = chosen.findIndex((id) => {
         const node = this.nodes.get(id)!;
         return node.kind !== "system" && node.kind !== "goal" && !this.frontierIds.has(id) && !isParentOfSelectedFrontier(id, chosen, this.nodes, this.frontierIds);
       });
       if (removable < 0) break;
       chosen.splice(removable, 1);
-      prompt = renderCompiledWeave(chosen.map((id) => this.nodes.get(id)!), this.frontierIds);
+      prompt = renderCompiledWeave(chosen.map((id) => this.nodes.get(id)!), this.frontierIds, digest);
       estimate = estimateStateWeaveTokens(prompt);
     }
     if (estimate.estimatedTokens > maxTokens) {
@@ -157,11 +168,13 @@ function causalNodeId(kind: CausalNodeKind, parents: string[], payload: unknown,
   return `cw_${digest.slice(0, 24)}`;
 }
 
-function renderCompiledWeave(nodes: CausalWeaveNode[], frontier: Set<string>): string {
+function renderCompiledWeave(nodes: CausalWeaveNode[], frontier: Set<string>, digest: string): string {
   const lines = [
     "CAUSAL_WEAVE/1",
     "The following is a causally selected working state, not a conversation transcript. Node order is chronological; parents identify direct dependencies. Use the ordinary tool protocol contained in the system node. Current resource and evidence nodes are authoritative.",
     `frontier: ${[...frontier].map(shortId).join(", ") || "(empty)"}`,
+    "",
+    digest,
     ""
   ];
   for (const node of nodes) {
@@ -174,6 +187,144 @@ function renderCompiledWeave(nodes: CausalWeaveNode[], frontier: Set<string>): s
     );
   }
   return lines.join("\n").trim();
+}
+
+function latestProjectionEquivalents(order: string[], nodes: Map<string, CausalWeaveNode>): Map<string, string> {
+  const latest = new Map<string, string>();
+  for (const id of order) {
+    const key = projectionEquivalenceKey(nodes.get(id)!);
+    if (key) latest.set(key, id);
+  }
+  return latest;
+}
+
+function projectionEquivalenceKey(node: CausalWeaveNode): string | undefined {
+  const payload = asRecord(node.payload);
+  if (node.kind === "resource" && node.resourceKey) return `resource:${node.resourceKey}`;
+  if (node.kind === "protocol_error") return `protocol_error:${projectionHash(node.payload)}`;
+  if (node.kind === "inference") return `inference:${projectionHash(node.payload)}`;
+  if (node.kind === "tool_call") {
+    const name = stringValue(payload.name);
+    const args = asRecord(payload.args);
+    const path = resourcePath(args);
+    if (name === "read_file" && path) return `read_call:${path}`;
+    if ((name === "write_file" || name === "edit_file") && path) return `mutation_call:${path}`;
+    return `tool_call:${name}:${projectionHash(payload.args)}`;
+  }
+  if (node.kind === "tool_result") {
+    const name = stringValue(payload.tool);
+    const result = asRecord(payload.result);
+    const path = resourcePath(result);
+    if (name === "read_file" && path) return `read_result:${path}`;
+    if ((name === "write_file" || name === "edit_file") && path) return `mutation_result:${path}`;
+    return `tool_result:${name}:${projectionHash(payload.result)}`;
+  }
+  return undefined;
+}
+
+function renderGraphDigest(nodes: CausalWeaveNode[], resourceHeads: Map<string, string>): string {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const kindCounts = new Map<CausalNodeKind, number>();
+  const toolCounts = new Map<string, number>();
+  const resourceActivity = new Map<string, { total: number; reads: number; mutations: number; failures: number; last: number }>();
+  const mutations: CausalWeaveNode[] = [];
+  const modelNotes: { sequence: number; note: string }[] = [];
+
+  for (const node of nodes) {
+    kindCounts.set(node.kind, (kindCounts.get(node.kind) ?? 0) + 1);
+    if (node.kind === "tool_call") {
+      const name = stringValue(asRecord(node.payload).name) || "unknown";
+      toolCounts.set(name, (toolCounts.get(name) ?? 0) + 1);
+    }
+    if (node.kind === "resource" && node.resourceKey) {
+      const payload = asRecord(node.payload);
+      const operation = stringValue(payload.operation);
+      const activity = resourceActivity.get(node.resourceKey) ?? { total: 0, reads: 0, mutations: 0, failures: 0, last: 0 };
+      activity.total += 1;
+      activity.reads += operation === "read_file" ? 1 : 0;
+      activity.mutations += operation !== "read_file" && payload.succeeded !== false ? 1 : 0;
+      activity.failures += payload.succeeded === false ? 1 : 0;
+      activity.last = node.sequence;
+      resourceActivity.set(node.resourceKey, activity);
+      if (operation !== "read_file" && payload.succeeded !== false) mutations.push(node);
+    }
+    if (node.kind === "inference") {
+      const note = inferenceNote(node.payload);
+      if (note) modelNotes.push({ sequence: node.sequence, note });
+    }
+  }
+
+  const lines = [
+    "GRAPH_DIGEST",
+    "Deterministic whole-graph index. Counts and resource state are runtime-derived; recent model notes are quoted from recorded inference nodes.",
+    `nodes: ${nodes.length}; kinds: ${[...kindCounts.entries()].map(([kind, count]) => `${kind}=${count}`).join(", ")}`,
+    `tool_calls: ${[...toolCounts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([tool, count]) => `${tool}=${count}`).join(", ") || "(none)"}`,
+    "current_resources:"
+  ];
+
+  const currentResources = [...resourceHeads.entries()]
+    .map(([key, id]) => ({ key, node: byId.get(id)! }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+  if (!currentResources.length) lines.push("- (none)");
+  for (const { key, node } of currentResources.slice(0, 100)) {
+    const payload = asRecord(node.payload);
+    const hash = stringValue(payload.contentHash);
+    lines.push(`- ${inline(key, 180)} | seq=${node.sequence} op=${stringValue(payload.operation) || "unknown"} ok=${payload.succeeded !== false}${typeof payload.bytes === "number" ? ` bytes=${payload.bytes}` : ""}${hash ? ` hash=${hash.slice(0, 12)}` : ""}`);
+  }
+  if (currentResources.length > 100) lines.push(`- ...${currentResources.length - 100} more resources omitted`);
+
+  const repeated = [...resourceActivity.entries()]
+    .filter(([, activity]) => activity.total > 1)
+    .sort((a, b) => b[1].total - a[1].total || b[1].last - a[1].last)
+    .slice(0, 20);
+  lines.push("highest_resource_activity:");
+  if (!repeated.length) lines.push("- (none)");
+  for (const [key, activity] of repeated) {
+    lines.push(`- ${inline(key, 160)} | total=${activity.total} reads=${activity.reads} mutations=${activity.mutations} failures=${activity.failures} last_seq=${activity.last}`);
+  }
+
+  lines.push("recent_mutations:");
+  const recentMutations = mutations.slice(-12);
+  if (!recentMutations.length) lines.push("- (none)");
+  for (const node of recentMutations) {
+    const payload = asRecord(node.payload);
+    lines.push(`- seq=${node.sequence} ${stringValue(payload.operation) || "mutation"} ${inline(node.resourceKey ?? stringValue(payload.path), 180)}`);
+  }
+
+  lines.push("recent_model_notes:");
+  const recentNotes = modelNotes.slice(-3);
+  if (!recentNotes.length) lines.push("- (none)");
+  for (const note of recentNotes) lines.push(`- seq=${note.sequence} ${inline(note.note, 1_200)}`);
+  lines.push("END_GRAPH_DIGEST");
+  return truncate(lines.join("\n"), 12_000);
+}
+
+function inferenceNote(payload: unknown): string {
+  if (typeof payload !== "string") return "";
+  const marker = payload.search(/\bTOOL_CALL\b|\bFINAL\s*:/i);
+  const note = (marker > 0 ? payload.slice(0, marker) : marker === 0 ? "" : payload).trim();
+  return note.length >= 20 && /\s/.test(note) ? note : "";
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function resourcePath(record: Record<string, unknown>): string {
+  return stringValue(record.file_path) || stringValue(record.path);
+}
+
+function projectionHash(value: unknown): string {
+  return createHash("sha256").update(stableStringify(value)).digest("hex").slice(0, 16);
+}
+
+function inline(value: string, limit: number): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length <= limit ? compact : `${compact.slice(0, Math.max(0, limit - 16))}...[truncated]`;
 }
 
 function relevanceScore(node: CausalWeaveNode, queryTerms: Set<string>, total: number): number {
@@ -194,6 +345,7 @@ function addOperationalParents(selected: Set<string>, nodes: Map<string, CausalW
     const node = nodes.get(current.id);
     if (!node || !followsOperationalParents(node.kind)) continue;
     for (const parent of node.parents) {
+      if (!isOperationalParent(node, nodes.get(parent))) continue;
       if (!selected.has(parent)) selected.add(parent);
       queue.push({ id: parent, remaining: current.remaining - 1 });
     }
@@ -202,6 +354,10 @@ function addOperationalParents(selected: Set<string>, nodes: Map<string, CausalW
 
 function followsOperationalParents(kind: CausalNodeKind): boolean {
   return kind === "tool_result" || kind === "resource" || kind === "verification" || kind === "protocol_error";
+}
+
+function isOperationalParent(node: CausalWeaveNode, parent: CausalWeaveNode | undefined): boolean {
+  return !(node.kind === "resource" && parent?.kind === "resource");
 }
 
 function isParentOfSelectedFrontier(id: string, selected: string[], nodes: Map<string, CausalWeaveNode>, frontier: Set<string>): boolean {
@@ -218,6 +374,7 @@ function isParentOfSelectedFrontier(id: string, selected: string[], nodes: Map<s
       const node = nodes.get(current);
       if (!node || !followsOperationalParents(node.kind)) continue;
       for (const parent of node.parents) {
+        if (!isOperationalParent(node, nodes.get(parent))) continue;
         if (parent === id) return true;
         queue.push(parent);
       }

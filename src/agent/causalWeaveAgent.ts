@@ -57,6 +57,7 @@ export class CausalWeaveAgent {
   private readonly tools: Map<string, Tool>;
   private readonly maxIterations: number;
   private readonly maxContextTokens: number;
+  private readonly projectionTargetTokens: number;
   private readonly maxNoProgressIterations?: number;
   private readonly providerSystem?: string;
   private readonly enforceCompletionEvidence: boolean;
@@ -69,6 +70,7 @@ export class CausalWeaveAgent {
     systemPrompt: string;
     maxIterations?: number;
     maxContextTokens?: number;
+    projectionTargetTokens?: number;
     maxNoProgressIterations?: number;
     providerSystem?: string;
     enforceCompletionEvidence?: boolean;
@@ -78,6 +80,7 @@ export class CausalWeaveAgent {
     this.tools = new Map(args.tools.map((tool) => [tool.name, tool]));
     this.maxIterations = args.maxIterations ?? 30;
     this.maxContextTokens = args.maxContextTokens ?? 64_000;
+    this.projectionTargetTokens = Math.min(args.projectionTargetTokens ?? this.maxContextTokens, this.maxContextTokens);
     this.maxNoProgressIterations = args.maxNoProgressIterations;
     this.providerSystem = args.providerSystem;
     this.enforceCompletionEvidence = args.enforceCompletionEvidence ?? false;
@@ -120,7 +123,7 @@ export class CausalWeaveAgent {
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       options.signal?.throwIfAborted();
       progress(iteration, "context", "Compiling the active causal frontier");
-      const compiled = this.weave.compile({ query: task, maxTokens: this.maxContextTokens });
+      const compiled = this.weave.compile({ query: task, maxTokens: this.maxContextTokens, targetTokens: this.projectionTargetTokens });
       progress(iteration, "model", `Waiting for causal model iteration ${iteration}`);
       const output = await this.model.complete({
         prompt: compiled.prompt,

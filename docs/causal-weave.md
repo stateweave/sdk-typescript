@@ -54,14 +54,17 @@ Selection combines:
 
 - mandatory system and goal roots;
 - current frontier;
+- a deterministic whole-graph digest of current resources, activity counts, recent mutations, and the latest substantive recorded inference notes;
 - current resource heads;
 - a short recent evidence window;
 - bounded **operational** closure (`resource → result → call`, `protocol_error → inference`);
 - generic lexical relevance, recency, and evidence authority.
 
+Equivalent repeated reads, calls, results, protocol errors, and superseded resource details collapse to their latest projection representative. Resource-version ancestry remains intact in storage but does not recursively pull older versions into the operational closure. This prevents repeated inspection of one large file from consuming the projection while the whole-graph digest keeps peripheral work visible.
+
 Inference/action nodes keep their complete read sets as provenance, but the compiler deliberately does not recursively expand those provenance parents. Doing so would reintroduce the full linear-history cost through transitive closure. Provenance remains queryable in storage while operational evidence alone receives automatic projection closure.
 
-The full graph remains lossless. Per-node rendering and the final compiled view are bounded before inference.
+The full graph remains lossless. The compiler can target a smaller working projection than the provider's hard input ceiling; optional nodes are removed toward that target while mandatory causal state may exceed it, and the independent hard ceiling still applies. Per-node rendering and the final compiled view are bounded before inference.
 
 ## Tool parity
 
@@ -82,6 +85,7 @@ Causal Weave adds no memory tool and no graph-only action. The model may choose 
 - Black-box providers still receive a linear token rendering; Causal Weave does not claim arbitrary transformer KV-cache composition.
 - Relevance is presently causal, lexical, and recency-based. Semantic indexes can be added as secondary indexes without changing graph truth.
 - Bounded rendering can omit part of a large old payload even though the immutable source node remains stored.
+- The digest is deterministic rather than a learned semantic summary; its recent model notes quote existing inference nodes and can therefore preserve a stale plan until newer reasoning supersedes it.
 - Resource extraction currently relies on generic tool path/hash/mutation metadata.
 - Variant C is one-shot and single-agent in the current benchmark. Multi-head concurrency and explicit merge policy remain future work.
 

@@ -14,6 +14,8 @@ describe("OpenShell SDK build benchmark", () => {
     expect(runner).toContain('PARTICIPANT_MAX_ITERATIONS ?? "300"');
     expect(runner).toContain("maxIterations > 3_000");
     expect(runner).toContain("maxPromptTokens: 250_000");
+    expect(runner).toContain("maxContextTokens: 250_000");
+    expect(runner).toContain("projectionTargetTokens: 16_000");
     expect(runner).toContain("thresholdTokens: 250_000");
     expect(runner).toContain('name: "bash_command"');
     expect(runner).toContain("runSandboxShell");
