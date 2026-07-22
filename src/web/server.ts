@@ -4,9 +4,8 @@ import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/p
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Agent, AgentRunError, type AgentState } from "../agent/agent.js";
+import { Agent, AgentRunError, defaultAgentSystemPrompt, type AgentState } from "../agent/agent.js";
 import { runStateWeave, StateWeaveRunError } from "../agent/stateweaveRunner.js";
-import { defaultSystemPrompt } from "../core/graph.js";
 import type { GraphFrame, StateWeaveRunMetadata, TraceStep } from "../core/types.js";
 import { createModelFromEnv } from "../llm/factory.js";
 import { createDefaultTools, describeTools } from "../tools/fileSystemTools.js";
@@ -114,7 +113,6 @@ void infiniteAgentReady.then(() => {
   console.error(`Failed to initialize infinite agent harness: ${error instanceof Error ? error.message : String(error)}`);
 });
 
-const defaultNodeTypes = ["intent", "constraint", "artifact", "decision", "fact", "hypothesis", "risk", "question", "wisdom"];
 const evalRuns = new Map<string, EvalRun>();
 const activeEvalRuns = new Set<string>();
 const evalRunsReady = loadEvalRuns().catch((error: unknown) => {
@@ -136,7 +134,7 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   const url = requestUrl(request);
 
   if (request.method === "GET" && url.pathname === "/api/health") {
-    json(response, 200, { ok: true, provider: providerName(), agentEngine: "causal-weave-v3", defaultSystemPrompt, defaultNodeTypes, defaultMaxIterations: 30 });
+    json(response, 200, { ok: true, provider: providerName(), agentEngine: "causal-weave-v3", defaultSystemPrompt: defaultAgentSystemPrompt, defaultProjectionTargetTokens: 16_000, defaultMaxIterations: 30 });
     return;
   }
 

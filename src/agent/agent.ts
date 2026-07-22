@@ -35,7 +35,7 @@ export class AgentRunError extends Error {
   }
 }
 
-const defaultSystemPrompt = "You are a StateWeave agent. Complete the user's task accurately, use tools when needed, and preserve durable working state in the causal graph.";
+export const defaultAgentSystemPrompt = "You are a StateWeave agent. Complete the user's task accurately, use tools when needed, and preserve durable working state in the causal graph.";
 
 export class Agent {
   private readonly args: Required<Pick<AgentArgs, "maxIterations" | "maxPromptTokens" | "projectionTargetTokens">> & Omit<AgentArgs, "maxIterations" | "maxPromptTokens" | "projectionTargetTokens" | "state">;
@@ -51,7 +51,7 @@ export class Agent {
     this.args = {
       ...args,
       tools: this.tools,
-      systemPrompt: args.systemPrompt ?? defaultSystemPrompt,
+      systemPrompt: args.systemPrompt ?? defaultAgentSystemPrompt,
       maxIterations: args.maxIterations ?? 30,
       maxPromptTokens,
       projectionTargetTokens
@@ -153,7 +153,7 @@ export class Agent {
     const runtime = new AgentRuntime({
       model: this.args.model,
       tools: this.tools,
-      systemPrompt: this.args.systemPrompt ?? defaultSystemPrompt,
+      systemPrompt: this.args.systemPrompt ?? defaultAgentSystemPrompt,
       maxIterations: this.args.maxIterations,
       maxContextTokens: this.args.maxPromptTokens,
       projectionTargetTokens: this.args.projectionTargetTokens,
