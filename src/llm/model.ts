@@ -76,10 +76,11 @@ export class MockModel implements Model {
     const lower = source.toLowerCase();
     if (lower.includes("evaluate a blind a/b answer comparison")) return mockJudge(source);
     const identity = identityOutput(source, inputNodeId);
+    const task = inferTask(lower);
+    if (input.prompt.startsWith("CAUSAL_WEAVE/1")) return `FINAL: ${identity?.answer ?? finalFor(task)}`;
     if (identity && input.mode === "text") return identity.answer;
     if (identity && input.mode !== "text") return identity.swx;
 
-    const task = inferTask(lower);
     const hasToolResult = input.frame?.graph.nodes.some((node) => node.type === "tool_result") ?? input.prompt.toLowerCase().includes("tool_result");
     if (input.mode === "text") return finalFor(task);
 

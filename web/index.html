@@ -36,7 +36,7 @@
       <main id="state-page" class="page active shell">
         <section class="card chat-card" aria-label="StateWeave chat">
           <div class="chat-toolbar">
-            <span class="eyebrow">Chat graph</span>
+            <span class="eyebrow">SDK Agent · causal engine</span>
             <div>
               <button id="export-graph" class="button secondary small-button" type="button">Export</button>
               <button id="import-graph" class="button secondary small-button" type="button">Import</button>
@@ -50,8 +50,8 @@
                 <textarea id="agent-system-prompt" rows="4"></textarea>
               </label>
               <label>
-                <span>NodeTypes</span>
-                <input id="agent-node-types" type="text" />
+                <span>Working projection tokens</span>
+                <input id="agent-projection-target" type="number" min="1000" max="64000" step="1000" />
               </label>
               <label>
                 <span>Max iterations</span>
@@ -64,7 +64,7 @@
           <div id="chat" class="chat">
             <div class="empty-state">
               <h2>Ask anything.</h2>
-              <p>StateWeave keeps one growing StateGraph rooted at <code>system_root</code>, then compiles a GraphFrame for the model each turn.</p>
+              <p>StateWeave keeps one immutable causal graph, then compiles a bounded working frontier for every model call.</p>
             </div>
           </div>
 
@@ -79,9 +79,9 @@
           <div class="graph-card">
             <div class="graph-heading">
               <div>
-                <p class="eyebrow">Growing StateGraph</p>
-                <h2>Graph memory</h2>
-                <p><strong>StateWeave primitive:</strong> regular <code>messages[]</code> sends a linear transcript; StateWeave sends a compiled <code>GraphFrame</code> — graph state plus focus — to the model, receives <code>GraphOps</code>, then weaves those ops back into the <code>StateGraph</code>. Multiple model iterations can run before the final answer.</p>
+                <p class="eyebrow">Immutable causal graph</p>
+                <h2>StateWeave memory</h2>
+                <p><strong>StateWeave primitive:</strong> ordinary model actions grow content-addressed causal nodes. Every action points to the exact state compiled for that inference; a deterministic bounded projection keeps the whole graph available without replaying a transcript.</p>
               </div>
             </div>
             <div class="workspace-switcher" aria-label="Right panel view">
@@ -125,12 +125,12 @@
           </div>
 
           <details class="model-io-panel">
-            <summary>Latest model loop: GraphFrame → streaming GraphOps · click either log to copy</summary>
+            <summary>Latest model loop: causal graph → bounded context → action · click either log to copy</summary>
             <div class="comparison single">
               <article class="compare-column">
-                <label>Exact model input / compiled GraphFrame</label>
+                <label>Exact model input / compiled causal context</label>
                 <pre id="state-input" class="code">No turn yet.</pre>
-                <label>Streaming model output, GraphOps, and trace metadata</label>
+                <label>Model actions, tools, retries, and trace metadata</label>
                 <pre id="state-output" class="code small">No output yet.</pre>
               </article>
             </div>
@@ -142,35 +142,17 @@
         <section class="card quickstart-card" aria-label="Quick Start">
           <p class="eyebrow">Quick Start</p>
           <h2>Start a graph-native agent</h2>
-          <p class="muted-copy">Primitive: <code>StateGraph → GraphFrame → GraphOps → StateGraph</code>. A user turn is a pending graph node; the model returns transactional graph mutations, not a provider transcript.</p>
+          <p class="muted-copy">Primitive: <code>immutable causal graph → bounded context → ordinary action → causal graph</code>. There is one public agent class and no provider transcript primitive.</p>
           <pre class="code quickstart-code"><code>import { Agent, createModelFromEnv } from "stateweave";
 
-// Optional: seed or resume from a minimal GraphFrame.
-// const existingFrame = {
-//   frame: {
-//     objective: "Continue an existing workspace",
-//     currentFocus: "Cortex focus is system_root.",
-//     focusNodeId: "system_root",
-//     nextExpectedOutput: "Append the next user input and weave it with GraphOps.",
-//     activeConstraints: [],
-//     availableActions: [],
-//     nodeTypes: ["intent", "artifact"]
-//   },
-//   graph: {
-//     nodes: [{ id: "system_root", type: "system", text: "StateWeave system root.", status: "active", confidence: 1, createdAt: new Date().toISOString() }],
-//     edges: []
-//   }
-// };
-
 const agent = new Agent({
-  model: createModelFromEnv(), // required
-
-  // tools: myTools, // default: workspace read/write/edit/bash tools
-  // maxIterations: 30, // default: model/tool loop limit per user turn
+  model: createModelFromEnv(),
+  // tools: myTools,
+  // maxIterations: 30,
+  // maxPromptTokens: 64_000,
+  // projectionTargetTokens: 16_000,
   // systemPrompt: "You are a careful product engineer.",
-  // nodeTypes: ["intent", "constraint", "artifact", "decision"],
-  // traceDir: ".stateweave/traces",
-  // frame: existingFrame // continue from an existing GraphFrame
+  // traceDir: ".stateweave/traces"
 });
 
 for await (const chunk of agent.stream("Create a tiny HTML todo app in ./todo")) {
@@ -178,12 +160,13 @@ for await (const chunk of agent.stream("Create a tiny HTML todo app in ./todo"))
 }
 
 await agent.run("Add keyboard shortcuts.");
-console.log(agent.getFrame()?.graph.nodes);</code></pre>
+console.log(agent.getState());
+console.log(agent.getGraph());</code></pre>
           <div class="quickstart-grid">
-            <article><h3>The primitive</h3><p>Each call appends a user input to the same graph, compiles a focused <code>GraphFrame</code>, receives <code>GraphOps</code>, validates them transactionally, then weaves them back into <code>StateGraph</code>.</p></article>
+            <article><h3>The primitive</h3><p>Each call appends a goal to the same immutable graph. Tool calls, results, resources, retries, and answers record their exact causal parents automatically.</p></article>
             <article><h3>System prompt</h3><p>Pass provider/system instructions through the model adapter, e.g. <code>new AnthropicModel({ system: "..." })</code>. Graph state stays separate.</p></article>
             <article><h3>Tools</h3><p>Workspace tools are built in by default: <code>read_file</code>, <code>write_file</code>, <code>edit_file</code>, and <code>bash_command</code>. No tool setup needed to start.</p></article>
-            <article><h3>Streaming + internals</h3><p><code>agent.stream()</code> yields answer text. Use <code>agent.streamEvents()</code> only when you want GraphFrame prompts, GraphOps, retries, and provider metadata.</p></article>
+            <article><h3>Streaming + internals</h3><p><code>agent.stream()</code> yields answer text. Use <code>agent.streamEvents()</code> for compiled contexts, actions, tools, retries, and graph growth.</p></article>
           </div>
         </section>
       </main>
@@ -443,7 +426,7 @@ console.log(agent.getFrame()?.graph.nodes);</code></pre>
           </div>
           <button id="close-transfer" class="button secondary small-button" type="button">Close</button>
         </div>
-        <p id="graph-transfer-help" class="muted-copy">Export produces TypeScript you can paste into another project. Import accepts that export or raw GraphFrame JSON.</p>
+        <p id="graph-transfer-help" class="muted-copy">Export produces TypeScript you can paste into another project. Import accepts that export or raw AgentState JSON.</p>
         <textarea id="graph-transfer-text" class="transfer-textarea" spellcheck="false"></textarea>
         <div class="modal-actions">
           <button id="copy-transfer" class="button secondary" type="button">Copy</button>

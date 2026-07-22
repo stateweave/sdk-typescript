@@ -5,11 +5,11 @@ import { oneShotSdkBuildPrompt } from "../src/evals/oneShotSdkBenchmark.js";
 const root = new URL("../ops/openshell-benchmark/", import.meta.url);
 
 describe("OpenShell SDK build benchmark", () => {
-  it("runs both memory formats under the same participant runner and task", async () => {
+  it("preserves the historical graph/transcript arms and runs the promoted agent under the same task", async () => {
     const runner = await readFile(new URL("participant-runner.mjs", root), "utf8");
-    expect(runner).toContain("StateWeaveAgent");
+    expect(runner).toContain("GraphFrameAgent");
     expect(runner).toContain("AgenticBaseline");
-    expect(runner).toContain("CausalWeaveAgent");
+    expect(runner).toContain("new Agent(");
     expect(runner).toContain("oneShotSdkBuildPrompt");
     expect(runner).toContain('PARTICIPANT_MAX_ITERATIONS ?? "300"');
     expect(runner).toContain("maxIterations > 3_000");

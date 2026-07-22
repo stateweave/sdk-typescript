@@ -105,7 +105,7 @@ export type TraceStep = {
   error?: string;
 };
 
-export type AgentResult = {
+export type GraphFrameRunResult = {
   finalAnswer: string;
   frame: GraphFrame;
   graph: StateGraph;
@@ -121,4 +121,4 @@ export type StateWeaveStreamEvent =
   | { type: "ops"; step: number; ops: GraphOp[] }
   | { type: "worker"; step: number; phase: "queued" | "started" | "token" | "ops" | "retrying" | "done" | "error" | "merged"; worker: WorkerRunSummary; token?: string; ops?: GraphOp[]; frame?: GraphFrame }
   | { type: "error"; step: number; message: string; retryable: boolean }
-  | { type: "final"; result: AgentResult };
+  | { type: "final"; result: GraphFrameRunResult };

@@ -1,5 +1,5 @@
 import { normalizeTaskInput, type TaskInput } from "../core/input.js";
-import type { AgentResult } from "../core/types.js";
+import type { GraphFrameRunResult } from "../core/types.js";
 import type { Model } from "../llm/model.js";
 import { estimateStateWeaveTokens } from "../llm/tokenizer.js";
 import type { Tool } from "../tools/types.js";
@@ -47,7 +47,7 @@ export class TraditionalMessagesAgent {
     };
   }
 
-  async run(input: TaskInput): Promise<AgentResult> {
+  async run(input: TaskInput): Promise<GraphFrameRunResult> {
     const startedAt = new Date();
     const task = normalizeTaskInput(input);
     const result = await this.inspect(task);

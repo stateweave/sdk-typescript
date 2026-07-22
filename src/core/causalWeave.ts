@@ -1,23 +1,8 @@
 import { createHash } from "node:crypto";
 import { estimateStateWeaveTokens, type StateWeaveTokenEstimate } from "../llm/tokenizer.js";
+import type { CausalNodeKind, CausalWeaveNode, CausalWeaveSnapshot } from "./causalTypes.js";
 
-export type CausalNodeKind = "system" | "goal" | "inference" | "tool_call" | "tool_result" | "resource" | "verification" | "answer" | "protocol_error";
-
-export type CausalWeaveNode = {
-  id: string;
-  kind: CausalNodeKind;
-  parents: string[];
-  payload: unknown;
-  createdAt: string;
-  sequence: number;
-  resourceKey?: string;
-};
-
-export type CausalWeaveSnapshot = {
-  version: 1;
-  nodes: CausalWeaveNode[];
-  frontier: string[];
-};
+export type { CausalNodeKind, CausalWeaveNode, CausalWeaveSnapshot } from "./causalTypes.js";
 
 export type CausalCompileResult = {
   prompt: string;
@@ -41,7 +26,7 @@ export class CausalWeave {
 
   constructor(snapshot?: CausalWeaveSnapshot) {
     if (!snapshot) return;
-    if (snapshot.version !== 1) throw new Error(`Unsupported Causal Weave version: ${snapshot.version}`);
+    assertValidCausalWeaveSnapshot(snapshot);
     for (const node of snapshot.nodes) {
       this.nodes.set(node.id, structuredClone(node));
       this.order.push(node.id);
@@ -112,11 +97,12 @@ export class CausalWeave {
       const key = projectionEquivalenceKey(this.nodes.get(id)!);
       return !key || latestEquivalent.get(key) === id;
     });
+    const reverseOrder = [...this.order].reverse();
+    const latestSystem = reverseOrder.find((id) => this.nodes.get(id)?.kind === "system");
+    const latestGoal = reverseOrder.find((id) => this.nodes.get(id)?.kind === "goal");
     const mandatory = [
-      ...this.order.filter((id) => {
-        const kind = this.nodes.get(id)?.kind;
-        return kind === "system" || kind === "goal";
-      }),
+      ...(latestSystem ? [latestSystem] : []),
+      ...(latestGoal ? [latestGoal] : []),
       ...this.frontier(),
       ...this.resourceHeads.values(),
       ...recent
@@ -161,6 +147,23 @@ export class CausalWeave {
     }
     return { prompt, nodeIds: chosen, tokenEstimate: estimate };
   }
+}
+
+export function assertValidCausalWeaveSnapshot(snapshot: CausalWeaveSnapshot): void {
+  if (snapshot.version !== 1) throw new Error(`Unsupported Causal Weave version: ${snapshot.version}`);
+  if (!Array.isArray(snapshot.nodes) || !Array.isArray(snapshot.frontier)) throw new Error("Causal Weave state requires nodes and frontier arrays.");
+  const ids = new Set<string>();
+  const kinds = new Set<CausalNodeKind>(["system", "goal", "inference", "tool_call", "tool_result", "resource", "verification", "answer", "protocol_error"]);
+  for (const [index, node] of snapshot.nodes.entries()) {
+    if (!node || typeof node !== "object" || typeof node.id !== "string" || !Array.isArray(node.parents) || !kinds.has(node.kind)) throw new Error(`Invalid Causal Weave node at index ${index}.`);
+    if (ids.has(node.id)) throw new Error(`Duplicate Causal Weave node: ${node.id}`);
+    for (const parent of node.parents) if (!ids.has(parent)) throw new Error(`Causal Weave node ${node.id} references a missing or non-causal parent: ${parent}`);
+    const expected = causalNodeId(node.kind, [...node.parents].sort(), node.payload, node.resourceKey);
+    if (node.id !== expected) throw new Error(`Causal Weave node identity mismatch: ${node.id}`);
+    if (node.sequence !== index + 1) throw new Error(`Causal Weave node sequence mismatch: ${node.id}`);
+    ids.add(node.id);
+  }
+  for (const id of snapshot.frontier) if (!ids.has(id)) throw new Error(`Causal Weave frontier references missing node: ${id}`);
 }
 
 function causalNodeId(kind: CausalNodeKind, parents: string[], payload: unknown, resourceKey?: string): string {

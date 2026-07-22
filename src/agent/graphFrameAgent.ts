@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { appendInputToGraphFrame, assertValidGraphFrame, cloneFrame, createInitialGraphFrame, forkFrame } from "../core/graph.js";
 import { normalizeTaskInput } from "../core/input.js";
-import type { AgentResult, GraphFrame, StateWeaveStreamEvent, TraceStep } from "../core/types.js";
+import type { GraphFrame, GraphFrameRunResult, StateWeaveStreamEvent, TraceStep } from "../core/types.js";
 import type { Model } from "../llm/model.js";
 import { createDefaultTools } from "../tools/fileSystemTools.js";
 import type { Tool } from "../tools/types.js";
@@ -12,7 +12,7 @@ export type { StateWeaveInput, StateWeaveRunOptions } from "./stateweaveRunner.j
 
 const defaultMaxIterations = 30;
 
-export type StateWeaveAgentArgs = {
+export type GraphFrameAgentArgs = {
   model: Model;
   tools?: Tool[];
   maxIterations?: number;
@@ -27,7 +27,7 @@ export type StateWeaveAgentArgs = {
   providerSystem?: string;
 };
 
-export class StateWeaveAgent {
+export class GraphFrameAgent {
   private model: Model;
   private tools: Tool[];
   private maxIterations: number;
@@ -43,7 +43,7 @@ export class StateWeaveAgent {
   private runLock: Promise<void> = Promise.resolve();
   private stateGeneration = 0;
 
-  constructor(args: StateWeaveAgentArgs) {
+  constructor(args: GraphFrameAgentArgs) {
     this.model = args.model;
     this.tools = args.tools ?? createDefaultTools();
     this.maxIterations = args.maxIterations ?? defaultMaxIterations;
@@ -59,7 +59,7 @@ export class StateWeaveAgent {
     this.providerSystem = args.providerSystem;
   }
 
-  async run(input: StateWeaveInput, options?: StateWeaveRunOptions): Promise<AgentResult> {
+  async run(input: StateWeaveInput, options?: StateWeaveRunOptions): Promise<GraphFrameRunResult> {
     if (options?.frame) return this.runOnce(input, options);
 
     const release = await this.acquireRunLock();
@@ -124,7 +124,7 @@ export class StateWeaveAgent {
     return forkFrame(next);
   }
 
-  private async runOnce(input: StateWeaveInput, options: StateWeaveRunOptions | undefined): Promise<AgentResult> {
+  private async runOnce(input: StateWeaveInput, options: StateWeaveRunOptions | undefined): Promise<GraphFrameRunResult> {
     try {
       const result = await runStateWeave({ model: this.model, tools: this.tools, maxIterations: this.maxIterations, maxNoProgressIterations: this.maxNoProgressIterations, maxPromptTokens: this.maxPromptTokens, systemPrompt: this.systemPrompt, nodeTypes: this.nodeTypes, traceMode: this.traceMode, blindIdentity: this.blindIdentity, providerSystem: this.providerSystem }, input, options);
       if (this.traceDir) await this.saveTrace(traceObjective(result.trace), result.trace);
@@ -165,38 +165,6 @@ export class StateWeaveAgent {
     await mkdir(this.traceDir, { recursive: true });
     const safeName = objective.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 64);
     await writeFile(path.join(this.traceDir, `${Date.now()}-${safeName}.json`), JSON.stringify(trace, null, 2));
-  }
-}
-
-export class Agent {
-  private readonly inner: StateWeaveAgent;
-
-  constructor(args: StateWeaveAgentArgs) {
-    this.inner = new StateWeaveAgent(args);
-  }
-
-  run(input: StateWeaveInput, options?: StateWeaveRunOptions): Promise<AgentResult> {
-    return this.inner.run(input, options);
-  }
-
-  stream(input: StateWeaveInput, options?: StateWeaveRunOptions): AsyncIterable<string> {
-    return this.inner.streamText(input, options);
-  }
-
-  streamText(input: StateWeaveInput, options?: StateWeaveRunOptions): AsyncIterable<string> {
-    return this.inner.streamText(input, options);
-  }
-
-  streamEvents(input: StateWeaveInput, options?: StateWeaveRunOptions): AsyncIterable<StateWeaveStreamEvent> {
-    return this.inner.stream(input, options);
-  }
-
-  getFrame(): GraphFrame | undefined {
-    return this.inner.getFrame();
-  }
-
-  resetFrame(frame?: GraphFrame): void {
-    this.inner.resetFrame(frame);
   }
 }
 

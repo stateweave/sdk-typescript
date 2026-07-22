@@ -1,4 +1,6 @@
-# StateWeave SDK Hardening Plan
+# Historical GraphFrame SDK Hardening Plan
+
+> Archived design record. The public `Agent` now uses the immutable causal engine documented in [`agent-engine.md`](./agent-engine.md). GraphFrame/SWX remains only in low-level utilities and frozen historical evaluation code.
 
 ## Objective
 

@@ -1,4 +1,6 @@
-import type { GraphFrame, GraphOp, StateGraph, StateWeaveRunMetadata, StateWeaveStreamEvent, TraceStep, WorkerRunSummary } from "../../src/core/types.js";
+import type { AgentProgress, AgentRunMetadata, AgentState, AgentStreamEvent, AgentTraceStep } from "../../src/agent/types.js";
+import { agentStateToGraph } from "../../src/core/causalGraph.js";
+import type { GraphFrame, StateGraph, StateWeaveRunMetadata, TraceStep } from "../../src/core/types.js";
 import { renderMarkdown } from "./markdown.js";
 import { scoreEvalRecords, type EvalPrimitive as Primitive, type EvalVote as Vote, type ScoreBreakdown } from "./evalScores.js";
 import { promptFiveCases, promptFiveCategoryOrder, type PromptFiveCategory } from "./promptFive.js";
@@ -9,22 +11,29 @@ import "./styles.css";
 type ChatMessage = { role: "user" | "assistant"; content: string };
 type ModelMessage = { role: "user" | "assistant"; content: string };
 
-type StateWeavePayload = {
-  inputFrame?: GraphFrame;
-  frameAfter?: GraphFrame;
+type AgentPayload = {
+  stateAfter: AgentState;
   output: string;
-  trace: TraceStep[];
+  trace: AgentTraceStep[];
   graph: StateGraph;
-  metadata?: StateWeaveRunMetadata;
+  metadata: AgentRunMetadata;
 };
 
-type StateWeaveResponse = { stateweave: StateWeavePayload };
-type CompareResponse = StateWeaveResponse & {
+type StateWeaveResponse = { stateweave: AgentPayload };
+type CompareResponse = {
   traditional: {
     messages: ModelMessage[];
     rawModelInput: string;
     output: string;
     history: ChatMessage[];
+  };
+  stateweave: {
+    inputFrame?: GraphFrame;
+    frameAfter?: GraphFrame;
+    output: string;
+    trace: TraceStep[];
+    graph: StateGraph;
+    metadata?: StateWeaveRunMetadata;
   };
 };
 
@@ -98,23 +107,20 @@ type WorkspaceFile = { path: string; size: number; updatedAt: string; mime: stri
 type WorkspaceFileContent = WorkspaceFile & { content: string };
 type TransferMode = "export" | "import";
 type WorkspaceViewName = "graph" | "tools" | "files";
-type AgentSettings = { systemPrompt: string; nodeTypes: string[]; maxIterations: number };
-type LiveStepStatus = "streaming" | "parsed" | "retrying" | "rejected" | "committed";
-type LiveWorker = WorkerRunSummary & { tokens: string; ops?: GraphOp[] };
+type AgentSettings = { systemPrompt: string; projectionTargetTokens: number; maxIterations: number };
 type LiveStreamStep = {
   step: number;
-  status: LiveStepStatus;
+  phase: AgentProgress["phase"];
+  detail: string;
   rawModelOutput: string;
-  tokenEstimate?: number;
-  parsedOps?: GraphOp[];
+  contextTokens?: number;
+  action?: AgentProgress["action"];
+  tool?: string;
   error?: string;
-  retryable?: boolean;
-  modelMetadata: Record<string, unknown>[];
-  workers: Map<string, LiveWorker>;
   nodeCount?: number;
   edgeCount?: number;
 };
-type LiveStreamLog = { metadata?: StateWeaveRunMetadata; steps: Map<number, LiveStreamStep>; events: string[]; prompt?: string; latestStep?: number; finalAnswer?: string };
+type LiveStreamLog = { metadata?: Partial<AgentRunMetadata>; steps: Map<number, LiveStreamStep>; events: string[]; prompt?: string; latestStep?: number; finalAnswer?: string };
 
 let activePage: PageName = pageFromHash();
 let sdkBuildState: SdkBuildPublicState | undefined;
@@ -122,7 +128,7 @@ let sdkBuildPollTimer: number | undefined;
 let sdkBuildPreviewRunId: string | undefined;
 let sdkBuildPreviewCRunId: string | undefined;
 let multiSuiteId: SuiteId = suiteIdForPage(activePage) ?? "prompt-one";
-let stateFrame: GraphFrame | undefined;
+let agentState: AgentState | undefined;
 let abStateFrame: GraphFrame | undefined;
 let abRegularHistory: ChatMessage[] = [];
 let multiStateFrame: GraphFrame | undefined;
@@ -141,12 +147,12 @@ let selectedFilePath: string | undefined;
 let workspaceFiles: WorkspaceFile[] = [];
 
 const defaultAgentSettings: AgentSettings = {
-  systemPrompt: "StateWeave system root. The graph is the runtime state; compile GraphFrame from the graph instead of provider messages.",
-  nodeTypes: ["intent", "constraint", "artifact", "decision", "fact", "hypothesis", "risk", "question", "wisdom"],
+  systemPrompt: "You are a StateWeave agent. Complete the user's task accurately, use tools when needed, and preserve durable working state in the causal graph.",
+  projectionTargetTokens: 16_000,
   maxIterations: 30
 };
-const agentSettingsStorageKey = "stateweave.agentSettings.v1";
-const stateChatStorageKey = "stateweave.chat.v1";
+const agentSettingsStorageKey = "stateweave.agentSettings.v2";
+const stateChatStorageKey = "stateweave.chat.v2";
 let agentSettings = loadAgentSettings();
 const primaryGraphViewState: GraphViewState = { positions: new Map<string, GraphPosition>() };
 const copyPayloads = new Map<string, string>();
@@ -557,7 +563,7 @@ const reset = element<HTMLButtonElement>("reset");
 const status = element<HTMLElement>("status");
 const provider = element<HTMLElement>("provider");
 const agentSystemPrompt = element<HTMLTextAreaElement>("agent-system-prompt");
-const agentNodeTypes = element<HTMLInputElement>("agent-node-types");
+const agentProjectionTarget = element<HTMLInputElement>("agent-projection-target");
 const agentMaxIterations = element<HTMLInputElement>("agent-max-iterations");
 const resetAgentSettings = element<HTMLButtonElement>("reset-agent-settings");
 const stateInput = element<HTMLElement>("state-input");
@@ -654,14 +660,14 @@ input.addEventListener("keydown", (event) => {
   }
 });
 agentSystemPrompt.addEventListener("input", saveAgentSettingsFromForm);
-agentNodeTypes.addEventListener("input", saveAgentSettingsFromForm);
+agentProjectionTarget.addEventListener("input", saveAgentSettingsFromForm);
 agentMaxIterations.addEventListener("input", saveAgentSettingsFromForm);
 resetAgentSettings.addEventListener("click", () => {
   agentSettings = structuredClone(defaultAgentSettings);
   saveAgentSettings();
   renderAgentSettings();
-  stateFrame = applyAgentSettingsToFrame(stateFrame);
-  if (stateFrame) renderGraph(stateFrame.graph);
+  agentState = undefined;
+  resetStateWeaveChat();
 });
 abInput.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
@@ -732,8 +738,8 @@ multiStage.addEventListener("click", (event) => {
   if (currentSuite().mode === "judge" && multiRun) void voteBackgroundEvalRun(voteButton.dataset.vote as Vote);
   else voteMulti(voteButton.dataset.vote as Vote);
 });
-setupCopyableLog(stateInput, "GraphFrame");
-setupCopyableLog(stateOutput, "GraphOps");
+setupCopyableLog(stateInput, "Causal context");
+setupCopyableLog(stateOutput, "Agent trace");
 
 function pageFromHash(): PageName {
   if (location.hash === "#quick-start") return "quickstart";
@@ -761,7 +767,7 @@ function loadAgentSettings(): AgentSettings {
     const parsed = JSON.parse(raw) as Partial<AgentSettings>;
     return {
       systemPrompt: typeof parsed.systemPrompt === "string" && parsed.systemPrompt.trim() ? parsed.systemPrompt : defaultAgentSettings.systemPrompt,
-      nodeTypes: normalizeNodeTypes(Array.isArray(parsed.nodeTypes) ? parsed.nodeTypes : defaultAgentSettings.nodeTypes),
+      projectionTargetTokens: normalizeProjectionTarget(parsed.projectionTargetTokens),
       maxIterations: normalizeMaxIterations(parsed.maxIterations)
     };
   } catch {
@@ -775,13 +781,13 @@ function saveAgentSettings(): void {
 
 function persistStateChat(): void {
   try {
-    if (!stateFrame) {
+    if (!agentState) {
       localStorage.removeItem(stateChatStorageKey);
       return;
     }
-    localStorage.setItem(stateChatStorageKey, JSON.stringify({ frame: stateFrame, chatHtml: chat.innerHTML, savedAt: new Date().toISOString() }));
+    localStorage.setItem(stateChatStorageKey, JSON.stringify({ state: agentState, chatHtml: chat.innerHTML, savedAt: new Date().toISOString() }));
   } catch {
-    status.textContent = "Chat is too large for browser persistence; export the graph to preserve it.";
+    status.textContent = "Chat is too large for browser persistence; export the state to preserve it.";
   }
 }
 
@@ -789,16 +795,15 @@ function restoreStateChat(): void {
   const raw = localStorage.getItem(stateChatStorageKey);
   if (!raw) return;
   try {
-    const saved = JSON.parse(raw) as { frame?: unknown; chatHtml?: unknown; savedAt?: unknown };
-    if (!isGraphFrameLike(saved.frame) || typeof saved.chatHtml !== "string") throw new Error("Invalid saved chat");
-    const restored = applyAgentSettingsToFrame(saved.frame);
-    if (!restored) throw new Error("Invalid saved chat");
-    stateFrame = restored;
+    const saved = JSON.parse(raw) as { state?: unknown; chatHtml?: unknown };
+    if (!isAgentStateLike(saved.state) || typeof saved.chatHtml !== "string") throw new Error("Invalid saved chat");
+    agentState = saved.state;
     chat.innerHTML = saved.chatHtml;
-    renderGraph(restored.graph);
-    stateInput.textContent = compactFrame(restored);
-    stateOutput.textContent = "Restored the browser-persisted StateGraph. Continue the chat or export it.";
-    status.textContent = `Restored · ${restored.graph.nodes.length} nodes / ${restored.graph.edges.length} edges`;
+    const graphValue = agentStateToGraph(agentState);
+    renderGraph(graphValue);
+    stateInput.textContent = compactAgentState(agentState);
+    stateOutput.textContent = "Restored the browser-persisted causal graph. Continue the chat or export it.";
+    status.textContent = `Restored · ${graphValue.nodes.length} nodes / ${graphValue.edges.length} edges`;
   } catch {
     localStorage.removeItem(stateChatStorageKey);
   }
@@ -806,25 +811,23 @@ function restoreStateChat(): void {
 
 function renderAgentSettings(): void {
   agentSystemPrompt.value = agentSettings.systemPrompt;
-  agentNodeTypes.value = agentSettings.nodeTypes.join(", ");
+  agentProjectionTarget.value = String(agentSettings.projectionTargetTokens);
   agentMaxIterations.value = String(agentSettings.maxIterations);
 }
 
 function saveAgentSettingsFromForm(): void {
   agentSettings = {
     systemPrompt: agentSystemPrompt.value.trim() || defaultAgentSettings.systemPrompt,
-    nodeTypes: normalizeNodeTypes(agentNodeTypes.value.split(",")),
+    projectionTargetTokens: normalizeProjectionTarget(agentProjectionTarget.value),
     maxIterations: normalizeMaxIterations(agentMaxIterations.value)
   };
   saveAgentSettings();
-  stateFrame = applyAgentSettingsToFrame(stateFrame);
   abStateFrame = applyAgentSettingsToFrame(abStateFrame);
 }
 
 function applyAgentSettingsToFrame(frame: GraphFrame | undefined): GraphFrame | undefined {
   if (!frame) return undefined;
   const next = structuredClone(frame);
-  next.frame.nodeTypes = agentSettings.nodeTypes;
   const root = next.graph.nodes.find((node) => node.id === "system_root" && node.type === "system");
   if (root) {
     root.text = agentSettings.systemPrompt;
@@ -833,11 +836,9 @@ function applyAgentSettingsToFrame(frame: GraphFrame | undefined): GraphFrame | 
   return next;
 }
 
-function normalizeNodeTypes(values: unknown[]): string[] {
-  return [...new Set(values
-    .filter((value): value is string => typeof value === "string")
-    .map((value) => value.trim())
-    .filter((value) => /^[a-z][a-z0-9_-]{0,63}$/.test(value)))];
+function normalizeProjectionTarget(value: unknown): number {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric >= 1_000 && numeric <= 64_000 ? numeric : defaultAgentSettings.projectionTargetTokens;
 }
 
 function normalizeMaxIterations(value: unknown): number {
@@ -1178,20 +1179,17 @@ async function sendStateWeaveMessage(): Promise<void> {
   const live = createLiveStreamLog();
 
   try {
-    stateFrame = applyAgentSettingsToFrame(stateFrame);
-    const result = await streamStateWeave(text, stateFrame, agentSettings, (event) => {
+    const result = await streamStateWeave(text, agentState, agentSettings, (event) => {
       updateLiveStreamLog(live, event);
       updatePendingStateWeave(pending, live);
       stateOutput.textContent = formatLiveStreamLog(live);
-      if (event.type === "frame" && event.phase === "before") stateInput.textContent = event.prompt ?? compactFrame(event.frame);
-      if (event.type === "frame") renderGraph(event.frame.graph);
-      if (event.type === "error") status.textContent = event.retryable ? `GraphOps rejected at step ${event.step}; retrying…` : "GraphOps rejected.";
-      if (event.type === "ops") status.textContent = `Parsed step ${event.step} GraphOps…`;
-      if (event.type === "worker") status.textContent = `Scheduler ${event.phase} · worker ${event.worker.id}`;
-      if (event.type === "frame" && event.phase === "after") status.textContent = `Committed step ${event.step} to StateGraph.`;
-      if (event.type === "token") status.textContent = `Streaming uncommitted GraphOps · step ${event.step}…`;
+      if (event.type === "progress") {
+        if (event.progress.prompt) stateInput.textContent = event.progress.prompt;
+        if (event.progress.graph) renderGraph(event.progress.graph);
+        status.textContent = `${event.progress.phase === "retrying" ? "Retrying" : event.progress.phase === "tool" ? "Using tool" : event.progress.phase === "model" ? "Thinking" : "Weaving state"} · step ${event.progress.iteration}`;
+      }
     });
-    stateFrame = result.stateweave.frameAfter;
+    agentState = result.stateweave.stateAfter;
     const assistantMessage = finalizePendingStateWeave(pending, result.stateweave.output, live);
     linkLatestConversationNodes(result.stateweave.graph, userMessage, assistantMessage);
     renderStateWeave(result.stateweave);
@@ -1242,11 +1240,11 @@ async function runAbTest(): Promise<void> {
   }
 }
 
-async function streamStateWeave(text: string, frame: GraphFrame | undefined, settings: AgentSettings, onEvent: (event: StateWeaveStreamEvent) => void): Promise<StateWeaveResponse> {
+async function streamStateWeave(text: string, state: AgentState | undefined, settings: AgentSettings, onEvent: (event: AgentStreamEvent) => void): Promise<StateWeaveResponse> {
   const response = await fetch(`${apiBase}/api/stateweave/run`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ input: text, frame, systemPrompt: settings.systemPrompt, nodeTypes: settings.nodeTypes, maxIterations: settings.maxIterations })
+    body: JSON.stringify({ input: text, state, systemPrompt: settings.systemPrompt, projectionTargetTokens: settings.projectionTargetTokens, maxIterations: settings.maxIterations })
   });
 
   if (!response.ok) {
@@ -1263,22 +1261,21 @@ async function streamStateWeave(text: string, frame: GraphFrame | undefined, set
 
   const consumeLine = (line: string): void => {
     if (!line.trim()) return;
-    const event = JSON.parse(line) as StateWeaveStreamEvent | { type: "error"; message: string; trace?: TraceStep[]; metadata?: StateWeaveRunMetadata };
+    const event = JSON.parse(line) as AgentStreamEvent | { type: "error"; message: string };
     if (event.type === "final") {
       final = {
         stateweave: {
-          inputFrame: event.result.trace[0]?.frameBefore,
-          frameAfter: event.result.frame ?? event.result.trace.at(-1)?.frameAfter,
+          stateAfter: event.result.state,
           output: event.result.finalAnswer,
           trace: event.result.trace,
           graph: event.result.graph,
           metadata: event.result.metadata
         }
       };
-    } else if (event.type === "error" && !("step" in event)) {
+    } else if (event.type === "error") {
       terminalError = event.message;
     }
-    if ("step" in event || event.type === "metadata" || event.type === "final") onEvent(event as StateWeaveStreamEvent);
+    if (event.type === "metadata" || event.type === "progress" || event.type === "final") onEvent(event);
   };
 
   while (true) {
@@ -1301,7 +1298,7 @@ async function compareStateWeave(text: string, frame: GraphFrame | undefined, me
   const response = await fetch(`${apiBase}/api/stateweave/compare`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ input: text, frame, messages, systemPrompt: agentSettings.systemPrompt, nodeTypes: agentSettings.nodeTypes, maxIterations: agentSettings.maxIterations })
+    body: JSON.stringify({ input: text, frame, messages, systemPrompt: agentSettings.systemPrompt, maxIterations: agentSettings.maxIterations })
   });
 
   const body = (await response.json()) as CompareResponse | { error?: string };
@@ -1327,9 +1324,9 @@ async function judgeComparison(record: MultiRecord): Promise<JudgeResponse> {
   return body as JudgeResponse;
 }
 
-function renderStateWeave(result: StateWeavePayload): void {
-  stateInput.textContent = result.trace[0]?.prompt ?? (result.inputFrame ? compactFrame(result.inputFrame) : "No GraphFrame captured.");
-  stateOutput.textContent = formatStateOutput(result.trace, result.output, result.metadata);
+function renderStateWeave(result: AgentPayload): void {
+  stateInput.textContent = result.trace.at(-1)?.prompt ?? "No compiled causal context captured.";
+  stateOutput.textContent = formatAgentOutput(result.trace, result.output, result.metadata);
   renderGraph(result.graph);
 }
 
@@ -1557,13 +1554,13 @@ function formatBytes(bytes: number): string {
 
 function openGraphTransfer(mode: TransferMode): void {
   transferMode = mode;
-  transferTitle.textContent = mode === "export" ? "Export current graph" : "Import graph";
+  transferTitle.textContent = mode === "export" ? "Export agent state" : "Import agent state";
   transferHelp.textContent = mode === "export"
-    ? "Copy this TypeScript into another project to continue from the current GraphFrame."
-    : "Paste a previous export or raw GraphFrame JSON. Import replaces the current chat graph in this lab.";
+    ? "Copy this TypeScript into another project to continue from the same immutable causal graph."
+    : "Paste a previous export or raw AgentState JSON. Import replaces the current chat state in this lab.";
   applyImport.hidden = mode === "export";
   copyTransfer.hidden = mode === "import";
-  transferText.value = mode === "export" ? graphExportCode(stateFrame) : "";
+  transferText.value = mode === "export" ? graphExportCode(agentState) : "";
   transferModal.hidden = false;
   transferText.focus();
   transferText.select();
@@ -1575,14 +1572,15 @@ function closeGraphTransfer(): void {
 
 function applyGraphImport(): void {
   try {
-    const frame = parseImportedGraphFrame(transferText.value);
-    stateFrame = frame;
+    const state = parseImportedAgentState(transferText.value);
+    agentState = state;
     primaryGraphViewState.selectedNodeId = undefined;
     primaryGraphViewState.positions.clear();
-    renderGraph(frame.graph);
-    stateInput.textContent = compactFrame(frame);
-    stateOutput.textContent = "Imported GraphFrame. The next user turn will be appended as a pending user_input node.";
-    status.textContent = `Imported · StateGraph ${frame.graph.nodes.length} nodes / ${frame.graph.edges.length} edges`;
+    const graphValue = agentStateToGraph(state);
+    renderGraph(graphValue);
+    stateInput.textContent = compactAgentState(state);
+    stateOutput.textContent = "Imported AgentState. The next turn will continue from this causal frontier.";
+    status.textContent = `Imported · ${graphValue.nodes.length} nodes / ${graphValue.edges.length} edges`;
     persistStateChat();
     closeGraphTransfer();
     setActivePage("state");
@@ -1591,70 +1589,43 @@ function applyGraphImport(): void {
   }
 }
 
-function graphExportCode(frame: GraphFrame | undefined): string {
-  const exportedFrame = frame ?? emptyExportFrame();
-  const json = JSON.stringify(exportedFrame, null, 2);
-  return `/* STATEWEAVE_FRAME_JSON_START\n${json}\nSTATEWEAVE_FRAME_JSON_END */
-import { StateWeaveAgent, createModelFromEnv, type GraphFrame } from "stateweave";
+function graphExportCode(state: AgentState | undefined): string {
+  const exportedState = state ?? { version: 1 as const, nodes: [], frontier: [] };
+  const json = JSON.stringify(exportedState, null, 2);
+  return `/* STATEWEAVE_STATE_JSON_START\n${json}\nSTATEWEAVE_STATE_JSON_END */
+import { Agent, createModelFromEnv, type AgentState } from "stateweave";
 
-const frame: GraphFrame = ${json} as GraphFrame;
-
-const agent = new StateWeaveAgent({
-  model: createModelFromEnv()
-  // default file-system tools are available unless you pass a custom tools array
-});
-
-const result = await agent.run({
-  objective: frame.frame.objective,
-  input: "Continue from this exported graph."
-}, { frame });
+const state: AgentState = ${json} as AgentState;
+const agent = new Agent({ model: createModelFromEnv(), state });
+const result = await agent.run("Continue from this exported state.");
 
 console.log(result.finalAnswer);
-console.log(result.graph);`;
+console.log(result.state);`;
 }
 
-function parseImportedGraphFrame(value: string): GraphFrame {
+function parseImportedAgentState(value: string): AgentState {
   const trimmed = value.trim();
-  if (!trimmed) throw new Error("Paste exported TypeScript or GraphFrame JSON first.");
-  const marker = trimmed.match(/STATEWEAVE_FRAME_JSON_START\s*([\s\S]*?)\s*STATEWEAVE_FRAME_JSON_END/);
+  if (!trimmed) throw new Error("Paste exported TypeScript or AgentState JSON first.");
+  const marker = trimmed.match(/STATEWEAVE_STATE_JSON_START\s*([\s\S]*?)\s*STATEWEAVE_STATE_JSON_END/);
   const raw = marker?.[1] ?? trimmed;
   const parsed = JSON.parse(raw) as unknown;
-  if (!isGraphFrameLike(parsed)) throw new Error("Import did not contain a valid GraphFrame with frame and graph nodes/edges.");
+  if (!isAgentStateLike(parsed)) throw new Error("Import did not contain a valid AgentState with nodes and frontier arrays.");
   return parsed;
 }
 
-function isGraphFrameLike(value: unknown): value is GraphFrame {
+function isAgentStateLike(value: unknown): value is AgentState {
   if (!value || typeof value !== "object") return false;
-  const candidate = value as { frame?: unknown; graph?: { nodes?: unknown; edges?: unknown } };
-  return Boolean(candidate.frame && candidate.graph && Array.isArray(candidate.graph.nodes) && Array.isArray(candidate.graph.edges));
-}
-
-function emptyExportFrame(): GraphFrame {
-  const createdAt = new Date().toISOString();
-  return {
-    frame: {
-      objective: "Continue graph",
-      currentFocus: "Cortex focus is system_root. Add a user input to begin.",
-      focusNodeId: "system_root",
-      candidateFocusNodeIds: ["system_root"],
-      nextExpectedOutput: "Append a user input and weave it with GraphOps.",
-      activeConstraints: [],
-      availableActions: ["add_node", "add_edge", "update_node", "focus", "call_tool", "final"]
-    },
-    graph: {
-      nodes: [{ id: "system_root", type: "system", text: "StateWeave system root.", data: { activeSystemNodeId: "system_root" }, status: "active", confidence: 1, createdAt }],
-      edges: []
-    }
-  };
+  const candidate = value as { version?: unknown; nodes?: unknown; frontier?: unknown };
+  return candidate.version === 1 && Array.isArray(candidate.nodes) && Array.isArray(candidate.frontier);
 }
 
 function resetStateWeaveChat(): void {
-  stateFrame = undefined;
+  agentState = undefined;
   localStorage.removeItem(stateChatStorageKey);
   primaryGraphViewState.selectedNodeId = undefined;
   primaryGraphViewState.positions.clear();
   stopGraphAnimation(primaryGraphViewState);
-  chat.innerHTML = `<div class="empty-state"><h2>Ask anything.</h2><p>StateWeave keeps one growing StateGraph rooted at <code>system_root</code>, then compiles a GraphFrame for the model each turn.</p></div>`;
+  chat.innerHTML = `<div class="empty-state"><h2>Ask anything.</h2><p>StateWeave keeps one immutable causal graph and compiles a bounded working frontier for every model call.</p></div>`;
   stateInput.textContent = "No turn yet.";
   stateOutput.textContent = "No output yet.";
   graph.className = "graph-empty";
@@ -2334,113 +2305,63 @@ function createLiveStreamLog(): LiveStreamLog {
 function ensureLiveStep(live: LiveStreamLog, stepNumber: number): LiveStreamStep {
   const existing = live.steps.get(stepNumber);
   if (existing) return existing;
-  const step: LiveStreamStep = { step: stepNumber, status: "streaming", rawModelOutput: "", modelMetadata: [], workers: new Map() };
+  const step: LiveStreamStep = { step: stepNumber, phase: "context", detail: "Preparing causal context", rawModelOutput: "" };
   live.steps.set(stepNumber, step);
   return step;
 }
 
-function updateLiveStreamLog(live: LiveStreamLog, event: StateWeaveStreamEvent): void {
+function updateLiveStreamLog(live: LiveStreamLog, event: AgentStreamEvent): void {
   if (event.type === "metadata") {
     live.metadata = event.metadata;
-    live.events.push(`run ${event.metadata.runId} started · maxIterations=${event.metadata.maxIterations}`);
+    live.events.push(`run ${event.metadata.runId} started · engine=${event.metadata.engine} · maxIterations=${event.metadata.maxIterations}`);
     return;
   }
-  if (event.type === "frame" && event.phase === "before") {
-    const step = ensureLiveStep(live, event.step);
-    live.latestStep = event.step;
-    live.prompt = event.prompt;
-    step.status = "streaming";
-    step.tokenEstimate = event.tokenEstimate?.estimatedTokens;
-    live.events.push(`step ${event.step} model call · promptTokens≈${event.tokenEstimate?.estimatedTokens ?? "unknown"}`);
+  if (event.type === "progress") {
+    const progress = event.progress;
+    const step = ensureLiveStep(live, progress.iteration);
+    live.latestStep = progress.iteration;
+    step.phase = progress.phase;
+    step.detail = progress.detail;
+    step.contextTokens = progress.contextTokens ?? step.contextTokens;
+    step.rawModelOutput = progress.rawModelOutput ?? step.rawModelOutput;
+    step.action = progress.action ?? step.action;
+    step.tool = progress.tool ?? step.tool;
+    step.error = progress.error ?? step.error;
+    if (progress.prompt) live.prompt = progress.prompt;
+    if (progress.graph) {
+      step.nodeCount = progress.graph.nodes.length;
+      step.edgeCount = progress.graph.edges.length;
+    }
+    live.events.push(`step ${progress.iteration} ${progress.phase} · ${progress.detail}`);
     return;
   }
-  if (event.type === "token") {
-    const step = ensureLiveStep(live, event.step);
-    live.latestStep = event.step;
-    step.status = "streaming";
-    step.rawModelOutput += event.token;
-    return;
-  }
-  if (event.type === "model_metadata") {
-    const step = ensureLiveStep(live, event.step);
-    step.modelMetadata.push(event.metadata);
-    const stopReason = typeof event.metadata.stopReason === "string" ? ` · stop=${event.metadata.stopReason}` : "";
-    live.events.push(`step ${event.step} model metadata${stopReason}`);
-    return;
-  }
-  if (event.type === "ops") {
-    const step = ensureLiveStep(live, event.step);
-    step.status = "parsed";
-    step.parsedOps = event.ops;
-    live.events.push(`step ${event.step} parsed GraphOps\n${formatOps(event.ops)}`);
-    return;
-  }
-  if (event.type === "worker") {
-    const step = ensureLiveStep(live, event.step);
-    const existing = step.workers.get(event.worker.id) ?? { ...event.worker, tokens: "" };
-    const nextWorker: LiveWorker = { ...existing, ...event.worker, tokens: existing.tokens };
-    if (event.token) nextWorker.tokens += event.token;
-    if (event.ops) nextWorker.ops = event.ops;
-    step.workers.set(event.worker.id, nextWorker);
-    live.events.push(`step ${event.step} worker ${event.worker.id} ${event.phase}${event.worker.finalAnswer ? ` · ${event.worker.finalAnswer}` : event.worker.error ? ` · ${event.worker.error}` : ""}`);
-    return;
-  }
-  if (event.type === "error") {
-    const step = ensureLiveStep(live, event.step);
-    step.status = event.retryable ? "retrying" : "rejected";
-    step.error = event.message;
-    step.retryable = event.retryable;
-    live.events.push(`step ${event.step} GraphOps rejected${event.retryable ? " · retrying" : ""}\n${event.message}`);
-    return;
-  }
-  if (event.type === "frame" && event.phase === "after") {
-    const step = ensureLiveStep(live, event.step);
-    step.status = "committed";
-    step.nodeCount = event.frame.graph.nodes.length;
-    step.edgeCount = event.frame.graph.edges.length;
-    live.events.push(`step ${event.step} committed · ${event.frame.graph.nodes.length} nodes / ${event.frame.graph.edges.length} edges`);
-    return;
-  }
-  if (event.type === "final") {
-    live.metadata = event.result.metadata;
-    live.finalAnswer = event.result.finalAnswer;
-    live.events.push(`final · steps=${event.result.metadata.stepCount} retries=${event.result.metadata.retryCount} duration=${event.result.metadata.durationMs ?? 0}ms`);
-  }
+  live.metadata = event.result.metadata;
+  live.finalAnswer = event.result.finalAnswer;
+  live.events.push(`final · steps=${event.result.metadata.stepCount} duration=${event.result.metadata.durationMs}ms`);
 }
 
 function formatLiveStreamLog(live: LiveStreamLog): string {
-  const metadata = live.metadata ? [`metadata:`, JSON.stringify(live.metadata, null, 2), ""] : [];
-  const prompt = live.prompt ? [`current model prompt:`, live.prompt, ""] : [];
-  const stepSections = [...live.steps.values()].map((step) => {
-    const modelMetadata = step.modelMetadata.length ? [`step ${step.step} provider metadata:`, JSON.stringify(step.modelMetadata, null, 2)] : [];
-    const workers = step.workers.size ? [`step ${step.step} workers:`, [...step.workers.values()].map((worker) => `${worker.id} ${worker.status}: ${worker.finalAnswer ?? worker.error ?? worker.objective}`).join("\n")] : [];
-    return [
-      `step ${step.step} status: ${step.status}`,
-      ...(step.tokenEstimate ? [`step ${step.step} promptTokens≈${step.tokenEstimate}`] : []),
-      ...workers,
-      ...modelMetadata,
-      `step ${step.step} raw model output:`, 
-      step.rawModelOutput,
-      ...(step.parsedOps ? [`step ${step.step} parsed GraphOps:`, formatOps(step.parsedOps)] : []),
-      ...(step.error ? [`step ${step.step} GraphOps error:`, step.error] : []),
-      ...(typeof step.nodeCount === "number" ? [`step ${step.step} graph: ${step.nodeCount} nodes / ${step.edgeCount ?? 0} edges`] : [])
-    ].join("\n");
-  });
-  return [...metadata, ...prompt, ...live.events, ...stepSections].join("\n\n").trim() || "Waiting for StateWeave stream…";
+  const metadata = live.metadata ? ["metadata:", JSON.stringify(live.metadata, null, 2), ""] : [];
+  const prompt = live.prompt ? ["current compiled causal context:", live.prompt, ""] : [];
+  const steps = [...live.steps.values()].map((step) => [
+    `step ${step.step} phase: ${step.phase}`,
+    `detail: ${step.detail}`,
+    ...(step.contextTokens ? [`contextTokens≈${step.contextTokens}`] : []),
+    ...(step.tool ? [`tool: ${step.tool}`] : []),
+    ...(step.rawModelOutput ? ["raw model output:", step.rawModelOutput] : []),
+    ...(step.error ? ["error:", step.error] : []),
+    ...(typeof step.nodeCount === "number" ? [`graph: ${step.nodeCount} nodes / ${step.edgeCount ?? 0} edges`] : [])
+  ].join("\n"));
+  return [...metadata, ...prompt, ...live.events, ...steps].join("\n\n").trim() || "Waiting for StateWeave stream…";
 }
 
 function updatePendingStateWeave(item: HTMLElement, live: LiveStreamLog): void {
   const statusEl = item.querySelector<HTMLElement>("[data-stream-status]");
   const stepsEl = item.querySelector<HTMLElement>("[data-stream-steps]");
   const latestStep = live.latestStep;
-  const maxIterations = live.metadata?.maxIterations;
-  if (statusEl) {
-    statusEl.textContent = live.finalAnswer
-      ? `Done · ${live.metadata?.stepCount ?? live.steps.size} step${(live.metadata?.stepCount ?? live.steps.size) === 1 ? "" : "s"}`
-      : latestStep
-        ? `Weaving GraphOps · step ${latestStep}${maxIterations ? ` / ${maxIterations}` : ""}`
-        : "Opening StateWeave stream…";
-  }
+  if (statusEl) statusEl.textContent = live.finalAnswer
+    ? `Done · ${live.metadata?.stepCount ?? live.steps.size} steps`
+    : latestStep ? `Causal weave · step ${latestStep} / ${live.metadata?.maxIterations ?? "?"}` : "Opening StateWeave stream…";
   if (stepsEl) {
     const openSteps = new Set([...stepsEl.querySelectorAll<HTMLDetailsElement>("details.stream-step[open]")].map((detail) => Number(detail.dataset.step)));
     if (!openSteps.size && latestStep) openSteps.add(latestStep);
@@ -2452,17 +2373,7 @@ function updatePendingStateWeave(item: HTMLElement, live: LiveStreamLog): void {
 function appendPendingStateWeave(): HTMLElement {
   const item = document.createElement("article");
   item.className = "answer pending assistant-response state-stream-card";
-  item.innerHTML = `
-    <div class="stream-card-header">
-      <div>
-        <span class="eyebrow">StateWeave</span>
-        <strong data-stream-status>Opening StateWeave stream…</strong>
-      </div>
-      <span class="stream-orb" aria-hidden="true"></span>
-    </div>
-    <div class="stream-steps" data-stream-steps>
-      <p class="stream-empty">Waiting for the first GraphOps step…</p>
-    </div>`;
+  item.innerHTML = `<div class="stream-card-header"><div><span class="eyebrow">StateWeave</span><strong data-stream-status>Opening StateWeave stream…</strong></div><span class="stream-orb" aria-hidden="true"></span></div><div class="stream-steps" data-stream-steps><p class="stream-empty">Waiting for the first causal step…</p></div>`;
   chat.append(item);
   scrollChat(chat);
   return item;
@@ -2471,12 +2382,7 @@ function appendPendingStateWeave(): HTMLElement {
 function finalizePendingStateWeave(item: HTMLElement, stateweave: string, live: LiveStreamLog): HTMLElement {
   item.classList.remove("pending", "state-stream-card");
   item.classList.add("state-answer", "assistant-final-card");
-  item.innerHTML = `
-    <div class="assistant-final-header">
-      <span>StateWeave</span>
-    </div>
-    <div class="assistant-final-body">${responseHtml(stateweave)}</div>
-    ${renderRunTrace(live)}`;
+  item.innerHTML = `<div class="assistant-final-header"><span>StateWeave</span></div><div class="assistant-final-body">${responseHtml(stateweave)}</div>${renderRunTrace(live)}`;
   scrollChat(chat);
   return item;
 }
@@ -2484,15 +2390,7 @@ function finalizePendingStateWeave(item: HTMLElement, stateweave: string, live: 
 function failPendingStateWeave(item: HTMLElement, message: string, live: LiveStreamLog): HTMLElement {
   item.classList.remove("pending");
   item.classList.add("state-stream-error");
-  item.innerHTML = `
-    <div class="stream-card-header">
-      <div>
-        <span class="eyebrow">StateWeave</span>
-        <strong>Run failed</strong>
-      </div>
-    </div>
-    <p class="message-copy error-copy">${escapeHtml(message)}</p>
-    ${renderRunTrace(live)}`;
+  item.innerHTML = `<div class="stream-card-header"><div><span class="eyebrow">StateWeave</span><strong>Run failed</strong></div></div><p class="message-copy error-copy">${escapeHtml(message)}</p>${renderRunTrace(live)}`;
   scrollChat(chat);
   return item;
 }
@@ -2500,97 +2398,40 @@ function failPendingStateWeave(item: HTMLElement, message: string, live: LiveStr
 function renderRunTrace(live: LiveStreamLog): string {
   if (!live.steps.size) return "";
   const stepCount = live.metadata?.stepCount ?? live.steps.size;
-  const retryCount = live.metadata?.retryCount ?? [...live.steps.values()].filter((step) => step.retryable).length;
+  const retryCount = [...live.steps.values()].filter((step) => step.phase === "retrying").length;
   const duration = typeof live.metadata?.durationMs === "number" ? ` · ${live.metadata.durationMs}ms` : "";
-  const retryText = retryCount ? ` · ${retryCount} ${retryCount === 1 ? "retry" : "retries"}` : "";
-  return `<details class="stream-run-trace"><summary>Run trace · ${stepCount} step${stepCount === 1 ? "" : "s"}${retryText}${duration}</summary><div class="stream-steps">${renderLiveSteps(live, new Set())}</div></details>`;
+  return `<details class="stream-run-trace"><summary>Run trace · ${stepCount} step${stepCount === 1 ? "" : "s"}${retryCount ? ` · ${retryCount} retries` : ""}${duration}</summary><div class="stream-steps">${renderLiveSteps(live, new Set())}</div></details>`;
 }
 
 function renderLiveSteps(live: LiveStreamLog, openSteps: Set<number>): string {
   const steps = [...live.steps.values()].sort((a, b) => a.step - b.step);
-  if (!steps.length) return `<p class="stream-empty">Waiting for the first GraphOps step…</p>`;
+  if (!steps.length) return `<p class="stream-empty">Waiting for the first causal step…</p>`;
   return steps.map((step) => renderLiveStep(step, openSteps.has(step.step))).join("");
 }
 
 function renderLiveStep(step: LiveStreamStep, open: boolean): string {
-  const opsSummary = step.parsedOps ? summarizeOps(step.parsedOps) : undefined;
-  const rawSummary = step.rawModelOutput ? `${step.rawModelOutput.length.toLocaleString()} chars` : "waiting";
-  const graphSummary = typeof step.nodeCount === "number" ? `${step.nodeCount} nodes · ${step.edgeCount ?? 0} edges` : "graph updates after commit";
-  const detail = step.parsedOps
-    ? streamCodeSection("Parsed GraphOps", formatOps(step.parsedOps))
-    : step.rawModelOutput
-      ? streamCodeSection("Streaming raw SWX", compactStreamText(step.rawModelOutput))
-      : `<p class="stream-note">Waiting for model tokens…</p>`;
-  const raw = step.parsedOps && step.rawModelOutput ? `<details class="stream-raw"><summary>Raw model output</summary>${streamCodeSection("", compactStreamText(step.rawModelOutput))}</details>` : "";
-  const metadata = step.modelMetadata.length ? streamCodeSection("Provider metadata", JSON.stringify(step.modelMetadata, null, 2)) : "";
-  const workers = step.workers.size ? renderWorkerScheduler(step.workers) : "";
-  const error = step.error ? `<p class="stream-error-text">${escapeHtml(step.error)}</p>` : "";
-  return `
-    <details class="stream-step ${streamStatusClass(step.status)}" data-step="${step.step}"${open ? " open" : ""}>
-      <summary>
-        <span class="stream-step-title">Step ${step.step}</span>
-        <span class="stream-chip ${streamStatusClass(step.status)}">${streamStatusLabel(step.status)}</span>
-        <small>${escapeHtml(opsSummary ?? rawSummary)} · ${escapeHtml(graphSummary)}</small>
-      </summary>
-      <div class="stream-step-body">
-        ${step.status === "streaming" ? `<p class="stream-note">Streaming transactional GraphOps. The graph panel updates after this step validates and commits.</p>` : ""}
-        ${detail}
-        ${workers}
-        ${error}
-        ${metadata}
-        ${raw}
-      </div>
-    </details>`;
-}
-
-function renderWorkerScheduler(workers: Map<string, LiveWorker>): string {
-  return `<section class="worker-scheduler"><div class="worker-scheduler-header"><span>Graph workers</span><small>${workers.size} running region${workers.size === 1 ? "" : "s"}</small></div><div class="worker-grid">${[...workers.values()].map(renderWorkerCard).join("")}</div></section>`;
-}
-
-function renderWorkerCard(worker: LiveWorker): string {
-  const summary = worker.finalAnswer ?? worker.error ?? (worker.tokens ? shorten(oneLine(worker.tokens), 160) : worker.objective);
-  const ops = worker.ops?.length ? `<small>${escapeHtml(summarizeOps(worker.ops))}</small>` : "";
-  return `<article class="worker-card ${workerStatusClass(worker.status)}"><div><strong>${escapeHtml(worker.id)}</strong><span>${escapeHtml(worker.status)}</span></div><p>${escapeHtml(summary)}</p>${ops}</article>`;
-}
-
-function workerStatusClass(statusValue: WorkerRunSummary["status"]): string {
-  return `worker-${statusValue}`;
+  const graphSummary = typeof step.nodeCount === "number" ? `${step.nodeCount} nodes · ${step.edgeCount ?? 0} edges` : "state pending";
+  const detail = step.rawModelOutput ? streamCodeSection("Model action", compactStreamText(step.rawModelOutput)) : `<p class="stream-note">${escapeHtml(step.detail)}</p>`;
+  return `<details class="stream-step ${streamStatusClass(step.phase)}" data-step="${step.step}"${open ? " open" : ""}><summary><span class="stream-step-title">Step ${step.step}</span><span class="stream-chip ${streamStatusClass(step.phase)}">${streamStatusLabel(step.phase)}</span><small>${escapeHtml(step.tool ?? step.action ?? step.detail)} · ${escapeHtml(graphSummary)}</small></summary><div class="stream-step-body">${detail}${step.error ? `<p class="stream-error-text">${escapeHtml(step.error)}</p>` : ""}</div></details>`;
 }
 
 function streamCodeSection(label: string, value: string): string {
   return `${label ? `<label>${escapeHtml(label)}</label>` : ""}<pre class="stream-code">${escapeHtml(value)}</pre>`;
 }
 
-function summarizeOps(ops: GraphOp[]): string {
-  const counts = new Map<string, number>();
-  for (const op of ops) counts.set(op.op, (counts.get(op.op) ?? 0) + 1);
-  const parts = [
-    countLabel(counts.get("add_node") ?? 0, "node"),
-    countLabel(counts.get("add_edge") ?? 0, "edge"),
-    countLabel(counts.get("update_node") ?? 0, "update"),
-    countLabel(counts.get("call_tool") ?? 0, "tool"),
-    countLabel(counts.get("spawn_worker") ?? 0, "worker"),
-    counts.get("focus") ? "focus" : "",
-    counts.get("final") ? "final" : ""
-  ].filter(Boolean);
-  return parts.join(" · ") || `${ops.length} op${ops.length === 1 ? "" : "s"}`;
+function streamStatusLabel(phase: AgentProgress["phase"]): string {
+  if (phase === "final") return "Committed";
+  if (phase === "tool") return "Tool";
+  if (phase === "retrying") return "Retrying";
+  if (phase === "model") return "Model";
+  return "Context";
 }
 
-function countLabel(count: number, label: string): string {
-  if (!count) return "";
-  return `${count} ${label}${count === 1 ? "" : "s"}`;
-}
-
-function streamStatusLabel(statusValue: LiveStepStatus): string {
-  if (statusValue === "committed") return "Committed";
-  if (statusValue === "parsed") return "Parsed";
-  if (statusValue === "retrying") return "Retrying";
-  if (statusValue === "rejected") return "Rejected";
-  return "Streaming";
-}
-
-function streamStatusClass(statusValue: LiveStepStatus): string {
-  return `is-${statusValue}`;
+function streamStatusClass(phase: AgentProgress["phase"]): string {
+  if (phase === "final") return "is-committed";
+  if (phase === "tool") return "is-parsed";
+  if (phase === "retrying") return "is-retrying";
+  return "is-streaming";
 }
 
 function compactStreamText(value: string, maxLength = 2400): string {
@@ -3080,56 +2921,24 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function compactFrame(frame: GraphFrame): string {
-  const lines = [
-    `objective: ${frame.frame.objective}`,
-    `currentFocus: ${frame.frame.currentFocus}`,
-    `focusNodeId: ${frame.frame.focusNodeId ?? "unknown"}`,
-    `latestInputNodeId: ${frame.frame.latestInputNodeId ?? "unknown"}`,
-    `activeUserInputNodeId: ${frame.frame.activeUserInputNodeId ?? frame.frame.latestInputNodeId ?? "unknown"}`,
-    `candidateFocusNodeIds: ${frame.frame.candidateFocusNodeIds?.join(", ") ?? "system_root"}`,
-    `nextExpectedOutput: ${frame.frame.nextExpectedOutput}`,
-    `activeConstraints: ${frame.frame.activeConstraints.length ? frame.frame.activeConstraints.join("; ") : "none"}`,
+function compactAgentState(state: AgentState): string {
+  return [
+    `engine: causal-weave-v3`,
+    `nodes: ${state.nodes.length}`,
+    `frontier: ${state.frontier.join(", ") || "empty"}`,
     "",
-    "graph:",
-    ...frame.graph.nodes.map((node) => `- ${node.id} [${node.type}] ${node.text}`),
-    ...frame.graph.edges.map((edge) => `- ${edge.from} -${edge.type}-> ${edge.to}`)
-  ];
-  return lines.join("\n");
+    ...state.nodes.map((node) => `- ${node.id} [${node.kind}] parents=${node.parents.join(",") || "root"} ${shorten(typeof node.payload === "string" ? node.payload : JSON.stringify(node.payload), 180)}`)
+  ].join("\n");
 }
 
-function formatStateOutput(trace: TraceStep[], finalAnswer: string, metadata?: StateWeaveRunMetadata): string {
-  const metadataLines = metadata ? ["metadata:", JSON.stringify(metadata, null, 2), ""] : [];
-  const parts = trace.map((step) => [
-    `step ${step.step} metadata: ${step.durationMs}ms · ${step.startedAt} → ${step.completedAt}`,
-    ...(step.modelMetadata?.length ? [`step ${step.step} provider metadata:`, JSON.stringify(step.modelMetadata, null, 2)] : []),
-    `step ${step.step} raw model output:`,
+function formatAgentOutput(trace: AgentTraceStep[], finalAnswer: string, metadata: AgentRunMetadata): string {
+  const steps = trace.map((step) => [
+    `step ${step.step}: ${step.action}${step.tool ? ` · ${step.tool}` : ""} · contextTokens≈${step.contextTokens}`,
+    "raw model output:",
     step.rawModelOutput,
-    "",
-    `step ${step.step} parsed GraphOps:`,
-    formatOps(step.parsedOps),
-    ...(step.error ? ["", `step ${step.step} GraphOps error:`, step.error] : [])
+    ...(step.error ? ["error:", step.error] : [])
   ].join("\n"));
-  return [...metadataLines, ...parts, "", "final answer:", finalAnswer].join("\n");
-}
-
-function formatOps(ops: GraphOp[]): string {
-  return ops.map(formatOp).join("\n");
-}
-
-function formatOp(op: GraphOp): string {
-  if (op.op === "add_node") return `@node ${op.node.id} ${op.node.type} "${shorten(op.node.text, 96)}"`;
-  if (op.op === "add_edge") return `@edge ${op.from} ${op.type} ${op.to}`;
-  if (op.op === "update_node") return `@update ${op.id}`;
-  if (op.op === "focus") return op.nodeId ? `@focus ${op.nodeId} "${op.currentFocus}"` : `@focus "${op.currentFocus}"`;
-  if (op.op === "call_tool") return `@tool ${op.tool}`;
-  if (op.op === "spawn_worker") return `@worker ${op.id} objective="${shorten(op.objective, 96)}"${op.focusNodeId ? ` focus=${op.focusNodeId}` : ""}`;
-  if (op.op === "final") {
-    const ids = op.artifactIds?.length ? op.artifactIds : op.artifactId ? [op.artifactId] : [];
-    const suffix = ids.length ? ` artifacts=${ids.join(",")}` : "";
-    return `@final "${shorten(op.answer, 120)}"${suffix}`;
-  }
-  return "@unknown";
+  return ["metadata:", JSON.stringify(metadata, null, 2), "", ...steps, "", "final answer:", finalAnswer].join("\n");
 }
 
 function responseHtml(value: string): string {

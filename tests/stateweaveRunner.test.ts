@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
 import { z } from "zod";
-import { Agent } from "../src/agent/stateweaveAgent.js";
+import { GraphFrameAgent as Agent } from "../src/agent/graphFrameAgent.js";
 import { runStateWeave, StateWeaveRunError, streamStateWeave } from "../src/agent/stateweaveRunner.js";
 import { applyOps } from "../src/core/applyOps.js";
 import { createInitialGraphFrame } from "../src/core/graph.js";
@@ -398,7 +398,7 @@ it("Agent streams final text by default and keeps one graph across user turns", 
   });
 
   const firstChunks: string[] = [];
-  for await (const chunk of agent.stream("Build a todo app")) firstChunks.push(chunk);
+  for await (const chunk of agent.streamText("Build a todo app")) firstChunks.push(chunk);
   const second = await agent.run("Add keyboard shortcuts.");
 
   expect(firstChunks.join("")).toBe("Started todo app.");
@@ -445,7 +445,7 @@ it("resetFrame invalidates an in-flight stateful commit", async () => {
 
 it("releases the state lock when a stream consumer closes early", async () => {
   const agent = new Agent({ model: new ConcurrentModel(), tools: [], maxIterations: 1 });
-  const iterator = agent.streamEvents("abandoned stream")[Symbol.asyncIterator]();
+  const iterator = agent.stream("abandoned stream")[Symbol.asyncIterator]();
   expect((await iterator.next()).value?.type).toBe("metadata");
   await iterator.return?.();
   await expect(agent.run("fast branch")).resolves.toMatchObject({ finalAnswer: "fast done" });
