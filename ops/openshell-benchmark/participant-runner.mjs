@@ -1,7 +1,7 @@
 import { cp, lstat, mkdir, readlink, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { z } from "zod";
-import { CausalWeaveAgent } from "../../dist/agent/causalWeaveAgent.js";
-import { StateWeaveAgent } from "../../dist/agent/stateweaveAgent.js";
+import { Agent } from "../../dist/agent/agent.js";
+import { GraphFrameAgent } from "../../dist/agent/graphFrameAgent.js";
 import { AgenticBaseline } from "../../dist/evals/agenticBaseline.js";
 import { oneShotSdkBuildPrompt } from "../../dist/evals/oneShotSdkBenchmark.js";
 import { AnthropicModel } from "../../dist/llm/anthropicModel.js";
@@ -91,7 +91,7 @@ try {
 }
 
 async function runGraphParticipant({ model, tools, providerSystem, systemPrompt, maxIterations, signal }) {
-  const agent = new StateWeaveAgent({
+  const agent = new GraphFrameAgent({
     model,
     tools,
     maxIterations,
@@ -140,12 +140,12 @@ async function runGraphParticipant({ model, tools, providerSystem, systemPrompt,
 }
 
 async function runCausalParticipant({ model, tools, providerSystem, systemPrompt, maxIterations, signal }) {
-  const agent = new CausalWeaveAgent({
+  const agent = new Agent({
     model,
     tools,
     systemPrompt,
     maxIterations,
-    maxContextTokens: 250_000,
+    maxPromptTokens: 250_000,
     projectionTargetTokens: 16_000,
     maxNoProgressIterations: 300,
     providerSystem,
@@ -165,7 +165,7 @@ async function runCausalParticipant({ model, tools, providerSystem, systemPrompt
       });
       if (progress.phase === "model" && progress.iteration > 0 && progress.iteration % 50 === 0) {
         progressWriteQueue = progressWriteQueue.catch(() => undefined).then(async () => {
-          await writeJson(`${outputDir}/weave.checkpoint.json`, agent.snapshot());
+          await writeJson(`${outputDir}/weave.checkpoint.json`, agent.getState());
           await writeJson(`${outputDir}/metrics.checkpoint.json`, {
             modelCalls: progress.modelCalls,
             toolCalls: progress.toolCalls,
@@ -177,7 +177,17 @@ async function runCausalParticipant({ model, tools, providerSystem, systemPrompt
       }
     }
   });
-  return { finalAnswer: result.finalAnswer, weave: result.weave, metrics: result.metrics };
+  return {
+    finalAnswer: result.finalAnswer,
+    weave: result.state,
+    metrics: {
+      modelCalls: result.metadata.modelCalls,
+      toolCalls: result.metadata.toolCalls,
+      latestContextTokens: result.metadata.latestContextTokens,
+      totalInputTokens: result.metadata.totalInputTokens,
+      outputTokens: result.metadata.outputTokens
+    }
+  };
 }
 
 async function runTranscriptParticipant({ model, tools, providerSystem, systemPrompt, maxIterations, signal }) {

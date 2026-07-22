@@ -1,243 +1,134 @@
 #!/usr/bin/env node
 import "dotenv/config";
 import path from "node:path";
-import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
+import { createInterface } from "node:readline/promises";
+import { Agent, type AgentProgress, type AgentState } from "./agent/agent.js";
 import { TraditionalMessagesAgent } from "./agent/baselineAgent.js";
-import { StateWeaveAgent } from "./agent/stateweaveAgent.js";
-import type { GraphFrame, GraphOp } from "./core/types.js";
-import { serializeGraphFrame } from "./core/serialize.js";
+import type { StateGraph } from "./core/types.js";
 import { graphToMermaid } from "./core/visualize.js";
 import { createModelFromEnv } from "./llm/factory.js";
 import { mockTools } from "./tools/mockTools.js";
 
-type CliOptions = {
-  input?: string;
-  maxIterations: number;
-  showPrompt: boolean;
-  fullFrame: boolean;
-  compare: boolean;
-  showGraph: boolean;
-};
+type CliOptions = { input?: string; maxIterations: number; showPrompt: boolean; fullState: boolean; compare: boolean; showGraph: boolean };
 
 const enabled = stdout.isTTY && !process.env.NO_COLOR;
-const ansi = (code: number, close = 39) => (text: string) => (enabled ? `\u001b[${code}m${text}\u001b[${close}m` : text);
-const color = {
-  reset: (text: string) => (enabled ? `\u001b[0m${text}` : text),
-  bold: (text: string) => (enabled ? `\u001b[1m${text}\u001b[22m` : text),
-  dim: (text: string) => (enabled ? `\u001b[2m${text}\u001b[22m` : text),
-  gray: ansi(90),
-  red: ansi(31),
-  green: ansi(32),
-  yellow: ansi(33),
-  blue: ansi(34),
-  magenta: ansi(35),
-  cyan: ansi(36)
-};
-const palette = {
-  red: color.red,
-  green: color.green,
-  yellow: color.yellow,
-  blue: color.blue,
-  magenta: color.magenta,
-  cyan: color.cyan,
-  gray: color.gray
-};
-
+const paint = (open: number, close = 39) => (value: string) => enabled ? `\u001b[${open}m${value}\u001b[${close}m` : value;
+const color = { bold: paint(1, 22), dim: paint(2, 22), red: paint(31), green: paint(32), yellow: paint(33), blue: paint(34), magenta: paint(35), cyan: paint(36), gray: paint(90) };
 const options = parseArgs(process.argv.slice(2));
 const model = createModelFromEnv();
-const agent = new StateWeaveAgent({
-  model,
-  tools: mockTools,
-  maxIterations: options.maxIterations,
-  traceDir: path.resolve("src/traces")
-});
+const agent = new Agent({ model, tools: mockTools, maxIterations: options.maxIterations, traceDir: path.resolve("src/traces"), enforceCompletionEvidence: false });
 const traditional = new TraditionalMessagesAgent({ model, tools: mockTools });
 
-if (options.input) await runOnce(agent, traditional, options.input, undefined, options);
-else await interactive(agent, traditional, options);
+if (options.input) await runOnce(options.input);
+else await interactive();
 
-async function interactive(agent: StateWeaveAgent, traditional: TraditionalMessagesAgent, options: CliOptions): Promise<void> {
-  header();
-  let sessionFrame: GraphFrame | undefined;
-
+async function interactive(): Promise<void> {
+  console.log(color.bold("StateWeave CLI"));
+  console.log(color.dim("One Agent, one append-only causal graph. Type /help for commands.\n"));
   if (!stdin.isTTY) {
-    for (const input of (await readPipedInput()).split(/\r?\n/)) {
-      const next = await handleInput(agent, traditional, input, sessionFrame, options);
-      if (next.exit) break;
-      sessionFrame = next.frame;
-    }
+    for (const input of (await readPipedInput()).split(/\r?\n/)) if (await handleInput(input)) break;
     return;
   }
-
   const rl = createInterface({ input: stdin, output: stdout });
-  while (true) {
-    const next = await handleInput(agent, traditional, await rl.question(color.cyan("stateweave › ")), sessionFrame, options);
-    if (next.exit) break;
-    sessionFrame = next.frame;
-  }
+  while (!await handleInput(await rl.question(color.cyan("stateweave › ")))) continue;
   rl.close();
 }
 
-async function handleInput(
-  agent: StateWeaveAgent,
-  traditional: TraditionalMessagesAgent,
-  rawInput: string,
-  sessionFrame: GraphFrame | undefined,
-  options: CliOptions
-): Promise<{ frame: GraphFrame | undefined; exit?: boolean }> {
-  const input = rawInput.trim();
-  if (!input) return { frame: sessionFrame };
-  if (input === "/exit" || input === "/quit") return { frame: sessionFrame, exit: true };
-  if (input === "/help") {
-    printHelp();
-    return { frame: sessionFrame };
-  }
-  if (input === "/prompt") {
-    options.showPrompt = !options.showPrompt;
-    line(`exact prompt: ${options.showPrompt ? "on" : "off"}`, "yellow");
-    return { frame: sessionFrame };
-  }
-  if (input === "/full") {
-    options.fullFrame = true;
-    line("frame view: full JSON", "yellow");
-    return { frame: sessionFrame };
-  }
-  if (input === "/compact") {
-    options.fullFrame = false;
-    line("frame view: compact", "yellow");
-    return { frame: sessionFrame };
-  }
-  if (input === "/compare") {
-    options.compare = !options.compare;
-    line(`traditional messages comparison: ${options.compare ? "on" : "off"}`, "yellow");
-    return { frame: sessionFrame };
-  }
-  if (input === "/graph") {
-    options.showGraph = !options.showGraph;
-    line(`mermaid graph view: ${options.showGraph ? "on" : "off"}`, "yellow");
-    return { frame: sessionFrame };
-  }
-  if (input === "/reset") {
-    line("short-term graph memory reset", "yellow");
-    return { frame: undefined };
-  }
-
-  const nextFrame = await runOnce(agent, traditional, input, sessionFrame, options).catch((error: unknown) => {
-    line(errorMessage(error), "red");
-    return undefined;
-  });
-  return { frame: nextFrame ?? sessionFrame };
+async function handleInput(raw: string): Promise<boolean> {
+  const input = raw.trim();
+  if (!input) return false;
+  if (input === "/exit" || input === "/quit") return true;
+  if (input === "/help") { printHelp(); return false; }
+  if (input === "/prompt") { options.showPrompt = !options.showPrompt; line(`exact prompt: ${options.showPrompt ? "on" : "off"}`, color.yellow); return false; }
+  if (input === "/full") { options.fullState = true; line("state view: full JSON", color.yellow); return false; }
+  if (input === "/compact") { options.fullState = false; line("state view: compact", color.yellow); return false; }
+  if (input === "/compare") { options.compare = !options.compare; line(`traditional comparison: ${options.compare ? "on" : "off"}`, color.yellow); return false; }
+  if (input === "/graph") { options.showGraph = !options.showGraph; line(`Mermaid graph: ${options.showGraph ? "on" : "off"}`, color.yellow); return false; }
+  if (input === "/reset") { agent.reset(); line("agent state reset", color.yellow); return false; }
+  await runOnce(input).catch((error: unknown) => line(error instanceof Error ? error.message : String(error), color.red));
+  return false;
 }
 
-async function runOnce(agent: StateWeaveAgent, traditional: TraditionalMessagesAgent, input: string, sessionFrame: GraphFrame | undefined, options: CliOptions): Promise<GraphFrame | undefined> {
-  section("USER INPUT", "magenta");
+async function runOnce(input: string): Promise<void> {
+  section("USER INPUT", color.magenta);
   console.log(input);
-
-  if (options.compare) await printTraditionalComparison(traditional, input);
-
-  let latestFrame: GraphFrame | undefined;
-
-  for await (const event of agent.stream(input, { frame: sessionFrame })) {
-    if (event.type === "frame" && event.phase === "before") {
-      section(`STEP ${event.step} · MODEL IN`, "cyan");
-      printFrame(event.frame, options.fullFrame);
-      if (options.showPrompt) {
-        section(`STEP ${event.step} · EXACT PROMPT`, "blue");
-        console.log(color.dim(serializeGraphFrame(event.frame)));
-      } else {
-        console.log(color.dim("exact prompt hidden; type /prompt or pass --prompt to show it"));
-      }
-      section(`STEP ${event.step} · MODEL OUT STREAM`, "green");
-    }
-
-    if (event.type === "token") stdout.write(color.green(event.token));
-
-    if (event.type === "ops") {
-      stdout.write(color.reset("\n"));
-      section(`STEP ${event.step} · PARSED GRAPH OPS`, "yellow");
-      printOps(event.ops);
-    }
-
-    if (event.type === "error") {
-      stdout.write(color.reset("\n"));
-      section(`STEP ${event.step} · GRAPH OPS REJECTED`, "red");
-      console.log(color.red(event.message));
-      if (event.retryable) console.log(color.dim("retrying with the same graph state and structured error feedback"));
-    }
-
-    if (event.type === "worker") {
-      if (event.phase === "token") stdout.write(color.cyan(event.token ?? ""));
-      else {
-        stdout.write(color.reset("\n"));
-        section(`STEP ${event.step} · WORKER ${event.worker.id} · ${event.phase.toUpperCase()}`, "cyan");
-        console.log(color.cyan(event.worker.finalAnswer ?? event.worker.error ?? event.worker.objective));
-      }
-    }
-
-    if (event.type === "frame" && event.phase === "after") {
-      latestFrame = event.frame;
-      section(`STEP ${event.step} · STATE AFTER`, "cyan");
-      printFrame(event.frame, options.fullFrame);
-      if (options.showGraph) {
-        section(`STEP ${event.step} · MERMAID GRAPH`, "blue");
-        console.log(color.dim(graphToMermaid(event.frame.graph)));
-      }
-    }
-
-    if (event.type === "final") {
-      section("FINAL", "magenta");
-      console.log(event.result.finalAnswer);
-      console.log(color.dim(`trace saved to src/traces/ · steps=${event.result.trace.length}`));
-    }
+  if (options.compare) {
+    const result = await traditional.inspect(input);
+    section("TRADITIONAL MESSAGES", color.gray);
+    console.log(JSON.stringify(result.messages, null, 2));
+    section("TRADITIONAL OUTPUT", color.gray);
+    console.log(result.rawModelOutput);
   }
 
-  return latestFrame;
+  for await (const event of agent.streamEvents(input)) {
+    if (event.type === "metadata") {
+      section("RUN", color.cyan);
+      console.log(color.dim(`${event.metadata.runId} · ${event.metadata.engine}`));
+      continue;
+    }
+    if (event.type === "progress") printProgress(event.progress);
+    if (event.type === "final") {
+      section("FINAL", color.magenta);
+      console.log(event.result.finalAnswer);
+      printState(event.result.state, event.result.graph);
+      console.log(color.dim(`trace saved to src/traces/ · steps=${event.result.trace.length} · inputTokens=${event.result.metadata.totalInputTokens}`));
+    }
+  }
 }
 
-async function printTraditionalComparison(traditional: TraditionalMessagesAgent, input: string): Promise<void> {
-  section("TRADITIONAL MODEL IN · MESSAGES", "gray");
-  const result = await traditional.inspect(input);
-  printJson(result.messages);
-  section("TRADITIONAL MODEL OUT · ASSISTANT TEXT", "gray");
-  console.log(color.gray(result.rawModelOutput));
-}
-
-function printFrame(frame: GraphFrame, full: boolean): void {
-  if (full) {
-    printJson(frame);
+function printProgress(progress: AgentProgress): void {
+  if (progress.phase === "context" && progress.prompt) {
+    section(`STEP ${progress.iteration} · CAUSAL CONTEXT`, color.cyan);
+    console.log(color.dim(`${progress.contextTokens ?? "?"} tokens · ${progress.state?.nodes.length ?? 0} stored nodes`));
+    if (options.showPrompt) console.log(progress.prompt);
+    else console.log(color.dim("exact prompt hidden; type /prompt or pass --prompt"));
     return;
   }
+  if (progress.phase === "model") line(`step ${progress.iteration} · model`, color.green);
+  if (progress.phase === "tool") line(`step ${progress.iteration} · ${progress.detail}`, color.yellow);
+  if (progress.phase === "retrying") line(`step ${progress.iteration} · ${progress.detail}`, color.red);
+}
 
-  console.log(`${label("objective")} ${frame.frame.objective}`);
-  console.log(`${label("focus")} ${frame.frame.currentFocus}`);
-  console.log(`${label("focus node")} ${frame.frame.focusNodeId ?? "unknown"}`);
-  console.log(`${label("active input")} ${frame.frame.activeUserInputNodeId ?? frame.frame.latestInputNodeId ?? "unknown"}`);
-  if (frame.frame.activeConstraints.length) console.log(`${label("constraints")} ${frame.frame.activeConstraints.join("; ")}`);
-  console.log(`${label("graph")} ${frame.graph.nodes.length} nodes · ${frame.graph.edges.length} edges`);
-
-  for (const node of frame.graph.nodes) {
-    const status = node.status ? color.gray(` ${node.status}`) : "";
-    console.log(`  ${color.blue(node.id)} ${color.magenta(`[${node.type}]`)}${status} ${truncate(node.text, 110)}`);
+function printState(state: AgentState, graph: StateGraph): void {
+  section("STATE", color.cyan);
+  if (options.fullState) console.log(JSON.stringify(state, null, 2));
+  else {
+    console.log(`${state.nodes.length} nodes · ${graph.edges.length} causal edges · frontier ${state.frontier.length}`);
+    for (const node of state.nodes.slice(-12)) console.log(`  ${color.blue(node.id.slice(0, 11))} ${color.magenta(`[${node.kind}]`)} ${truncate(typeof node.payload === "string" ? node.payload : JSON.stringify(node.payload), 110)}`);
   }
-
-  if (frame.graph.edges.length) {
-    console.log(color.gray("  edges"));
-    for (const edge of frame.graph.edges) console.log(`  ${color.gray(`${edge.from} -${edge.type}-> ${edge.to}`)}`);
+  if (options.showGraph) {
+    section("MERMAID GRAPH", color.blue);
+    console.log(graphToMermaid(graph));
   }
 }
 
-function printOps(ops: GraphOp[]): void {
-  for (const op of ops) {
-    if (op.op === "add_node") console.log(`${opLabel(op.op)} ${op.node.id} ${color.magenta(`[${op.node.type}]`)} ${truncate(op.node.text, 120)}`);
-    else if (op.op === "add_edge") console.log(`${opLabel(op.op)} ${op.from} ${color.gray(op.type)} ${op.to}`);
-    else if (op.op === "update_node") console.log(`${opLabel(op.op)} ${op.id} ${JSON.stringify(op.patch)}`);
-    else if (op.op === "focus") console.log(`${opLabel(op.op)} ${op.nodeId ? `${op.nodeId} ` : ""}${op.currentFocus}`);
-    else if (op.op === "zoom") console.log(`${opLabel(op.op)} level ${op.level}`);
-    else if (op.op === "call_tool") console.log(`${opLabel(op.op)} ${op.tool} ${JSON.stringify(op.args)}`);
-    else if (op.op === "spawn_worker") console.log(`${opLabel(op.op)} ${op.id} focus=${op.focusNodeId ?? "auto"} ${op.objective}`);
-    else console.log(`${opLabel(op.op)} ${op.answer}`);
+function parseArgs(args: string[]): CliOptions {
+  const parsed: CliOptions = { maxIterations: 5, showPrompt: false, fullState: false, compare: false, showGraph: false };
+  const positional: string[] = [];
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
+    if (arg === "--input" || arg === "-i") parsed.input = requireValue(args, ++index, arg);
+    else if (arg === "--max-iterations") parsed.maxIterations = Number(requireValue(args, ++index, arg));
+    else if (arg === "--prompt") parsed.showPrompt = true;
+    else if (arg === "--full") parsed.fullState = true;
+    else if (arg === "--compare") parsed.compare = true;
+    else if (arg === "--graph") parsed.showGraph = true;
+    else positional.push(arg);
   }
+  if (!parsed.input && positional.length) parsed.input = positional.join(" ");
+  if (!Number.isInteger(parsed.maxIterations) || parsed.maxIterations < 1) throw new Error("--max-iterations must be a positive integer");
+  return parsed;
+}
+
+function requireValue(args: string[], index: number, flag: string): string {
+  const value = args[index];
+  if (!value) throw new Error(`${flag} requires a value`);
+  return value;
+}
+
+function printHelp(): void {
+  console.log(["/prompt toggle exact compiled context", "/full show complete state JSON", "/compact show compact state", "/graph toggle Mermaid graph", "/compare toggle transcript comparison", "/reset clear state", "/exit quit"].join("\n"));
 }
 
 async function readPipedInput(): Promise<string> {
@@ -246,87 +137,6 @@ async function readPipedInput(): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function parseArgs(args: string[]): CliOptions {
-  const options: CliOptions = { maxIterations: 5, showPrompt: false, fullFrame: false, compare: false, showGraph: false };
-  const positional: string[] = [];
-
-  for (let index = 0; index < args.length; index++) {
-    const arg = args[index];
-    if (arg === "--input" || arg === "-i") options.input = value(args, ++index, arg);
-    else if (arg === "--max-iterations") options.maxIterations = Number(value(args, ++index, arg));
-    else if (arg === "--prompt") options.showPrompt = true;
-    else if (arg === "--no-prompt") options.showPrompt = false;
-    else if (arg === "--full") options.fullFrame = true;
-    else if (arg === "--compare") options.compare = true;
-    else if (arg === "--graph") options.showGraph = true;
-    else if (arg === "--help" || arg === "-h") help();
-    else positional.push(arg);
-  }
-
-  if (!options.input && positional.length) options.input = positional.join(" ");
-  if (!Number.isInteger(options.maxIterations) || options.maxIterations < 1) throw new Error("--max-iterations must be a positive integer.");
-  return options;
-}
-
-function header(): void {
-  console.log(color.bold(color.magenta("StateWeave CLI")) + color.dim(" · GraphFrame → GraphOps → StateGraph"));
-  console.log(color.dim("Type one task. Short-term graph memory stays active. Commands: /prompt, /compare, /graph, /reset, /full, /compact, /help, /exit"));
-}
-
-function printHelp(): void {
-  console.log(`
-${color.bold("Usage")}
-  pnpm cli
-  pnpm cli "Find why login fails after token refresh. Do not rewrite the auth system."
-  pnpm cli --input "Find why login fails after token refresh." --prompt --compare --graph
-
-${color.bold("Commands")}
-  /prompt   toggle exact provider prompt
-  /compare  toggle traditional messages comparison
-  /graph    toggle Mermaid graph output
-  /reset    clear short-term graph memory
-  /full     show full GraphFrame JSON
-  /compact  show compact graph view
-  /exit     quit
-`);
-}
-
-function help(): never {
-  printHelp();
-  process.exit(0);
-}
-
-function value(args: string[], index: number, flag: string): string {
-  const found = args[index];
-  if (!found) throw new Error(`${flag} requires a value.`);
-  return found;
-}
-
-function section(title: string, tone: keyof typeof palette): void {
-  console.log(`\n${palette[tone]("━━ ")}${color.bold(palette[tone](title))}${palette[tone](" ━━")}`);
-}
-
-function label(text: string): string {
-  return color.gray(`${text.padEnd(11)}:`);
-}
-
-function opLabel(text: string): string {
-  return color.yellow(text.padEnd(11));
-}
-
-function line(text: string, tone: keyof typeof palette): void {
-  console.log(palette[tone](text));
-}
-
-function printJson(value: unknown): void {
-  console.log(JSON.stringify(value, null, 2));
-}
-
-function truncate(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
+function section(title: string, painter: (value: string) => string): void { console.log(`\n${painter(color.bold(`── ${title} ──`))}`); }
+function line(value: string, painter: (value: string) => string): void { console.log(painter(value)); }
+function truncate(value: string, limit: number): string { return value.length <= limit ? value : `${value.slice(0, limit - 1)}…`; }

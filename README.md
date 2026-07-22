@@ -4,60 +4,29 @@
 [![CodeQL](https://github.com/stateweave/sdk-typescript/actions/workflows/codeql.yml/badge.svg)](https://github.com/stateweave/sdk-typescript/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-7c3aed.svg)](./LICENSE)
 
-StateWeave is a low-level TypeScript SDK for building agents around graph state instead of chat transcripts.
+StateWeave is a low-level TypeScript SDK for agents with immutable graph state instead of provider chat transcripts.
 
 ```txt
-GraphFrame -> model -> GraphOps -> StateGraph
+immutable causal graph → bounded working context → ordinary model action → causal graph
 ```
 
-The model is still a normal transformer. StateWeave changes the runtime primitive around it: the SDK serializes a structured graph frame, asks the model for validated operations, applies them to an in-memory graph, and exposes every state transition for inspection.
+There is one public agent class: `Agent`.
 
-Experimental **Causal Weave (Variant C)** explores a second graph-native primitive: immutable content-addressed causal nodes, an active frontier, and ordinary tool actions whose parents are exactly the graph nodes compiled for that inference. It does not use `messages[]` or model-authored GraphOps. See [`docs/causal-weave.md`](./docs/causal-weave.md).
+The runtime automatically records goals, model inferences, tool calls, tool results, resource versions, protocol errors, and answers as content-addressed causal nodes. Every model action points to the exact graph nodes compiled for that inference. The complete graph remains append-only while a deterministic projection keeps each model call bounded.
 
-The current runtime uses a Cortex-style focus model: `system_root` anchors the graph, new user inputs enter as pending nodes, and `GraphFrame` carries `focusNodeId`, `activeUserInputNodeId`, and candidate focus points. The model then returns GraphOps edges deciding whether the input starts a new root-level branch, continues a prior node, updates an output, or relates elsewhere. GraphOps apply transactionally: disconnected pending inputs or new semantic/output nodes are rejected and retried with structured error feedback. Runs expose trace metadata and can stream model-call frames, output tokens, parsed GraphOps, retry errors, and final results. Only runtime nodes are structural (`system`, `user_input`, `assistant_output`, `tool_call`, `tool_result`); all other node types are model-created semantic slugs.
+StateWeave does not expose `messages[]` as a primitive and does not require the model to author graph mutations. The model uses an ordinary `TOOL_CALL` / `FINAL` protocol; the runtime owns graph lineage.
 
-## Why StateWeave?
-
-Traditional agent runtimes pass transcript-shaped context:
-
-```txt
-messages[] -> LLM -> assistant message/tool call
-```
-
-That works, but important state is buried in prose: facts, constraints, risks, tool results, hypotheses, and decisions.
-
-StateWeave makes those first-class:
-
-```txt
-GraphFrame -> LLM -> GraphOps -> updated StateGraph
-```
-
-This makes agent state easier to inspect, visualize, persist, test, and debug.
-
-## Status
-
-StateWeave is experimental. The core primitive is intentionally small and readable.
-
-- No LangChain or LangGraph dependency.
-- No provider SDK dependency.
-- No graph database.
-- No hidden message-history abstraction.
-- In-memory JSON graph for the MVP.
-- Built-in workspace tools: `read_file`, `write_file`, `edit_file`, and `bash_command`.
-- Cortex-style graph focus/branching over transcript replay.
-- Transactional GraphOps validation rejects orphan/disconnected graph mutations before commit.
-- Streamable model internals: metadata, compiled prompt, token stream, parsed GraphOps, retries, and final trace.
-- Web lab trace JSON is persisted under `STATEWEAVE_TRACE_DIR` (Docker default `/data/traces`).
+See [Agent engine](./docs/agent-engine.md) for the invariants and projection design.
 
 ## Installation
 
-StateWeave uses npm dist-tags that mirror the GitHub promotion flow:
+StateWeave dist-tags mirror the promotion flow:
 
-| GitHub branch | GitHub environment | npm install |
-| --- | --- | --- |
-| `development` | development | `pnpm add stateweave@dev` |
-| `uat` | uat | `pnpm add stateweave@uat` |
-| `main` | production | `pnpm add stateweave` |
+| GitHub branch | npm install |
+| --- | --- |
+| `development` | `pnpm add stateweave@dev` |
+| `uat` | `pnpm add stateweave@uat` |
+| `main` | `pnpm add stateweave` |
 
 From source:
 
@@ -68,14 +37,13 @@ pnpm install
 pnpm test
 ```
 
-Quick start:
+## Quick start
 
 ```ts
 import { Agent, createModelFromEnv } from "stateweave";
 
 const agent = new Agent({
-  model: createModelFromEnv(),
-  nodeTypes: ["intent", "constraint", "artifact", "decision"]
+  model: createModelFromEnv()
 });
 
 for await (const chunk of agent.stream("Create a tiny HTML todo app in ./todo")) {
@@ -83,242 +51,192 @@ for await (const chunk of agent.stream("Create a tiny HTML todo app in ./todo"))
 }
 
 await agent.run("Add keyboard shortcuts.");
-console.log(agent.getFrame()?.graph.nodes);
+console.log(agent.getState());
+console.log(agent.getGraph());
 ```
 
-`Agent` includes workspace file-system tools by default, so it can read, write, edit, and run shell commands in its workspace without extra setup. File tools reject absolute paths, traversal, and symlink components. The read-only bash allowlist runs without shell startup profiles, with a fixed trusted `PATH`, and rejects symlink-following flags and glob expansion.
+`Agent` includes workspace-scoped `read_file`, `write_file`, `edit_file`, and read-only `bash_command` tools by default. Pass `tools` to replace the default set.
 
-`nodeTypes` is an ordered list of preferred semantic types, not a whitelist. StateWeave shows the list explicitly in every `GraphFrame` prompt and instructs the model to use a configured type whenever it fits; the model may still create a precise custom `lower_snake_case` type when none applies. Tool-using turns preserve a semantic work record: an active task/intent before the first tool, durable constraints/files/symbols/decisions around it, and evidence-linked verification before resolution.
-
-## Quickstart
-
-A single `Agent` owns a session `GraphFrame`. Every successful `run` or `stream` commits a new `user_input_N` and its result to that graph unless you pass an explicit frame. Stateful calls are serialized in invocation order so a later turn sees the prior committed result; failed, aborted, or reset-invalidated work is not committed. Explicit-frame calls are independent and may run concurrently.
-
-`maxIterations` is the recursion limit for the internal model/tool loop for one user input. It defaults to `30`; if the loop is exhausted, StateWeave raises a recursion-limit error suggesting a higher `maxIterations`. The SDK/web lab do not impose an artificial upper cap. It is not a max-turn setting; user turns are just more graph nodes.
-
-`maxPromptTokens` is the hard model-input budget for each compiled `GraphFrame` and defaults to `64_000`. StateWeave recursively summarizes bulky tool metadata, prioritizes the active input and focused/retrieved graph regions, and omits optional projection lines before crossing the budget. If mandatory state cannot fit, the SDK fails locally before calling the provider. Set this below the provider model's context window, leaving room for output tokens.
-
-Quality gates are evidence-based. `edit_file` requires a prior read of that path (or a file created earlier in the same run); failed or unsuccessful tool results reject semantic mutations from that transaction; requested checks, restarts, and smoke tests must each have matching successful tool evidence; and configured tool-using agents must resolve their semantic task and connect a resolved verification result to both the tool evidence and task before finalizing. Current file/tool evidence always outranks an earlier assistant summary.
-
-Use `streamEvents()` when you want the full trace stream, including GraphOps and built-in graph worker scheduler events:
+Important options:
 
 ```ts
-for await (const event of agent.streamEvents("Inspect the graph")) {
-  console.log(event);
+const agent = new Agent({
+  model,
+  tools,
+  systemPrompt: "You are a careful product engineer.",
+  maxIterations: 30,
+  maxPromptTokens: 64_000,
+  projectionTargetTokens: 16_000,
+  maxNoProgressIterations: 100,
+  enforceCompletionEvidence: true,
+  traceDir: ".stateweave/traces"
+});
+```
+
+- `maxIterations` limits the internal model/tool loop for one user turn. It defaults to 30 and has no artificial SDK maximum.
+- `maxPromptTokens` is the hard model-input ceiling.
+- `projectionTargetTokens` is the preferred bounded working context. Mandatory state may exceed the target but never the hard ceiling.
+- `enforceCompletionEvidence` rejects unsupported coding-task finals when required inspection, mutation, checks, restart, or smoke evidence is absent.
+
+## Persistent state
+
+A single `Agent` owns one session graph. Stateful calls are serialized in invocation order. Successful runs commit; failed or aborted runs return diagnostic state on `AgentRunError` but do not overwrite the agent’s committed state.
+
+```ts
+const first = await agent.run("Remember that the release window is Friday.");
+const state = first.state;
+
+const resumed = new Agent({ model, state });
+const second = await resumed.run("When is the release window?");
+```
+
+Use:
+
+```ts
+agent.getState(); // lossless AgentState
+agent.getGraph(); // StateGraph visualization view
+agent.reset();
+agent.reset(savedState);
+```
+
+Imported state is validated for node identity, causal parent ordering, sequence integrity, and frontier references.
+
+## Streaming diagnostics
+
+`agent.stream()` yields final answer text. `agent.streamEvents()` exposes the engine lifecycle:
+
+```ts
+for await (const event of agent.streamEvents("Inspect the workspace and fix the failing check")) {
+  if (event.type === "metadata") console.log(event.metadata);
+  if (event.type === "progress") {
+    console.log(event.progress.phase, event.progress.detail);
+    console.log(event.progress.prompt); // exact compiled context when available
+    console.log(event.progress.graph);  // current visualization view
+  }
+  if (event.type === "final") console.log(event.result);
 }
 ```
 
-Models can spawn focused graph workers with SWX `@worker` operations. Workers run StateWeave on focused graph regions, merge validated graph branches back into the shared StateGraph, then the parent loop synthesizes one final answer from `worker_result` nodes.
+Each trace step records the compiled node ids, exact prompt, context-token estimate, raw model output, action type, tool name, and any protocol error. Run metadata includes model/tool calls and provider or estimated token totals.
 
-The default toolset is workspace-scoped file-system access. For deterministic local tests, import and pass `mockTools` explicitly. To extend the default toolset, pass `tools: [...createDefaultTools(), yourTool]`.
+## Agent state
 
-## Run the demo CLI
-
-```bash
-pnpm cli
+```ts
+type AgentState = {
+  version: 1;
+  nodes: Array<{
+    id: string;
+    kind: "system" | "goal" | "inference" | "tool_call" | "tool_result" |
+      "resource" | "verification" | "answer" | "protocol_error";
+    parents: string[];
+    payload: unknown;
+    createdAt: string;
+    sequence: number;
+    resourceKey?: string;
+  }>;
+  frontier: string[];
+};
 ```
 
-Then type one input:
+Node identity is SHA-256 over kind, sorted parents, payload, and optional resource key. Timestamps and insertion sequence are metadata, not identity.
+
+The defining invariant is:
+
+> A model action’s parents are exactly the graph nodes selected for that inference.
+
+The runtime knows this read set, so causal lineage requires no extra model syntax or second model call.
+
+## Projection
+
+The compiler selects:
+
+- system and goal roots;
+- the active frontier;
+- current resource heads;
+- recent authoritative evidence;
+- bounded operational closure;
+- lexically relevant older nodes;
+- a deterministic whole-graph digest of resources, mutations, tool activity, and recent recorded inference notes.
+
+Equivalent repeated reads, calls, results, protocol errors, and superseded resource details collapse only in the model-facing projection. They remain present in the immutable source graph.
+
+## Tool protocol
+
+For one action the model returns:
 
 ```txt
-stateweave › Hi my name is Radi.
-stateweave › What is my name?
+TOOL_CALL {"name":"read_file","args":{"file_path":"src/app.ts"}}
 ```
 
-The CLI keeps short-term graph memory during the session. Use `/reset` to clear it.
-
-Useful commands:
+After verified work it returns:
 
 ```txt
-/prompt   show the exact prompt sent to the model
-/compare  show traditional messages side-by-side
-/graph    print a Mermaid graph of the StateGraph
-/full     show full GraphFrame JSON
-/compact  return to compact state view
-/exit     quit
+FINAL: Fixed the parser and verified the focused test.
 ```
 
-One-shot inspection:
+Tool schemas are Zod-validated. The runtime executes only the first valid action envelope, records the call/result/resource lineage, and makes failures visible on the next inference.
 
-```bash
-pnpm cli "Find why login fails after token refresh. Login fails after refresh." --compare --graph
-```
+The default file tools reject absolute paths, traversal, and symlink components. The default `bash_command` is a no-profile read-only allowlist with a fixed trusted `PATH`; it rejects pipes, redirects, command substitution, arbitrary interpreters, network commands, and symlink-following flags.
 
 ## Connect a model
 
-StateWeave uses a tiny model interface:
+StateWeave uses a small provider-neutral interface:
 
 ```ts
 import type { Model } from "stateweave";
 
 const model: Model = {
   async complete(input) {
-    let text = "";
-    for await (const event of this.stream(input)) {
-      if (event.type === "token") text += event.token;
-    }
-    return { text };
+    return { text: "FINAL: Done." };
   },
-
   async *stream(input) {
-    const response = await fetch("https://provider.example.com/generate", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ prompt: input.prompt })
-    });
-
-    yield { type: "token", token: await response.text() };
+    yield { type: "token", token: (await this.complete(input)).text };
   }
 };
 ```
 
 Included adapters:
 
-- `MockModel` for deterministic local demos/tests.
-- `AnthropicModel` as a thin HTTP adapter with configurable base URL, API key, model, temperature, top-p, top-k, stop sequences, beta header, timeout, and extra payload fields.
+- `MockModel` for deterministic tests.
+- `AnthropicModel` as a thin HTTP adapter.
+- `createModelFromEnv()` for environment-selected construction.
 
-Environment example:
+StateWeave keeps provider adapters thin. Provider APIs still receive a linear token sequence because current transformers require one; that sequence is a temporary compilation of graph state, not stored chat history.
 
-```env
-STATEWEAVE_MODEL_PROVIDER=real
-ANTHROPIC_API_KEY=your_key_here
-ANTHROPIC_BASE_URL=https://api.anthropic.com
-ANTHROPIC_MODEL=claude-3-5-sonnet-latest
-ANTHROPIC_VERSION=2023-06-01
-ANTHROPIC_MAX_TOKENS=8192
-ANTHROPIC_TEMPERATURE=0
-```
-
-## Built-in workspace tools
-
-Tools are Zod-validated functions. Tool calls become `tool_call` / `tool_result` nodes in the graph, then the next model step receives the updated `GraphFrame`.
-
-`Agent` includes these workspace-scoped tools by default:
-
-| Tool | Args |
-| --- | --- |
-| `read_file` | `file_path`, optional `offset`, `limit` |
-| `write_file` | `file_path`, `content` |
-| `edit_file` | `file_path`, `old_string`, `new_string`, optional `replace_all` |
-| `bash_command` | `command`, optional `timeout_ms` |
-
-The file tool argument names match the common LangChain filesystem convention. `path`, `oldText`, `newText`, `replaceAll`, `startLine`, and `maxLines` are accepted as compatibility aliases, but new code should use the table above.
-
-For multiline HTML/SVG/code or exact edit strings, SWX uses raw block references instead of escaping giant JSON strings:
-
-```txt
-@tool write_file file_path=logo.svg content_ref=svg_1
-<<<svg_1:image/svg+xml
-<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" /></svg>
->>>
-```
-
-```txt
-@tool edit_file file_path=README.md old_string_ref=old_1 new_string_ref=new_1
-<<<old_1:text/plain
-old exact text
->>>
-<<<new_1:text/plain
-new exact text
->>>
-```
-
-Final answers are always human-readable text. Use inline `@final` for short responses and `@final_ref` for long responses, with optional artifact references:
-
-```txt
-@final "Created the SVG and wrote it to logo.svg." artifact=logo_svg
-```
-
-```txt
-@final_ref final_answer artifacts=snake,index_page
-<<<final_answer:text/markdown
-Created the game files:
-- snake.html
-- index.html
->>>
-```
-
-To add custom tools without losing the defaults, pass `tools: [...createDefaultTools(), yourTool]`. To replace the defaults entirely, pass your own `tools` array.
-
-## Visualize graph state
-
-State graphs can be rendered as Mermaid for low-level inspection.
-
-```ts
-import { graphToMermaid } from "stateweave";
-
-console.log(graphToMermaid(result.graph));
-```
-
-CLI:
+## CLI and lab
 
 ```bash
-pnpm cli "Diagnose the API response shape mismatch." --graph
-```
-
-## Trace everything
-
-Each step records:
-
-```ts
-type TraceStep = {
-  step: number;
-  frameBefore: GraphFrame;
-  prompt: string;
-  tokenEstimate: { estimatedTokens: number; messageCount: number };
-  streamedTokens: string[];
-  rawModelOutput: string;
-  parsedOps: GraphOp[];
-  frameAfter: GraphFrame;
-};
-```
-
-For StateWeave graph steps, `messageCount` is `0`.
-
-## Repository structure
-
-```txt
-src/
-  core/      GraphFrame, StateGraph, validation, serialization, graph ops
-  llm/       model interface and provider adapters
-  tools/     tool interface and deterministic mock tools
-  agent/     StateWeave agent and traditional comparison agent
-  evals/     toy baseline-vs-StateWeave evals
-  cli.ts     interactive inspection CLI
-```
-
-Docs live in a separate repository:
-
-```txt
-https://github.com/stateweave/docs
-https://stateweave.dev
-```
-
-## Commands
-
-```bash
-pnpm typecheck
-pnpm test
-pnpm build
-pnpm eval
 pnpm cli
 ```
 
-## Roadmap
-
-See [`ROADMAP.md`](./ROADMAP.md).
-
-## Contributing
-
-See [`CONTRIBUTING.md`](./CONTRIBUTING.md). PRs should be small, include tests when behavior changes, and preserve the core primitive:
+Useful commands:
 
 ```txt
-GraphFrame -> GraphOps -> StateGraph
+/prompt   show the exact compiled causal context
+/graph    show a Mermaid graph
+/full     show lossless AgentState JSON
+/compact  show a compact state view
+/compare  compare with a traditional transcript
+/reset    clear agent state
 ```
 
-## Security
+The development lab is available at `https://dev.stateweave.dev/lab/`. Its primary chat runs the same public `Agent`, keeps `AgentState` in the browser, streams causal progress, and visualizes the graph. The historical benchmark and frozen evaluation harnesses remain isolated internal evidence; they are not alternative public agent classes.
 
-Do not commit `.env`, provider keys, trace JSON with private prompts, or production data. See [`SECURITY.md`](./SECURITY.md).
+## Low-level graph utilities
+
+`GraphFrame`, `GraphOps`, and `StateGraph` utilities remain exported for low-level graph construction, visualization, and historical artifact compatibility. The public `Agent` runtime no longer asks the model to author GraphOps and does not use GraphFrame as its memory engine.
+
+## Development
+
+```bash
+pnpm test
+pnpm typecheck
+pnpm build
+pnpm web:check
+pnpm web:build
+```
+
+StateWeave has no LangChain/LangGraph dependency, provider SDK dependency, or graph database dependency.
 
 ## License
 

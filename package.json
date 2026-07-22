@@ -1,7 +1,7 @@
 {
   "name": "stateweave",
   "version": "0.1.0",
-  "description": "StateWeave SDK: GraphFrame -> GraphOps -> StateGraph as the runtime primitive for agent state.",
+  "description": "StateWeave SDK: immutable causal graph state for persistent agents.",
   "type": "module",
   "license": "MIT",
   "packageManager": "pnpm@11.9.0",
@@ -20,6 +20,8 @@
     "dist",
     "!dist/evals/**",
     "!dist/web/**",
+    "!dist/agent/graphFrameAgent.*",
+    "!dist/agent/stateweaveRunner.*",
     "README.md",
     "LICENSE"
   ],

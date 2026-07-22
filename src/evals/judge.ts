@@ -1,4 +1,4 @@
-import type { AgentResult } from "../core/types.js";
+import type { GraphFrameRunResult } from "../core/types.js";
 import type { EvalTask } from "./tasks.js";
 
 export type EvalScore = {
@@ -9,7 +9,7 @@ export type EvalScore = {
   notes: string;
 };
 
-export function judge(task: EvalTask, result: AgentResult): EvalScore {
+export function judge(task: EvalTask, result: GraphFrameRunResult): EvalScore {
   const text = `${result.finalAnswer}\n${JSON.stringify(result.graph)}`.toLowerCase();
   const traceText = JSON.stringify(result.trace).toLowerCase();
   const matchedFacts = task.expectedFacts.filter((fact) => text.includes(fact.toLowerCase()));

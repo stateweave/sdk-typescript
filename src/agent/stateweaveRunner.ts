@@ -2,7 +2,7 @@ import { applyOps, addToolResult } from "../core/applyOps.js";
 import { appendInputToGraphFrame, assertValidGraphFrame, cloneFrame, createInitialGraphFrame, forkFrame, forkFrameMetadataOnly, nowIso } from "../core/graph.js";
 import { normalizeTaskInput, type TaskInput } from "../core/input.js";
 import { serializeGraphFrame } from "../core/serialize.js";
-import type { AgentResult, GraphEdge, GraphFrame, GraphNode, GraphOp, StateWeaveRunMetadata, StateWeaveStreamEvent, TraceStep, WorkerRunSummary } from "../core/types.js";
+import type { GraphEdge, GraphFrame, GraphFrameRunResult, GraphNode, GraphOp, StateWeaveRunMetadata, StateWeaveStreamEvent, TraceStep, WorkerRunSummary } from "../core/types.js";
 import { parseAndValidateOps } from "../core/validateOps.js";
 import type { Model } from "../llm/model.js";
 import { estimateStateWeaveTokens } from "../llm/tokenizer.js";
@@ -26,8 +26,8 @@ export class StateWeaveRunError extends Error {
   }
 }
 
-export async function runStateWeave(args: StateWeaveRunnerArgs, input: StateWeaveInput, options?: StateWeaveRunOptions): Promise<AgentResult> {
-  let result: AgentResult | undefined;
+export async function runStateWeave(args: StateWeaveRunnerArgs, input: StateWeaveInput, options?: StateWeaveRunOptions): Promise<GraphFrameRunResult> {
+  let result: GraphFrameRunResult | undefined;
   for await (const event of streamStateWeave(args, input, options)) {
     if (event.type === "final") result = event.result;
   }
@@ -364,7 +364,7 @@ type WorkerPlan = {
   maxIterations?: number;
 };
 
-type WorkerExecution = { plan: WorkerPlan; baseFrame: GraphFrame; result?: AgentResult; error?: string };
+type WorkerExecution = { plan: WorkerPlan; baseFrame: GraphFrame; result?: GraphFrameRunResult; error?: string };
 
 function hasWorkers(ops: GraphOp[]): boolean {
   return ops.some((op) => op.op === "spawn_worker");
@@ -669,7 +669,7 @@ async function runWorker(
   queue.push({ type: "worker", step: parentStep, phase: "queued", worker: summary });
   queue.push({ type: "worker", step: parentStep, phase: "started", worker: workerSummary(plan, "running") });
 
-  let result: AgentResult | undefined;
+  let result: GraphFrameRunResult | undefined;
   try {
     for await (const event of streamStateWeave(
       { ...args, maxIterations: plan.maxIterations ?? parentMaxIterations },

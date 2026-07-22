@@ -1,7 +1,7 @@
 import "dotenv/config";
 import path from "node:path";
 import { BaselineAgent } from "../agent/baselineAgent.js";
-import { StateWeaveAgent } from "../agent/stateweaveAgent.js";
+import { GraphFrameAgent } from "../agent/graphFrameAgent.js";
 import { createModelFromEnv } from "../llm/factory.js";
 import { mockTools } from "../tools/mockTools.js";
 import { judge } from "./judge.js";
@@ -9,7 +9,7 @@ import { evalTasks } from "./tasks.js";
 
 const model = createModelFromEnv();
 const baseline = new BaselineAgent({ model, tools: mockTools });
-const stateweave = new StateWeaveAgent({ model, tools: mockTools, maxIterations: 4, traceDir: path.resolve("src/traces") });
+const stateweave = new GraphFrameAgent({ model, tools: mockTools, maxIterations: 4, traceDir: path.resolve("src/traces") });
 
 const rows: string[] = ["Task | Traditional messages success | StateWeave success | Traditional steps | StateWeave steps | Notes", "--- | --- | --- | --- | --- | ---"];
 

@@ -4,7 +4,8 @@ import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/p
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { runStateWeave, StateWeaveRunError, streamStateWeave } from "../agent/stateweaveRunner.js";
+import { Agent, AgentRunError, type AgentState } from "../agent/agent.js";
+import { runStateWeave, StateWeaveRunError } from "../agent/stateweaveRunner.js";
 import { defaultSystemPrompt } from "../core/graph.js";
 import type { GraphFrame, StateWeaveRunMetadata, TraceStep } from "../core/types.js";
 import { createModelFromEnv } from "../llm/factory.js";
@@ -15,8 +16,10 @@ import { SdkBuildBenchmarkApi } from "./sdkBuildBenchmark.js";
 
 type RunRequest = {
   input?: unknown;
+  state?: unknown;
   frame?: unknown;
   maxIterations?: unknown;
+  projectionTargetTokens?: unknown;
   systemPrompt?: unknown;
   nodeTypes?: unknown;
   messages?: unknown;
@@ -133,7 +136,7 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   const url = requestUrl(request);
 
   if (request.method === "GET" && url.pathname === "/api/health") {
-    json(response, 200, { ok: true, provider: providerName(), defaultSystemPrompt, defaultNodeTypes, defaultMaxIterations: 30 });
+    json(response, 200, { ok: true, provider: providerName(), agentEngine: "causal-weave-v3", defaultSystemPrompt, defaultNodeTypes, defaultMaxIterations: 30 });
     return;
   }
 
@@ -315,30 +318,27 @@ async function streamStateWeaveRun(request: IncomingMessage, response: ServerRes
     return;
   }
 
+  let agent: Agent;
+  try {
+    agent = createPublicAgent(body);
+  } catch (error) {
+    json(response, 400, { error: error instanceof Error ? error.message : String(error) });
+    return;
+  }
+
   response.writeHead(200, {
     "content-type": "application/x-ndjson; charset=utf-8",
     "cache-control": "no-cache, no-transform",
     "x-accel-buffering": "no"
   });
-
-  let finalTrace: TraceStep[] | undefined;
-  let finalMetadata: StateWeaveRunMetadata | undefined;
   try {
-    for await (const event of streamStateWeave(
-      { model, tools: agentTools, maxIterations: safeMaxIterations(body.maxIterations), systemPrompt: safeSystemPrompt(body.systemPrompt), nodeTypes: safeNodeTypes(body.nodeTypes) },
-      body.input,
-      { frame: isGraphFrame(body.frame) ? body.frame : undefined }
-    )) {
-      if (event.type === "final") {
-        finalTrace = event.result.trace;
-        finalMetadata = event.result.metadata;
-      }
+    for await (const event of agent.streamEvents(body.input)) {
+      if (event.type === "final") await persistTrace("stream", body.input.trim(), event.result.trace, event.result.metadata);
       response.write(`${JSON.stringify(event)}\n`);
     }
-    if (finalTrace) await persistTrace("stream", body.input.trim(), finalTrace, finalMetadata);
   } catch (error) {
-    if (error instanceof StateWeaveRunError) await persistTrace("stream-error", body.input.trim(), error.trace, error.metadata);
-    response.write(`${JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error), trace: error instanceof StateWeaveRunError ? error.trace : undefined, metadata: error instanceof StateWeaveRunError ? error.metadata : undefined })}\n`);
+    if (error instanceof AgentRunError) await persistTrace("stream-error", body.input.trim(), error.trace, error.metrics);
+    response.write(`${JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error), state: error instanceof AgentRunError ? error.state : undefined, graph: error instanceof AgentRunError ? error.graph : undefined, trace: error instanceof AgentRunError ? error.trace : undefined, metrics: error instanceof AgentRunError ? error.metrics : undefined })}\n`);
   } finally {
     response.end();
   }
@@ -352,17 +352,20 @@ async function runStateWeaveTurn(request: IncomingMessage, response: ServerRespo
   }
 
   const input = body.input.trim();
+  let agent: Agent;
+  try {
+    agent = createPublicAgent(body);
+  } catch (error) {
+    json(response, 400, { error: error instanceof Error ? error.message : String(error) });
+    return;
+  }
   let stateweave;
   try {
-    stateweave = await runStateWeave(
-      { model, tools: agentTools, maxIterations: safeMaxIterations(body.maxIterations), systemPrompt: safeSystemPrompt(body.systemPrompt), nodeTypes: safeNodeTypes(body.nodeTypes) },
-      input,
-      { frame: isGraphFrame(body.frame) ? body.frame : undefined }
-    );
+    stateweave = await agent.run(input);
   } catch (error) {
-    if (error instanceof StateWeaveRunError) {
-      await persistTrace("chat-error", input, error.trace, error.metadata);
-      json(response, 500, { error: error.message, trace: error.trace, metadata: error.metadata });
+    if (error instanceof AgentRunError) {
+      await persistTrace("chat-error", input, error.trace, error.metrics);
+      json(response, 500, { error: error.message, state: error.state, graph: error.graph, trace: error.trace, metrics: error.metrics });
       return;
     }
     throw error;
@@ -371,8 +374,7 @@ async function runStateWeaveTurn(request: IncomingMessage, response: ServerRespo
 
   json(response, 200, {
     stateweave: {
-      inputFrame: stateweave.trace[0]?.frameBefore,
-      frameAfter: stateweave.frame,
+      stateAfter: stateweave.state,
       output: stateweave.finalAnswer,
       trace: stateweave.trace,
       graph: stateweave.graph,
@@ -759,7 +761,7 @@ function isRenderableMime(mime: string): boolean {
   return mime === "text/html" || mime === "image/svg+xml";
 }
 
-async function persistTrace(kind: string, input: string, trace: TraceStep[], metadata?: StateWeaveRunMetadata): Promise<void> {
+async function persistTrace(kind: string, input: string, trace: unknown[], metadata?: unknown): Promise<void> {
   if (!trace.length) return;
   try {
     await mkdir(traceDir, { recursive: true });
@@ -866,6 +868,24 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
 }
 
+function createPublicAgent(body: RunRequest): Agent {
+  if (body.state !== undefined && !isAgentState(body.state)) throw new Error("state must be a valid AgentState object.");
+  return new Agent({
+    model,
+    tools: agentTools,
+    maxIterations: safeMaxIterations(body.maxIterations),
+    projectionTargetTokens: safeProjectionTarget(body.projectionTargetTokens),
+    systemPrompt: safeSystemPrompt(body.systemPrompt),
+    state: body.state
+  });
+}
+
+function isAgentState(value: unknown): value is AgentState {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as { version?: unknown; nodes?: unknown; frontier?: unknown };
+  return candidate.version === 1 && Array.isArray(candidate.nodes) && Array.isArray(candidate.frontier);
+}
+
 function isGraphFrame(value: unknown): value is GraphFrame {
   return Boolean(
     value &&
@@ -881,6 +901,11 @@ function safeMaxIterations(value: unknown): number {
   const numeric = Number(value);
   if (!Number.isInteger(numeric) || numeric < 1) return 30;
   return numeric;
+}
+
+function safeProjectionTarget(value: unknown): number | undefined {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric >= 1_000 && numeric <= 64_000 ? numeric : undefined;
 }
 
 function safeSystemPrompt(value: unknown): string | undefined {

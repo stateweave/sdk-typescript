@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { StateWeaveAgent } from "../src/agent/stateweaveAgent.js";
+import { GraphFrameAgent } from "../src/agent/graphFrameAgent.js";
 import { createInitialGraphFrame } from "../src/core/graph.js";
 import { serializeGraphFrame } from "../src/core/serialize.js";
 import { AgenticBaseline } from "../src/evals/agenticBaseline.js";
@@ -50,7 +50,7 @@ it("removes experiment and implementation identity from the blinded graph prompt
 it("uses the exact same neutral provider system for both participant runtimes", async () => {
   const graphModel = new CapturingParticipantModel();
   const transcriptModel = new CapturingParticipantModel();
-  const graph = new StateWeaveAgent({
+  const graph = new GraphFrameAgent({
     model: graphModel,
     tools: [],
     maxIterations: 2,

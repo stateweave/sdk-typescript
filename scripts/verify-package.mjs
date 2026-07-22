@@ -9,10 +9,12 @@ const forbidden = paths.filter((file) =>
   file.startsWith("dist/evals/")
   || file.startsWith("dist/web/")
   || file.startsWith("data/")
+  || file.startsWith("dist/agent/graphFrameAgent.")
+  || file.startsWith("dist/agent/stateweaveRunner.")
   || file.includes("challenger-scenarios")
   || file.includes("traces/")
 );
-const required = ["dist/index.js", "dist/index.d.ts", "dist/agent/stateweaveAgent.js", "dist/core/graph.js"];
+const required = ["dist/index.js", "dist/index.d.ts", "dist/agent/agent.js", "dist/core/graph.js"];
 const missing = required.filter((file) => !paths.includes(file));
 
 if (forbidden.length) throw new Error(`Package contains private/non-SDK artifacts: ${forbidden.join(", ")}`);

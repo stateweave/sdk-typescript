@@ -2,10 +2,10 @@ import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { StateWeaveAgent } from "../agent/stateweaveAgent.js";
+import { GraphFrameAgent } from "../agent/graphFrameAgent.js";
 import { StateWeaveRunError } from "../agent/stateweaveRunner.js";
 import { clusterGraph } from "../core/projection.js";
-import type { AgentResult, GraphFrame, TraceStep } from "../core/types.js";
+import type { GraphFrame, GraphFrameRunResult, TraceStep } from "../core/types.js";
 import { createModelFromEnv } from "../llm/factory.js";
 import type { Model } from "../llm/model.js";
 import { estimateStateWeaveTokens } from "../llm/tokenizer.js";
@@ -214,7 +214,7 @@ type StateWeaveTurnResult = {
   modelCalls: number;
   toolCalls: number;
   latencyMs: number;
-  result: AgentResult;
+  result: GraphFrameRunResult;
 };
 
 class ProviderTurnError extends Error {}
@@ -233,7 +233,7 @@ export class InfiniteAgentHarness {
   private readonly naiveWorkspace: string;
   private readonly model: Model;
   private state: InfiniteAgentState;
-  private stateweave?: StateWeaveAgent;
+  private stateweave?: GraphFrameAgent;
   private naive?: AgenticBaseline;
   private running = false;
   private runPromise?: Promise<void>;
@@ -344,7 +344,7 @@ export class InfiniteAgentHarness {
     const frame = await readJson<GraphFrame>(this.framePath);
     const messages = await readJson<AgenticMessage[]>(this.messagesPath);
     const sharedPrompt = challengerParticipantPrompt();
-    this.stateweave = new StateWeaveAgent({
+    this.stateweave = new GraphFrameAgent({
       model: this.model,
       tools: createFileSystemTools({ rootDir: this.stateweaveWorkspace }),
       maxIterations: MAX_AGENT_ITERATIONS,
@@ -908,7 +908,7 @@ export class InfiniteAgentHarness {
 type CaptureProgress = Pick<InfiniteAgentProgress, "phase" | "iteration" | "maxIterations" | "modelCalls" | "toolCalls" | "detail">;
 
 async function captureStateWeaveTurn(
-  agent: StateWeaveAgent,
+  agent: GraphFrameAgent,
   prompt: string,
   signal: AbortSignal,
   onProgress: (progress: CaptureProgress) => void
@@ -919,7 +919,7 @@ async function captureStateWeaveTurn(
   let modelFacingFrame: GraphFrame | undefined;
   let latestCommittedFrame: GraphFrame | undefined;
   try {
-    let result: AgentResult | undefined;
+    let result: GraphFrameRunResult | undefined;
     onProgress({ phase: "context", iteration: 0, maxIterations: MAX_AGENT_ITERATIONS, modelCalls, toolCalls, detail: "Preparing StateWeave graph projection" });
     for await (const event of agent.stream(prompt, { signal })) {
       if (event.type === "frame" && event.phase === "before") {

@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { describe, expect, it } from "vitest";
-import { CausalWeaveAgent } from "../src/agent/causalWeaveAgent.js";
+import { Agent } from "../src/agent/agent.js";
+import { agentStateToGraph } from "../src/core/causalGraph.js";
 import { CausalWeave } from "../src/core/causalWeave.js";
+import * as publicSdk from "../src/index.js";
 import { AgenticBaseline } from "../src/evals/agenticBaseline.js";
 import type { Model, ModelInput, ModelOutput, ModelToken } from "../src/llm/model.js";
 import type { Tool } from "../src/tools/types.js";
@@ -71,6 +73,21 @@ describe("Causal Weave", () => {
     expect(compiled.nodeIds.length).toBeLessThanOrEqual(30);
   });
 
+  it("keeps many user turns bounded instead of making every historical goal mandatory", () => {
+    const weave = new CausalWeave();
+    const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
+    for (let turn = 0; turn < 100; turn++) {
+      const goal = weave.append({ kind: "goal", payload: `turn-${turn} ${"detail ".repeat(20)}`, parents: [system.id, ...weave.frontier()] });
+      weave.append({ kind: "answer", payload: `answer-${turn}`, parents: [goal.id] });
+    }
+
+    const compiled = weave.compile({ query: "turn-99", maxTokens: 4_000, targetTokens: 2_000, maxNodes: 32 });
+
+    expect(compiled.prompt).toContain("turn-99");
+    expect(compiled.prompt).not.toContain("turn-0 detail");
+    expect(compiled.tokenEstimate.estimatedTokens).toBeLessThanOrEqual(2_100);
+  });
+
   it("does not recursively resend prior inference read sets as causal closure", () => {
     const weave = new CausalWeave();
     const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
@@ -129,19 +146,72 @@ describe("Causal Weave", () => {
       'TOOL_CALL {"name":"read_file","args":{"file_path":"src/app.js"}}',
       "FINAL: Inspected the application."
     ]);
-    const agent = new CausalWeaveAgent({ model, tools: [recordingTool(calls)], systemPrompt: "Work carefully.", maxIterations: 3 });
+    const agent = new Agent({ model, tools: [recordingTool(calls)], systemPrompt: "Work carefully.", maxIterations: 3 });
 
     const result = await agent.run("Inspect src/app.js");
-    const toolCall = result.weave.nodes.find((node) => node.kind === "tool_call")!;
-    const toolResult = result.weave.nodes.find((node) => node.kind === "tool_result")!;
-    const answer = result.weave.nodes.find((node) => node.kind === "answer")!;
+    const toolCall = result.state.nodes.find((node) => node.kind === "tool_call")!;
+    const toolResult = result.state.nodes.find((node) => node.kind === "tool_result")!;
+    const answer = result.state.nodes.find((node) => node.kind === "answer")!;
 
     expect(calls).toEqual([{ file_path: "src/app.js" }]);
     expect(toolCall.parents).toEqual([...result.trace[0].nodeIds].sort());
     expect(toolResult.parents).toEqual([toolCall.id]);
     expect(answer.parents).toEqual([...result.trace[1].nodeIds].sort());
-    expect(result.weave.nodes.every((node) => !("role" in node))).toBe(true);
+    expect(result.state.nodes.every((node) => !("role" in node))).toBe(true);
     expect(model.prompts.every((prompt) => prompt.startsWith("CAUSAL_WEAVE/1"))).toBe(true);
+  });
+
+  it("continues one causal frontier across turns and commits only successful runs", async () => {
+    const agent = new Agent({
+      model: new SequenceModel(["FINAL: First answer.", "not an action"]),
+      tools: [],
+      maxIterations: 1,
+      enforceCompletionEvidence: false
+    });
+
+    const first = await agent.run("First goal");
+    const committed = agent.getState()!;
+    const firstAnswer = committed.nodes.find((node) => node.kind === "answer")!;
+    await expect(agent.run("Broken second goal")).rejects.toThrow(/recursion limit/i);
+
+    expect(agent.getState()).toEqual(committed);
+    expect(first.state).toEqual(committed);
+    expect(firstAnswer.payload).toBe("First answer.");
+  });
+
+  it("links a later goal to the prior frontier and supports state export/import", async () => {
+    const first = new Agent({ model: new SequenceModel(["FINAL: Remembered."]), tools: [], enforceCompletionEvidence: false });
+    const initial = await first.run("Remember this");
+    const resumed = new Agent({ model: new SequenceModel(["FINAL: Continued."]), tools: [], state: initial.state, enforceCompletionEvidence: false });
+    const next = await resumed.run("Continue");
+    const earlierAnswer = initial.state.nodes.find((node) => node.kind === "answer")!;
+    const laterGoal = next.state.nodes.filter((node) => node.kind === "goal").at(-1)!;
+
+    expect(laterGoal.parents).toContain(earlierAnswer.id);
+    expect(next.graph.nodes.some((node) => node.type === "user_input")).toBe(true);
+    expect(next.graph.nodes.some((node) => node.type === "assistant_output")).toBe(true);
+  });
+
+  it("keeps visualization payloads bounded while preserving lossless state", () => {
+    const weave = new CausalWeave();
+    weave.append({ kind: "system", payload: "x".repeat(10_000), parents: [], advance: false });
+    const state = weave.snapshot();
+    const graph = agentStateToGraph(state);
+
+    expect(state.nodes[0]!.payload).toHaveLength(10_000);
+    expect(graph.nodes[0]!.text.length).toBeLessThan(2_100);
+  });
+
+  it("rejects tampered imported state and exposes only one public agent class", () => {
+    const weave = new CausalWeave();
+    weave.append({ kind: "system", payload: "system", parents: [], advance: false });
+    const tampered = weave.snapshot();
+    tampered.nodes[0]!.id = "cw_tampered";
+
+    expect(() => new Agent({ model: new SequenceModel([]), tools: [], state: tampered })).toThrow(/identity mismatch/i);
+    expect(publicSdk.Agent).toBe(Agent);
+    expect("StateWeaveAgent" in publicSdk).toBe(false);
+    expect("CausalWeaveAgent" in publicSdk).toBe(false);
   });
 
   it("uses the exact same tool action and executor semantics as the transcript baseline", async () => {
@@ -149,7 +219,7 @@ describe("Causal Weave", () => {
     const transcriptCalls: unknown[] = [];
     const causalCalls: unknown[] = [];
     const transcript = new AgenticBaseline({ model: new SequenceModel(output), tools: [recordingTool(transcriptCalls)], systemPrompt: "Shared system", maxIterations: 3 });
-    const causal = new CausalWeaveAgent({ model: new SequenceModel(output), tools: [recordingTool(causalCalls)], systemPrompt: "Shared system", maxIterations: 3 });
+    const causal = new Agent({ model: new SequenceModel(output), tools: [recordingTool(causalCalls)], systemPrompt: "Shared system", maxIterations: 3 });
 
     const [transcriptResult, causalResult] = await Promise.all([
       transcript.run("Read same.js"),
@@ -159,7 +229,7 @@ describe("Causal Weave", () => {
     expect(transcriptResult.completed).toBe(true);
     expect(causalResult.finalAnswer).toBe("Done.");
     expect(causalCalls).toEqual(transcriptCalls);
-    expect(causalResult.metrics.toolCalls).toBe(transcriptResult.toolCalls);
-    expect(causalResult.metrics.modelCalls).toBe(transcriptResult.modelCalls);
+    expect(causalResult.metadata.toolCalls).toBe(transcriptResult.toolCalls);
+    expect(causalResult.metadata.modelCalls).toBe(transcriptResult.modelCalls);
   });
 });
