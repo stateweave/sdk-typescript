@@ -210,7 +210,7 @@ function projectionEquivalenceKey(node: CausalWeaveNode): string | undefined {
     const name = stringValue(payload.name);
     const args = asRecord(payload.args);
     const path = resourcePath(args);
-    if (name === "read_file" && path) return `read_call:${path}`;
+    if (name === "read_file" && path) return `read_call:${path}:${readRangeKey(args)}`;
     if ((name === "write_file" || name === "edit_file") && path) return `mutation_call:${path}`;
     return `tool_call:${name}:${projectionHash(payload.args)}`;
   }
@@ -218,11 +218,23 @@ function projectionEquivalenceKey(node: CausalWeaveNode): string | undefined {
     const name = stringValue(payload.tool);
     const result = asRecord(payload.result);
     const path = resourcePath(result);
-    if (name === "read_file" && path) return `read_result:${path}`;
+    if (name === "read_file" && path) return `read_result:${path}:${readRangeKey(result)}`;
     if ((name === "write_file" || name === "edit_file") && path) return `mutation_result:${path}`;
     return `tool_result:${name}:${projectionHash(payload.result)}`;
   }
   return undefined;
+}
+
+// Reads are equivalence-collapsed by file PATH by default, which evicts earlier
+// chunks when a file is read in ranges (offset/limit). Keying on the read range
+// too means chunked reads of one file coexist in the projection instead of
+// ping-ponging (the model re-reading offset 0, then 100, then 0, ...). Two reads
+// of the same range still collapse to the latest (a larger re-read supersedes a
+// smaller one at the same offset).
+function readRangeKey(record: Record<string, unknown>): string {
+  const offset = Number(record.offset ?? 0);
+  if (!Number.isFinite(offset) || offset <= 0) return "o0";
+  return `o${Math.floor(offset)}`;
 }
 
 function renderGraphDigest(nodes: CausalWeaveNode[], resourceHeads: Map<string, string>): string {
