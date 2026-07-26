@@ -140,6 +140,39 @@ describe("Causal Weave", () => {
     expect(compiled.tokenEstimate.estimatedTokens).toBeLessThanOrEqual(6_200);
   });
 
+  it("keeps chunked reads of one file at different offsets in the projection (no read ping-pong)", () => {
+    const weave = new CausalWeave();
+    const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
+    weave.append({ kind: "goal", payload: "edit app.js to be responsive", parents: [system.id] });
+    const readChunk = (offset: number, body: string, hash: string) => {
+      const call = weave.append({ kind: "tool_call", payload: { name: "read_file", args: { file_path: "app.js", offset, limit: 100 } }, parents: weave.frontier() });
+      const result = weave.append({ kind: "tool_result", payload: { tool: "read_file", result: { path: "app.js", file_path: "app.js", offset, limit: 100, content_hash: hash, content: body } }, parents: [call.id] });
+      weave.append({ kind: "resource", payload: { path: "app.js", operation: "read_file", contentHash: hash, succeeded: true }, parents: [result.id], resourceKey: "app.js" });
+    };
+    readChunk(0, "CHUNK_ZERO_BODY", "h0");
+    readChunk(100, "CHUNK_HUNDRED_BODY", "h1");
+
+    const compiled = weave.compile({ query: "responsive app.js", maxTokens: 20_000, targetTokens: 8_000, maxNodes: 48 });
+    // Before the range-aware equivalence key, both reads collapsed to the latest
+    // offset and the model could only see CHUNK_HUNDRED_BODY, forcing it to
+    // re-read offset 0, then 100, then 0, ... (the loop). Both ranges now survive.
+    expect(compiled.prompt).toContain("CHUNK_ZERO_BODY");
+    expect(compiled.prompt).toContain("CHUNK_HUNDRED_BODY");
+  });
+
+  it("still collapses identical re-reads of the same offset", () => {
+    const weave = new CausalWeave();
+    const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
+    weave.append({ kind: "goal", payload: "inspect app.js", parents: [system.id] });
+    for (let i = 0; i < 5; i++) {
+      const call = weave.append({ kind: "tool_call", payload: { name: "read_file", args: { file_path: "app.js", offset: 0, limit: 100 } }, parents: weave.frontier() });
+      const result = weave.append({ kind: "tool_result", payload: { tool: "read_file", result: { path: "app.js", offset: 0, limit: 100, content_hash: "same", content: "SAME_BODY" } }, parents: [call.id] });
+      weave.append({ kind: "resource", payload: { path: "app.js", operation: "read_file", contentHash: "same", succeeded: true }, parents: [result.id], resourceKey: "app.js" });
+    }
+    const compiled = weave.compile({ query: "inspect app.js", maxTokens: 20_000, targetTokens: 8_000, maxNodes: 48 });
+    expect(compiled.prompt.match(/SAME_BODY/g)).toHaveLength(1);
+  });
+
   it("grows from ordinary tool actions without model-authored graph operations", async () => {
     const calls: unknown[] = [];
     const model = new SequenceModel([
