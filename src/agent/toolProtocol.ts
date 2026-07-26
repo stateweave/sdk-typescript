@@ -1,4 +1,9 @@
+import { defaultSemanticNodeTypes, type SemanticNodeType } from "./types.js";
 import type { Tool } from "../tools/types.js";
+
+export type SemanticNodeInput = { type: string; key: string; content: unknown };
+export type ParsedToolCall = { name: string; args: unknown; state: SemanticNodeInput[] };
+export type ParsedFinal = { answer: string; state: SemanticNodeInput[] };
 
 export type CompletionEvidence = {
   inspected: boolean;
@@ -69,20 +74,25 @@ export function providerSystem(common: string | undefined, instruction: string):
   return common ?? instruction;
 }
 
-export function agentSystemPrompt(systemPrompt: string, tools: Tool[]): string {
+export function agentSystemPrompt(systemPrompt: string, tools: Tool[], nodeTypes: SemanticNodeType[] = defaultSemanticNodeTypes, allowDynamicNodeTypes = false): string {
+  const stateFormat = 'Optional state entries use {"type":"type_name","key":"stable-key","content":"durable content or structured data"}.';
   return [
     systemPrompt,
-    "You have a persistent workspace and must use tools to inspect current files before changing them.",
-    "Use the supplied working context deliberately: preserve active tasks, constraints, file paths, implementation decisions, failures, and successful check evidence, while treating current workspace reads as authoritative.",
-    "For one tool action, return exactly TOOL_CALL followed by one JSON object: {\"name\":\"tool_name\",\"args\":{...}}. Keep each write_file content value under 2,500 characters and build longer artifacts through multiple write/edit calls so the JSON envelope cannot be truncated.",
-    "After a TOOL result, either call another tool or finish with exactly FINAL: followed by a concise human answer.",
-    "Never claim a file changed unless a write_file or edit_file result confirms it. Prefer read_file before edit_file. bash_command is read-only and allowlisted.",
+    tools.length ? "You have a persistent workspace and must use tools to inspect current files before changing them." : "Answer from the supplied causal state and the current request; no tools are available.",
+    "Use the supplied working context deliberately. The runtime, not you, creates causal links and validates persistent state.",
+    `You may preserve up to 8 durable semantic nodes in the state array of a TOOL_CALL or structured FINAL. ${stateFormat}`,
+    "Preserve only explicit stable facts, confirmed preferences, reusable evidence-supported wisdom, and durable artifact content or references. Do not save guesses, routine prose, transient requests, secrets, or duplicates. Reuse the same type and key to supersede an older value.",
+    `Configured semantic node types: ${nodeTypes.map((type) => `${type.name} (${type.description})`).join("; ")}.`,
+    allowDynamicNodeTypes ? "You may create a concise lowercase custom semantic type when none of the configured types fits." : "Use only the configured semantic node types.",
+    tools.length ? "For one tool action, return exactly TOOL_CALL followed by one JSON object: {\"name\":\"tool_name\",\"args\":{...},\"state\":[...]}. Keep each write_file content value under 2,500 characters and build longer artifacts through multiple write/edit calls so the JSON envelope cannot be truncated." : "Do not return TOOL_CALL because no tools are available.",
+    "Finish with either FINAL: followed by a concise human answer, or FINAL followed by one JSON object: {\"answer\":\"concise human answer\",\"state\":[...]}. State entries are optional and are never shown as the human answer.",
+    tools.length ? "Never claim a file changed unless a write_file or edit_file result confirms it. Prefer read_file before edit_file. bash_command is read-only and allowlisted." : "Do not claim external actions occurred.",
     "Available tools:",
-    ...tools.map((tool) => `- ${tool.name}: ${tool.description}`)
+    ...(tools.length ? tools.map((tool) => `- ${tool.name}: ${tool.description}`) : ["- none"])
   ].join("\n");
 }
 
-export function parseToolCall(text: string): { name: string; args: unknown } | undefined {
+export function parseToolCall(text: string): ParsedToolCall | undefined {
   const envelope = text.match(/^\s*TOOL_CALL\s*/i);
   if (!envelope) return undefined;
   const start = envelope[0].length;
@@ -93,14 +103,43 @@ export function parseToolCall(text: string): { name: string; args: unknown } | u
   const candidates = [raw, trailingQuoteRepair, trailingQuoteRepair ? repairCommandValueQuotes(trailingQuoteRepair) : undefined, repairCommandValueQuotes(raw)];
   for (const json of new Set(candidates.filter((value): value is string => Boolean(value)))) {
     try {
-      const parsed = JSON.parse(json) as { name?: unknown; args?: unknown };
+      const parsed = JSON.parse(json) as { name?: unknown; args?: unknown; state?: unknown };
       if (typeof parsed.name !== "string" || !parsed.args || typeof parsed.args !== "object" || Array.isArray(parsed.args)) continue;
-      return { name: parsed.name, args: parsed.args };
+      return { name: parsed.name, args: parsed.args, state: readSemanticNodeInputs(parsed.state) };
     } catch {
       continue;
     }
   }
   return undefined;
+}
+
+export function parseFinal(text: string): ParsedFinal | undefined {
+  const envelope = text.match(/^\s*FINAL\s*/i);
+  if (!envelope) return undefined;
+  const remainder = text.slice(envelope[0].length);
+  if (!remainder.startsWith("{")) {
+    const answer = remainder.replace(/^:\s*/, "").trim();
+    return answer ? { answer, state: [] } : undefined;
+  }
+  const raw = balancedJsonObject(remainder, 0);
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as { answer?: unknown; state?: unknown };
+    if (typeof parsed.answer !== "string" || !parsed.answer.trim()) return undefined;
+    return { answer: parsed.answer.trim(), state: readSemanticNodeInputs(parsed.state) };
+  } catch {
+    return undefined;
+  }
+}
+
+function readSemanticNodeInputs(value: unknown): SemanticNodeInput[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 8).flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const record = entry as Record<string, unknown>;
+    if (typeof record.type !== "string" || typeof record.key !== "string" || !("content" in record)) return [];
+    return [{ type: record.type, key: record.key, content: record.content }];
+  });
 }
 
 function toolResultSucceeded(result: unknown): boolean {

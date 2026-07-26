@@ -1,4 +1,10 @@
-export type CausalNodeKind = "system" | "goal" | "inference" | "tool_call" | "tool_result" | "resource" | "verification" | "answer" | "protocol_error";
+export type CausalNodeKind = "system" | "goal" | "inference" | "semantic" | "tool_call" | "tool_result" | "resource" | "verification" | "answer" | "protocol_error";
+
+export type SemanticNodePayload = {
+  type: string;
+  key: string;
+  content: unknown;
+};
 
 export type CausalWeaveNode = {
   id: string;

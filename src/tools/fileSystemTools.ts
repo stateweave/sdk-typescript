@@ -72,7 +72,7 @@ export function createDefaultTools(options: FileSystemToolsOptions = {}): Tool[]
 }
 
 export function createFileSystemTools(options: FileSystemToolsOptions = {}): Tool[] {
-  const rootDir = path.resolve(options.rootDir ?? process.env.STATEWEAVE_WORKSPACE_DIR ?? path.join(process.cwd(), ".stateweave", "workspace"));
+  const rootDir = path.resolve(/* turbopackIgnore: true */ options.rootDir ?? process.env.STATEWEAVE_WORKSPACE_DIR ?? ".stateweave/workspace");
   const timeoutMs = options.timeoutMs ?? numberEnv(process.env.STATEWEAVE_TOOL_TIMEOUT_MS) ?? defaultTimeoutMs;
   const maxOutputBytes = options.maxOutputBytes ?? numberEnv(process.env.STATEWEAVE_TOOL_MAX_OUTPUT_BYTES) ?? defaultMaxOutputBytes;
   const allowedBashCommands = new Set(options.allowedBashCommands ?? defaultAllowedBashCommands);

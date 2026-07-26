@@ -194,6 +194,47 @@ describe("Causal Weave", () => {
     expect(model.prompts.every((prompt) => prompt.startsWith("CAUSAL_WEAVE/1"))).toBe(true);
   });
 
+  it("creates typed semantic memory without an extra model call", async () => {
+    const model = new SequenceModel([
+      'FINAL {"answer":"I will remember that.","state":[{"type":"preference","key":"hotel-style","content":"The user prefers quiet hotels."}]}'
+    ]);
+    const agent = new Agent({ model, tools: [], enforceCompletionEvidence: false });
+
+    const result = await agent.run("I prefer quiet hotels.");
+    const preference = result.state.nodes.find((node) => node.kind === "semantic")!;
+
+    expect(result.finalAnswer).toBe("I will remember that.");
+    expect(model.prompts).toHaveLength(1);
+    expect(preference.payload).toEqual({ type: "preference", key: "hotel-style", content: "The user prefers quiet hotels." });
+    expect(preference.resourceKey).toBe("semantic:preference:hotel-style");
+    expect(result.graph.nodes.find((node) => node.id === preference.id)?.type).toBe("preference");
+  });
+
+  it("supports configured and agent-created semantic types with keyed supersession", async () => {
+    const model = new SequenceModel([
+      'FINAL {"answer":"Saved.","state":[{"type":"pros-cons","key":"database-choice","content":{"pros":["simple"],"cons":["limited"]}},{"type":"risk","key":"migration","content":"Migration requires a rollback plan."}]}',
+      'FINAL {"answer":"Updated.","state":[{"type":"pros-cons","key":"database-choice","content":{"pros":["simple","fast"],"cons":[]}}]}'
+    ]);
+    const agent = new Agent({
+      model,
+      tools: [],
+      enforceCompletionEvidence: false,
+      nodeTypes: [{ name: "pros-cons", description: "Pros and cons for a decision." }],
+      allowDynamicNodeTypes: true
+    });
+
+    await agent.run("Save this database assessment.");
+    const result = await agent.run("Update the database assessment.");
+    const semanticNodes = result.state.nodes.filter((node) => node.kind === "semantic");
+    const latest = semanticNodes.at(-1)!;
+    const compiled = new CausalWeave(result.state).compile({ query: "show pros-cons database choice", targetTokens: 4_000 });
+
+    expect(semanticNodes.map((node) => (node.payload as { type: string }).type)).toEqual(["pros-cons", "risk", "pros-cons"]);
+    expect(latest.parents).toContain(semanticNodes[0]!.id);
+    expect(compiled.prompt).toContain('"fast"');
+    expect(compiled.prompt).not.toContain('"limited"');
+  });
+
   it("continues one causal frontier across turns and commits only successful runs", async () => {
     const agent = new Agent({
       model: new SequenceModel(["FINAL: First answer.", "not an action"]),
