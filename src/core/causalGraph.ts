@@ -6,9 +6,9 @@ export function agentStateToGraph(state?: CausalWeaveSnapshot): StateGraph {
   return {
     nodes: state.nodes.map((node) => ({
       id: node.id,
-      type: graphNodeType(node.kind),
-      text: payloadText(node.payload),
-      data: { kind: node.kind, parents: node.parents, sequence: node.sequence, ...(node.resourceKey ? { resourceKey: node.resourceKey } : {}) },
+      type: graphNodeType(node.kind, node.payload),
+      text: node.kind === "semantic" ? semanticContentText(node.payload) : payloadText(node.payload),
+      data: { kind: node.kind, parents: node.parents, sequence: node.sequence, ...(node.kind === "semantic" ? { semanticType: semanticType(node.payload) } : {}), ...(node.resourceKey ? { resourceKey: node.resourceKey } : {}) },
       status: state.frontier.includes(node.id) ? "active" : "resolved",
       createdAt: node.createdAt
     })),
@@ -22,11 +22,24 @@ export function agentStateToGraph(state?: CausalWeaveSnapshot): StateGraph {
   };
 }
 
-function graphNodeType(kind: CausalNodeKind): GraphNode["type"] {
+function graphNodeType(kind: CausalNodeKind, payload: unknown): GraphNode["type"] {
   if (kind === "system") return "system";
   if (kind === "goal") return "user_input";
   if (kind === "answer") return "assistant_output";
+  if (kind === "semantic") return semanticType(payload) || "memory";
   return kind;
+}
+
+function semanticType(payload: unknown): string {
+  return payload && typeof payload === "object" && typeof (payload as Record<string, unknown>).type === "string"
+    ? (payload as Record<string, unknown>).type as string
+    : "";
+}
+
+function semanticContentText(payload: unknown): string {
+  return payload && typeof payload === "object" && "content" in payload
+    ? payloadText((payload as Record<string, unknown>).content)
+    : payloadText(payload);
 }
 
 function payloadText(payload: unknown): string {

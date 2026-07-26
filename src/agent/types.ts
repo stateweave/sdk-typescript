@@ -5,6 +5,18 @@ import type { Tool } from "../tools/types.js";
 
 export type AgentState = CausalWeaveSnapshot;
 
+export type SemanticNodeType = {
+  name: string;
+  description: string;
+};
+
+export const defaultSemanticNodeTypes: SemanticNodeType[] = [
+  { name: "memory", description: "A durable fact or context that should remain available in later work." },
+  { name: "preference", description: "A stable user preference, choice, or working style stated or confirmed by the user." },
+  { name: "wisdom", description: "A reusable, evidence-supported lesson, principle, or decision rule." },
+  { name: "artifact", description: "A durable output or artifact reference, with enough metadata to find or render it again." }
+];
+
 export type AgentArgs = {
   model: Model;
   tools?: Tool[];
@@ -15,6 +27,8 @@ export type AgentArgs = {
   systemPrompt?: string;
   providerSystem?: string;
   enforceCompletionEvidence?: boolean;
+  nodeTypes?: SemanticNodeType[];
+  allowDynamicNodeTypes?: boolean;
   state?: AgentState;
   traceDir?: string;
 };
@@ -64,6 +78,8 @@ export type AgentRunMetadata = {
   maxIterations: number;
   maxPromptTokens: number;
   projectionTargetTokens: number;
+  nodeTypes: SemanticNodeType[];
+  allowDynamicNodeTypes: boolean;
   stepCount: number;
   modelCalls: number;
   toolCalls: number;

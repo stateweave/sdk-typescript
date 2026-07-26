@@ -9,15 +9,17 @@ import type { Model } from "../llm/model.js";
 import { estimateStateWeaveTokens } from "../llm/tokenizer.js";
 import { createDefaultTools } from "../tools/fileSystemTools.js";
 import type { Tool } from "../tools/types.js";
-import type { AgentArgs, AgentProgress, AgentRunOptions, AgentRunResult, AgentState, AgentStreamEvent, AgentTraceStep } from "./types.js";
+import { defaultSemanticNodeTypes, type AgentArgs, type AgentProgress, type AgentRunOptions, type AgentRunResult, type AgentState, type AgentStreamEvent, type AgentTraceStep, type SemanticNodeType } from "./types.js";
 import {
   agentSystemPrompt,
   completionEvidenceGaps,
   createCompletionEvidence,
   executeAgentTool,
+  parseFinal,
   parseToolCall,
   providerSystem,
-  recordCompletionEvidence
+  recordCompletionEvidence,
+  type SemanticNodeInput
 } from "./toolProtocol.js";
 
 export type * from "./types.js";
@@ -38,7 +40,7 @@ export class AgentRunError extends Error {
 export const defaultAgentSystemPrompt = "You are a StateWeave agent. Complete the user's task accurately, use tools when needed, and preserve durable working state in the causal graph.";
 
 export class Agent {
-  private readonly args: Required<Pick<AgentArgs, "maxIterations" | "maxPromptTokens" | "projectionTargetTokens">> & Omit<AgentArgs, "maxIterations" | "maxPromptTokens" | "projectionTargetTokens" | "state">;
+  private readonly args: Required<Pick<AgentArgs, "maxIterations" | "maxPromptTokens" | "projectionTargetTokens" | "nodeTypes" | "allowDynamicNodeTypes">> & Omit<AgentArgs, "maxIterations" | "maxPromptTokens" | "projectionTargetTokens" | "nodeTypes" | "allowDynamicNodeTypes" | "state">;
   private readonly tools: Tool[];
   private state?: AgentState;
   private runLock: Promise<void> = Promise.resolve();
@@ -54,7 +56,9 @@ export class Agent {
       systemPrompt: args.systemPrompt ?? defaultAgentSystemPrompt,
       maxIterations: args.maxIterations ?? 30,
       maxPromptTokens,
-      projectionTargetTokens
+      projectionTargetTokens,
+      nodeTypes: normalizeNodeTypes(args.nodeTypes ?? defaultSemanticNodeTypes),
+      allowDynamicNodeTypes: args.allowDynamicNodeTypes ?? false
     };
     this.state = args.state ? cloneState(args.state) : undefined;
     if (this.state) new CausalWeave(this.state);
@@ -96,7 +100,9 @@ export class Agent {
         startedAt,
         maxIterations: this.args.maxIterations,
         maxPromptTokens: this.args.maxPromptTokens,
-        projectionTargetTokens: this.args.projectionTargetTokens
+        projectionTargetTokens: this.args.projectionTargetTokens,
+        nodeTypes: this.args.nodeTypes,
+        allowDynamicNodeTypes: this.args.allowDynamicNodeTypes
       }
     });
     const running = this.runManaged(input, { ...options, signal, onProgress: (progress) => {
@@ -160,6 +166,8 @@ export class Agent {
       maxNoProgressIterations: this.args.maxNoProgressIterations,
       providerSystem: this.args.providerSystem,
       enforceCompletionEvidence: this.args.enforceCompletionEvidence ?? true,
+      nodeTypes: this.args.nodeTypes,
+      allowDynamicNodeTypes: this.args.allowDynamicNodeTypes,
       state
     });
     const runtimeResult = await runtime.run(task.input, options);
@@ -179,6 +187,8 @@ export class Agent {
         maxIterations: this.args.maxIterations,
         maxPromptTokens: this.args.maxPromptTokens,
         projectionTargetTokens: this.args.projectionTargetTokens,
+        nodeTypes: this.args.nodeTypes,
+        allowDynamicNodeTypes: this.args.allowDynamicNodeTypes,
         stepCount: runtimeResult.trace.length,
         ...runtimeResult.metrics,
         status: "done"
@@ -220,6 +230,8 @@ class AgentRuntime {
   private readonly maxNoProgressIterations?: number;
   private readonly providerSystem?: string;
   private readonly enforceCompletionEvidence: boolean;
+  private readonly nodeTypes: SemanticNodeType[];
+  private readonly allowDynamicNodeTypes: boolean;
   private readonly weave: CausalWeave;
 
   constructor(args: {
@@ -232,6 +244,8 @@ class AgentRuntime {
     maxNoProgressIterations?: number;
     providerSystem?: string;
     enforceCompletionEvidence: boolean;
+    nodeTypes: SemanticNodeType[];
+    allowDynamicNodeTypes: boolean;
     state?: AgentState;
   }) {
     this.model = args.model;
@@ -242,8 +256,10 @@ class AgentRuntime {
     this.maxNoProgressIterations = args.maxNoProgressIterations;
     this.providerSystem = args.providerSystem;
     this.enforceCompletionEvidence = args.enforceCompletionEvidence;
+    this.nodeTypes = args.nodeTypes;
+    this.allowDynamicNodeTypes = args.allowDynamicNodeTypes;
     this.weave = new CausalWeave(args.state);
-    const systemPayload = agentSystemPrompt(args.systemPrompt, args.tools);
+    const systemPayload = agentSystemPrompt(args.systemPrompt, args.tools, args.nodeTypes, args.allowDynamicNodeTypes);
     const current = this.weave.snapshot();
     const latestSystem = current.nodes.filter((node) => node.kind === "system").at(-1);
     if (!latestSystem) this.weave.append({ kind: "system", payload: systemPayload, parents: current.frontier, advance: false });
@@ -310,30 +326,30 @@ class AgentRuntime {
       outputTokens += output.usage?.outputTokens ?? estimateStateWeaveTokens(output.text).estimatedTokens;
 
       const call = parseToolCall(output.text);
-      if (!call) {
-        if (!/^\s*FINAL\s*:/i.test(output.text)) {
-          const invalid = output.text.trim();
-          repeatedInvalidCount = invalid === repeatedInvalidOutput ? repeatedInvalidCount + 1 : 1;
-          repeatedInvalidOutput = invalid;
-          const inference = this.weave.append({ kind: "inference", payload: invalid, parents: compiled.nodeIds, advance: true });
-          const detail = /^\s*TOOL_CALL\b/i.test(output.text)
-            ? "The TOOL_CALL JSON was malformed or truncated. Retry with exactly one smaller valid TOOL_CALL object."
-            : "Planning prose is not an action. Return exactly one TOOL_CALL JSON object, or FINAL: followed by the factual answer.";
-          this.weave.append({ kind: "protocol_error", payload: detail, parents: [inference.id], advance: true });
-          trace.push(traceStep(iteration, compiled, output.text, "invalid", undefined, detail));
-          progress(iteration, "retrying", `Invalid action ${repeatedInvalidCount}/3`, { rawModelOutput: output.text, action: "invalid", error: detail });
-          if (repeatedInvalidCount >= 3) fail(`Agent repeated the same invalid action envelope 3 times: ${invalid.replace(/\s+/g, " ").slice(0, 240)}`);
-          enforceNoProgress(iteration);
-          continue;
-        }
+      const final = call ? undefined : parseFinal(output.text);
+      if (!call && !final) {
+        const invalid = output.text.trim();
+        repeatedInvalidCount = invalid === repeatedInvalidOutput ? repeatedInvalidCount + 1 : 1;
+        repeatedInvalidOutput = invalid;
+        const inference = this.weave.append({ kind: "inference", payload: invalid, parents: compiled.nodeIds, advance: true });
+        const detail = /^\s*(?:TOOL_CALL|FINAL)\b/i.test(output.text)
+          ? "The action JSON was malformed or truncated. Retry with one smaller valid TOOL_CALL or FINAL response."
+          : "Planning prose is not an action. Return exactly one TOOL_CALL JSON object or one FINAL response.";
+        this.weave.append({ kind: "protocol_error", payload: detail, parents: [inference.id], advance: true });
+        trace.push(traceStep(iteration, compiled, output.text, "invalid", undefined, detail));
+        progress(iteration, "retrying", `Invalid action ${repeatedInvalidCount}/3`, { rawModelOutput: output.text, action: "invalid", error: detail });
+        if (repeatedInvalidCount >= 3) fail(`Agent repeated the same invalid action envelope 3 times: ${invalid.replace(/\s+/g, " ").slice(0, 240)}`);
+        enforceNoProgress(iteration);
+        continue;
+      }
 
-        const answer = output.text.replace(/^\s*FINAL\s*:\s*/i, "").trim();
-        const missingEvidence = this.enforceCompletionEvidence ? completionEvidenceGaps(task, evidence, answer) : [];
+      if (final) {
+        const missingEvidence = this.enforceCompletionEvidence ? completionEvidenceGaps(task, evidence, final.answer) : [];
         if (missingEvidence.length) {
           const missing = missingEvidence.join(", ");
           repeatedMissingEvidenceCount = missing === repeatedMissingEvidence ? repeatedMissingEvidenceCount + 1 : 1;
           repeatedMissingEvidence = missing;
-          const unsupported = this.weave.append({ kind: "inference", payload: { unsupportedFinal: answer }, parents: compiled.nodeIds, advance: true });
+          const unsupported = this.weave.append({ kind: "inference", payload: { unsupportedFinal: final.answer }, parents: compiled.nodeIds, advance: true });
           this.weave.append({ kind: "protocol_error", payload: `Final is unsupported. Still required: ${missing}. Continue with one TOOL_CALL.`, parents: [unsupported.id], advance: true });
           trace.push(traceStep(iteration, compiled, output.text, "invalid", undefined, missing));
           progress(iteration, "retrying", `Final blocked by missing evidence: ${missing}`, { rawModelOutput: output.text, action: "invalid", error: missing });
@@ -341,12 +357,14 @@ class AgentRuntime {
           enforceNoProgress(iteration);
           continue;
         }
-        this.weave.append({ kind: "answer", payload: answer, parents: compiled.nodeIds, advance: true });
+        const answerNode = this.weave.append({ kind: "answer", payload: final.answer, parents: compiled.nodeIds, advance: true });
+        this.appendSemanticNodes(final.state, answerNode.id);
         trace.push(traceStep(iteration, compiled, output.text, "final"));
         progress(iteration, "final", "Agent produced a final answer", { rawModelOutput: output.text, action: "final" });
-        return { finalAnswer: answer, state: this.weave.snapshot(), trace, metrics: metrics() };
+        return { finalAnswer: final.answer, state: this.weave.snapshot(), trace, metrics: metrics() };
       }
 
+      if (!call) continue;
       repeatedInvalidOutput = "";
       repeatedInvalidCount = 0;
       const callNode = this.weave.append({ kind: "tool_call", payload: { name: call.name, args: call.args, raw: output.text }, parents: compiled.nodeIds, advance: true });
@@ -357,6 +375,7 @@ class AgentRuntime {
       toolCalls += 1;
       recordCompletionEvidence(evidence, call.name, call.args, result);
       const resultNode = this.weave.append({ kind: "tool_result", payload: { tool: call.name, result }, parents: [callNode.id], advance: true });
+      this.appendSemanticNodes(call.state, resultNode.id);
       for (const resource of resourceChanges(call.name, call.args, result)) {
         this.weave.append({ kind: "resource", payload: resource.payload, parents: [resultNode.id], resourceKey: resource.key, advance: true });
       }
@@ -367,6 +386,21 @@ class AgentRuntime {
     }
 
     return fail(`Agent recursion limit reached after ${this.maxIterations} iterations. Increase maxIterations to continue.`);
+  }
+
+  private appendSemanticNodes(inputs: SemanticNodeInput[], parentId: string): void {
+    const allowed = new Set(this.nodeTypes.map((type) => type.name));
+    for (const input of inputs) {
+      const normalized = normalizeSemanticNode(input, allowed, this.allowDynamicNodeTypes);
+      if (!normalized) continue;
+      this.weave.append({
+        kind: "semantic",
+        payload: normalized,
+        parents: [parentId],
+        resourceKey: `semantic:${normalized.type}:${normalized.key}`,
+        advance: false
+      });
+    }
   }
 }
 
@@ -381,6 +415,38 @@ function traceStep(step: number, compiled: CausalCompileResult, rawModelOutput: 
     ...(tool ? { tool } : {}),
     ...(error ? { error } : {})
   };
+}
+
+function normalizeNodeTypes(nodeTypes: SemanticNodeType[]): SemanticNodeType[] {
+  const unique = new Map<string, SemanticNodeType>();
+  for (const type of nodeTypes) {
+    const name = normalizeSemanticName(type.name);
+    const description = type.description.trim().slice(0, 240);
+    if (!name || !description) throw new Error("Semantic node types require a lowercase name and description.");
+    unique.set(name, { name, description });
+  }
+  if (!unique.size) throw new Error("Agent requires at least one semantic node type.");
+  return [...unique.values()].slice(0, 32);
+}
+
+function normalizeSemanticNode(input: SemanticNodeInput, allowed: Set<string>, allowDynamic: boolean): SemanticNodeInput | undefined {
+  const type = normalizeSemanticName(input.type);
+  const key = normalizeSemanticKey(input.key);
+  if (!type || !key || (!allowDynamic && !allowed.has(type))) return undefined;
+  let encoded: string;
+  try { encoded = JSON.stringify(input.content); } catch { return undefined; }
+  if (encoded === undefined || encoded.length > 100_000) return undefined;
+  return { type, key, content: structuredClone(input.content) };
+}
+
+function normalizeSemanticName(value: string): string {
+  const name = value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+  return /^[a-z][a-z0-9_-]{0,47}$/.test(name) ? name : "";
+}
+
+function normalizeSemanticKey(value: string): string {
+  const key = value.trim().toLowerCase().replace(/[^a-z0-9_./:-]+/g, "-").replace(/^-+|-+$/g, "");
+  return key.slice(0, 120);
 }
 
 function cloneState(state: AgentState): AgentState {

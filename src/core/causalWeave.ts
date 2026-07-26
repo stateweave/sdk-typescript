@@ -153,7 +153,7 @@ export function assertValidCausalWeaveSnapshot(snapshot: CausalWeaveSnapshot): v
   if (snapshot.version !== 1) throw new Error(`Unsupported Causal Weave version: ${snapshot.version}`);
   if (!Array.isArray(snapshot.nodes) || !Array.isArray(snapshot.frontier)) throw new Error("Causal Weave state requires nodes and frontier arrays.");
   const ids = new Set<string>();
-  const kinds = new Set<CausalNodeKind>(["system", "goal", "inference", "tool_call", "tool_result", "resource", "verification", "answer", "protocol_error"]);
+  const kinds = new Set<CausalNodeKind>(["system", "goal", "inference", "semantic", "tool_call", "tool_result", "resource", "verification", "answer", "protocol_error"]);
   for (const [index, node] of snapshot.nodes.entries()) {
     if (!node || typeof node !== "object" || typeof node.id !== "string" || !Array.isArray(node.parents) || !kinds.has(node.kind)) throw new Error(`Invalid Causal Weave node at index ${index}.`);
     if (ids.has(node.id)) throw new Error(`Duplicate Causal Weave node: ${node.id}`);
@@ -204,6 +204,7 @@ function latestProjectionEquivalents(order: string[], nodes: Map<string, CausalW
 function projectionEquivalenceKey(node: CausalWeaveNode): string | undefined {
   const payload = asRecord(node.payload);
   if (node.kind === "resource" && node.resourceKey) return `resource:${node.resourceKey}`;
+  if (node.kind === "semantic" && node.resourceKey) return node.resourceKey;
   if (node.kind === "protocol_error") return `protocol_error:${projectionHash(node.payload)}`;
   if (node.kind === "inference") return `inference:${projectionHash(node.payload)}`;
   if (node.kind === "tool_call") {
@@ -348,8 +349,10 @@ function relevanceScore(node: CausalWeaveNode, queryTerms: Set<string>, total: n
   for (const term of queryTerms) if (nodeTerms.has(term)) overlap += 1;
   const semantic = queryTerms.size ? overlap / Math.sqrt(queryTerms.size * Math.max(1, nodeTerms.size)) : 0;
   const recency = node.sequence / Math.max(1, total);
-  const authority = node.kind === "resource" || node.kind === "verification" || node.kind === "tool_result" ? 0.25 : node.kind === "goal" ? 0.3 : 0;
-  return semantic * 0.55 + recency * 0.2 + authority;
+  const semanticType = node.kind === "semantic" ? stringValue(asRecord(node.payload).type).toLowerCase() : "";
+  const typeMatch = semanticType && (queryTerms.has(semanticType) || queryTerms.has(`${semanticType}s`)) ? 0.35 : 0;
+  const authority = node.kind === "resource" || node.kind === "verification" || node.kind === "tool_result" ? 0.25 : node.kind === "goal" ? 0.3 : node.kind === "semantic" ? 0.15 : 0;
+  return semantic * 0.55 + recency * 0.2 + authority + typeMatch;
 }
 
 function addOperationalParents(selected: Set<string>, nodes: Map<string, CausalWeaveNode>, depth: number): void {

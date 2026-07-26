@@ -69,6 +69,12 @@ const agent = new Agent({
   projectionTargetTokens: 16_000,
   maxNoProgressIterations: 100,
   enforceCompletionEvidence: true,
+  nodeTypes: [
+    { name: "preference", description: "A stable user preference." },
+    { name: "wisdom", description: "A reusable evidence-supported lesson." },
+    { name: "artifact", description: "A durable output or artifact reference." }
+  ],
+  allowDynamicNodeTypes: false,
   traceDir: ".stateweave/traces"
 });
 ```
@@ -101,6 +107,23 @@ agent.reset(savedState);
 
 Imported state is validated for node identity, causal parent ordering, sequence integrity, and frontier references.
 
+## Semantic node types
+
+The causal structure stays fixed, while semantic memory is configurable. The built-in types are `memory`, `preference`, `wisdom`, and `artifact`. The model may create these nodes inside the same ordinary tool or final response, so recording semantic state does not require a second model call.
+
+```ts
+const agent = new Agent({
+  model,
+  nodeTypes: [
+    { name: "preference", description: "A stable user preference." },
+    { name: "pros-cons", description: "A durable decision assessment." }
+  ],
+  allowDynamicNodeTypes: true
+});
+```
+
+Each semantic node has a stable `type`, `key`, and arbitrary JSON `content`. Reusing the same type and key creates an immutable successor and makes the newest value authoritative in future projections. Set `allowDynamicNodeTypes` only when the agent should be allowed to invent a bounded lowercase type not present in `nodeTypes`.
+
 ## Streaming diagnostics
 
 `agent.stream()` yields final answer text. `agent.streamEvents()` exposes the engine lifecycle:
@@ -126,8 +149,8 @@ type AgentState = {
   version: 1;
   nodes: Array<{
     id: string;
-    kind: "system" | "goal" | "inference" | "tool_call" | "tool_result" |
-      "resource" | "verification" | "answer" | "protocol_error";
+    kind: "system" | "goal" | "inference" | "semantic" | "tool_call" |
+      "tool_result" | "resource" | "verification" | "answer" | "protocol_error";
     parents: string[];
     payload: unknown;
     createdAt: string;
