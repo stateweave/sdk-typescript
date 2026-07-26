@@ -116,12 +116,13 @@ export function parseToolCall(text: string): ParsedToolCall | undefined {
 export function parseFinal(text: string): ParsedFinal | undefined {
   const envelope = text.match(/^\s*FINAL\s*/i);
   if (!envelope) return undefined;
-  const remainder = text.slice(envelope[0].length);
-  if (!remainder.startsWith("{")) {
-    const answer = remainder.replace(/^:\s*/, "").trim();
+  const remainder = text.slice(envelope[0].length).trimStart();
+  const payload = remainder.replace(/^:\s*/, "");
+  if (!payload.startsWith("{")) {
+    const answer = payload.trim();
     return answer ? { answer, state: [] } : undefined;
   }
-  const raw = balancedJsonObject(remainder, 0);
+  const raw = balancedJsonObject(payload, 0);
   if (!raw) return undefined;
   try {
     const parsed = JSON.parse(raw) as { answer?: unknown; state?: unknown };

@@ -196,7 +196,7 @@ describe("Causal Weave", () => {
 
   it("creates typed semantic memory without an extra model call", async () => {
     const model = new SequenceModel([
-      'FINAL {"answer":"I will remember that.","state":[{"type":"preference","key":"hotel-style","content":"The user prefers quiet hotels."}]}'
+      'FINAL: {"answer":"I will remember that.","state":[{"type":"preference","key":"hotel-style","content":"The user prefers quiet hotels."}]}'
     ]);
     const agent = new Agent({ model, tools: [], enforceCompletionEvidence: false });
 
