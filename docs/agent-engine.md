@@ -11,8 +11,8 @@ type AgentState = {
   version: 1;
   nodes: Array<{
     id: string;
-    kind: "system" | "goal" | "inference" | "tool_call" | "tool_result" |
-      "resource" | "verification" | "answer" | "protocol_error";
+    kind: "system" | "goal" | "inference" | "semantic" | "tool_call" |
+      "tool_result" | "resource" | "verification" | "answer" | "protocol_error";
     parents: string[];
     payload: unknown;
     createdAt: string;
@@ -35,11 +35,11 @@ The runtime already knows the compiled read set, so lineage requires no extra mo
 
 1. Append the system contract and user goal.
 2. Compile a bounded causally connected set from the frontier, current resource heads, recent evidence, relevant older nodes, and a deterministic whole-graph digest.
-3. Invoke the model with the normal `TOOL_CALL` / `FINAL` protocol.
+3. Invoke the model with the normal `TOOL_CALL` / `FINAL` protocol. `streamEvents()` uses the model's streaming interface and forwards provider tokens and metadata while the action is being collected.
 4. Append the action with the compiled node ids as parents.
 5. Execute the requested tool.
 6. Append the typed tool result as a child of the call.
-7. Append content-addressed resource-version nodes for observed or changed paths.
+7. Append content-addressed resource-version nodes for observed or changed paths and recognized `verification` nodes for successful post-mutation reads, syntax checks, or explicit application checks.
 8. Repeat until an answer is accepted or a configured limit stops the run.
 
 Failed work remains available in diagnostic error state. A public `Agent` commits only successful runs to its owned state. Superseded resource versions remain addressable while current resource heads receive projection priority.
@@ -53,16 +53,17 @@ Selection combines:
 - system and goal roots;
 - current frontier;
 - a deterministic whole-graph digest of current resources, activity counts, recent mutations, and recent recorded inference notes;
-- current resource heads;
+- current resource and semantic heads;
+- a deterministic multi-resolution overview of topic clusters, neighboring summaries, focus detail, and recent timeline;
 - a recent evidence window;
-- bounded operational closure (`resource → result → call`, `protocol_error → inference`);
+- bounded operational closure (`resource → result → call`, `verification → result`, `protocol_error → inference`);
 - lexical relevance, recency, and evidence authority.
 
 Equivalent repeated reads, calls, results, protocol errors, and superseded resource details collapse to their latest projection representative. Resource ancestry remains intact in storage but does not recursively pull every obsolete version into the working context.
 
 Inference nodes keep their complete read sets as provenance, but the compiler does not recursively expand those provenance parents. Doing so would reintroduce full linear-history cost through transitive closure. Provenance remains queryable in storage while operational evidence receives automatic projection closure.
 
-The full graph remains lossless. The compiler targets `projectionTargetTokens` while independently enforcing `maxPromptTokens`. Optional nodes are removed toward the target; mandatory causal state may exceed the target but may not exceed the hard ceiling.
+The full graph remains lossless. The compiler targets `projectionTargetTokens` while independently enforcing `maxPromptTokens`. Optional nodes and payload detail are reduced toward the target; mandatory causal state may exceed the target but may not exceed the hard ceiling. If the mandatory view cannot fit, compilation fails before the provider is called. The budget is an explicit character-based estimate, so it is a safety ceiling rather than a claim about a provider's exact tokenizer.
 
 ## Public API
 
@@ -82,11 +83,13 @@ The agent uses ordinary tool schemas and executors. It adds no memory tool and n
 ## Current limitations
 
 - Black-box providers still receive a linear token rendering; StateWeave does not claim arbitrary transformer KV-cache composition.
-- Relevance is causal, lexical, and recency-based. Semantic indexes may be added as secondary indexes without changing graph truth.
+- Relevance and clustering are deterministic, causal, lexical, and recency-based. There is no embedding index or learned semantic summary.
+- The public `Agent` renders multi-resolution focus automatically but does not yet expose an interactive zoom/focus option; the low-level historical projection utility has its own zoom controls.
 - Bounded rendering can omit part of an old large payload even though the immutable source node remains stored.
 - The digest is deterministic rather than a learned semantic summary; recent model notes quote recorded inference nodes and can preserve a stale plan until newer reasoning supersedes it.
+- `verification` nodes are emitted for recognized successful evidence patterns, not for every arbitrary domain-specific check. A successful custom tool result may set `verification: true` to record a generic signal; product policy should still decide whether its structured evidence is sufficient.
 - Resource extraction currently relies on generic tool path/hash/mutation metadata.
 
 ## Origin and evidence
 
-This engine was developed and tested as Causal Weave Variant C in the frozen one-shot SDK benchmark. It materially outperformed the other preserved artifacts in browser review, while still exhibiting a packaging defect. Promotion into `Agent` therefore preserves the benchmark evidence but does not claim that one benchmark proves universal superiority. Continued paired evaluation is required.
+This engine was developed and tested as Causal Weave Variant C in the frozen one-shot SDK benchmark. It materially outperformed the other preserved artifacts in browser review; the preserved artifact had a packaging defect, while the promoted package has an independent package-content check. Promotion into `Agent` preserves the benchmark evidence but does not claim that one benchmark proves universal superiority. Continued paired evaluation is required.

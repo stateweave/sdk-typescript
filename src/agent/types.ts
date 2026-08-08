@@ -39,6 +39,10 @@ export type AgentRunOptions = {
   onProgress?: (progress: AgentProgress) => void;
 };
 
+export type AgentModelEvent =
+  | { type: "token"; iteration: number; token: string }
+  | { type: "metadata"; iteration: number; metadata: Record<string, unknown> };
+
 export type AgentProgress = {
   iteration: number;
   phase: "context" | "model" | "tool" | "final" | "retrying";
@@ -101,5 +105,7 @@ export type AgentStartMetadata = Omit<AgentRunMetadata, "completedAt" | "duratio
 
 export type AgentStreamEvent =
   | { type: "metadata"; metadata: AgentStartMetadata }
+  | { type: "model_token"; iteration: number; token: string }
+  | { type: "model_metadata"; iteration: number; metadata: Record<string, unknown> }
   | { type: "progress"; progress: AgentProgress }
   | { type: "final"; result: AgentRunResult };
