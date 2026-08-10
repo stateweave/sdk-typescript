@@ -2335,6 +2335,18 @@ function updateLiveStreamLog(live: LiveStreamLog, event: AgentStreamEvent): void
     live.events.push(`step ${progress.iteration} ${progress.phase} · ${progress.detail}`);
     return;
   }
+  if (event.type === "model_token") {
+    const step = ensureLiveStep(live, event.iteration);
+    live.latestStep = event.iteration;
+    step.phase = "model";
+    step.rawModelOutput += event.token;
+    return;
+  }
+  if (event.type === "model_metadata") {
+    live.events.push(`model metadata · iteration=${event.iteration} · ${JSON.stringify(event.metadata)}`);
+    return;
+  }
+  if (event.type !== "final") return;
   live.metadata = event.result.metadata;
   live.finalAnswer = event.result.finalAnswer;
   live.events.push(`final · steps=${event.result.metadata.stepCount} duration=${event.result.metadata.durationMs}ms`);

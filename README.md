@@ -12,23 +12,23 @@ immutable causal graph → bounded working context → ordinary model action →
 
 There is one public agent class: `Agent`.
 
-The runtime automatically records goals, model inferences, tool calls, tool results, resource versions, protocol errors, and answers as content-addressed causal nodes. Every model action points to the exact graph nodes compiled for that inference. The complete graph remains append-only while a deterministic projection keeps each model call bounded.
+The runtime automatically records goals, model inferences, tool calls, tool results, resource versions, verification evidence, protocol errors, and answers as content-addressed causal nodes. Every model action points to the exact graph nodes compiled for that inference. The complete graph remains append-only while a deterministic multi-resolution projection keeps each model call bounded.
 
-StateWeave does not expose `messages[]` as a primitive and does not require the model to author graph mutations. The model uses an ordinary `TOOL_CALL` / `FINAL` protocol; the runtime owns graph lineage.
+StateWeave does not expose `messages[]` as a primitive and does not require the model to author graph mutations. The model uses an ordinary `TOOL_CALL` / `FINAL` protocol; the runtime owns graph lineage. Recognized successful post-mutation reads, syntax checks, and explicit application checks are recorded as `verification` nodes linked to their tool evidence.
 
 See [Agent engine](./docs/agent-engine.md) for the invariants and projection design.
 
 ## Installation
 
-StateWeave dist-tags mirror the promotion flow:
+StateWeave intends to mirror the GitHub promotion flow with npm dist-tags once the initial package is published:
 
-| GitHub branch | npm install |
+| GitHub branch | planned npm install |
 | --- | --- |
 | `development` | `pnpm add stateweave@dev` |
 | `uat` | `pnpm add stateweave@uat` |
 | `main` | `pnpm add stateweave` |
 
-From source:
+The package is currently source-only; use this path until the first authenticated npm publication:
 
 ```bash
 git clone https://github.com/stateweave/sdk-typescript.git
@@ -80,8 +80,8 @@ const agent = new Agent({
 ```
 
 - `maxIterations` limits the internal model/tool loop for one user turn. It defaults to 30 and has no artificial SDK maximum.
-- `maxPromptTokens` is the hard model-input ceiling.
-- `projectionTargetTokens` is the preferred bounded working context. Mandatory state may exceed the target but never the hard ceiling.
+- `maxPromptTokens` is the hard model-input ceiling and must be at least 256.
+- `projectionTargetTokens` is the preferred bounded working context. Mandatory state may exceed the target but never the hard ceiling. If mandatory state cannot fit, the provider is not called. The SDK uses a conservative character-based token estimate rather than pretending to know every provider tokenizer.
 - `enforceCompletionEvidence` rejects unsupported coding-task finals when required inspection, mutation, checks, restart, or smoke evidence is absent.
 
 ## Persistent state
@@ -126,11 +126,13 @@ Each semantic node has a stable `type`, `key`, and arbitrary JSON `content`. Reu
 
 ## Streaming diagnostics
 
-`agent.stream()` yields final answer text. `agent.streamEvents()` exposes the engine lifecycle:
+`agent.stream()` and `agent.streamText()` yield the accepted final answer as one string. `agent.streamEvents()` exposes the engine lifecycle and forwards provider token events while each model action is streaming:
 
 ```ts
 for await (const event of agent.streamEvents("Inspect the workspace and fix the failing check")) {
   if (event.type === "metadata") console.log(event.metadata);
+  if (event.type === "model_token") process.stdout.write(event.token);
+  if (event.type === "model_metadata") console.log(event.metadata);
   if (event.type === "progress") {
     console.log(event.progress.phase, event.progress.detail);
     console.log(event.progress.prompt); // exact compiled context when available
@@ -175,13 +177,14 @@ The compiler selects:
 
 - system and goal roots;
 - the active frontier;
-- current resource heads;
+- current resource and semantic heads;
 - recent authoritative evidence;
 - bounded operational closure;
 - lexically relevant older nodes;
-- a deterministic whole-graph digest of resources, mutations, tool activity, and recent recorded inference notes.
+- a deterministic whole-graph digest of resources, mutations, tool activity, and recent recorded inference notes;
+- a deterministic multi-resolution view: `<BIG_BRAIN>` topic pins, `<PERIPHERAL>` neighboring summaries, `<FOCUS>` detail, and `<TIMELINE>` chronology.
 
-Equivalent repeated reads, calls, results, protocol errors, and superseded resource details collapse only in the model-facing projection. They remain present in the immutable source graph.
+The view uses pure TypeScript topology, lexical retrieval, recency, and evidence authority. It is not an embedding index or a learned summary. Cluster ids are deterministic for the same graph. Equivalent repeated reads, calls, results, protocol errors, and superseded resource details collapse only in the model-facing projection. They remain present in the immutable source graph.
 
 ## Tool protocol
 
@@ -197,7 +200,7 @@ After verified work it returns:
 FINAL: Fixed the parser and verified the focused test.
 ```
 
-Tool schemas are Zod-validated. The runtime executes only the first valid action envelope, records the call/result/resource lineage, and makes failures visible on the next inference.
+Tool schemas are Zod-validated. The runtime executes only the first valid action envelope, records the call/result/resource lineage, emits recognized verification evidence, and makes failures visible on the next inference.
 
 The default file tools reject absolute paths, traversal, and symlink components. The default `bash_command` is a no-profile read-only allowlist with a fixed trusted `PATH`; it rejects pipes, redirects, command substitution, arbitrary interpreters, network commands, and symlink-following flags.
 

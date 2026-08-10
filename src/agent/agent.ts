@@ -5,11 +5,11 @@ import { agentStateToGraph } from "../core/causalGraph.js";
 import { CausalWeave, type CausalCompileResult } from "../core/causalWeave.js";
 import { normalizeTaskInput, type TaskInput } from "../core/input.js";
 import type { StateGraph } from "../core/types.js";
-import type { Model } from "../llm/model.js";
+import type { Model, ModelInput, ModelOutput, ModelUsage } from "../llm/model.js";
 import { estimateStateWeaveTokens } from "../llm/tokenizer.js";
 import { createDefaultTools } from "../tools/fileSystemTools.js";
 import type { Tool } from "../tools/types.js";
-import { defaultSemanticNodeTypes, type AgentArgs, type AgentProgress, type AgentRunOptions, type AgentRunResult, type AgentState, type AgentStreamEvent, type AgentTraceStep, type SemanticNodeType } from "./types.js";
+import { defaultSemanticNodeTypes, type AgentArgs, type AgentModelEvent, type AgentProgress, type AgentRunOptions, type AgentRunResult, type AgentState, type AgentStreamEvent, type AgentTraceStep, type SemanticNodeType } from "./types.js";
 import {
   agentSystemPrompt,
   completionEvidenceGaps,
@@ -47,14 +47,20 @@ export class Agent {
   private stateGeneration = 0;
 
   constructor(args: AgentArgs) {
-    const maxPromptTokens = args.maxPromptTokens ?? 64_000;
-    const projectionTargetTokens = Math.min(args.projectionTargetTokens ?? 16_000, maxPromptTokens);
+    const maxPromptTokens = boundedInteger(args.maxPromptTokens ?? 64_000, "maxPromptTokens", 256);
+    const requestedProjectionTokens = boundedInteger(args.projectionTargetTokens ?? 16_000, "projectionTargetTokens", 256);
+    const projectionTargetTokens = Math.min(requestedProjectionTokens, maxPromptTokens);
+    const maxIterations = boundedInteger(args.maxIterations ?? 30, "maxIterations", 1);
+    const maxNoProgressIterations = args.maxNoProgressIterations === undefined
+      ? undefined
+      : boundedInteger(args.maxNoProgressIterations, "maxNoProgressIterations", 1);
     this.tools = args.tools ?? createDefaultTools();
     this.args = {
       ...args,
       tools: this.tools,
       systemPrompt: args.systemPrompt ?? defaultAgentSystemPrompt,
-      maxIterations: args.maxIterations ?? 30,
+      maxIterations,
+      maxNoProgressIterations,
       maxPromptTokens,
       projectionTargetTokens,
       nodeTypes: normalizeNodeTypes(args.nodeTypes ?? defaultSemanticNodeTypes),
@@ -105,10 +111,19 @@ export class Agent {
         allowDynamicNodeTypes: this.args.allowDynamicNodeTypes
       }
     });
-    const running = this.runManaged(input, { ...options, signal, onProgress: (progress) => {
-      options.onProgress?.(progress);
-      push({ type: "progress", progress });
-    } }, runId, startedAt)
+    const running = this.runManaged(input, {
+      ...options,
+      signal,
+      streamModel: true,
+      onProgress: (progress) => {
+        options.onProgress?.(progress);
+        push({ type: "progress", progress });
+      },
+      onModelEvent: (event) => {
+        if (event.type === "token") push({ type: "model_token", iteration: event.iteration, token: event.token });
+        else push({ type: "model_metadata", iteration: event.iteration, metadata: event.metadata });
+      }
+    }, runId, startedAt)
       .then((result) => { push({ type: "final", result }); })
       .catch((error) => { failure = error; })
       .finally(() => { done = true; wake?.(); wake = undefined; });
@@ -140,7 +155,7 @@ export class Agent {
     this.state = state ? cloneState(state) : undefined;
   }
 
-  private async runManaged(input: TaskInput, options: AgentRunOptions, runId: string, startedAt: string): Promise<AgentRunResult> {
+  private async runManaged(input: TaskInput, options: RuntimeRunOptions, runId: string, startedAt: string): Promise<AgentRunResult> {
     if (options.state) return this.runWithMetadata(input, options.state, options, runId, startedAt);
     const release = await this.acquireRunLock();
     const generation = this.stateGeneration;
@@ -153,7 +168,7 @@ export class Agent {
     }
   }
 
-  private async runWithMetadata(input: TaskInput, state: AgentState | undefined, options: AgentRunOptions, runId: string, startedAt: string): Promise<AgentRunResult> {
+  private async runWithMetadata(input: TaskInput, state: AgentState | undefined, options: RuntimeRunOptions, runId: string, startedAt: string): Promise<AgentRunResult> {
     const started = Date.parse(startedAt);
     const task = normalizeTaskInput(input);
     const runtime = new AgentRuntime({
@@ -207,6 +222,61 @@ export class Agent {
     return release;
   }
 }
+
+async function collectStreamedModelOutput(
+  model: Model,
+  input: ModelInput,
+  iteration: number,
+  onModelEvent: ((event: AgentModelEvent) => void) | undefined
+): Promise<ModelOutput> {
+  const tokens: string[] = [];
+  const metadata: Record<string, unknown>[] = [];
+  for await (const event of model.stream(input)) {
+    if (event.type === "token") {
+      tokens.push(event.token);
+      onModelEvent?.({ type: "token", iteration, token: event.token });
+    } else {
+      metadata.push(event.metadata);
+      onModelEvent?.({ type: "metadata", iteration, metadata: event.metadata });
+    }
+  }
+  const usage = usageFromStreamMetadata(metadata);
+  return { text: tokens.join(""), ...(usage ? { usage } : {}) };
+}
+
+function usageFromStreamMetadata(events: Record<string, unknown>[]): ModelUsage | undefined {
+  let inputTokens: number | undefined;
+  let outputTokens: number | undefined;
+  let uncachedInputTokens: number | undefined;
+  let cacheReadInputTokens: number | undefined;
+  let cacheCreationInputTokens: number | undefined;
+  for (const event of events) {
+    const nestedUsage = asRecord(event.usage);
+    const usage = Object.keys(nestedUsage).length ? nestedUsage : event;
+    inputTokens ??= numberValue(usage.inputTokens) ?? numberValue(usage.input_tokens);
+    outputTokens ??= numberValue(usage.outputTokens) ?? numberValue(usage.output_tokens);
+    uncachedInputTokens ??= numberValue(usage.uncachedInputTokens) ?? numberValue(usage.uncached_input_tokens);
+    cacheReadInputTokens ??= numberValue(usage.cacheReadInputTokens) ?? numberValue(usage.cache_read_input_tokens);
+    cacheCreationInputTokens ??= numberValue(usage.cacheCreationInputTokens) ?? numberValue(usage.cache_creation_input_tokens);
+  }
+  if (inputTokens === undefined || outputTokens === undefined) return undefined;
+  const cachedRead = cacheReadInputTokens ?? 0;
+  const cachedCreation = cacheCreationInputTokens ?? 0;
+  const totalInputTokens = uncachedInputTokens === undefined ? inputTokens : uncachedInputTokens + cachedRead + cachedCreation;
+  return {
+    inputTokens: totalInputTokens,
+    outputTokens,
+    totalTokens: totalInputTokens + outputTokens,
+    ...(uncachedInputTokens === undefined ? {} : { uncachedInputTokens }),
+    ...(cacheReadInputTokens === undefined ? {} : { cacheReadInputTokens }),
+    ...(cacheCreationInputTokens === undefined ? {} : { cacheCreationInputTokens })
+  };
+}
+
+type RuntimeRunOptions = AgentRunOptions & {
+  streamModel?: boolean;
+  onModelEvent?: (event: AgentModelEvent) => void;
+};
 
 type RuntimeResult = {
   finalAnswer: string;
@@ -266,7 +336,7 @@ class AgentRuntime {
     else if (latestSystem.payload !== systemPayload) this.weave.append({ kind: "system", payload: systemPayload, parents: current.frontier, advance: true });
   }
 
-  async run(task: string, options: AgentRunOptions): Promise<RuntimeResult> {
+  async run(task: string, options: RuntimeRunOptions): Promise<RuntimeResult> {
     options.signal?.throwIfAborted();
     const beforeGoal = this.weave.snapshot();
     const system = beforeGoal.nodes.filter((node) => node.kind === "system").at(-1);
@@ -314,12 +384,15 @@ class AgentRuntime {
       const compiled = this.weave.compile({ query: task, maxTokens: this.maxContextTokens, targetTokens: this.projectionTargetTokens });
       progress(iteration, "context", "Compiled the active causal frontier", { prompt: compiled.prompt, contextTokens: compiled.tokenEstimate.estimatedTokens });
       progress(iteration, "model", `Waiting for model iteration ${iteration}`, { contextTokens: compiled.tokenEstimate.estimatedTokens });
-      const output = await this.model.complete({
+      const modelInput: ModelInput = {
         prompt: compiled.prompt,
         mode: "text",
         system: providerSystem(this.providerSystem, "Follow the supplied tool protocol exactly. Return one TOOL_CALL JSON object or one FINAL response."),
         signal: options.signal
-      });
+      };
+      const output = options.streamModel
+        ? await collectStreamedModelOutput(this.model, modelInput, iteration, options.onModelEvent)
+        : await this.model.complete(modelInput);
       modelCalls += 1;
       latestContextTokens = output.usage?.inputTokens ?? compiled.tokenEstimate.estimatedTokens;
       totalInputTokens += latestContextTokens;
@@ -373,9 +446,12 @@ class AgentRuntime {
       const result = await executeAgentTool(this.tools, call);
       options.signal?.throwIfAborted();
       toolCalls += 1;
+      const evidenceBefore = completionEvidenceSnapshot(evidence);
       recordCompletionEvidence(evidence, call.name, call.args, result);
       const resultNode = this.weave.append({ kind: "tool_result", payload: { tool: call.name, result }, parents: [callNode.id], advance: true });
       this.appendSemanticNodes(call.state, resultNode.id);
+      const verification = verificationRecord(call.name, call.args, result, evidenceBefore);
+      if (verification) this.weave.append({ kind: "verification", payload: verification, parents: [resultNode.id], advance: true });
       for (const resource of resourceChanges(call.name, call.args, result)) {
         this.weave.append({ kind: "resource", payload: resource.payload, parents: [resultNode.id], resourceKey: resource.key, advance: true });
       }
@@ -495,6 +571,46 @@ function isMeaningfulPath(filePath: string): boolean {
   const name = segments.at(-1) ?? filePath;
   return !/(?:\.log|\.pid|\.tmp|\.cache|\.tsbuildinfo)$/i.test(name)
     && !/^(?:test|vitest|build|npm)[-_].*\.(?:log|txt|json)$/i.test(name);
+}
+
+function completionEvidenceSnapshot(evidence: ReturnType<typeof createCompletionEvidence>): { mutatedPaths: Set<string> } {
+  return { mutatedPaths: new Set(evidence.mutatedPaths) };
+}
+
+function verificationRecord(
+  toolName: string,
+  args: unknown,
+  result: unknown,
+  before: { mutatedPaths: Set<string> }
+): Record<string, unknown> | undefined {
+  if (!toolSucceeded(result)) return undefined;
+  const toolArgs = args && typeof args === "object" ? args as Record<string, unknown> : {};
+  const record = result && typeof result === "object" ? result as Record<string, unknown> : {};
+  const filePath = String(toolArgs.file_path ?? toolArgs.path ?? "");
+  if (toolName === "read_file" && filePath && before.mutatedPaths.has(filePath) && isMeaningfulPath(filePath)) {
+    return { method: "post_mutation_read", path: filePath };
+  }
+  if (toolName === "bash_command" && /\bnode\s+--check\b/.test(String(toolArgs.command ?? ""))) {
+    return { method: "syntax_check", command: String(toolArgs.command) };
+  }
+  if (toolName === "app_control" && ["check", "restart", "smoke"].includes(String(toolArgs.action))) {
+    return { method: String(toolArgs.action) };
+  }
+  if (record.verification === true) return { method: "tool_declared" };
+  return undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function boundedInteger(value: number, name: string, minimum: number): number {
+  if (!Number.isInteger(value) || value < minimum) throw new Error(`${name} must be an integer of at least ${minimum}; received ${String(value)}.`);
+  return value;
 }
 
 function toolSucceeded(result: unknown): boolean {
