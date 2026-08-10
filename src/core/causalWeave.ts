@@ -100,7 +100,6 @@ export class CausalWeave {
     const maxNodes = boundedPositiveInteger(args.maxNodes ?? 48, "maxNodes");
     const snapshot = this.snapshot();
     const overview = projectCausalSnapshot(snapshot);
-    const queryTerms = terms([args.query ?? "", ...this.frontier().map((id) => payloadText(this.nodes.get(id)?.payload))].join(" "));
     const selected = new Set<string>();
     const latestEquivalent = latestProjectionEquivalents(this.order, this.nodes);
     const recent = this.order.slice(-10).filter((id) => {
@@ -110,6 +109,7 @@ export class CausalWeave {
     const reverseOrder = [...this.order].reverse();
     const latestSystem = reverseOrder.find((id) => this.nodes.get(id)?.kind === "system");
     const latestGoal = reverseOrder.find((id) => this.nodes.get(id)?.kind === "goal");
+    const queryTerms = meaningfulQueryTerms([args.query ?? "", latestGoal ? payloadText(this.nodes.get(latestGoal)?.payload) : ""].join(" "));
     const mandatory = [
       ...(latestSystem ? [latestSystem] : []),
       ...(latestGoal ? [latestGoal] : []),
@@ -126,14 +126,21 @@ export class CausalWeave {
     addOperationalParents(closureSeeds, this.nodes, 2);
     for (const id of closureSeeds) selected.add(id);
 
-    const candidates = this.order
+    const eligible = this.order.filter((id) => {
+      const key = projectionEquivalenceKey(this.nodes.get(id)!);
+      return !key || latestEquivalent.get(key) === id;
+    });
+    const protectedQueryIds = new Set(eligible
+      .map((id) => ({ id, score: relevanceScore(this.nodes.get(id)!, queryTerms, this.order.length), overlap: queryOverlap(this.nodes.get(id)!, queryTerms) }))
+      .filter((candidate) => candidate.overlap > 0)
+      .sort((a, b) => b.overlap - a.overlap || b.score - a.score || this.nodes.get(b.id)!.sequence - this.nodes.get(a.id)!.sequence)
+      .slice(0, 8)
+      .map((candidate) => candidate.id));
+    for (const id of protectedQueryIds) selected.add(id);
+    const candidates = eligible
       .filter((id) => !selected.has(id))
-      .filter((id) => {
-        const key = projectionEquivalenceKey(this.nodes.get(id)!);
-        return !key || latestEquivalent.get(key) === id;
-      })
-      .map((id) => ({ id, score: relevanceScore(this.nodes.get(id)!, queryTerms, this.order.length) }))
-      .sort((a, b) => b.score - a.score || this.nodes.get(b.id)!.sequence - this.nodes.get(a.id)!.sequence);
+      .map((id) => ({ id, score: relevanceScore(this.nodes.get(id)!, queryTerms, this.order.length), overlap: queryOverlap(this.nodes.get(id)!, queryTerms) }))
+      .sort((a, b) => b.overlap - a.overlap || b.score - a.score || this.nodes.get(b.id)!.sequence - this.nodes.get(a.id)!.sequence);
     for (const candidate of candidates) {
       if (selected.size >= maxNodes) break;
       const closure = new Set([candidate.id]);
@@ -149,7 +156,7 @@ export class CausalWeave {
     };
     let rendered = render();
     while (rendered.estimate.estimatedTokens > targetTokens && chosen.length > 4) {
-      const removable = removableProjectionNode(chosen, this.nodes, this.frontierIds, latestGoal);
+      const removable = removableProjectionNode(chosen, this.nodes, this.frontierIds, latestGoal, protectedQueryIds);
       if (removable < 0) break;
       chosen.splice(removable, 1);
       rendered = render();
@@ -161,7 +168,7 @@ export class CausalWeave {
         if (rendered.estimate.estimatedTokens <= targetTokens) break;
       }
       while (rendered.estimate.estimatedTokens > targetTokens && chosen.length > 4) {
-        const removable = removableProjectionNode(chosen, this.nodes, this.frontierIds, latestGoal);
+        const removable = removableProjectionNode(chosen, this.nodes, this.frontierIds, latestGoal, protectedQueryIds);
         if (removable < 0) break;
         chosen.splice(removable, 1);
         rendered = render(400);
@@ -174,7 +181,7 @@ export class CausalWeave {
         if (rendered.estimate.estimatedTokens <= maxTokens) break;
       }
       while (rendered.estimate.estimatedTokens > maxTokens && chosen.length > 4) {
-        const removable = removableProjectionNode(chosen, this.nodes, this.frontierIds, latestGoal);
+        const removable = removableProjectionNode(chosen, this.nodes, this.frontierIds, latestGoal, protectedQueryIds);
         if (removable < 0) break;
         chosen.splice(removable, 1);
         rendered = render(400);
@@ -449,10 +456,16 @@ function inline(value: string, limit: number): string {
   return compact.length <= limit ? compact : `${compact.slice(0, Math.max(0, limit - 16))}...[truncated]`;
 }
 
-function relevanceScore(node: CausalWeaveNode, queryTerms: Set<string>, total: number): number {
+function queryOverlap(node: CausalWeaveNode, queryTerms: Set<string>): number {
   const nodeTerms = terms(payloadText(node.payload));
   let overlap = 0;
   for (const term of queryTerms) if (nodeTerms.has(term)) overlap += 1;
+  return overlap;
+}
+
+function relevanceScore(node: CausalWeaveNode, queryTerms: Set<string>, total: number): number {
+  const overlap = queryOverlap(node, queryTerms);
+  const nodeTerms = terms(payloadText(node.payload));
   const semantic = queryTerms.size ? overlap / Math.sqrt(queryTerms.size * Math.max(1, nodeTerms.size)) : 0;
   const recency = node.sequence / Math.max(1, total);
   const semanticType = node.kind === "semantic" ? stringValue(asRecord(node.payload).type).toLowerCase() : "";
@@ -528,6 +541,13 @@ function stableStringify(value: unknown): string {
   return JSON.stringify(String(value));
 }
 
+function meaningfulQueryTerms(value: string): Set<string> {
+  const stopWords = new Set([
+    "the", "and", "are", "was", "were", "what", "when", "where", "which", "who", "why", "how", "recall", "remember", "mentioned", "earlier", "previously", "about", "this", "that", "with", "from", "into", "for", "my", "your", "our", "their", "find", "show", "tell", "give", "look", "up"
+  ]);
+  return new Set([...terms(value)].filter((term) => !stopWords.has(term)));
+}
+
 function terms(value: string): Set<string> {
   return new Set((value.toLowerCase().match(/[a-z0-9_./-]{3,}/g) ?? []).slice(0, 20_000));
 }
@@ -544,10 +564,10 @@ function truncate(value: string, limit: number): string {
   return value.length <= limit ? value : `${value.slice(0, limit)}\n...[${value.length - limit} characters omitted]`;
 }
 
-function removableProjectionNode(chosen: string[], nodes: Map<string, CausalWeaveNode>, frontier: Set<string>, latestGoal: string | undefined): number {
+function removableProjectionNode(chosen: string[], nodes: Map<string, CausalWeaveNode>, frontier: Set<string>, latestGoal: string | undefined, protectedQueryIds: Set<string>): number {
   return chosen.findIndex((id) => {
     const node = nodes.get(id)!;
-    return node.kind !== "system" && id !== latestGoal && !frontier.has(id) && !isParentOfSelectedFrontier(id, chosen, nodes, frontier);
+    return node.kind !== "system" && id !== latestGoal && !frontier.has(id) && !protectedQueryIds.has(id) && !isParentOfSelectedFrontier(id, chosen, nodes, frontier);
   });
 }
 

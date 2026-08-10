@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { Agent } from "../src/agent/agent.js";
 import type { Model, ModelInput, ModelOutput, ModelToken } from "../src/llm/model.js";
 import { CausalWeave } from "../src/core/causalWeave.js";
+import { estimateStateWeaveTokens } from "../src/llm/tokenizer.js";
 import type { Tool } from "../src/tools/types.js";
 import { z } from "zod";
 
@@ -33,6 +34,53 @@ class SequenceModel implements Model {
   async *stream(input: ModelInput): AsyncIterable<ModelToken> {
     yield { type: "token", token: (await this.complete(input)).text };
   }
+}
+
+const longContextQuery = "Recall the critical legacy fact about the launch window.";
+const longContextFact = "CRITICAL LEGACY FACT: the launch window is Thursday at 09:17 UTC.";
+
+class AbortProbeModel implements Model {
+  async complete(_input: ModelInput): Promise<ModelOutput> {
+    throw new Error("The abort probe must use Model.stream().");
+  }
+
+  async *stream(input: ModelInput): AsyncIterable<ModelToken> {
+    yield { type: "token", token: "FINAL: partial" };
+    await new Promise<never>((_resolve, reject) => {
+      const abort = (): void => reject(input.signal?.reason ?? new DOMException("Aborted", "AbortError"));
+      if (input.signal?.aborted) abort();
+      else input.signal?.addEventListener("abort", abort, { once: true });
+    });
+  }
+}
+
+class LongContextRecallModel implements Model {
+  sawFact = false;
+
+  async complete(input: ModelInput): Promise<ModelOutput> {
+    this.sawFact = input.prompt.includes(longContextFact);
+    return { text: this.sawFact ? "FINAL: The critical legacy fact is Thursday at 09:17 UTC." : "FINAL: I could not find the critical legacy fact." };
+  }
+
+  async *stream(input: ModelInput): AsyncIterable<ModelToken> {
+    yield { type: "token", token: (await this.complete(input)).text };
+  }
+}
+
+function buildLongContextState() {
+  const weave = new CausalWeave();
+  const system = weave.append({ kind: "system", payload: "Use the causal state and answer accurately.", parents: [], advance: false });
+  weave.append({ kind: "semantic", resourceKey: "semantic:memory:legacy-fact", parents: [system.id], advance: false, payload: { type: "memory", key: "legacy-fact", content: longContextFact } });
+  for (let index = 0; index < 100; index += 1) {
+    weave.append({
+      kind: "semantic",
+      resourceKey: `semantic:memory:noise-${index}`,
+      parents: [system.id],
+      advance: false,
+      payload: { type: "memory", key: `noise-${index}`, content: `Noise evidence ${index}: ${"context that should be projected only when relevant ".repeat(72)}` }
+    });
+  }
+  return weave.snapshot();
 }
 
 it("forwards provider tokens and metadata through streamEvents", async () => {
@@ -100,4 +148,36 @@ it("keeps compiled prompts at or below the configured token estimate ceiling", (
   expect(compiled.tokenEstimate.estimatedTokens).toBeLessThanOrEqual(1_024);
   expect(compiled.prompt).toContain("<BIG_BRAIN>");
   expect(compiled.prompt).toContain("<FOCUS>");
+});
+
+it("keeps an exact old memory through long-context projection, abort, and state import", async () => {
+  const initialState = buildLongContextState();
+  const serializedTokens = estimateStateWeaveTokens(JSON.stringify(initialState)).estimatedTokens;
+  const compiled = new CausalWeave(initialState).compile({ query: longContextQuery, maxTokens: 64_000, targetTokens: 16_000 });
+  expect(serializedTokens).toBeGreaterThan(64_000);
+  expect(compiled.tokenEstimate.estimatedTokens).toBeLessThanOrEqual(64_000);
+  expect(compiled.prompt).toContain(longContextFact);
+
+  const abortAgent = new Agent({ model: new AbortProbeModel(), state: initialState, tools: [], maxPromptTokens: 64_000, projectionTargetTokens: 16_000, enforceCompletionEvidence: false });
+  const beforeAbort = JSON.stringify(abortAgent.getState());
+  const controller = new AbortController();
+  for await (const event of abortAgent.streamEvents(longContextQuery, { signal: controller.signal })) {
+    if (event.type === "model_token") {
+      controller.abort(new DOMException("Test abort", "AbortError"));
+      break;
+    }
+  }
+  expect(JSON.stringify(abortAgent.getState())).toBe(beforeAbort);
+
+  const recallModel = new LongContextRecallModel();
+  const resumedAgent = new Agent({ model: recallModel, state: abortAgent.getState(), tools: [], maxPromptTokens: 64_000, projectionTargetTokens: 16_000, enforceCompletionEvidence: false });
+  const resumed = await resumedAgent.run(longContextQuery);
+  expect(recallModel.sawFact).toBe(true);
+  expect(resumed.finalAnswer).toBe("The critical legacy fact is Thursday at 09:17 UTC.");
+
+  const importedModel = new LongContextRecallModel();
+  const importedAgent = new Agent({ model: importedModel, state: resumed.state, tools: [], maxPromptTokens: 64_000, projectionTargetTokens: 16_000, enforceCompletionEvidence: false });
+  const imported = await importedAgent.run(longContextQuery);
+  expect(importedModel.sawFact).toBe(true);
+  expect(imported.finalAnswer).toBe("The critical legacy fact is Thursday at 09:17 UTC.");
 });
