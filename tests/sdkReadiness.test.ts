@@ -138,6 +138,63 @@ it("records recognized successful checks as verification nodes", async () => {
   }));
 });
 
+it("resets the completion retry streak after each accepted tool action", async () => {
+  const tools: Tool[] = [
+    {
+      name: "read_file",
+      description: "Read one file.",
+      schema: z.object({ file_path: z.string() }),
+      execute: async () => ({ path: "source.txt", content_hash: "source", content: "observed" })
+    },
+    {
+      name: "write_file",
+      description: "Write one file.",
+      schema: z.object({ file_path: z.string(), content: z.string() }),
+      execute: async () => ({ path: "output.txt", content_hash: "output", ok: true })
+    },
+    {
+      name: "bash_command",
+      description: "Run a fixed syntax check.",
+      schema: z.object({ command: z.string() }),
+      execute: async () => ({ exitCode: 0, stdout: "", stderr: "" })
+    }
+  ];
+  const agent = new Agent({
+    model: new SequenceModel([
+      "FINAL: I have started the work.",
+      'TOOL_CALL {"name":"read_file","args":{"file_path":"source.txt"}}',
+      "FINAL: I have inspected the source.",
+      'TOOL_CALL {"name":"write_file","args":{"file_path":"output.txt","content":"ready"}}',
+      "FINAL: The file is written.",
+      'TOOL_CALL {"name":"bash_command","args":{"command":"node --check output.js"}}',
+      "FINAL: Inspected the source, wrote output.txt, and completed the syntax check."
+    ]),
+    tools,
+    maxIterations: 7
+  });
+
+  const result = await agent.run("Inspect source.txt, write output.txt, and run a syntax check.");
+
+  expect(result.finalAnswer).toContain("completed the syntax check");
+  expect(result.trace.filter((step) => step.action === "invalid")).toHaveLength(3);
+  expect(result.trace.at(-1)?.action).toBe("final");
+});
+
+it("stops after three consecutive retry iterations even when their outputs differ", async () => {
+  const agent = new Agent({
+    model: new SequenceModel([
+      "I will inspect the workspace first.",
+      "I am still preparing the inspection.",
+      "I need one more moment to inspect it."
+    ]),
+    tools: [],
+    maxIterations: 20,
+    enforceCompletionEvidence: false
+  });
+
+  await expect(agent.run("Inspect the workspace.")).rejects.toThrow(/stopped after 3 consecutive retries/i);
+});
+
 it("keeps compiled prompts at or below the configured token estimate ceiling", () => {
   const weave = new CausalWeave();
   const system = weave.append({ kind: "system", payload: "Use the causal state.", parents: [], advance: false });

@@ -353,6 +353,7 @@ class AgentRuntime {
     let repeatedInvalidCount = 0;
     let repeatedMissingEvidence = "";
     let repeatedMissingEvidenceCount = 0;
+    let consecutiveRetryCount = 0;
     let lastMutationIteration = 0;
     const metrics = (): RuntimeResult["metrics"] => ({ modelCalls, toolCalls, latestContextTokens, totalInputTokens, outputTokens });
     const progress = (iteration: number, phase: AgentProgress["phase"], detail: string, extra: Partial<AgentProgress> = {}): void => {
@@ -404,14 +405,16 @@ class AgentRuntime {
         const invalid = output.text.trim();
         repeatedInvalidCount = invalid === repeatedInvalidOutput ? repeatedInvalidCount + 1 : 1;
         repeatedInvalidOutput = invalid;
+        consecutiveRetryCount += 1;
         const inference = this.weave.append({ kind: "inference", payload: invalid, parents: compiled.nodeIds, advance: true });
         const detail = /^\s*(?:TOOL_CALL|FINAL)\b/i.test(output.text)
           ? "The action JSON was malformed or truncated. Retry with one smaller valid TOOL_CALL or FINAL response."
           : "Planning prose is not an action. Return exactly one TOOL_CALL JSON object or one FINAL response.";
         this.weave.append({ kind: "protocol_error", payload: detail, parents: [inference.id], advance: true });
         trace.push(traceStep(iteration, compiled, output.text, "invalid", undefined, detail));
-        progress(iteration, "retrying", `Invalid action ${repeatedInvalidCount}/3`, { rawModelOutput: output.text, action: "invalid", error: detail });
+        progress(iteration, "retrying", `Invalid action · consecutive retries ${consecutiveRetryCount}/3`, { rawModelOutput: output.text, action: "invalid", error: detail });
         if (repeatedInvalidCount >= 3) fail(`Agent repeated the same invalid action envelope 3 times: ${invalid.replace(/\s+/g, " ").slice(0, 240)}`);
+        if (consecutiveRetryCount >= 3) fail(`Agent stopped after 3 consecutive retries; invalid action: ${invalid.replace(/\s+/g, " ").slice(0, 240)}`);
         enforceNoProgress(iteration);
         continue;
       }
@@ -422,11 +425,13 @@ class AgentRuntime {
           const missing = missingEvidence.join(", ");
           repeatedMissingEvidenceCount = missing === repeatedMissingEvidence ? repeatedMissingEvidenceCount + 1 : 1;
           repeatedMissingEvidence = missing;
+          consecutiveRetryCount += 1;
           const unsupported = this.weave.append({ kind: "inference", payload: { unsupportedFinal: final.answer }, parents: compiled.nodeIds, advance: true });
           this.weave.append({ kind: "protocol_error", payload: `Final is unsupported. Still required: ${missing}. Continue with one TOOL_CALL.`, parents: [unsupported.id], advance: true });
           trace.push(traceStep(iteration, compiled, output.text, "invalid", undefined, missing));
-          progress(iteration, "retrying", `Final blocked by missing evidence: ${missing}`, { rawModelOutput: output.text, action: "invalid", error: missing });
+          progress(iteration, "retrying", `Final blocked · consecutive retries ${consecutiveRetryCount}/3: ${missing}`, { rawModelOutput: output.text, action: "invalid", error: missing });
           if (repeatedMissingEvidenceCount >= 3) fail(`Agent repeated an unsupported final 3 times; missing evidence: ${missing}`);
+          if (consecutiveRetryCount >= 3) fail(`Agent stopped after 3 consecutive retries; missing evidence: ${missing}`);
           enforceNoProgress(iteration);
           continue;
         }
@@ -440,6 +445,9 @@ class AgentRuntime {
       if (!call) continue;
       repeatedInvalidOutput = "";
       repeatedInvalidCount = 0;
+      repeatedMissingEvidence = "";
+      repeatedMissingEvidenceCount = 0;
+      consecutiveRetryCount = 0;
       const callNode = this.weave.append({ kind: "tool_call", payload: { name: call.name, args: call.args, raw: output.text }, parents: compiled.nodeIds, advance: true });
       progress(iteration, "tool", `Running ${call.name}`, { rawModelOutput: output.text, action: "tool", tool: call.name });
       options.signal?.throwIfAborted();

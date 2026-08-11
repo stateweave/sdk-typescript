@@ -6,6 +6,7 @@
 - Forward provider token and metadata events through `Agent.streamEvents()` while preserving ordinary action parsing and transactional commits.
 - Emit causal `verification` nodes for recognized successful post-mutation reads, syntax checks, and explicit application checks.
 - Enforce prompt-budget and configuration validation, strengthen imported-state validation, and fail before provider invocation when mandatory context cannot fit.
+- Bound protocol/completion retry failures by three consecutive retry iterations, resetting the streak after each accepted tool action instead of counting separated retries across the run trace.
 
 ## 0.1.0
 
