@@ -1169,10 +1169,15 @@ label {
   font-weight: 800;
 }
 
-.node-id {
+.node-label {
   fill: var(--foreground);
   font-size: 10px;
   font-weight: 700;
+  text-anchor: start;
+}
+
+.node-label.left {
+  text-anchor: end;
 }
 
 .graph-selected-node {

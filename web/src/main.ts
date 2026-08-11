@@ -2555,12 +2555,15 @@ function renderGraphComponent(container: HTMLElement, value: StateGraph, viewSta
           </g>` : "").join("")}
       </g>
       <g class="nodes">
-        ${layout.nodes.map((node) => `
+        ${layout.nodes.map((node) => {
+          const labelOnLeft = node.x > layout.width * 0.7;
+          return `
           <g class="cortex-node ${escapeHtml(node.type)} ${node.id === "system_root" ? "root" : ""} ${node.id === latestNodeId ? "latest" : ""} ${node.id === viewState.selectedNodeId ? "selected" : ""} ${node.pinned ? "pinned" : ""}" data-node-id="${escapeAttribute(node.id)}" transform="translate(${node.x} ${node.y})">
             <circle r="${node.radius}"></circle>
-            <text class="node-id" y="${node.radius + 15}">${escapeHtml(shorten(node.id, node.id === "system_root" ? 18 : 16))}</text>
+            <text class="node-label ${labelOnLeft ? "left" : "right"}" x="${labelOnLeft ? -(node.radius + 8) : node.radius + 8}" y="4">${escapeHtml(graphNodeLabel(node))}</text>
             <title>${escapeHtml(`${node.id} [${node.type}]\n${node.text}`)}</title>
-          </g>`).join("")}
+          </g>`;
+        }).join("")}
       </g>
     </svg>
     <div id="graph-selected-node" class="graph-selected-node">
@@ -2867,6 +2870,12 @@ function updateGraphDom(
     line.setAttribute("x2", edge.toNode.x.toFixed(1));
     line.setAttribute("y2", edge.toNode.y.toFixed(1));
   });
+}
+
+function graphNodeLabel(node: GraphLayoutNode): string {
+  if (node.id === "system_root" || node.type === "system") return "memory root";
+  const normalized = oneLine(node.text);
+  return normalized ? shorten(normalized, 30) : shorten(node.id, 16);
 }
 
 function graphInspectorHtml(value: StateGraph, node: GraphLayoutNode): string {
