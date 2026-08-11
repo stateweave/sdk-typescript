@@ -584,6 +584,7 @@ const refreshFiles = element<HTMLButtonElement>("refresh-files");
 const rebootFiles = element<HTMLButtonElement>("reboot-files");
 const exportGraph = element<HTMLButtonElement>("export-graph");
 const importGraph = element<HTMLButtonElement>("import-graph");
+const clearMessages = element<HTMLButtonElement>("clear-messages");
 const transferModal = element<HTMLElement>("graph-transfer-modal");
 const transferTitle = element<HTMLElement>("graph-transfer-title");
 const transferHelp = element<HTMLElement>("graph-transfer-help");
@@ -693,6 +694,13 @@ refreshFiles.addEventListener("click", () => void loadWorkspaceFiles());
 rebootFiles.addEventListener("click", () => void rebootWorkspaceFiles());
 exportGraph.addEventListener("click", () => openGraphTransfer("export"));
 importGraph.addEventListener("click", () => openGraphTransfer("import"));
+clearMessages.addEventListener("click", () => {
+  if (!agentState && !localStorage.getItem(stateChatStorageKey)) {
+    status.textContent = "Messages already clear.";
+    return;
+  }
+  if (confirm("Clear StateWeave messages and graph? Workspace files will stay intact.")) resetStateWeaveChat();
+});
 closeTransfer.addEventListener("click", closeGraphTransfer);
 copyTransfer.addEventListener("click", () => void copyText(transferText.value, copyTransfer));
 applyImport.addEventListener("click", applyGraphImport);
@@ -1621,6 +1629,7 @@ function isAgentStateLike(value: unknown): value is AgentState {
 
 function resetStateWeaveChat(): void {
   agentState = undefined;
+  input.value = "";
   localStorage.removeItem(stateChatStorageKey);
   primaryGraphViewState.selectedNodeId = undefined;
   primaryGraphViewState.positions.clear();
