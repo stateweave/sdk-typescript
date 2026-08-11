@@ -105,6 +105,7 @@ type GraphViewState = { selectedNodeId?: string; animationFrame?: number; positi
 type ToolInfo = { name: string; description: string };
 type WorkspaceFile = { path: string; size: number; updatedAt: string; mime: string; renderable: boolean };
 type WorkspaceFileContent = WorkspaceFile & { content: string };
+type PreviewSource = { kind: "srcdoc" | "url"; value: string };
 type TransferMode = "export" | "import";
 type WorkspaceViewName = "graph" | "tools" | "files";
 type AgentSettings = { systemPrompt: string; projectionTargetTokens: number; maxIterations: number };
@@ -156,7 +157,7 @@ const stateChatStorageKey = "stateweave.chat.v2";
 let agentSettings = loadAgentSettings();
 const primaryGraphViewState: GraphViewState = { positions: new Map<string, GraphPosition>() };
 const copyPayloads = new Map<string, string>();
-const artifactPreviews = new Map<string, string>();
+const artifactPreviews = new Map<string, PreviewSource>();
 const categoryOrder: EvalCategory[] = ["memory", "logical", "holistic", ...promptFiveCategoryOrder, ...promptSixCategoryOrder];
 const autoJudgePreviewMs = 2000;
 const promptSuites: Record<SuiteId, PromptSuite> = {
@@ -1430,15 +1431,15 @@ function workspaceFileRowHtml(file: WorkspaceFile): string {
 }
 
 function workspaceFileHtml(file: WorkspaceFileContent): string {
-  const previewDoc = file.renderable ? filePreviewSrcDoc(file) : undefined;
-  const previewId = previewDoc ? registerArtifactPreview(previewDoc) : undefined;
+  const previewUrl = file.renderable ? workspaceFilePreviewUrl(file.path) : undefined;
+  const previewId = previewUrl ? registerWorkspacePreview(file.path) : undefined;
   const sourceCopyId = registerCopy(file.content);
   const pathCopyId = registerCopy(file.path);
   const warning = file.mime === "image/svg+xml" && !looksLikeCompleteSvg(file.content)
     ? `<p class="file-render-warning">This SVG looks incomplete or invalid. Source is shown below.</p>`
     : "";
-  const preview = previewDoc
-    ? `<section class="file-preview-card"><div class="artifact-preview-toolbar"><span>Rendered ${escapeHtml(file.mime)}</span><button class="button secondary small-button" type="button" data-artifact-preview-id="${previewId}">Open full screen</button></div><iframe sandbox="allow-scripts" tabindex="0" srcdoc="${escapeAttribute(previewDoc)}" title="${escapeAttribute(file.path)} preview"></iframe></section>`
+  const preview = previewUrl
+    ? `<section class="file-preview-card"><div class="artifact-preview-toolbar"><span>Rendered ${escapeHtml(file.mime)} · local assets enabled</span><button class="button secondary small-button" type="button" data-artifact-preview-id="${previewId}">Open full screen</button></div><iframe sandbox="allow-scripts" tabindex="0" src="${escapeAttribute(previewUrl)}" title="${escapeAttribute(file.path)} preview"></iframe></section>`
     : `<section class="file-empty-preview"><span class="file-kind ${fileKindClass(file)}">${escapeHtml(fileKindLabel(file))}</span><p>No rich preview for this file type. Source is shown below.</p></section>`;
   return `<article class="file-open">
     <header class="file-open-header">
@@ -1539,15 +1540,9 @@ function formatFileTimestamp(value: string): string {
   return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-function filePreviewSrcDoc(file: WorkspaceFileContent): string {
-  if (file.mime !== "image/svg+xml") return file.content;
-
-  if (!looksLikeCompleteSvg(file.content)) {
-    return `<!doctype html><html><body style="margin:0;display:grid;place-items:center;min-height:100vh;font:14px system-ui;color:#b91c1c;background:#fff;"><p>Invalid or truncated SVG file. Source is shown below.</p></body></html>`;
-  }
-
-  const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(file.content)}`;
-  return `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;min-height:100vh;background:#fff;display:grid;place-items:center;}img{display:block;max-width:100%;max-height:100vh;object-fit:contain;}</style></head><body><img src="${escapeAttribute(dataUrl)}" alt="${escapeAttribute(file.path)}"></body></html>`;
+function workspaceFilePreviewUrl(filePath: string): string {
+  const encodedPath = filePath.split("/").map((segment) => encodeURIComponent(segment)).join("/");
+  return `${apiBase}/api/stateweave/files/preview/${encodedPath}`;
 }
 
 function looksLikeCompleteSvg(content: string): boolean {
@@ -2992,7 +2987,13 @@ function registerCopy(value: string): string {
 
 function registerArtifactPreview(value: string): string {
   const id = `artifact_preview_${++artifactPreviewCounter}`;
-  artifactPreviews.set(id, value);
+  artifactPreviews.set(id, { kind: "srcdoc", value });
+  return id;
+}
+
+function registerWorkspacePreview(filePath: string): string {
+  const id = `artifact_preview_${++artifactPreviewCounter}`;
+  artifactPreviews.set(id, { kind: "url", value: workspaceFilePreviewUrl(filePath) });
   return id;
 }
 
@@ -3001,8 +3002,8 @@ function handleArtifactPreviewClick(event: Event): boolean {
   const button = target?.closest<HTMLButtonElement>("button[data-artifact-preview-id]");
   const id = button?.dataset.artifactPreviewId;
   if (!id) return false;
-  const artifact = artifactPreviews.get(id);
-  if (artifact) openArtifactModal(artifact);
+  const preview = artifactPreviews.get(id);
+  if (preview) openArtifactModal(preview);
   return true;
 }
 
@@ -3015,7 +3016,7 @@ function handleStreamAccordionToggle(event: Event): void {
   });
 }
 
-function openArtifactModal(artifact: string): void {
+function openArtifactModal(preview: PreviewSource): void {
   const existing = document.getElementById("artifact-modal");
   existing?.remove();
 
@@ -3025,13 +3026,16 @@ function openArtifactModal(artifact: string): void {
   modal.setAttribute("role", "dialog");
   modal.setAttribute("aria-modal", "true");
   modal.setAttribute("aria-label", "Full screen artifact preview");
+  const frame = preview.kind === "url"
+    ? `<iframe sandbox="allow-scripts" tabindex="0" src="${escapeAttribute(preview.value)}" title="Full screen artifact preview"></iframe>`
+    : `<iframe sandbox="allow-scripts" tabindex="0" srcdoc="${escapeAttribute(preview.value)}" title="Full screen artifact preview"></iframe>`;
   modal.innerHTML = `
     <div class="artifact-modal-panel">
       <div class="artifact-modal-toolbar">
         <strong>Artifact preview</strong>
         <button class="button secondary small-button" type="button" data-artifact-modal-close>Close</button>
       </div>
-      <iframe sandbox="allow-scripts" tabindex="0" srcdoc="${escapeAttribute(artifact)}" title="Full screen artifact preview"></iframe>
+      ${frame}
     </div>`;
   modal.addEventListener("click", (event) => {
     const target = event.target instanceof Element ? event.target : undefined;

@@ -153,6 +153,12 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     return;
   }
 
+  const workspacePreviewMatch = url.pathname.match(/^\/api\/stateweave\/files\/preview(?:\/(.*))?$/);
+  if (workspacePreviewMatch && (request.method === "GET" || request.method === "HEAD")) {
+    await serveWorkspacePreview(workspacePreviewMatch[1] ?? "", response, request.method === "HEAD");
+    return;
+  }
+
   if (request.method === "POST" && url.pathname === "/api/stateweave/files/reboot") {
     await rebootWorkspace(response);
     return;
@@ -731,6 +737,45 @@ async function readWorkspaceFile(url: URL, response: ServerResponse): Promise<vo
   json(response, 200, { path: requestedPath, content, size: info.size, updatedAt: info.mtime.toISOString(), mime, renderable: isRenderableMime(mime) });
 }
 
+async function serveWorkspacePreview(encodedPath: string, response: ServerResponse, headOnly: boolean): Promise<void> {
+  if (!encodedPath) {
+    json(response, 400, { error: "workspace preview path is required" });
+    return;
+  }
+
+  let requestedPath: string;
+  try {
+    requestedPath = encodedPath.split("/").map((segment) => decodeURIComponent(segment)).join("/");
+  } catch {
+    json(response, 400, { error: "workspace preview path is invalid" });
+    return;
+  }
+
+  const filePath = resolveWorkspaceFilePath(requestedPath);
+  const fileStat = await stat(filePath).catch(() => undefined);
+  if (!fileStat?.isFile()) {
+    json(response, 404, { error: "Workspace preview file not found" });
+    return;
+  }
+
+  const mime = fileMime(requestedPath);
+  const headers: Record<string, string | number> = {
+    "content-type": contentType(filePath),
+    "content-length": fileStat.size,
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff"
+  };
+  if (mime === "text/html") {
+    headers["content-security-policy"] = "default-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' http: https:; style-src 'unsafe-inline' http: https:; img-src http: https: data: blob:; font-src http: https: data:; media-src http: https: data: blob:; frame-src http: https:; connect-src http: https:; worker-src blob: http: https:";
+  }
+  response.writeHead(200, headers);
+  if (headOnly) {
+    response.end();
+    return;
+  }
+  createReadStream(filePath).pipe(response);
+}
+
 async function rebootWorkspace(response: ServerResponse): Promise<void> {
   if (workspaceDir === "/" || workspaceDir.length < 8) throw new Error(`Refusing to reboot unsafe workspace path: ${workspaceDir}`);
   await rm(workspaceDir, { recursive: true, force: true });
@@ -922,14 +967,22 @@ function json(response: ServerResponse, status: number, body: unknown): void {
 }
 
 function contentType(filePath: string): string {
-  const extension = path.extname(filePath);
-  if (extension === ".html") return "text/html; charset=utf-8";
-  if (extension === ".js") return "text/javascript; charset=utf-8";
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension === ".html" || extension === ".htm") return "text/html; charset=utf-8";
+  if ([".js", ".mjs", ".cjs"].includes(extension)) return "text/javascript; charset=utf-8";
   if (extension === ".css") return "text/css; charset=utf-8";
   if (extension === ".svg") return "image/svg+xml";
   if (extension === ".json") return "application/json; charset=utf-8";
   if (extension === ".png") return "image/png";
+  if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
+  if (extension === ".gif") return "image/gif";
+  if (extension === ".webp") return "image/webp";
+  if (extension === ".avif") return "image/avif";
   if (extension === ".ico") return "image/x-icon";
+  if (extension === ".woff") return "font/woff";
+  if (extension === ".woff2") return "font/woff2";
+  if (extension === ".ttf") return "font/ttf";
+  if (extension === ".otf") return "font/otf";
   return "application/octet-stream";
 }
 
