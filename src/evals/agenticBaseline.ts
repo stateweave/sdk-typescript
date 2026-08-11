@@ -83,6 +83,7 @@ export class AgenticBaseline {
     let repeatedInvalidCount = 0;
     let repeatedMissingEvidence = "";
     let repeatedMissingEvidenceCount = 0;
+    let consecutiveRetryCount = 0;
     const evidence = createCompletionEvidence();
     const progress = (iteration: number, phase: AgenticProgress["phase"], detail: string): void => {
       options.onProgress?.({ iteration, phase, modelCalls, toolCalls, detail });
@@ -132,9 +133,11 @@ export class AgenticBaseline {
           const invalidOutput = output.text.trim();
           repeatedInvalidCount = invalidOutput === repeatedInvalidOutput ? repeatedInvalidCount + 1 : 1;
           repeatedInvalidOutput = invalidOutput;
+          consecutiveRetryCount += 1;
           const preview = invalidOutput.replace(/\s+/g, " ").slice(0, 240);
-          progress(iteration, "retrying", `Invalid native envelope ${repeatedInvalidCount}/3: ${preview}`);
+          progress(iteration, "retrying", `Invalid native envelope · consecutive retries ${consecutiveRetryCount}/3: ${preview}`);
           if (repeatedInvalidCount >= 3) return failedResult(`Transcript agent repeated the same invalid TOOL_CALL/final envelope 3 times: ${preview}`);
+          if (consecutiveRetryCount >= 3) return failedResult(`Transcript agent stopped after 3 consecutive retries; invalid envelope: ${preview}`);
           const toolEnvelope = /^\s*TOOL_CALL\b/i.test(output.text);
           this.messages.push({ role: "tool", content: toolEnvelope
             ? "protocol_error: The TOOL_CALL JSON was malformed or truncated and was not executed. Retry with one smaller action. Keep write_file content under 2,500 characters and build long artifacts through multiple write/edit calls; never repeat the same oversized envelope."
@@ -147,8 +150,10 @@ export class AgenticBaseline {
           const missing = missingEvidence.join(", ");
           repeatedMissingEvidenceCount = missing === repeatedMissingEvidence ? repeatedMissingEvidenceCount + 1 : 1;
           repeatedMissingEvidence = missing;
-          progress(iteration, "retrying", `Final blocked by missing evidence: ${missing}`);
+          consecutiveRetryCount += 1;
+          progress(iteration, "retrying", `Final blocked · consecutive retries ${consecutiveRetryCount}/3: ${missing}`);
           if (repeatedMissingEvidenceCount >= 3) return failedResult(`Transcript agent repeated an unsupported final 3 times; missing evidence: ${missing}`);
+          if (consecutiveRetryCount >= 3) return failedResult(`Transcript agent stopped after 3 consecutive retries; missing evidence: ${missing}`);
           this.messages.push({ role: "tool", content: `completion_error: Final is not yet supported by successful tool evidence. Still required: ${missing}. Continue with exactly one TOOL_CALL.` });
           continue;
         }
@@ -158,6 +163,9 @@ export class AgenticBaseline {
 
       repeatedInvalidOutput = "";
       repeatedInvalidCount = 0;
+      repeatedMissingEvidence = "";
+      repeatedMissingEvidenceCount = 0;
+      consecutiveRetryCount = 0;
       // Some providers continue by fabricating TOOL/ASSISTANT transcript lines. Execute
       // only the first requested action and retain a canonical envelope, never the
       // fabricated results or later calls.
