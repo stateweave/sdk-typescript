@@ -2557,10 +2557,11 @@ function renderGraphComponent(container: HTMLElement, value: StateGraph, viewSta
       <g class="nodes">
         ${layout.nodes.map((node) => {
           const labelOnLeft = node.x > layout.width * 0.7;
+          const showLabel = value.nodes.length <= 15 || node.id === latestNodeId || node.id === viewState.selectedNodeId;
           return `
           <g class="cortex-node ${escapeHtml(node.type)} ${node.id === "system_root" ? "root" : ""} ${node.id === latestNodeId ? "latest" : ""} ${node.id === viewState.selectedNodeId ? "selected" : ""} ${node.pinned ? "pinned" : ""}" data-node-id="${escapeAttribute(node.id)}" transform="translate(${node.x} ${node.y})">
             <circle r="${node.radius}"></circle>
-            <text class="node-label ${labelOnLeft ? "left" : "right"}" x="${labelOnLeft ? -(node.radius + 8) : node.radius + 8}" y="4">${escapeHtml(graphNodeLabel(node))}</text>
+            <text class="node-label ${labelOnLeft ? "left" : "right"} ${showLabel ? "visible" : ""}" x="${labelOnLeft ? -(node.radius + 8) : node.radius + 8}" y="4">${escapeHtml(graphNodeLabel(node))}</text>
             <title>${escapeHtml(`${node.id} [${node.type}]\n${node.text}`)}</title>
           </g>`;
         }).join("")}
@@ -2645,9 +2646,14 @@ function mountGraphInteractions(container: HTMLElement, value: StateGraph, layou
   if (!svg) return;
 
   const nodeElements = new Map<string, SVGGElement>();
+  const labelElements = new Map<string, SVGTextElement>();
   for (const nodeElement of svg.querySelectorAll<SVGGElement>(".cortex-node[data-node-id]")) {
     const nodeId = nodeElement.dataset.nodeId;
-    if (nodeId) nodeElements.set(nodeId, nodeElement);
+    if (nodeId) {
+      nodeElements.set(nodeId, nodeElement);
+      const label = nodeElement.querySelector<SVGTextElement>(".node-label");
+      if (label) labelElements.set(nodeId, label);
+    }
   }
   const edgeElements = layout.edges.map((_, index) => svg.querySelector<SVGLineElement>(`line[data-edge-index="${index}"]`));
   const inspector = container.querySelector<HTMLElement>("#graph-selected-node");
@@ -2655,12 +2661,17 @@ function mountGraphInteractions(container: HTMLElement, value: StateGraph, layou
   let hoveredNodeId: string | undefined;
   let hoverPoint: GraphPointer | undefined;
   let dragging: { node: GraphLayoutNode; element: SVGGElement; pointerId: number; moved: boolean; start: GraphPointer } | undefined;
+  const latestNodeId = layout.nodes.at(-1)?.id;
+  const updateLabelVisibility = () => {
+    for (const [id, label] of labelElements) label.classList.toggle("visible", layout.nodes.length <= 15 || id === latestNodeId || id === viewState.selectedNodeId);
+  };
 
   const selectNode = (nodeId: string) => {
     const node = layout.nodeMap.get(nodeId);
     if (!node) return;
     viewState.selectedNodeId = node.id;
     for (const [id, element] of nodeElements) element.classList.toggle("selected", id === node.id);
+    updateLabelVisibility();
     for (const card of cards) card.classList.toggle("selected", card.dataset.nodeCardId === node.id);
     layout.edges.forEach((edge, index) => {
       edgeElements[index]?.parentElement?.classList.toggle("selected", edge.from === node.id || edge.to === node.id);
@@ -2669,6 +2680,7 @@ function mountGraphInteractions(container: HTMLElement, value: StateGraph, layou
     if (focusChat) focusConversationNode(node.id);
   };
 
+  updateLabelVisibility();
   svg.addEventListener("pointermove", (event) => {
     hoverPoint = svgPoint(svg, event);
   });
