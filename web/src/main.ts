@@ -6,6 +6,7 @@ import { scoreEvalRecords, type EvalPrimitive as Primitive, type EvalVote as Vot
 import { promptFiveCases, promptFiveCategoryOrder, type PromptFiveCategory } from "./promptFive.js";
 import { promptSixCases, promptSixCategoryOrder, promptSixHypothesis, type PromptSixCategory, type PromptSixHypothesis } from "./promptSix.js";
 import { oneShotPromptStats, oneShotSdkBuildPrompt } from "../../src/evals/oneShotSdkBenchmark.js";
+import { protocolExperiment } from "./protocolExperiment.js";
 import "./styles.css";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -37,7 +38,7 @@ type CompareResponse = {
   };
 };
 
-type PageName = "state" | "quickstart" | "ab" | "sdk-build" | "infinite" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
+type PageName = "state" | "quickstart" | "ab" | "protocol-experiment" | "sdk-build" | "infinite" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
 type SdkBuildEnvironment = { slot: number; status: string; progress?: { iteration: number; phase: string; modelCalls: number; toolCalls: number; totalInputTokens?: number; outputTokens?: number; detail: string; updatedAt: string } };
 type SdkBuildCandidate = { status: string; finalAnswer?: string; error?: string; previewReady: boolean; attempt?: number; maxIterations?: number; previousAttempts?: { attempt: number; maxIterations: number; status: string }[] };
 type SdkBuildVariantC = { version: string; status: string; progress?: SdkBuildEnvironment["progress"]; finalAnswer?: string; error?: string; metrics?: Record<string, number>; previewReady: boolean; importRepairedPreviewReady?: boolean; attempt?: number; maxIterations?: number; previousAttempts?: { attempt: number; maxIterations: number; status: string }[]; requestedAt?: string; startedAt?: string; completedAt?: string };
@@ -495,6 +496,7 @@ const apiBase = import.meta.env.BASE_URL.replace(/\/$/, "");
 const stateTab = element<HTMLButtonElement>("state-tab");
 const quickstartTab = element<HTMLButtonElement>("quickstart-tab");
 const abTab = element<HTMLButtonElement>("ab-tab");
+const protocolTab = element<HTMLButtonElement>("protocol-tab");
 const multiTab = element<HTMLButtonElement>("multi-tab");
 const multiTwoTab = element<HTMLButtonElement>("multi-two-tab");
 const multiThreeTab = element<HTMLButtonElement>("multi-three-tab");
@@ -506,6 +508,8 @@ const infiniteTab = element<HTMLButtonElement>("infinite-tab");
 const statePage = element<HTMLElement>("state-page");
 const quickstartPage = element<HTMLElement>("quickstart-page");
 const abPage = element<HTMLElement>("ab-page");
+const protocolPage = element<HTMLElement>("protocol-page");
+const protocolReport = element<HTMLElement>("protocol-report");
 const multiPage = element<HTMLElement>("multi-page");
 const sdkBuildPage = element<HTMLElement>("sdk-build-page");
 const infinitePage = element<HTMLElement>("infinite-page");
@@ -611,6 +615,7 @@ const multiStage = element<HTMLElement>("multi-stage");
 sdkBuildPrompt.textContent = oneShotSdkBuildPrompt;
 const sdkPromptStats = oneShotPromptStats();
 sdkBuildPromptStats.textContent = `${sdkPromptStats.words.toLocaleString()} words · ${sdkPromptStats.characters.toLocaleString()} characters · fixed for both participants`;
+renderProtocolExperiment();
 
 setActivePage(activePage, false);
 renderAgentSettings();
@@ -623,6 +628,7 @@ restoreStateChat();
 stateTab.addEventListener("click", () => setActivePage("state"));
 quickstartTab.addEventListener("click", () => setActivePage("quickstart"));
 abTab.addEventListener("click", () => setActivePage("ab"));
+protocolTab.addEventListener("click", () => setActivePage("protocol-experiment"));
 multiTab.addEventListener("click", () => setActivePage("prompt-one"));
 multiTwoTab.addEventListener("click", () => setActivePage("prompt-two"));
 multiThreeTab.addEventListener("click", () => setActivePage("prompt-three"));
@@ -652,7 +658,7 @@ reset.addEventListener("click", () => {
   if (activePage === "state") resetStateWeaveChat();
   else if (activePage === "quickstart") setActivePage("state");
   else if (activePage === "ab") resetAbTests();
-  else if (activePage === "sdk-build") setActivePage("state");
+  else if (activePage === "protocol-experiment" || activePage === "sdk-build") setActivePage("state");
   else void resetCurrentMultiTest();
 });
 input.addEventListener("keydown", (event) => {
@@ -753,6 +759,7 @@ setupCopyableLog(stateOutput, "Agent trace");
 function pageFromHash(): PageName {
   if (location.hash === "#quick-start") return "quickstart";
   if (location.hash === "#ab") return "ab";
+  if (location.hash === "#protocol-experiment") return "protocol-experiment";
   if (location.hash === "#sdk-build") return "sdk-build";
   if (location.hash === "#infinite") return "infinite";
   if (location.hash === "#prompt-one") return "prompt-one";
@@ -881,6 +888,7 @@ function setActivePage(page: PageName, updateHash = true): void {
   const isState = page === "state";
   const isQuickstart = page === "quickstart";
   const isAb = page === "ab";
+  const isProtocolExperiment = page === "protocol-experiment";
   const isSdkBuild = page === "sdk-build";
   const nextSuiteId = suiteIdForPage(page);
   const isMulti = Boolean(nextSuiteId);
@@ -896,6 +904,8 @@ function setActivePage(page: PageName, updateHash = true): void {
   quickstartTab.setAttribute("aria-selected", String(isQuickstart));
   abTab.classList.toggle("active", isAb);
   abTab.setAttribute("aria-selected", String(isAb));
+  protocolTab.classList.toggle("active", isProtocolExperiment);
+  protocolTab.setAttribute("aria-selected", String(isProtocolExperiment));
   multiTab.classList.toggle("active", page === "prompt-one");
   multiTab.setAttribute("aria-selected", String(page === "prompt-one"));
   multiTwoTab.classList.toggle("active", page === "prompt-two");
@@ -919,6 +929,8 @@ function setActivePage(page: PageName, updateHash = true): void {
   quickstartPage.classList.toggle("active", isQuickstart);
   abPage.hidden = !isAb;
   abPage.classList.toggle("active", isAb);
+  protocolPage.hidden = !isProtocolExperiment;
+  protocolPage.classList.toggle("active", isProtocolExperiment);
   multiPage.hidden = !isMulti;
   multiPage.classList.toggle("active", isMulti);
   sdkBuildPage.hidden = !isSdkBuild;
@@ -927,9 +939,9 @@ function setActivePage(page: PageName, updateHash = true): void {
   infinitePage.classList.toggle("active", isInfinite);
   multiTitle.textContent = suite.title;
   multiDescription.textContent = suite.description;
-  reset.textContent = isState ? "Reset" : isQuickstart || isSdkBuild ? "Back to chat" : isAb ? "Reset A/B" : isInfinite ? "Reset harness" : `Reset ${suite.title.toLowerCase()}`;
+  reset.textContent = isState ? "Reset" : isQuickstart || isProtocolExperiment || isSdkBuild ? "Back to chat" : isAb ? "Reset A/B" : isInfinite ? "Reset harness" : `Reset ${suite.title.toLowerCase()}`;
   syncMultiModeControls();
-  if (updateHash) history.replaceState(null, "", isState ? location.pathname : isQuickstart ? "#quick-start" : isAb ? "#ab" : isSdkBuild ? "#sdk-build" : isInfinite ? "#infinite" : `#${suite.id}`);
+  if (updateHash) history.replaceState(null, "", isState ? location.pathname : isQuickstart ? "#quick-start" : isAb ? "#ab" : isProtocolExperiment ? "#protocol-experiment" : isSdkBuild ? "#sdk-build" : isInfinite ? "#infinite" : `#${suite.id}`);
   if (isMulti) void resumeStoredEvalRun();
   else stopBackgroundPoll();
   if (isInfinite) {
@@ -944,6 +956,37 @@ function setActivePage(page: PageName, updateHash = true): void {
   else if (isAb) abInput.focus();
   else if (isSdkBuild) sdkBuildCopy.focus();
   else if (isMulti) multiStart.focus();
+}
+
+function renderProtocolExperiment(): void {
+  const base = protocolExperiment.base as Record<string, number>;
+  const tuned = protocolExperiment.tuned as Record<string, number>;
+  const rows = [
+    ["Valid on first response", "valid_first_pct", "percent"],
+    ["Valid within three attempts", "valid_with_retry_pct", "percent"],
+    ["Tool exactness", "tool_exact_with_retry_pct", "percent"],
+    ["Final answer anchor", "final_answer_anchor_pct", "percent"],
+    ["Adversarial valid first response", "adversarial_valid_first_pct", "percent"],
+    ["Mean attempts", "mean_attempts", "decimal"]
+  ] as const;
+  const format = (value: number, kind: "percent" | "decimal"): string => kind === "percent" ? `${value.toFixed(2)}%` : value.toFixed(2);
+  const delta = (key: string): string => {
+    const value = tuned[key]! - base[key]!;
+    return `${value >= 0 ? "+" : ""}${value.toFixed(2)}${key === "mean_attempts" ? "" : " pp"}`;
+  };
+  const metricRows = rows.map(([label, key, kind]) => `<tr><th scope="row">${escapeHtml(label)}</th><td>${format(base[key]!, kind)}</td><td>${format(tuned[key]!, kind)}</td><td class="${tuned[key]! >= base[key]! ? "protocol-positive" : "protocol-negative"}">${escapeHtml(delta(key))}</td></tr>`).join("");
+  const samples = protocolExperiment.samples.map((sample) => `<article class="protocol-sample"><header><span>${escapeHtml(sample.id)} · ${escapeHtml(sample.expectedTool ?? "FINAL")}</span><span class="${sample.tunedExact ? "protocol-pass" : "protocol-warn"}">${sample.tunedExact ? "exact action" : "needs review"}</span></header><div class="protocol-output-grid"><div><small>Base</small><pre>${escapeHtml(sample.base)}</pre></div><div><small>LoRA tuned</small><pre>${escapeHtml(sample.tuned)}</pre></div></div></article>`).join("");
+  const probe = protocolExperiment.runtimeProbe;
+  protocolReport.innerHTML = `
+    <section class="protocol-hero">
+      <div><p class="eyebrow">Modal experiment · ${escapeHtml(protocolExperiment.experiment)}</p><h2>Protocol adherence improved; semantic correctness still needs runtime authority.</h2><p>Fine-tuning taught a small model to emit StateWeave's ordinary <code>TOOL_CALL</code>/<code>FINAL</code> envelope. It did not replace deterministic parsing, validation, tool execution, causal graph creation, or completion checks.</p></div>
+      <div class="protocol-verdict"><span>Conclusion</span><strong>Keep the adapter isolated</strong><small>Use it as a protocol candidate, not as graph authority.</small></div>
+    </section>
+    <section class="protocol-stat-grid" aria-label="Experiment setup"><article><small>Base model</small><strong>${escapeHtml(protocolExperiment.model.split("/").at(-1) ?? protocolExperiment.model)}</strong><span>Qwen 1.5B Instruct</span></article><article><small>Training set</small><strong>${protocolExperiment.trainExamples}</strong><span>prompt/action examples</span></article><article><small>Held-out set</small><strong>${protocolExperiment.evalExamples}</strong><span>including 40 adversarial cases</span></article><article><small>Compute</small><strong>${escapeHtml(protocolExperiment.training.gpu)}</strong><span>${protocolExperiment.training.epochs} epochs · LoRA r=${protocolExperiment.training.loraRank} · $${protocolExperiment.training.meteredCostUsd.toFixed(2)} metered</span></article></section>
+    <section class="protocol-section"><div class="protocol-section-heading"><div><p class="eyebrow">Measured A/B</p><h3>Base versus tuned output</h3></div><p>Same prompts, deterministic decoding, three-attempt retry simulation. Exact toolness is scored separately from final-answer anchoring.</p></div><div class="protocol-table-wrap"><table class="protocol-table"><thead><tr><th scope="col">Metric</th><th scope="col">Base</th><th scope="col">LoRA</th><th scope="col">Δ</th></tr></thead><tbody>${metricRows}</tbody></table></div><p class="protocol-footnote">Tool exactness means exact tool name and arguments. Final answer anchor means the held-out identifier appears in a valid final answer; exact prose wording is not required.</p></section>
+    <section class="protocol-section"><div class="protocol-section-heading"><div><p class="eyebrow">StateWeave verification</p><h3>Runtime replay passed</h3></div><span class="protocol-runtime-badge">${escapeHtml(probe.status)}</span></div><div class="protocol-runtime-grid"><div><strong>${probe.steps} steps</strong><span>read → final</span></div><div><strong>${probe.protocolErrors}</strong><span>protocol-error nodes</span></div><div><strong>${escapeHtml(String(probe.stateRoundTripBytes))} bytes</strong><span>validated state export</span></div><div><strong>${escapeHtml(probe.finalAnswer)}</strong><span>final answer</span></div></div><p class="protocol-footnote">The tuned envelope was passed through the public <code>Agent</code>, a real scoped workspace tool, immutable causal state, and state serialization. The replay produced system, user, tool call, tool result, resource, and assistant-output nodes.</p></section>
+    <section class="protocol-section"><div class="protocol-section-heading"><div><p class="eyebrow">Representative held-out outputs</p><h3>What changed</h3></div><p>These are examples from the same frozen evaluation result.</p></div><div class="protocol-samples">${samples}</div></section>
+    <section class="protocol-section protocol-method"><p class="eyebrow">Objective and plan</p><h3>Why this experiment exists</h3><ol><li>Measure whether a very small model can reliably produce the SDK's ordinary action envelope.</li><li>Train only on positive protocol traces with no chain-of-thought, secrets, review metadata, or held-out gold.</li><li>Compare first-pass validity, retries, exact tool arguments, adversarial behavior, and a real StateWeave runtime replay.</li><li>Keep parsing, validation, security, graph lineage, and successful-run commits deterministic in the runtime.</li></ol><p><strong>Limitation:</strong> this is a protocol experiment hosted in the D.O.T. repository. It does not measure semantic D.O.T. behavior, general reasoning quality, or production task success.</p></section>`;
 }
 
 function startSdkBuildPoll(): void {

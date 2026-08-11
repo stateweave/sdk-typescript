@@ -3849,3 +3849,302 @@ label {
 .infinite-graph-canvas .graph-svg { min-height: 0; }
 .infinite-graph-canvas .graph-selected-node { bottom: 10px; }
 .infinite-graph-canvas .graph-node-list { bottom: 44px; }
+
+/* Protocol fine-tuning report */
+.protocol-page {
+  padding-bottom: 28px;
+}
+
+.protocol-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.protocol-shell > * {
+  min-width: 0;
+}
+
+.protocol-hero,
+.protocol-section,
+.protocol-stat-grid article {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.protocol-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 250px;
+  gap: 20px;
+  align-items: center;
+  padding: 24px;
+}
+
+.protocol-hero h2 {
+  max-width: 760px;
+  margin-bottom: 10px;
+  font-size: clamp(1.35rem, 2.8vw, 2rem);
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+}
+
+.protocol-hero p:not(.eyebrow) {
+  max-width: 780px;
+  color: var(--muted-foreground);
+  line-height: 1.65;
+}
+
+.protocol-verdict {
+  display: grid;
+  gap: 6px;
+  border-left: 3px solid var(--stateweave);
+  padding: 12px 0 12px 16px;
+}
+
+.protocol-verdict span,
+.protocol-stat-grid small,
+.protocol-output-grid small {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.protocol-verdict strong {
+  font-size: 1.05rem;
+}
+
+.protocol-verdict small,
+.protocol-stat-grid span {
+  color: var(--muted-foreground);
+  line-height: 1.4;
+}
+
+.protocol-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.protocol-stat-grid article {
+  display: grid;
+  gap: 5px;
+  padding: 16px;
+}
+
+.protocol-stat-grid strong {
+  overflow-wrap: anywhere;
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+}
+
+.protocol-section {
+  padding: 20px;
+}
+
+.protocol-section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.protocol-section-heading h3 {
+  font-size: 1.15rem;
+}
+
+.protocol-section-heading > p {
+  max-width: 560px;
+  color: var(--muted-foreground);
+  font-size: 0.84rem;
+  line-height: 1.5;
+  text-align: right;
+}
+
+.protocol-table-wrap {
+  overflow-x: auto;
+}
+
+.protocol-table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.protocol-table th,
+.protocol-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 11px 10px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.protocol-table th:first-child,
+.protocol-table td:first-child {
+  text-align: left;
+}
+
+.protocol-table thead th {
+  color: var(--muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.protocol-table tbody th {
+  color: var(--foreground);
+  font-weight: 700;
+}
+
+.protocol-positive { color: #15803d; font-weight: 800; }
+.protocol-negative { color: #b91c1c; font-weight: 800; }
+.protocol-footnote {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.protocol-runtime-badge,
+.protocol-pass,
+.protocol-warn {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.protocol-runtime-badge,
+.protocol-pass {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.protocol-warn {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.protocol-runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.protocol-runtime-grid > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border-radius: 10px;
+  background: #fafafa;
+  padding: 13px;
+}
+
+.protocol-runtime-grid strong {
+  overflow-wrap: anywhere;
+  font-size: 0.92rem;
+}
+
+.protocol-runtime-grid span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.protocol-samples {
+  display: grid;
+  gap: 10px;
+}
+
+.protocol-sample {
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  overflow: hidden;
+}
+
+.protocol-sample header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  background: #fafafa;
+  padding: 9px 12px;
+  color: var(--muted-foreground);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.protocol-output-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.protocol-output-grid > div + div {
+  border-left: 1px solid var(--border);
+}
+
+.protocol-output-grid small {
+  display: block;
+  padding: 9px 12px 0;
+}
+
+.protocol-output-grid pre {
+  min-height: 58px;
+  margin: 0;
+  padding: 8px 12px 12px;
+  overflow: auto;
+  color: var(--foreground);
+  font: 0.78rem/1.5 var(--mono-font, ui-monospace, SFMono-Regular, Menlo, monospace);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.protocol-method ol {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 14px;
+  padding-left: 22px;
+  color: var(--muted-foreground);
+  line-height: 1.55;
+}
+
+.protocol-method > p:last-child {
+  border-left: 3px solid #f59e0b;
+  margin-top: 12px;
+  padding-left: 12px;
+  color: var(--muted-foreground);
+  line-height: 1.55;
+}
+
+@media (max-width: 800px) {
+  .protocol-hero { grid-template-columns: 1fr; padding: 18px; }
+  .protocol-verdict { border-left: 0; border-top: 3px solid var(--stateweave); padding: 12px 0 0; }
+  .protocol-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .protocol-runtime-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .protocol-section { padding: 16px; }
+  .protocol-section-heading { align-items: start; flex-direction: column; }
+  .protocol-section-heading > p { text-align: left; }
+}
+
+@media (max-width: 520px) {
+  .protocol-stat-grid,
+  .protocol-runtime-grid,
+  .protocol-output-grid { grid-template-columns: 1fr; }
+  .protocol-output-grid > div + div { border-top: 1px solid var(--border); border-left: 0; }
+  .protocol-table { min-width: 0; table-layout: fixed; font-size: 0.68rem; }
+  .protocol-table th,
+  .protocol-table td { padding: 8px 3px; white-space: normal; overflow-wrap: anywhere; }
+  .protocol-table th:first-child,
+  .protocol-table td:first-child { width: 43%; }
+}

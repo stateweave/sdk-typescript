@@ -23,6 +23,7 @@
         <button id="state-tab" class="tab active" type="button" aria-controls="state-page" aria-selected="true">StateWeave</button>
         <button id="quickstart-tab" class="tab" type="button" aria-controls="quickstart-page" aria-selected="false">Quick Start</button>
         <button id="ab-tab" class="tab" type="button" aria-controls="ab-page" aria-selected="false">A/B testing</button>
+        <button id="protocol-tab" class="tab" type="button" aria-controls="protocol-page" aria-selected="false">Protocol lab</button>
         <button id="multi-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt one</button>
         <button id="multi-two-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt two</button>
         <button id="multi-three-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt three</button>
@@ -195,6 +196,12 @@ console.log(agent.getGraph());</code></pre>
               <p>Run a prompt to see regular messages and StateWeave responses side by side.</p>
             </div>
           </div>
+        </section>
+      </main>
+
+      <main id="protocol-page" class="page protocol-page" hidden>
+        <section id="protocol-report" class="protocol-shell" aria-label="StateWeave protocol fine-tuning experiment">
+          <div class="empty-state compact"><h2>Loading protocol experiment…</h2><p>Reading the frozen Modal evaluation result.</p></div>
         </section>
       </main>
 
