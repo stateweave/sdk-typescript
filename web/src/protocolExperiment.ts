@@ -136,5 +136,48 @@ export const protocolExperiment = {
     "final_answer_anchor": "Final answer contains the held-out identifier; exact prose wording is intentionally not required.",
     "adversarial": "The 40 adversarial held-out cases are included in the aggregate, not a separate training objective.",
     "semantic_dot": "Not measured; this experiment does not establish D.O.T. behavior."
+  },
+  "scaleUp": {
+    "model": "Qwen/Qwen2.5-32B-Instruct",
+    "gpu": "Modal L4 × 2",
+    "trainRun": "ap-947ExBfKSrOastbKitcEVU",
+    "evalRun": "ap-hbmgVrMF06RCzp1A5j4aCx",
+    "volume": "dot-stateweave-protocol-32b-v1",
+    "trainLoss": 0.9969303031762441,
+    "trainRuntimeSeconds": 3794.9238,
+    "evalRuntimeSeconds": 3409.51,
+    "meteredCostUsd": 1.9137835,
+    "maxLength": 1024,
+    "batchSize": 2,
+    "gradientAccumulation": 4,
+    "base": {
+      "valid_first_pct": 42.0,
+      "valid_with_retry_pct": 56.5,
+      "exact_with_retry_pct": 0.5,
+      "tool_exact_with_retry_pct": 0.63,
+      "final_answer_anchor_pct": 76.19,
+      "adversarial_valid_first_pct": 100.0,
+      "adversarial_exact_with_retry_pct": 0.0,
+      "mean_attempts": 2.02
+    },
+    "tuned": {
+      "valid_first_pct": 100.0,
+      "valid_with_retry_pct": 100.0,
+      "exact_with_retry_pct": 76.5,
+      "tool_exact_with_retry_pct": 96.84,
+      "final_answer_anchor_pct": 76.19,
+      "adversarial_valid_first_pct": 100.0,
+      "adversarial_exact_with_retry_pct": 62.5,
+      "mean_attempts": 1.0
+    },
+    "comparison": {
+      "valid_first_delta_pp": 2.0,
+      "exact_delta_pp": 11.0,
+      "tool_exact_delta_pp": 13.93,
+      "final_anchor_delta_pp": 16.67,
+      "adversarial_exact_delta_pp": 25.0,
+      "mean_attempts_delta": -0.02
+    },
+    "note": "The same split was used, but this is directional rather than a perfectly controlled scaling sweep: the 32B run used two GPUs, a 1024-token training cap, and a different per-device batch configuration."
   }
 } as const;
