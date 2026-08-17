@@ -48,7 +48,7 @@ describe("compound-node experiment", () => {
     const testCase = cases[0]!;
     const prompt = compileCompound(testCase);
     const pass = scoreOutput(testCase, "compound", 1, prompt, {
-      text: 'FINAL: {"answer":"432 sensors to Kyoto","evidence":["orchard_city","orchard_crates","orchard_units"]}'
+      text: 'FINAL: {"answer":"432 sensors ship to Kyoto","evidence":["orchard_city","orchard_crates","orchard_units"]}'
     }, 10);
     expect(pass).toMatchObject({ formatValid: true, answerCorrect: true, evidenceComplete: true, evidenceClean: true, fullPass: true });
 

@@ -4174,6 +4174,7 @@ label {
 
 .subgraph-moves strong { color: var(--foreground); }
 .subgraph-method { display: grid; gap: 7px; margin: 0; padding-left: 22px; color: var(--muted-foreground); line-height: 1.5; }
+.subgraph-calibration { border-left: 3px solid #f59e0b; margin-top: 14px; padding-left: 12px; color: var(--muted-foreground); font-size: 0.8rem; line-height: 1.5; }
 .subgraph-fail { display: inline-flex; border-radius: 999px; background: #fee2e2; padding: 5px 9px; color: #991b1b; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
 .subgraph-cases { display: grid; gap: 9px; }
 .subgraph-case { overflow: hidden; border: 1px solid var(--border); border-radius: 10px; }

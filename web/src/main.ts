@@ -49,6 +49,7 @@ type SubgraphExperimentState = {
   hypothesis: string;
   primitive: { name: string; definition: string; down: string; up: string; across: string };
   method: string[];
+  calibrationNote: string;
   cases: SubgraphCaseResult[];
   aggregate?: { cases: number; flatAnswerCorrect: number; compoundAnswerCorrect: number; flatFullPass: number; compoundFullPass: number; pairedWins: { flat: number; compound: number; tiesBoth: number; tiesNeither: number }; averagePromptTokens: { flat: number; compound: number }; averageLatencyMs: { flat: number; compound: number }; pairedSignTestP: number; conclusion: "compound_better" | "flat_better" | "no_clear_difference"; enoughToConclude: boolean; reason: string };
   startedAt?: string;
@@ -1142,7 +1143,7 @@ EXPANDED project_release {
   ATOM evidence
   BOND evidence --supports--&gt; decision
 }</pre><div class="subgraph-moves"><span><strong>Down</strong>${escapeHtml(state.primitive.down)}</span><span><strong>Up</strong>${escapeHtml(state.primitive.up)}</span><span><strong>Across</strong>${escapeHtml(state.primitive.across)}</span></div></section>
-    <section class="protocol-section"><div class="protocol-section-heading"><div><p class="eyebrow">Method</p><h3>Same evidence, different primitive</h3></div><p>The gold answers were held server-side and deterministic scoring replaced subjective LLM judging. Fixture <code>${escapeHtml(state.fixtureSha256.slice(0, 12))}</code>.</p></div><ol class="subgraph-method">${state.method.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol></section>
+    <section class="protocol-section"><div class="protocol-section-heading"><div><p class="eyebrow">Method</p><h3>Same evidence, different primitive</h3></div><p>The gold answers were held server-side and deterministic scoring replaced subjective LLM judging. Fixture <code>${escapeHtml(state.fixtureSha256.slice(0, 12))}</code>.</p></div><ol class="subgraph-method">${state.method.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol><p class="subgraph-calibration"><strong>Calibration correction:</strong> ${escapeHtml(state.calibrationNote)}</p></section>
     ${state.cases.length ? `<section class="protocol-section"><div class="protocol-section-heading"><div><p class="eyebrow">All ten cases</p><h3>Paired result ledger</h3></div><p>Full means the answer was correct, all required evidence keys were cited, and stale or forbidden evidence was not cited.</p></div><div class="protocol-table-wrap"><table class="protocol-table subgraph-table"><thead><tr><th>Case</th><th>Flat</th><th>Compound</th><th>Winner</th><th>Prompt tokens F/C</th></tr></thead><tbody>${resultRows}</tbody></table></div></section>` : ""}
     ${caseDetails ? `<section class="protocol-section"><div class="protocol-section-heading"><div><p class="eyebrow">Full report</p><h3>Questions, outputs, and evidence</h3></div><p>Open each case to inspect both raw model answers.</p></div><div class="subgraph-cases">${caseDetails}</div></section>` : ""}
     ${aggregate ? `<section class="protocol-section protocol-method"><p class="eyebrow">Conclusion</p><h3>${escapeHtml(verdict)}</h3><p>${escapeHtml(aggregate.reason)}</p><p><strong>Important:</strong> explicit compound membership is the tested capability. This pilot does not prove that a runtime can infer perfect compound boundaries automatically.</p></section>` : ""}`;
