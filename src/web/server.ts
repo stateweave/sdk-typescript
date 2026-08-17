@@ -106,7 +106,7 @@ const agentTools = createDefaultTools({ rootDir: workspaceDir });
 const sdkBuildBenchmark = new SdkBuildBenchmarkApi(path.resolve(process.env.STATEWEAVE_SDK_BENCHMARK_DIR ?? "/data/sdk-build-benchmark"));
 const subgraphExperiment = new SubgraphExperimentHarness({
   model,
-  statePath: path.resolve(process.env.STATEWEAVE_SUBGRAPH_EXPERIMENT_STATE ?? "/data/subgraph-experiment-v2.json"),
+  statePath: path.resolve(process.env.STATEWEAVE_SUBGRAPH_EXPERIMENT_STATE ?? "/data/subgraph-experiment-hard-v3-glm-5.3.json"),
   provider: providerName(),
   modelName: process.env.ANTHROPIC_MODEL ?? "configured default"
 });
