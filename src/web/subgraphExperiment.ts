@@ -14,7 +14,7 @@ type AtomAuthority = "runtime" | "verified" | "claim";
 type AtomSpec = { key: string; text: string; status?: AtomStatus; authority?: AtomAuthority };
 type CompoundSpec = { id: string; label: string; anchor: string; members: string[] };
 type LinkSpec = { from: string; to: string; relation: string };
-type GoldSpec = { answers: string[]; requiredEvidence: string[]; forbiddenEvidence?: string[] };
+type GoldSpec = { answers: string[]; answerContains: string[]; answerExcludes?: string[]; requiredEvidence: string[]; forbiddenEvidence?: string[] };
 
 export type SubgraphCaseSpec = {
   id: string;
@@ -73,8 +73,8 @@ export type SubgraphAggregate = {
 };
 
 export type SubgraphExperimentState = {
-  version: 1;
-  experiment: "compound-node-ab-v1";
+  version: 2;
+  experiment: "compound-node-ab-v2";
   status: SubgraphRunStatus;
   provider: string;
   model: string;
@@ -88,6 +88,7 @@ export type SubgraphExperimentState = {
     across: string;
   };
   method: string[];
+  calibrationNote: string;
   cases: SubgraphCaseResult[];
   aggregate?: SubgraphAggregate;
   startedAt?: string;
@@ -113,7 +114,7 @@ export class SubgraphExperimentHarness {
     });
     if (!raw.trim()) return;
     const parsed = JSON.parse(raw) as SubgraphExperimentState;
-    if (parsed.version === 1 && parsed.experiment === "compound-node-ab-v1") this.state = parsed.status === "running" ? { ...parsed, status: "error", error: "The prior process stopped during the experiment." } : parsed;
+    if (parsed.version === 2 && parsed.experiment === "compound-node-ab-v2") this.state = parsed.status === "running" ? { ...parsed, status: "error", error: "The prior process stopped during the experiment." } : parsed;
   }
 
   publicState(): SubgraphExperimentState {
@@ -173,8 +174,8 @@ export class SubgraphExperimentHarness {
 
 function initialState(provider: string, modelName = "configured default"): SubgraphExperimentState {
   return {
-    version: 1,
-    experiment: "compound-node-ab-v1",
+    version: 2,
+    experiment: "compound-node-ab-v2",
     status: "not_started",
     provider,
     model: modelName,
@@ -192,9 +193,11 @@ function initialState(provider: string, modelName = "configured default"): Subgr
       "Same provider, temperature zero, evidence atoms, causal links, question, and output contract.",
       "Flat uses the current CAUSAL_WEAVE/1 compiler. Compound uses COMPOUND_WEAVE/1 membership, expansion, and boundary ports.",
       "Arm order alternates across cases to reduce first-call bias.",
-      "Deterministic scoring checks answer correctness and exact evidence keys; no LLM judge is used.",
+      "Deterministic semantic-token scoring checks answer correctness and exact evidence keys; no LLM judge is used.",
+      "Each arm receives the same 1,024-token output ceiling.",
       "Explicit compound membership is the tested primitive and is not available to the flat arm."
     ],
+    calibrationNote: "An initial calibration pass used a 320-token output ceiling and exact-phrase scoring. It was excluded because GLM exhausted the ceiling before visible output on three compound calls and the scorer rejected semantically correct wording. The raw calibration state remains preserved separately on the lab volume.",
     cases: []
   };
 }
@@ -202,7 +205,7 @@ function initialState(provider: string, modelName = "configured default"): Subgr
 async function runArm(model: Model, testCase: SubgraphCaseSpec, arm: SubgraphArm, order: number): Promise<SubgraphArmResult> {
   const prompt = arm === "flat" ? compileFlat(testCase) : compileCompound(testCase);
   const started = performance.now();
-  const output = await model.complete({ prompt, mode: "text", system: providerSystem, parameters: { temperature: 0, maxTokens: 320 } });
+  const output = await model.complete({ prompt, mode: "text", system: providerSystem, parameters: { temperature: 0, maxTokens: 1_024 } });
   const latencyMs = Math.round(performance.now() - started);
   return scoreOutput(testCase, arm, order, prompt, output, latencyMs);
 }
@@ -288,7 +291,7 @@ function baseCases(): SubgraphCaseSpec[] {
       ],
       compounds: [compound("cmp_orchard", "Orchard release", "orchard_anchor", ["orchard_anchor", "orchard_city", "orchard_crates", "orchard_units", "orchard_crates_draft"])],
       links: [{ from: "orchard_crates_draft", to: "orchard_crates", relation: "superseded_by" }],
-      gold: { answers: ["432 sensors to Kyoto", "432 to Kyoto"], requiredEvidence: ["orchard_city", "orchard_crates", "orchard_units"], forbiddenEvidence: ["orchard_crates_draft"] }
+      gold: { answers: ["432 sensors to Kyoto", "432 to Kyoto"], answerContains: ["432", "kyoto"], requiredEvidence: ["orchard_city", "orchard_crates", "orchard_units"], forbiddenEvidence: ["orchard_crates_draft"] }
     },
     {
       id: "compound-to-atom-port",
@@ -304,7 +307,7 @@ function baseCases(): SubgraphCaseSpec[] {
       ],
       compounds: [compound("cmp_cedar", "Cedar trip", "cedar_anchor", ["cedar_anchor", "cedar_distance", "cedar_efficiency", "cedar_reserve"])],
       links: [{ from: "cedar_reserve", to: "fuel_price", relation: "priced_by" }],
-      gold: { answers: ["$90", "90 dollars", "90"], requiredEvidence: ["cedar_distance", "cedar_efficiency", "cedar_reserve", "fuel_price"] }
+      gold: { answers: ["$90", "90 dollars", "90"], answerContains: ["90"], requiredEvidence: ["cedar_distance", "cedar_efficiency", "cedar_reserve", "fuel_price"] }
     },
     {
       id: "compound-to-compound-join",
@@ -326,7 +329,7 @@ function baseCases(): SubgraphCaseSpec[] {
         compound("cmp_nimbus_capacity", "Nimbus capacity", "nimbus_capacity_anchor", ["nimbus_capacity_anchor", "nimbus_capacity_base", "nimbus_alpha_multiplier", "nimbus_beta_multiplier", "nimbus_deadline"])
       ],
       links: [{ from: "nimbus_selection_anchor", to: "nimbus_capacity_anchor", relation: "feeds" }],
-      gold: { answers: ["60 units, Tuesday", "60, Tuesday", "Team Beta: 60 units by Tuesday"], requiredEvidence: ["nimbus_alpha_score", "nimbus_beta_score", "nimbus_capacity_base", "nimbus_beta_multiplier", "nimbus_deadline"] }
+      gold: { answers: ["60 units, Tuesday", "60, Tuesday", "Team Beta: 60 units by Tuesday"], answerContains: ["beta", "60", "tuesday"], requiredEvidence: ["nimbus_alpha_score", "nimbus_beta_score", "nimbus_capacity_base", "nimbus_beta_multiplier", "nimbus_deadline"] }
     },
     {
       id: "supersession-through-port",
@@ -344,7 +347,7 @@ function baseCases(): SubgraphCaseSpec[] {
         { from: "harbor_limit_old", to: "harbor_limit_current", relation: "superseded_by" },
         { from: "harbor_limit_current", to: "holiday_factor", relation: "scaled_by" }
       ],
-      gold: { answers: ["52 orders per day", "52"], requiredEvidence: ["harbor_limit_current", "holiday_factor"], forbiddenEvidence: ["harbor_limit_old"] }
+      gold: { answers: ["52 orders per day", "52"], answerContains: ["52"], requiredEvidence: ["harbor_limit_current", "holiday_factor"], forbiddenEvidence: ["harbor_limit_old"] }
     },
     {
       id: "shared-atom-overlap",
@@ -364,7 +367,7 @@ function baseCases(): SubgraphCaseSpec[] {
         compound("cmp_glass_route", "Glassline route", "glass_route_anchor", ["glass_route_anchor", "glass_operating_temp", "glass_safety_margin"])
       ],
       links: [{ from: "glass_design_anchor", to: "glass_route_anchor", relation: "constrains" }],
-      gold: { answers: ["Yes, safe by 5 Celsius", "safe by 5 C", "yes, 5 Celsius"], requiredEvidence: ["glass_max_temp", "glass_operating_temp", "glass_safety_margin"] }
+      gold: { answers: ["Yes, safe by 5 Celsius", "safe by 5 C", "yes, 5 Celsius"], answerContains: ["yes", "safe", "5"], requiredEvidence: ["glass_max_temp", "glass_operating_temp", "glass_safety_margin"] }
     },
     {
       id: "verified-contradiction",
@@ -382,7 +385,7 @@ function baseCases(): SubgraphCaseSpec[] {
         { from: "quartz_claim_count", to: "quartz_verified_count", relation: "contradicted_by" },
         { from: "quartz_verified_count", to: "quartz_outbound", relation: "reduced_by" }
       ],
-      gold: { answers: ["200 units", "200"], requiredEvidence: ["quartz_verified_count", "quartz_outbound"], forbiddenEvidence: ["quartz_claim_count"] }
+      gold: { answers: ["200 units", "200"], answerContains: ["200"], requiredEvidence: ["quartz_verified_count", "quartz_outbound"], forbiddenEvidence: ["quartz_claim_count"] }
     },
     {
       id: "chronology-across-compounds",
@@ -404,7 +407,7 @@ function baseCases(): SubgraphCaseSpec[] {
         { from: "meridian_launch_old", to: "meridian_launch_current", relation: "superseded_by" },
         { from: "meridian_cert_anchor", to: "meridian_terms_anchor", relation: "gates" }
       ],
-      gold: { answers: ["Yes, by 1 day", "yes, one day", "1 day before"], requiredEvidence: ["meridian_launch_current", "meridian_cert_arrival"], forbiddenEvidence: ["meridian_launch_old"] }
+      gold: { answers: ["Yes, by 1 day", "yes, one day", "1 day before"], answerContains: ["yes", "1", "day"], requiredEvidence: ["meridian_launch_current", "meridian_cert_arrival"], forbiddenEvidence: ["meridian_launch_old"] }
     },
     {
       id: "resource-lineage",
@@ -420,7 +423,7 @@ function baseCases(): SubgraphCaseSpec[] {
       ],
       compounds: [compound("cmp_parser", "Parser change", "parser_anchor", ["parser_anchor", "parser_errors_before", "parser_errors_after", "parser_cases_per_error"])],
       links: [{ from: "parser_anchor", to: "benchmark_population", relation: "measured_against" }],
-      gold: { answers: ["290 cases", "290"], requiredEvidence: ["parser_errors_after", "parser_cases_per_error", "benchmark_population"], forbiddenEvidence: ["parser_errors_before"] }
+      gold: { answers: ["290 cases", "290"], answerContains: ["290"], requiredEvidence: ["parser_errors_after", "parser_cases_per_error", "benchmark_population"], forbiddenEvidence: ["parser_errors_before"] }
     },
     {
       id: "revoked-membership",
@@ -436,7 +439,7 @@ function baseCases(): SubgraphCaseSpec[] {
       ],
       compounds: [compound("cmp_access", "Meridian access", "access_anchor", ["access_anchor", "access_alice_grant", "access_alice_revoke", "access_bob_archive", "access_carol_lab"])],
       links: [{ from: "access_alice_grant", to: "access_alice_revoke", relation: "revoked_by" }],
-      gold: { answers: ["Carol", "Carol only"], requiredEvidence: ["access_alice_revoke", "access_carol_lab"] }
+      gold: { answers: ["Carol", "Carol only"], answerContains: ["carol"], answerExcludes: ["alice", "bob"], requiredEvidence: ["access_alice_revoke", "access_carol_lab"] }
     },
     {
       id: "three-compound-aggregation",
@@ -463,7 +466,7 @@ function baseCases(): SubgraphCaseSpec[] {
         { from: "atlas_east_anchor", to: "atlas_west_anchor", relation: "aggregates_with" },
         { from: "atlas_west_anchor", to: "atlas_north_anchor", relation: "aggregates_with" }
       ],
-      gold: { answers: ["25 units", "25"], requiredEvidence: ["atlas_east_shipped", "atlas_east_recalled", "atlas_west_shipped", "atlas_west_pending", "atlas_north_shipped", "atlas_north_damaged"] }
+      gold: { answers: ["25 units", "25"], answerContains: ["25"], requiredEvidence: ["atlas_east_shipped", "atlas_east_recalled", "atlas_west_shipped", "atlas_west_pending", "atlas_north_shipped", "atlas_north_damaged"] }
     }
   ];
 }
@@ -594,7 +597,7 @@ function compound(id: string, label: string, anchor: string, members: string[]):
 export function scoreOutput(testCase: SubgraphCaseSpec, arm: SubgraphArm, order: number, prompt: string, output: ModelOutput, latencyMs: number): SubgraphArmResult {
   const parsed = parseFinal(output.text);
   const evidence = parsed?.evidence ?? [];
-  const answerCorrect = Boolean(parsed && testCase.gold.answers.some((answer) => normalizeAnswer(answer) === normalizeAnswer(parsed.answer)));
+  const answerCorrect = Boolean(parsed && semanticAnswerMatch(parsed.answer, testCase.gold));
   const evidenceSet = new Set(evidence);
   const evidenceComplete = testCase.gold.requiredEvidence.every((key) => evidenceSet.has(key));
   const evidenceClean = !(testCase.gold.forbiddenEvidence ?? []).some((key) => evidenceSet.has(key));
@@ -647,8 +650,15 @@ function parseFinal(value: string): { answer: string; evidence: string[] } | und
   return undefined;
 }
 
-function normalizeAnswer(value: string): string {
-  return value.toLowerCase().replace(/\bone\b/g, "1").replace(/\byes\b/g, "yes").replace(/\bdollars?\b/g, "").replace(/\bunits?\b/g, "").replace(/\bcelsius\b/g, "c").replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
+function semanticAnswerMatch(value: string, gold: GoldSpec): boolean {
+  const tokens = answerTokens(value);
+  return gold.answerContains.every((term) => tokens.has(term.toLowerCase()))
+    && !(gold.answerExcludes ?? []).some((term) => tokens.has(term.toLowerCase()));
+}
+
+function answerTokens(value: string): Set<string> {
+  const normalized = value.toLowerCase().replace(/\bone\b/g, "1");
+  return new Set(normalized.match(/[a-z0-9]+/g) ?? []);
 }
 
 function pairedWinner(flat: SubgraphArmResult, compound: SubgraphArmResult): SubgraphCaseResult["winner"] {
