@@ -1038,6 +1038,59 @@ label {
   backdrop-filter: blur(10px);
 }
 
+.graph-molecule-strip {
+  position: absolute;
+  z-index: 3;
+  top: 42px;
+  left: 8px;
+  display: flex;
+  max-width: calc(100% - 16px);
+  gap: 5px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+
+.graph-molecule-strip::-webkit-scrollbar { display: none; }
+
+.graph-molecule-chip {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 1px;
+  max-width: 190px;
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 5px 8px;
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+}
+
+.graph-molecule-chip span {
+  overflow: hidden;
+  font-size: 0.68rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-molecule-chip small {
+  color: var(--muted-foreground);
+  font-size: 0.58rem;
+}
+
+.graph-molecule-chip.collapsed {
+  border-color: rgba(8, 145, 178, 0.36);
+  background: rgba(236, 254, 255, 0.92);
+}
+
+.graph-molecule-chip:focus-visible {
+  outline: 2px solid #0891b2;
+  outline-offset: 2px;
+}
+
 .graph-svg {
   display: block;
   width: 100%;
@@ -1050,6 +1103,20 @@ label {
     radial-gradient(circle at 50% 50%, rgba(124, 58, 237, 0.13), transparent 28%),
     radial-gradient(circle at 70% 28%, rgba(37, 99, 235, 0.11), transparent 22%),
     #fbfbff;
+}
+
+.molecule-hull rect {
+  fill: rgba(124, 58, 237, 0.035);
+  stroke: rgba(124, 58, 237, 0.2);
+  stroke-dasharray: 6 5;
+  stroke-width: 1.2;
+}
+
+.molecule-hull text {
+  fill: #6d28d9;
+  font-size: 10px;
+  font-weight: 750;
+  pointer-events: none;
 }
 
 .cortex-edge line {
@@ -1154,6 +1221,13 @@ label {
 
 .cortex-node.tool_call circle {
   stroke: #0891b2;
+}
+
+.cortex-node.molecule circle {
+  fill: #ecfeff;
+  stroke: #0891b2;
+  stroke-width: 3;
+  stroke-dasharray: 6 4;
 }
 
 .cortex-node text {
@@ -2560,6 +2634,10 @@ label {
 }
 
 @media (max-width: 640px) {
+  .graph-summary.floating { top: 40px; }
+  .graph-molecule-strip { top: 72px; }
+  .graph-molecule-chip { max-width: 148px; }
+
   #app {
     width: min(100% - 20px, 1440px);
     padding: 14px 0;

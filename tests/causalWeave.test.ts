@@ -73,6 +73,73 @@ describe("Causal Weave", () => {
     expect(compiled.nodeIds.length).toBeLessThanOrEqual(30);
   });
 
+  it("compiles a smaller deterministic molecular view over unchanged causal truth", () => {
+    const weave = new CausalWeave();
+    const system = weave.append({ kind: "system", payload: `protocol ${"instruction ".repeat(80)}`, parents: [], advance: false });
+    for (let turn = 0; turn < 24; turn++) {
+      const goal = weave.append({ kind: "goal", payload: `project-${turn} objective and constraints`, parents: [system.id, ...weave.frontier()] });
+      const result = weave.append({ kind: "tool_result", payload: { project: turn, content: `verified-${turn} ${"evidence ".repeat(24)}` }, parents: [goal.id] });
+      weave.append({ kind: "answer", payload: `project-${turn} complete`, parents: [result.id] });
+    }
+    const before = weave.snapshot();
+    const causal = weave.compile({ query: "project-23 objective", maxTokens: 16_000, maxNodes: 48, contextMode: "causal" });
+    const molecular = weave.compile({ query: "project-23 objective", maxTokens: 16_000, maxNodes: 16, contextMode: "molecular" });
+
+    expect(molecular.contextMode).toBe("molecular");
+    expect(molecular.prompt).toContain("MOLECULAR_WEAVE/1");
+    expect(molecular.prompt).toContain("<MAP>");
+    expect(molecular.prompt).toContain("<EXPANDED");
+    expect(molecular.prompt).toContain("PORT ");
+    expect(molecular.prompt).toContain("project-23 objective");
+    expect(molecular.nodeIds.every((id) => causal.nodeIds.includes(id))).toBe(true);
+    expect(molecular.nodeIds.length).toBeLessThan(causal.nodeIds.length);
+    expect(molecular.tokenEstimate.estimatedTokens).toBeLessThan(causal.tokenEstimate.estimatedTokens);
+    expect(weave.snapshot()).toEqual(before);
+  });
+
+  it("keeps an exact old semantic match in a small molecular detail window", () => {
+    const weave = new CausalWeave();
+    const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
+    const original = weave.append({ kind: "goal", payload: "Record the Atlas launch code", parents: [system.id] });
+    weave.append({ kind: "semantic", payload: { type: "memory", key: "atlas-code", content: "Atlas launch code is ORBIT-731." }, parents: [original.id], resourceKey: "semantic:memory:atlas-code", advance: false });
+    for (let turn = 0; turn < 80; turn++) {
+      const goal = weave.append({ kind: "goal", payload: `Unrelated task ${turn}`, parents: [system.id, ...weave.frontier()] });
+      weave.append({ kind: "answer", payload: `Unrelated result ${turn}`, parents: [goal.id] });
+    }
+
+    const compiled = weave.compile({ query: "What is the Atlas launch code?", maxTokens: 8_000, maxNodes: 16, contextMode: "molecular" });
+
+    expect(compiled.prompt).toContain("ORBIT-731");
+    expect(compiled.prompt).toContain("MOLECULAR_WEAVE/1");
+  });
+
+  it("projects turn molecules into consumer-safe graph metadata", () => {
+    const weave = new CausalWeave();
+    const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
+    const firstGoal = weave.append({ kind: "goal", payload: "First objective", parents: [system.id] });
+    const firstAnswer = weave.append({ kind: "answer", payload: "First result", parents: [firstGoal.id] });
+    const secondGoal = weave.append({ kind: "goal", payload: "Second objective", parents: [system.id, firstAnswer.id] });
+    const secondAnswer = weave.append({ kind: "answer", payload: "Second result", parents: [secondGoal.id] });
+    const graph = agentStateToGraph(weave.snapshot());
+    const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+
+    expect(byId.get(firstGoal.id)?.data?.moleculeId).toBe(byId.get(firstAnswer.id)?.data?.moleculeId);
+    expect(byId.get(secondGoal.id)?.data?.moleculeId).toBe(byId.get(secondAnswer.id)?.data?.moleculeId);
+    expect(byId.get(firstGoal.id)?.data?.moleculeId).not.toBe(byId.get(secondGoal.id)?.data?.moleculeId);
+    expect(byId.get(secondAnswer.id)?.data?.moleculeLabel).toBe("Second objective");
+  });
+
+  it("runs the public Agent with an opt-in molecular context mode", async () => {
+    const model = new SequenceModel(["FINAL: molecular mode complete"]);
+    const agent = new Agent({ model, tools: [], contextMode: "molecular", projectionMaxNodes: 24, enforceCompletionEvidence: false });
+    const result = await agent.run("Test molecular context.");
+
+    expect(model.prompts[0]).toContain("MOLECULAR_WEAVE/1");
+    expect(result.metadata.contextMode).toBe("molecular");
+    expect(result.metadata.projectionMaxNodes).toBe(24);
+    expect(result.finalAnswer).toBe("molecular mode complete");
+  });
+
   it("keeps many user turns bounded instead of making every historical goal mandatory", () => {
     const weave = new CausalWeave();
     const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });

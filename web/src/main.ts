@@ -120,7 +120,7 @@ type EvalRun = {
 };
 
 type GraphPosition = { x: number; y: number; vx: number; vy: number; pinned: boolean };
-type GraphViewState = { selectedNodeId?: string; animationFrame?: number; positions: Map<string, GraphPosition> };
+type GraphViewState = { selectedNodeId?: string; animationFrame?: number; positions: Map<string, GraphPosition>; collapsedMoleculeIds: Set<string> };
 type ToolInfo = { name: string; description: string };
 type WorkspaceFile = { path: string; size: number; updatedAt: string; mime: string; renderable: boolean };
 type WorkspaceFileContent = WorkspaceFile & { content: string };
@@ -176,7 +176,7 @@ const defaultAgentSettings: AgentSettings = {
 const agentSettingsStorageKey = "stateweave.agentSettings.v2";
 const stateChatStorageKey = "stateweave.chat.v2";
 let agentSettings = loadAgentSettings();
-const primaryGraphViewState: GraphViewState = { positions: new Map<string, GraphPosition>() };
+const primaryGraphViewState: GraphViewState = { positions: new Map<string, GraphPosition>(), collapsedMoleculeIds: new Set<string>() };
 const copyPayloads = new Map<string, string>();
 const artifactPreviews = new Map<string, PreviewSource>();
 const categoryOrder: EvalCategory[] = ["memory", "logical", "holistic", ...promptFiveCategoryOrder, ...promptSixCategoryOrder];
@@ -1556,8 +1556,8 @@ function renderStateWeave(result: AgentPayload): void {
 
 async function loadHealth(): Promise<void> {
   const response = await fetch(`${apiBase}/api/health`).catch(() => undefined);
-  const health = response?.ok ? ((await response.json()) as { provider?: string }) : undefined;
-  provider.textContent = health?.provider ? `Provider: ${health.provider}` : "Provider unavailable";
+  const health = response?.ok ? ((await response.json()) as { provider?: string; defaultContextMode?: string }) : undefined;
+  provider.textContent = health?.provider ? `Provider: ${health.provider}${health.defaultContextMode ? ` · ${health.defaultContextMode}` : ""}` : "Provider unavailable";
 }
 
 async function loadTools(): Promise<void> {
@@ -1794,6 +1794,7 @@ function applyGraphImport(): void {
     agentState = state;
     primaryGraphViewState.selectedNodeId = undefined;
     primaryGraphViewState.positions.clear();
+    primaryGraphViewState.collapsedMoleculeIds.clear();
     const graphValue = agentStateToGraph(state);
     renderGraph(graphValue);
     stateInput.textContent = compactAgentState(state);
@@ -1843,8 +1844,9 @@ function resetStateWeaveChat(): void {
   localStorage.removeItem(stateChatStorageKey);
   primaryGraphViewState.selectedNodeId = undefined;
   primaryGraphViewState.positions.clear();
+  primaryGraphViewState.collapsedMoleculeIds.clear();
   stopGraphAnimation(primaryGraphViewState);
-  chat.innerHTML = `<div class="empty-state"><h2>Ask anything.</h2><p>StateWeave keeps one immutable causal graph and compiles a bounded working frontier for every model call.</p></div>`;
+  chat.innerHTML = `<div class="empty-state"><h2>Ask anything.</h2><p>StateWeave keeps one immutable causal graph and compiles a compact molecular view for every model call.</p></div>`;
   stateInput.textContent = "No turn yet.";
   stateOutput.textContent = "No output yet.";
   graph.className = "graph-empty";
@@ -2524,7 +2526,7 @@ function createLiveStreamLog(): LiveStreamLog {
 function ensureLiveStep(live: LiveStreamLog, stepNumber: number): LiveStreamStep {
   const existing = live.steps.get(stepNumber);
   if (existing) return existing;
-  const step: LiveStreamStep = { step: stepNumber, phase: "context", detail: "Preparing causal context", rawModelOutput: "" };
+  const step: LiveStreamStep = { step: stepNumber, phase: "context", detail: "Preparing molecular context", rawModelOutput: "" };
   live.steps.set(stepNumber, step);
   return step;
 }
@@ -2532,7 +2534,7 @@ function ensureLiveStep(live: LiveStreamLog, stepNumber: number): LiveStreamStep
 function updateLiveStreamLog(live: LiveStreamLog, event: AgentStreamEvent): void {
   if (event.type === "metadata") {
     live.metadata = event.metadata;
-    live.events.push(`run ${event.metadata.runId} started · engine=${event.metadata.engine} · maxIterations=${event.metadata.maxIterations}`);
+    live.events.push(`run ${event.metadata.runId} started · engine=${event.metadata.engine} · context=${event.metadata.contextMode} · maxNodes=${event.metadata.projectionMaxNodes}`);
     return;
   }
   if (event.type === "progress") {
@@ -2573,7 +2575,7 @@ function updateLiveStreamLog(live: LiveStreamLog, event: AgentStreamEvent): void
 
 function formatLiveStreamLog(live: LiveStreamLog): string {
   const metadata = live.metadata ? ["metadata:", JSON.stringify(live.metadata, null, 2), ""] : [];
-  const prompt = live.prompt ? ["current compiled causal context:", live.prompt, ""] : [];
+  const prompt = live.prompt ? ["current compiled molecular context:", live.prompt, ""] : [];
   const steps = [...live.steps.values()].map((step) => [
     `step ${step.step} phase: ${step.phase}`,
     `detail: ${step.detail}`,
@@ -2592,7 +2594,7 @@ function updatePendingStateWeave(item: HTMLElement, live: LiveStreamLog): void {
   const latestStep = live.latestStep;
   if (statusEl) statusEl.textContent = live.finalAnswer
     ? `Done · ${live.metadata?.stepCount ?? live.steps.size} steps`
-    : latestStep ? `Causal weave · step ${latestStep} / ${live.metadata?.maxIterations ?? "?"}` : "Opening StateWeave stream…";
+    : latestStep ? `Molecular weave · step ${latestStep} / ${live.metadata?.maxIterations ?? "?"}` : "Opening StateWeave stream…";
   if (stepsEl) {
     const openSteps = new Set([...stepsEl.querySelectorAll<HTMLDetailsElement>("details.stream-step[open]")].map((detail) => Number(detail.dataset.step)));
     if (!openSteps.size && latestStep) openSteps.add(latestStep);
@@ -2631,7 +2633,9 @@ function renderRunTrace(live: LiveStreamLog): string {
   const stepCount = live.metadata?.stepCount ?? live.steps.size;
   const retryCount = [...live.steps.values()].filter((step) => step.phase === "retrying").length;
   const duration = typeof live.metadata?.durationMs === "number" ? ` · ${live.metadata.durationMs}ms` : "";
-  return `<details class="stream-run-trace"><summary>Run trace · ${stepCount} step${stepCount === 1 ? "" : "s"}${retryCount ? ` · ${retryCount} retries` : ""}${duration}</summary><div class="stream-steps">${renderLiveSteps(live, new Set())}</div></details>`;
+  const latestContext = [...live.steps.values()].reverse().find((step) => typeof step.contextTokens === "number")?.contextTokens;
+  const context = typeof latestContext === "number" ? ` · ${latestContext.toLocaleString()} ctx` : "";
+  return `<details class="stream-run-trace"><summary>Run trace · ${stepCount} step${stepCount === 1 ? "" : "s"}${context}${retryCount ? ` · ${retryCount} retries` : ""}${duration}</summary><div class="stream-steps">${renderLiveSteps(live, new Set())}</div></details>`;
 }
 
 function renderLiveSteps(live: LiveStreamLog, openSteps: Set<number>): string {
@@ -2643,7 +2647,7 @@ function renderLiveSteps(live: LiveStreamLog, openSteps: Set<number>): string {
 function renderLiveStep(step: LiveStreamStep, open: boolean): string {
   const graphSummary = typeof step.nodeCount === "number" ? `${step.nodeCount} nodes · ${step.edgeCount ?? 0} edges` : "state pending";
   const detail = step.rawModelOutput ? streamCodeSection("Model action", compactStreamText(step.rawModelOutput)) : `<p class="stream-note">${escapeHtml(step.detail)}</p>`;
-  return `<details class="stream-step ${streamStatusClass(step.phase)}" data-step="${step.step}"${open ? " open" : ""}><summary><span class="stream-step-title">Step ${step.step}</span><span class="stream-chip ${streamStatusClass(step.phase)}">${streamStatusLabel(step.phase)}</span><small>${escapeHtml(step.tool ?? step.action ?? step.detail)} · ${escapeHtml(graphSummary)}</small></summary><div class="stream-step-body">${detail}${step.error ? `<p class="stream-error-text">${escapeHtml(step.error)}</p>` : ""}</div></details>`;
+  return `<details class="stream-step ${streamStatusClass(step.phase)}" data-step="${step.step}"${open ? " open" : ""}><summary><span class="stream-step-title">Step ${step.step}</span><span class="stream-chip ${streamStatusClass(step.phase)}">${streamStatusLabel(step.phase)}</span><small>${escapeHtml(step.tool ?? step.action ?? step.detail)} · ${step.contextTokens?.toLocaleString() ?? "—"} ctx · ${escapeHtml(graphSummary)}</small></summary><div class="stream-step-body">${detail}${step.error ? `<p class="stream-error-text">${escapeHtml(step.error)}</p>` : ""}</div></details>`;
 }
 
 function streamCodeSection(label: string, value: string): string {
@@ -2738,11 +2742,60 @@ function renderGraph(value: StateGraph): void {
   renderGraphComponent(graph, value, primaryGraphViewState);
 }
 
+type GraphMolecule = { id: string; label: string; sequence: number; nodeIds: string[] };
+
+function graphMolecules(value: StateGraph): GraphMolecule[] {
+  const molecules = new Map<string, GraphMolecule>();
+  for (const node of value.nodes) {
+    const id = typeof node.data?.moleculeId === "string" ? node.data.moleculeId : "molecule_unclustered";
+    const label = typeof node.data?.moleculeLabel === "string" ? node.data.moleculeLabel : "Unclustered atoms";
+    const sequence = typeof node.data?.moleculeSequence === "number" ? node.data.moleculeSequence : 0;
+    const molecule = molecules.get(id) ?? { id, label, sequence, nodeIds: [] };
+    molecule.nodeIds.push(node.id);
+    molecules.set(id, molecule);
+  }
+  return [...molecules.values()].sort((a, b) => a.sequence - b.sequence || a.id.localeCompare(b.id));
+}
+
+function collapsedMoleculeGraph(value: StateGraph, molecules: GraphMolecule[], collapsed: Set<string>): StateGraph {
+  const collapsedNodes = new Map<string, GraphMolecule>();
+  for (const molecule of molecules) if (collapsed.has(molecule.id) && molecule.id !== "molecule_system" && molecule.nodeIds.length > 1) collapsedNodes.set(molecule.id, molecule);
+  if (!collapsedNodes.size) return value;
+  const moleculeByNode = new Map(molecules.flatMap((molecule) => molecule.nodeIds.map((nodeId) => [nodeId, molecule.id] as const)));
+  const mapId = (nodeId: string): string => {
+    const moleculeId = moleculeByNode.get(nodeId);
+    return moleculeId && collapsedNodes.has(moleculeId) ? moleculeId : nodeId;
+  };
+  const nodes = value.nodes.filter((node) => !collapsedNodes.has(moleculeByNode.get(node.id) ?? ""));
+  for (const molecule of collapsedNodes.values()) {
+    const members = value.nodes.filter((node) => molecule.nodeIds.includes(node.id));
+    nodes.push({
+      id: molecule.id,
+      type: "molecule",
+      text: `${molecule.label} · ${members.length} causal atoms`,
+      data: { moleculeId: molecule.id, moleculeLabel: molecule.label, moleculeSequence: molecule.sequence, moleculeCollapsed: true, moleculeMemberIds: molecule.nodeIds },
+      status: members.some((node) => node.status === "active") ? "active" : "resolved",
+      createdAt: members.at(-1)?.createdAt ?? new Date(0).toISOString()
+    });
+  }
+  const edges = new Map<string, StateGraph["edges"][number]>();
+  for (const edge of value.edges) {
+    const from = mapId(edge.from);
+    const to = mapId(edge.to);
+    if (from === to) continue;
+    const key = `${from}\u0000${to}\u0000${edge.type}`;
+    if (!edges.has(key)) edges.set(key, { ...edge, id: `edge_${from}_${to}_${edge.type}`, from, to });
+  }
+  return { nodes: nodes.sort((a, b) => a.createdAt.localeCompare(b.createdAt)), edges: [...edges.values()] };
+}
+
 function renderGraphComponent(container: HTMLElement, value: StateGraph, viewState: GraphViewState, focusChat = true): void {
   stopGraphAnimation(viewState);
-  const layout = graphLayout(value, viewState.positions);
+  const molecules = graphMolecules(value);
+  const displayValue = collapsedMoleculeGraph(value, molecules, viewState.collapsedMoleculeIds);
+  const layout = graphLayout(displayValue, viewState.positions, container.clientWidth < 640 ? 640 : 1080);
   const turnCount = value.nodes.filter((node) => node.type === "user_input").length;
-  const latestNodeId = value.nodes.at(-1)?.id;
+  const latestNodeId = displayValue.nodes.at(-1)?.id;
   const selectedNode = layout.nodeMap.get(viewState.selectedNodeId ?? "") ?? layout.nodeMap.get(latestNodeId ?? "") ?? layout.nodeMap.get("system_root") ?? layout.nodes[0];
   viewState.selectedNodeId = selectedNode?.id;
 
@@ -2750,9 +2803,12 @@ function renderGraphComponent(container: HTMLElement, value: StateGraph, viewSta
   container.innerHTML = `
     <div class="graph-summary floating">
       <strong>Turn ${turnCount}</strong>
-      <span>${value.nodes.length} nodes · ${value.edges.length} edges</span>
+      <span>${value.nodes.length} atoms · ${molecules.filter((molecule) => molecule.id !== "molecule_system").length} molecules · ${value.edges.length} edges</span>
     </div>
-    <div class="graph-help">Hover to stir · drag to pin · double-click to release · click to inspect</div>
+    <div class="graph-help">Drag atoms · click a molecule to collapse or expand</div>
+    <div class="graph-molecule-strip" aria-label="Molecule controls">
+      ${molecules.filter((molecule) => molecule.id !== "molecule_system").map((molecule) => `<button type="button" class="graph-molecule-chip ${viewState.collapsedMoleculeIds.has(molecule.id) ? "collapsed" : "expanded"}" data-molecule-toggle="${escapeAttribute(molecule.id)}" title="${escapeAttribute(molecule.label)}"><span>${escapeHtml(shorten(molecule.label, 32))}</span><small>${molecule.nodeIds.length} atoms · ${viewState.collapsedMoleculeIds.has(molecule.id) ? "expand" : "collapse"}</small></button>`).join("")}
+    </div>
     <svg class="graph-svg cortex-map" viewBox="0 0 ${layout.width} ${layout.height}" role="img" aria-label="StateGraph knowledge map">
       <defs>
         <radialGradient id="graph-glow" cx="50%" cy="50%" r="70%">
@@ -2762,6 +2818,9 @@ function renderGraphComponent(container: HTMLElement, value: StateGraph, viewSta
         </radialGradient>
       </defs>
       <rect x="0" y="0" width="${layout.width}" height="${layout.height}" rx="18" fill="url(#graph-glow)"></rect>
+      <g class="molecule-hulls">
+        ${layout.molecules.map((molecule) => `<g class="molecule-hull" data-molecule-hull="${escapeAttribute(molecule.id)}"><rect x="${molecule.x}" y="${molecule.y}" width="${molecule.width}" height="${molecule.height}" rx="34"></rect><text x="${molecule.x + 16}" y="${molecule.y + 20}">${escapeHtml(shorten(molecule.label, 46))} · ${molecule.nodes.length}</text></g>`).join("")}
+      </g>
       <g class="edges">
         ${layout.edges.map((edge, index) => edge.fromNode && edge.toNode ? `
           <g class="cortex-edge ${escapeHtml(edge.type)} ${edge.from === viewState.selectedNodeId || edge.to === viewState.selectedNodeId ? "selected" : ""}">
@@ -2783,10 +2842,10 @@ function renderGraphComponent(container: HTMLElement, value: StateGraph, viewSta
       </g>
     </svg>
     <div id="graph-selected-node" class="graph-selected-node">
-      ${selectedNode ? graphInspectorHtml(value, selectedNode) : ""}
+      ${selectedNode ? graphInspectorHtml(displayValue, selectedNode) : ""}
     </div>
     <details class="graph-node-list">
-      <summary>Node list (${value.nodes.length})</summary>
+      <summary>Visible atoms (${displayValue.nodes.length}/${value.nodes.length})</summary>
       <ul>
         ${layout.nodes.map((node) => `
           <li class="${node.id === viewState.selectedNodeId ? "selected" : ""}" data-node-card-id="${escapeAttribute(node.id)}">
@@ -2797,22 +2856,34 @@ function renderGraphComponent(container: HTMLElement, value: StateGraph, viewSta
       </ul>
     </details>
   `;
-  mountGraphInteractions(container, value, layout, viewState, focusChat);
+  for (const button of container.querySelectorAll<HTMLButtonElement>("[data-molecule-toggle]")) {
+    button.addEventListener("click", () => {
+      const moleculeId = button.dataset.moleculeToggle;
+      if (!moleculeId) return;
+      if (viewState.collapsedMoleculeIds.has(moleculeId)) viewState.collapsedMoleculeIds.delete(moleculeId);
+      else viewState.collapsedMoleculeIds.add(moleculeId);
+      viewState.selectedNodeId = moleculeId;
+      renderGraphComponent(container, value, viewState, focusChat);
+    });
+  }
+  mountGraphInteractions(container, displayValue, layout, viewState, focusChat);
 }
 
 type GraphLayoutNode = StateGraph["nodes"][number] & { x: number; y: number; vx: number; vy: number; radius: number; degree: number; pinned: boolean };
 type GraphLayoutEdge = StateGraph["edges"][number] & { fromNode?: GraphLayoutNode; toNode?: GraphLayoutNode };
+type GraphLayoutMolecule = { id: string; label: string; nodes: GraphLayoutNode[]; x: number; y: number; width: number; height: number; element?: SVGGElement };
 type GraphPointer = { x: number; y: number };
 
-function graphLayout(value: StateGraph, positions: Map<string, GraphPosition>): {
+function graphLayout(value: StateGraph, positions: Map<string, GraphPosition>, requestedWidth = 1080): {
   width: number;
   height: number;
   nodes: GraphLayoutNode[];
   edges: GraphLayoutEdge[];
   featuredNodes: GraphLayoutNode[];
   nodeMap: Map<string, GraphLayoutNode>;
+  molecules: GraphLayoutMolecule[];
 } {
-  const width = 1080;
+  const width = requestedWidth;
   const height = 760;
   const centerX = width / 2;
   const centerY = height / 2;
@@ -2852,14 +2923,44 @@ function graphLayout(value: StateGraph, positions: Map<string, GraphPosition>): 
     .slice(0, 8);
 
   for (const node of nodes) rememberGraphNodePosition(node, positions);
+  const molecules = graphLayoutMolecules(nodes);
 
-  return { width, height, nodes, edges, featuredNodes, nodeMap };
+  return { width, height, nodes, edges, featuredNodes, nodeMap, molecules };
+}
+
+function graphLayoutMolecules(nodes: GraphLayoutNode[]): GraphLayoutMolecule[] {
+  const groups = new Map<string, { label: string; nodes: GraphLayoutNode[] }>();
+  for (const node of nodes) {
+    if (node.data?.moleculeCollapsed === true) continue;
+    const id = typeof node.data?.moleculeId === "string" ? node.data.moleculeId : "";
+    if (!id || id === "molecule_system") continue;
+    const label = typeof node.data?.moleculeLabel === "string" ? node.data.moleculeLabel : "Causal molecule";
+    const group = groups.get(id) ?? { label, nodes: [] };
+    group.nodes.push(node);
+    groups.set(id, group);
+  }
+  return [...groups].map(([id, group]) => moleculeBounds(id, group.label, group.nodes)).filter((molecule) => molecule.nodes.length > 1);
+}
+
+function moleculeBounds(id: string, label: string, nodes: GraphLayoutNode[]): GraphLayoutMolecule {
+  const paddingX = 36;
+  const paddingTop = 44;
+  const paddingBottom = 30;
+  const left = Math.min(...nodes.map((node) => node.x - node.radius)) - paddingX;
+  const right = Math.max(...nodes.map((node) => node.x + node.radius)) + paddingX;
+  const top = Math.min(...nodes.map((node) => node.y - node.radius)) - paddingTop;
+  const bottom = Math.max(...nodes.map((node) => node.y + node.radius)) + paddingBottom;
+  return { id, label, nodes, x: left, y: top, width: right - left, height: bottom - top };
 }
 
 function mountGraphInteractions(container: HTMLElement, value: StateGraph, layout: ReturnType<typeof graphLayout>, viewState: GraphViewState, focusChat: boolean): void {
   const svg = container.querySelector<SVGSVGElement>("svg.cortex-map");
   if (!svg) return;
 
+  for (const moleculeElement of svg.querySelectorAll<SVGGElement>(".molecule-hull[data-molecule-hull]")) {
+    const molecule = layout.molecules.find((candidate) => candidate.id === moleculeElement.dataset.moleculeHull);
+    if (molecule) molecule.element = moleculeElement;
+  }
   const nodeElements = new Map<string, SVGGElement>();
   const labelElements = new Map<string, SVGTextElement>();
   for (const nodeElement of svg.querySelectorAll<SVGGElement>(".cortex-node[data-node-id]")) {
@@ -3097,6 +3198,19 @@ function updateGraphDom(
     line.setAttribute("x2", edge.toNode.x.toFixed(1));
     line.setAttribute("y2", edge.toNode.y.toFixed(1));
   });
+  for (const molecule of layout.molecules) {
+    if (!molecule.element) continue;
+    const next = moleculeBounds(molecule.id, molecule.label, molecule.nodes);
+    Object.assign(molecule, { x: next.x, y: next.y, width: next.width, height: next.height });
+    const rect = molecule.element.querySelector("rect");
+    const text = molecule.element.querySelector("text");
+    rect?.setAttribute("x", molecule.x.toFixed(1));
+    rect?.setAttribute("y", molecule.y.toFixed(1));
+    rect?.setAttribute("width", molecule.width.toFixed(1));
+    rect?.setAttribute("height", molecule.height.toFixed(1));
+    text?.setAttribute("x", (molecule.x + 16).toFixed(1));
+    text?.setAttribute("y", (molecule.y + 20).toFixed(1));
+  }
 }
 
 function graphNodeLabel(node: GraphLayoutNode): string {
@@ -3108,13 +3222,14 @@ function graphNodeLabel(node: GraphLayoutNode): string {
 function graphInspectorHtml(value: StateGraph, node: GraphLayoutNode): string {
   const adjacentCount = value.edges.filter((edge) => edge.from === node.id || edge.to === node.id).length;
   const conversationHint = node.type === "user_input" || node.type === "assistant_output" ? " · chat bubble highlighted" : "";
+  const moleculeLabel = typeof node.data?.moleculeLabel === "string" ? ` · ${node.data.moleculeLabel}` : "";
 
   return `
     <span>Selected</span>
     <strong>${escapeHtml(node.id)}</strong>
     <em>${escapeHtml(node.type)}</em>
     <p title="${escapeAttribute(node.text)}">${escapeHtml(shorten(node.text, 180))}</p>
-    <small>${adjacentCount} edges${conversationHint}</small>
+    <small>${adjacentCount} edges${moleculeLabel}${conversationHint}</small>
   `;
 }
 
@@ -3150,6 +3265,7 @@ function stopGraphAnimation(viewState: GraphViewState): void {
 
 function nodeRadius(type: string, degree: number, root: boolean): number {
   if (root) return 34;
+  if (type === "molecule") return 30;
   const base = type === "user_input" || type === "assistant_output" ? 20 : type === "artifact" ? 24 : 17;
   return Math.min(30, base + Math.sqrt(degree) * 2.6);
 }
@@ -3505,7 +3621,7 @@ async function openInfiniteGraph(): Promise<void> {
     </div>`;
     const canvas = modal.querySelector<HTMLElement>("#infinite-graph-canvas")!;
     const caption = modal.querySelector<HTMLElement>("#infinite-graph-caption")!;
-    const infiniteGraphViewState: GraphViewState = { positions: new Map<string, GraphPosition>() };
+    const infiniteGraphViewState: GraphViewState = { positions: new Map<string, GraphPosition>(), collapsedMoleculeIds: new Set<string>() };
     const close = () => {
       stopGraphAnimation(infiniteGraphViewState);
       modal.remove();

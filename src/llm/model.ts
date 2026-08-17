@@ -77,7 +77,7 @@ export class MockModel implements Model {
     if (lower.includes("evaluate a blind a/b answer comparison")) return mockJudge(source);
     const identity = identityOutput(source, inputNodeId);
     const task = inferTask(lower);
-    if (input.prompt.startsWith("CAUSAL_WEAVE/1")) return `FINAL: ${identity?.answer ?? finalFor(task)}`;
+    if (input.prompt.startsWith("CAUSAL_WEAVE/1") || input.prompt.startsWith("MOLECULAR_WEAVE/1")) return `FINAL: ${identity?.answer ?? finalFor(task)}`;
     if (identity && input.mode === "text") return identity.answer;
     if (identity && input.mode !== "text") return identity.swx;
 

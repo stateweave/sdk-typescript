@@ -1,4 +1,5 @@
-import type { CausalWeaveSnapshot } from "../core/causalTypes.js";
+import type { CausalContextMode, CausalWeaveSnapshot } from "../core/causalTypes.js";
+export type { CausalContextMode } from "../core/causalTypes.js";
 import type { StateGraph } from "../core/types.js";
 import type { Model } from "../llm/model.js";
 import type { Tool } from "../tools/types.js";
@@ -24,6 +25,8 @@ export type AgentArgs = {
   maxNoProgressIterations?: number;
   maxPromptTokens?: number;
   projectionTargetTokens?: number;
+  projectionMaxNodes?: number;
+  contextMode?: CausalContextMode;
   systemPrompt?: string;
   providerSystem?: string;
   enforceCompletionEvidence?: boolean;
@@ -82,6 +85,8 @@ export type AgentRunMetadata = {
   maxIterations: number;
   maxPromptTokens: number;
   projectionTargetTokens: number;
+  projectionMaxNodes: number;
+  contextMode: CausalContextMode;
   nodeTypes: SemanticNodeType[];
   allowDynamicNodeTypes: boolean;
   stepCount: number;

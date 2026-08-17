@@ -67,6 +67,8 @@ const agent = new Agent({
   maxIterations: 30,
   maxPromptTokens: 64_000,
   projectionTargetTokens: 16_000,
+  projectionMaxNodes: 48,
+  contextMode: "causal", // opt into "molecular" for a compact zoomable view
   maxNoProgressIterations: 100,
   enforceCompletionEvidence: true,
   nodeTypes: [
@@ -82,6 +84,8 @@ const agent = new Agent({
 - `maxIterations` limits the internal model/tool loop for one user turn. It defaults to 30 and has no artificial SDK maximum.
 - `maxPromptTokens` is the hard model-input ceiling and must be at least 256.
 - `projectionTargetTokens` is the preferred bounded working context. Mandatory state may exceed the target but never the hard ceiling. If mandatory state cannot fit, the provider is not called. The SDK uses a conservative character-based token estimate rather than pretending to know every provider tokenizer.
+- `projectionMaxNodes` targets the maximum optional detailed source atoms in one compiled view. Mandatory frontier, current resource, and exact query-match nodes may exceed it. It defaults to 48.
+- `contextMode: "molecular"` keeps the immutable causal graph unchanged but compiles deterministic outer-map molecules, expanded source atoms, and cross-molecule ports. The default remains `"causal"`; the development lab opts into molecular mode with a 16-node optional-detail target.
 - `enforceCompletionEvidence` rejects unsupported coding-task finals when required inspection, mutation, checks, restart, or smoke evidence is absent.
 
 ## Persistent state
@@ -100,7 +104,7 @@ Use:
 
 ```ts
 agent.getState(); // lossless AgentState
-agent.getGraph(); // StateGraph visualization view
+agent.getGraph(); // StateGraph visualization view with deterministic molecule metadata
 agent.reset();
 agent.reset(savedState);
 ```

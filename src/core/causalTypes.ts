@@ -1,3 +1,5 @@
+export type CausalContextMode = "causal" | "molecular";
+
 export type CausalNodeKind = "system" | "goal" | "inference" | "semantic" | "tool_call" | "tool_result" | "resource" | "verification" | "answer" | "protocol_error";
 
 export type SemanticNodePayload = {

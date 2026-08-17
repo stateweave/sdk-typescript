@@ -65,6 +65,12 @@ Inference nodes keep their complete read sets as provenance, but the compiler do
 
 The full graph remains lossless. The compiler targets `projectionTargetTokens` while independently enforcing `maxPromptTokens`. Optional nodes and payload detail are reduced toward the target; mandatory causal state may exceed the target but may not exceed the hard ceiling. If the mandatory view cannot fit, compilation fails before the provider is called. The budget is an explicit character-based estimate, so it is a safety ceiling rather than a claim about a provider's exact tokenizer.
 
+### Molecular context
+
+`contextMode: "molecular"` changes only the disposable model-facing view. Deterministic turn/entity clusters become outer `MOLECULE` nodes, selected source nodes appear in `EXPANDED` blocks, and causal edges crossing cluster boundaries become `PORT` records. The source `AgentState`, content-addressed node identity, exact compiled read-set parents, validation, tool execution, and success-only commit rules remain unchanged.
+
+`projectionMaxNodes` independently targets optional detailed source atoms; mandatory frontier, current resource, and exact query matches may exceed it. The development lab uses molecular mode with a 16-node optional-detail target; the public SDK keeps causal mode and 48 atoms as compatibility defaults. Graph views expose deterministic molecule id, label, and sequence metadata so consumers can render expandable subgraphs without making those views authoritative.
+
 ## Public API
 
 There is one public class:
@@ -84,7 +90,7 @@ The agent uses ordinary tool schemas and executors. It adds no memory tool and n
 
 - Black-box providers still receive a linear token rendering; StateWeave does not claim arbitrary transformer KV-cache composition.
 - Relevance and clustering are deterministic, causal, lexical, and recency-based. There is no embedding index or learned semantic summary.
-- The public `Agent` renders multi-resolution focus automatically but does not yet expose an interactive zoom/focus option; the low-level historical projection utility has its own zoom controls.
+- The public `Agent` exposes molecular metadata but not a prescribed UI; the development lab provides the reference expand/collapse interaction.
 - Bounded rendering can omit part of an old large payload even though the immutable source node remains stored.
 - The digest is deterministic rather than a learned semantic summary; recent model notes quote recorded inference nodes and can preserve a stale plan until newer reasoning supersedes it.
 - `verification` nodes are emitted for recognized successful evidence patterns, not for every arbitrary domain-specific check. A successful custom tool result may set `verification: true` to record a generic signal; product policy should still decide whether its structured evidence is sufficient.

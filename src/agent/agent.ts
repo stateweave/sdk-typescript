@@ -40,7 +40,7 @@ export class AgentRunError extends Error {
 export const defaultAgentSystemPrompt = "You are a StateWeave agent. Complete the user's task accurately, use tools when needed, and preserve durable working state in the causal graph.";
 
 export class Agent {
-  private readonly args: Required<Pick<AgentArgs, "maxIterations" | "maxPromptTokens" | "projectionTargetTokens" | "nodeTypes" | "allowDynamicNodeTypes">> & Omit<AgentArgs, "maxIterations" | "maxPromptTokens" | "projectionTargetTokens" | "nodeTypes" | "allowDynamicNodeTypes" | "state">;
+  private readonly args: Required<Pick<AgentArgs, "maxIterations" | "maxPromptTokens" | "projectionTargetTokens" | "projectionMaxNodes" | "contextMode" | "nodeTypes" | "allowDynamicNodeTypes">> & Omit<AgentArgs, "maxIterations" | "maxPromptTokens" | "projectionTargetTokens" | "projectionMaxNodes" | "contextMode" | "nodeTypes" | "allowDynamicNodeTypes" | "state">;
   private readonly tools: Tool[];
   private state?: AgentState;
   private runLock: Promise<void> = Promise.resolve();
@@ -51,6 +51,7 @@ export class Agent {
     const requestedProjectionTokens = boundedInteger(args.projectionTargetTokens ?? 16_000, "projectionTargetTokens", 256);
     const projectionTargetTokens = Math.min(requestedProjectionTokens, maxPromptTokens);
     const maxIterations = boundedInteger(args.maxIterations ?? 30, "maxIterations", 1);
+    const projectionMaxNodes = boundedInteger(args.projectionMaxNodes ?? 48, "projectionMaxNodes", 4);
     const maxNoProgressIterations = args.maxNoProgressIterations === undefined
       ? undefined
       : boundedInteger(args.maxNoProgressIterations, "maxNoProgressIterations", 1);
@@ -63,6 +64,8 @@ export class Agent {
       maxNoProgressIterations,
       maxPromptTokens,
       projectionTargetTokens,
+      projectionMaxNodes,
+      contextMode: args.contextMode ?? "causal",
       nodeTypes: normalizeNodeTypes(args.nodeTypes ?? defaultSemanticNodeTypes),
       allowDynamicNodeTypes: args.allowDynamicNodeTypes ?? false
     };
@@ -107,6 +110,8 @@ export class Agent {
         maxIterations: this.args.maxIterations,
         maxPromptTokens: this.args.maxPromptTokens,
         projectionTargetTokens: this.args.projectionTargetTokens,
+        projectionMaxNodes: this.args.projectionMaxNodes,
+        contextMode: this.args.contextMode,
         nodeTypes: this.args.nodeTypes,
         allowDynamicNodeTypes: this.args.allowDynamicNodeTypes
       }
@@ -178,6 +183,8 @@ export class Agent {
       maxIterations: this.args.maxIterations,
       maxContextTokens: this.args.maxPromptTokens,
       projectionTargetTokens: this.args.projectionTargetTokens,
+      projectionMaxNodes: this.args.projectionMaxNodes,
+      contextMode: this.args.contextMode,
       maxNoProgressIterations: this.args.maxNoProgressIterations,
       providerSystem: this.args.providerSystem,
       enforceCompletionEvidence: this.args.enforceCompletionEvidence ?? true,
@@ -202,6 +209,8 @@ export class Agent {
         maxIterations: this.args.maxIterations,
         maxPromptTokens: this.args.maxPromptTokens,
         projectionTargetTokens: this.args.projectionTargetTokens,
+        projectionMaxNodes: this.args.projectionMaxNodes,
+        contextMode: this.args.contextMode,
         nodeTypes: this.args.nodeTypes,
         allowDynamicNodeTypes: this.args.allowDynamicNodeTypes,
         stepCount: runtimeResult.trace.length,
@@ -297,6 +306,8 @@ class AgentRuntime {
   private readonly maxIterations: number;
   private readonly maxContextTokens: number;
   private readonly projectionTargetTokens: number;
+  private readonly projectionMaxNodes: number;
+  private readonly contextMode: "causal" | "molecular";
   private readonly maxNoProgressIterations?: number;
   private readonly providerSystem?: string;
   private readonly enforceCompletionEvidence: boolean;
@@ -311,6 +322,8 @@ class AgentRuntime {
     maxIterations: number;
     maxContextTokens: number;
     projectionTargetTokens: number;
+    projectionMaxNodes: number;
+    contextMode: "causal" | "molecular";
     maxNoProgressIterations?: number;
     providerSystem?: string;
     enforceCompletionEvidence: boolean;
@@ -323,6 +336,8 @@ class AgentRuntime {
     this.maxIterations = args.maxIterations;
     this.maxContextTokens = args.maxContextTokens;
     this.projectionTargetTokens = args.projectionTargetTokens;
+    this.projectionMaxNodes = args.projectionMaxNodes;
+    this.contextMode = args.contextMode;
     this.maxNoProgressIterations = args.maxNoProgressIterations;
     this.providerSystem = args.providerSystem;
     this.enforceCompletionEvidence = args.enforceCompletionEvidence;
@@ -382,8 +397,8 @@ class AgentRuntime {
 
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       options.signal?.throwIfAborted();
-      const compiled = this.weave.compile({ query: task, maxTokens: this.maxContextTokens, targetTokens: this.projectionTargetTokens });
-      progress(iteration, "context", "Compiled the active causal frontier", { prompt: compiled.prompt, contextTokens: compiled.tokenEstimate.estimatedTokens });
+      const compiled = this.weave.compile({ query: task, maxTokens: this.maxContextTokens, targetTokens: this.projectionTargetTokens, maxNodes: this.projectionMaxNodes, contextMode: this.contextMode });
+      progress(iteration, "context", this.contextMode === "molecular" ? "Compiled the molecular context view" : "Compiled the active causal frontier", { prompt: compiled.prompt, contextTokens: compiled.tokenEstimate.estimatedTokens });
       progress(iteration, "model", `Waiting for model iteration ${iteration}`, { contextTokens: compiled.tokenEstimate.estimatedTokens });
       const modelInput: ModelInput = {
         prompt: compiled.prompt,
