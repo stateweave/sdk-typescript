@@ -50,6 +50,7 @@ type SubgraphExperimentState = {
   primitive: { name: string; definition: string; down: string; up: string; across: string };
   method: string[];
   calibrationNote: string;
+  plannedCases: number;
   cases: SubgraphCaseResult[];
   aggregate?: { cases: number; flatAnswerCorrect: number; compoundAnswerCorrect: number; flatFullPass: number; compoundFullPass: number; pairedWins: { flat: number; compound: number; tiesBoth: number; tiesNeither: number }; averagePromptTokens: { flat: number; compound: number }; averageLatencyMs: { flat: number; compound: number }; pairedSignTestP: number; conclusion: "compound_better" | "flat_better" | "no_clear_difference"; enoughToConclude: boolean; reason: string };
   startedAt?: string;
@@ -1092,17 +1093,18 @@ function stopSubgraphPoll(): void {
 function renderSubgraphExperiment(state: SubgraphExperimentState): void {
   const aggregate = state.aggregate;
   const completed = state.cases.length;
+  const planned = state.plannedCases;
   const verdict = !aggregate
-    ? state.status === "running" ? `${completed} / 10 complete` : "Awaiting experiment"
+    ? state.status === "running" ? `${completed} / ${planned} complete` : "Awaiting experiment"
     : aggregate.enoughToConclude
-      ? aggregate.conclusion === "compound_better" ? "Compound primitive wins this pilot" : aggregate.conclusion === "flat_better" ? "Current flat primitive wins this pilot" : "No clear difference"
-      : "Directional only — more tests needed";
-  const startButton = state.status === "not_started" ? `<button class="button primary" type="button" data-subgraph-start>Run ten paired tests</button>` : "";
-  const progress = state.status === "running" ? `<div class="subgraph-progress"><span style="width:${completed * 10}%"></span></div>` : "";
+      ? aggregate.conclusion === "compound_better" ? "Compound primitive wins this preregistered run" : aggregate.conclusion === "flat_better" ? "Current flat primitive wins this preregistered run" : "No clear difference"
+      : "No significant difference";
+  const startButton = state.status === "not_started" ? `<button class="button primary" type="button" data-subgraph-start>Run ${planned} paired tests</button>` : "";
+  const progress = state.status === "running" ? `<div class="subgraph-progress"><span style="width:${planned ? completed / planned * 100 : 0}%"></span></div>` : "";
   const scoreCards = aggregate ? `
     <section class="protocol-stat-grid" aria-label="Subgraph experiment scores">
-      <article><small>Answer accuracy</small><strong>${aggregate.flatAnswerCorrect}/10 → ${aggregate.compoundAnswerCorrect}/10</strong><span>flat → compound</span></article>
-      <article><small>Full evidence pass</small><strong>${aggregate.flatFullPass}/10 → ${aggregate.compoundFullPass}/10</strong><span>answer + required evidence + no stale evidence</span></article>
+      <article><small>Answer accuracy</small><strong>${aggregate.flatAnswerCorrect}/${aggregate.cases} → ${aggregate.compoundAnswerCorrect}/${aggregate.cases}</strong><span>flat → compound</span></article>
+      <article><small>Full evidence pass</small><strong>${aggregate.flatFullPass}/${aggregate.cases} → ${aggregate.compoundFullPass}/${aggregate.cases}</strong><span>answer + required evidence + no stale evidence</span></article>
       <article><small>Paired wins</small><strong>${aggregate.pairedWins.flat} : ${aggregate.pairedWins.compound}</strong><span>flat : compound · ${aggregate.pairedWins.tiesBoth} both · ${aggregate.pairedWins.tiesNeither} neither · p=${(aggregate.pairedSignTestP ?? 1).toFixed(4)}</span></article>
       <article><small>Average prompt</small><strong>${aggregate.averagePromptTokens.flat} → ${aggregate.averagePromptTokens.compound}</strong><span>estimated tokens · flat → compound</span></article>
     </section>` : "";
@@ -1143,10 +1145,10 @@ EXPANDED project_release {
   ATOM evidence
   BOND evidence --supports--&gt; decision
 }</pre><div class="subgraph-moves"><span><strong>Down</strong>${escapeHtml(state.primitive.down)}</span><span><strong>Up</strong>${escapeHtml(state.primitive.up)}</span><span><strong>Across</strong>${escapeHtml(state.primitive.across)}</span></div></section>
-    <section class="protocol-section"><div class="protocol-section-heading"><div><p class="eyebrow">Method</p><h3>Same evidence, different primitive</h3></div><p>The gold answers were held server-side and deterministic scoring replaced subjective LLM judging. Fixture <code>${escapeHtml(state.fixtureSha256.slice(0, 12))}</code>.</p></div><ol class="subgraph-method">${state.method.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol><p class="subgraph-calibration"><strong>Calibration correction:</strong> ${escapeHtml(state.calibrationNote)}</p></section>
-    ${state.cases.length ? `<section class="protocol-section"><div class="protocol-section-heading"><div><p class="eyebrow">All ten cases</p><h3>Paired result ledger</h3></div><p>Full means the answer was correct, all required evidence keys were cited, and stale or forbidden evidence was not cited.</p></div><div class="protocol-table-wrap"><table class="protocol-table subgraph-table"><thead><tr><th>Case</th><th>Flat</th><th>Compound</th><th>Winner</th><th>Prompt tokens F/C</th></tr></thead><tbody>${resultRows}</tbody></table></div></section>` : ""}
+    <section class="protocol-section"><div class="protocol-section-heading"><div><p class="eyebrow">Method</p><h3>Same evidence, different primitive</h3></div><p>The gold answers were held server-side and deterministic scoring replaced subjective LLM judging. Fixture <code>${escapeHtml(state.fixtureSha256.slice(0, 12))}</code>.</p></div><ol class="subgraph-method">${state.method.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol><p class="subgraph-calibration"><strong>Preregistration:</strong> ${escapeHtml(state.calibrationNote)}</p></section>
+    ${state.cases.length ? `<section class="protocol-section"><div class="protocol-section-heading"><div><p class="eyebrow">All ${planned} cases</p><h3>Paired result ledger</h3></div><p>Full means the answer was correct, all required evidence keys were cited, and stale or forbidden evidence was not cited.</p></div><div class="protocol-table-wrap"><table class="protocol-table subgraph-table"><thead><tr><th>Case</th><th>Flat</th><th>Compound</th><th>Winner</th><th>Prompt tokens F/C</th></tr></thead><tbody>${resultRows}</tbody></table></div></section>` : ""}
     ${caseDetails ? `<section class="protocol-section"><div class="protocol-section-heading"><div><p class="eyebrow">Full report</p><h3>Questions, outputs, and evidence</h3></div><p>Open each case to inspect both raw model answers.</p></div><div class="subgraph-cases">${caseDetails}</div></section>` : ""}
-    ${aggregate ? `<section class="protocol-section protocol-method"><p class="eyebrow">Conclusion</p><h3>${escapeHtml(verdict)}</h3><p>${escapeHtml(aggregate.reason)}</p><p><strong>Important:</strong> explicit compound membership is the tested capability. This pilot does not prove that a runtime can infer perfect compound boundaries automatically.</p></section>` : ""}`;
+    ${aggregate ? `<section class="protocol-section protocol-method"><p class="eyebrow">Conclusion</p><h3>${escapeHtml(verdict)}</h3><p>${escapeHtml(aggregate.reason)}</p><p><strong>Important:</strong> explicit compound membership is the tested capability. This run does not prove that a runtime can infer perfect compound boundaries automatically.</p></section>` : ""}`;
 }
 
 function subgraphPassLabel(result: SubgraphArmResult): string {

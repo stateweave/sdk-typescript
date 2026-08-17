@@ -5,16 +5,17 @@ import { CausalWeave } from "../core/causalWeave.js";
 import type { CausalWeaveSnapshot } from "../core/causalTypes.js";
 import type { Model, ModelOutput } from "../llm/model.js";
 import { estimateStateWeaveTokens } from "../llm/tokenizer.js";
+import { hardSubgraphCases } from "./subgraphHardCases.js";
 
 export type SubgraphArm = "flat" | "compound";
 export type SubgraphRunStatus = "not_started" | "running" | "done" | "error";
 
-type AtomStatus = "active" | "stale";
-type AtomAuthority = "runtime" | "verified" | "claim";
-type AtomSpec = { key: string; text: string; status?: AtomStatus; authority?: AtomAuthority };
-type CompoundSpec = { id: string; label: string; anchor: string; members: string[] };
-type LinkSpec = { from: string; to: string; relation: string };
-type GoldSpec = { answers: string[]; answerContains: string[]; answerExcludes?: string[]; requiredEvidence: string[]; forbiddenEvidence?: string[] };
+export type AtomStatus = "active" | "stale";
+export type AtomAuthority = "runtime" | "verified" | "claim";
+export type AtomSpec = { key: string; text: string; status?: AtomStatus; authority?: AtomAuthority };
+export type CompoundSpec = { id: string; label: string; anchor: string; members: string[] };
+export type LinkSpec = { from: string; to: string; relation: string };
+export type GoldSpec = { answers: string[]; answerContains: string[]; answerExcludes?: string[]; requiredEvidence: string[]; forbiddenEvidence?: string[] };
 
 export type SubgraphCaseSpec = {
   id: string;
@@ -74,8 +75,8 @@ export type SubgraphAggregate = {
 };
 
 export type SubgraphExperimentState = {
-  version: 2;
-  experiment: "compound-node-ab-v2";
+  version: 3;
+  experiment: "compound-node-hard-ab-v3";
   status: SubgraphRunStatus;
   provider: string;
   model: string;
@@ -90,6 +91,7 @@ export type SubgraphExperimentState = {
   };
   method: string[];
   calibrationNote: string;
+  plannedCases: number;
   cases: SubgraphCaseResult[];
   aggregate?: SubgraphAggregate;
   startedAt?: string;
@@ -115,7 +117,7 @@ export class SubgraphExperimentHarness {
     });
     if (!raw.trim()) return;
     const parsed = JSON.parse(raw) as SubgraphExperimentState;
-    if (parsed.version === 2 && parsed.experiment === "compound-node-ab-v2") this.state = parsed.status === "running" ? { ...parsed, status: "error", error: "The prior process stopped during the experiment." } : parsed;
+    if (parsed.version === 3 && parsed.experiment === "compound-node-hard-ab-v3") this.state = parsed.status === "running" ? { ...parsed, status: "error", error: "The prior process stopped during the experiment." } : parsed;
   }
 
   publicState(): SubgraphExperimentState {
@@ -175,8 +177,8 @@ export class SubgraphExperimentHarness {
 
 function initialState(provider: string, modelName = "configured default"): SubgraphExperimentState {
   return {
-    version: 2,
-    experiment: "compound-node-ab-v2",
+    version: 3,
+    experiment: "compound-node-hard-ab-v3",
     status: "not_started",
     provider,
     model: modelName,
@@ -190,15 +192,17 @@ function initialState(provider: string, modelName = "configured default"): Subgr
       across: "Follow a PORT edge from a compound to another compound or an ordinary atom."
     },
     method: [
-      "Ten independent cases; gold answers are never sent to either arm.",
+      "Twenty-two new difficult independent cases were frozen before the first GLM 5.3 answer; gold answers are never sent to either arm.",
       "Same provider, temperature zero, evidence atoms, causal links, question, and output contract.",
       "Flat uses the current CAUSAL_WEAVE/1 compiler. Compound uses COMPOUND_WEAVE/1 membership, expansion, and boundary ports.",
       "Arm order alternates across cases to reduce first-call bias.",
       "Deterministic semantic-token scoring checks answer correctness and exact evidence keys; no LLM judge is used.",
       "Each arm receives the same 1,024-token output ceiling and the same bounded retry policy for transient provider overloads.",
-      "Explicit compound membership is the tested primitive and is not available to the flat arm."
+      "Explicit compound membership is the tested primitive and is not available to the flat arm.",
+      "The preregistered decision statistic is the exact two-sided paired sign test over non-tied full-pass winners at alpha 0.05; this run is reported once regardless of significance."
     ],
-    calibrationNote: "An initial calibration pass used a 320-token output ceiling and exact-phrase scoring. It was excluded because GLM exhausted the ceiling before visible output on three compound calls and the scorer rejected semantically correct wording. The raw calibration state remains preserved separately on the lab volume.",
+    calibrationNote: "The prior ten-case GLM 5.2 and GLM 5.3 pilots informed difficulty design but are excluded from this confirmatory run. This is one frozen 22-case run with no optional stopping, case replacement, or rerun for significance.",
+    plannedCases: subgraphExperimentCases().length,
     cases: []
   };
 }
@@ -288,203 +292,7 @@ export function compileCompound(testCase: SubgraphCaseSpec): string {
 }
 
 export function subgraphExperimentCases(): SubgraphCaseSpec[] {
-  return baseCases().map((testCase, index) => addDistractors(testCase, index));
-}
-
-function baseCases(): SubgraphCaseSpec[] {
-  return [
-    {
-      id: "nested-sibling-join",
-      title: "Sibling facts inside one compound",
-      category: "within-compound synthesis",
-      question: "For the Orchard release, how many sensors ship and to which city?",
-      atoms: [
-        atom("orchard_anchor", "Authoritative record for the Orchard release."),
-        atom("orchard_city", "The destination city is Kyoto."),
-        atom("orchard_crates", "The approved current crate count is 18."),
-        atom("orchard_units", "Each crate contains 24 sensors."),
-        atom("orchard_crates_draft", "An obsolete draft proposed 20 crates.", "stale", "claim")
-      ],
-      compounds: [compound("cmp_orchard", "Orchard release", "orchard_anchor", ["orchard_anchor", "orchard_city", "orchard_crates", "orchard_units", "orchard_crates_draft"])],
-      links: [{ from: "orchard_crates_draft", to: "orchard_crates", relation: "superseded_by" }],
-      gold: { answers: ["432 sensors to Kyoto", "432 to Kyoto"], answerContains: ["432", "kyoto"], requiredEvidence: ["orchard_city", "orchard_crates", "orchard_units"], forbiddenEvidence: ["orchard_crates_draft"] }
-    },
-    {
-      id: "compound-to-atom-port",
-      title: "Compound connected to an ordinary atom",
-      category: "boundary traversal",
-      question: "What is the minimum fuel budget for the Cedar trip, including reserve?",
-      atoms: [
-        atom("cedar_anchor", "Authoritative plan for the Cedar trip."),
-        atom("cedar_distance", "Trip distance is 540 kilometers."),
-        atom("cedar_efficiency", "Vehicle efficiency is 12 kilometers per liter."),
-        atom("cedar_reserve", "Required fuel reserve is 5 liters."),
-        atom("fuel_price", "Current fuel price is 1.80 dollars per liter.", "active", "verified")
-      ],
-      compounds: [compound("cmp_cedar", "Cedar trip", "cedar_anchor", ["cedar_anchor", "cedar_distance", "cedar_efficiency", "cedar_reserve"])],
-      links: [{ from: "cedar_reserve", to: "fuel_price", relation: "priced_by" }],
-      gold: { answers: ["$90", "90 dollars", "90"], answerContains: ["90"], requiredEvidence: ["cedar_distance", "cedar_efficiency", "cedar_reserve", "fuel_price"] }
-    },
-    {
-      id: "compound-to-compound-join",
-      title: "Crossing between two compounds",
-      category: "cross-compound synthesis",
-      question: "For Nimbus, choose the team with the higher score, then give its total capacity and deadline.",
-      atoms: [
-        atom("nimbus_selection_anchor", "Nimbus team selection board."),
-        atom("nimbus_alpha_score", "Team Alpha score is 17."),
-        atom("nimbus_beta_score", "Team Beta score is 22."),
-        atom("nimbus_capacity_anchor", "Nimbus capacity schedule."),
-        atom("nimbus_capacity_base", "Base capacity is 15 units."),
-        atom("nimbus_alpha_multiplier", "Team Alpha multiplier is 3."),
-        atom("nimbus_beta_multiplier", "Team Beta multiplier is 4."),
-        atom("nimbus_deadline", "The capacity deadline is Tuesday.")
-      ],
-      compounds: [
-        compound("cmp_nimbus_selection", "Nimbus team selection", "nimbus_selection_anchor", ["nimbus_selection_anchor", "nimbus_alpha_score", "nimbus_beta_score"]),
-        compound("cmp_nimbus_capacity", "Nimbus capacity", "nimbus_capacity_anchor", ["nimbus_capacity_anchor", "nimbus_capacity_base", "nimbus_alpha_multiplier", "nimbus_beta_multiplier", "nimbus_deadline"])
-      ],
-      links: [{ from: "nimbus_selection_anchor", to: "nimbus_capacity_anchor", relation: "feeds" }],
-      gold: { answers: ["60 units, Tuesday", "60, Tuesday", "Team Beta: 60 units by Tuesday"], answerContains: ["beta", "60", "tuesday"], requiredEvidence: ["nimbus_alpha_score", "nimbus_beta_score", "nimbus_capacity_base", "nimbus_beta_multiplier", "nimbus_deadline"] }
-    },
-    {
-      id: "supersession-through-port",
-      title: "Current value over stale history",
-      category: "supersession",
-      question: "What is Harbor's current holiday processing cap in orders per day?",
-      atoms: [
-        atom("harbor_anchor", "Harbor processing policy."),
-        atom("harbor_limit_old", "The former cap was 80 orders per day.", "stale", "verified"),
-        atom("harbor_limit_current", "The current cap is 65 orders per day.", "active", "verified"),
-        atom("holiday_factor", "The holiday operating factor is 0.8.", "active", "verified")
-      ],
-      compounds: [compound("cmp_harbor", "Harbor policy", "harbor_anchor", ["harbor_anchor", "harbor_limit_old", "harbor_limit_current"])],
-      links: [
-        { from: "harbor_limit_old", to: "harbor_limit_current", relation: "superseded_by" },
-        { from: "harbor_limit_current", to: "holiday_factor", relation: "scaled_by" }
-      ],
-      gold: { answers: ["52 orders per day", "52"], answerContains: ["52"], requiredEvidence: ["harbor_limit_current", "holiday_factor"], forbiddenEvidence: ["harbor_limit_old"] }
-    },
-    {
-      id: "shared-atom-overlap",
-      title: "One atom shared by two compounds",
-      category: "overlapping membership",
-      question: "For the Glassline route, is the operating temperature safe after the required margin, and by how much?",
-      atoms: [
-        atom("glass_design_anchor", "Glassline vessel design."),
-        atom("glass_material", "The vessel material is borosilicate."),
-        atom("glass_max_temp", "Maximum allowed material temperature is 180 Celsius.", "active", "verified"),
-        atom("glass_route_anchor", "Glassline operating route."),
-        atom("glass_operating_temp", "Expected operating temperature is 155 Celsius.", "active", "verified"),
-        atom("glass_safety_margin", "Required safety margin is 20 Celsius.", "active", "verified")
-      ],
-      compounds: [
-        compound("cmp_glass_design", "Glassline design", "glass_design_anchor", ["glass_design_anchor", "glass_material", "glass_max_temp", "glass_safety_margin"]),
-        compound("cmp_glass_route", "Glassline route", "glass_route_anchor", ["glass_route_anchor", "glass_operating_temp", "glass_safety_margin"])
-      ],
-      links: [{ from: "glass_design_anchor", to: "glass_route_anchor", relation: "constrains" }],
-      gold: { answers: ["Yes, safe by 5 Celsius", "safe by 5 C", "yes, 5 Celsius"], answerContains: ["yes", "safe", "5"], requiredEvidence: ["glass_max_temp", "glass_operating_temp", "glass_safety_margin"] }
-    },
-    {
-      id: "verified-contradiction",
-      title: "Verified evidence defeats a conflicting claim",
-      category: "authority and contradiction",
-      question: "After the Quartz outbound shipment, what is the verified remaining inventory?",
-      atoms: [
-        atom("quartz_anchor", "Quartz inventory audit."),
-        atom("quartz_claim_count", "A manager claimed inventory was 240 units.", "active", "claim"),
-        atom("quartz_verified_count", "The verified physical count is 228 units.", "active", "verified"),
-        atom("quartz_outbound", "The confirmed outbound shipment contains 28 units.", "active", "verified")
-      ],
-      compounds: [compound("cmp_quartz", "Quartz audit", "quartz_anchor", ["quartz_anchor", "quartz_claim_count", "quartz_verified_count"])],
-      links: [
-        { from: "quartz_claim_count", to: "quartz_verified_count", relation: "contradicted_by" },
-        { from: "quartz_verified_count", to: "quartz_outbound", relation: "reduced_by" }
-      ],
-      gold: { answers: ["200 units", "200"], answerContains: ["200"], requiredEvidence: ["quartz_verified_count", "quartz_outbound"], forbiddenEvidence: ["quartz_claim_count"] }
-    },
-    {
-      id: "chronology-across-compounds",
-      title: "Current chronology across compounds",
-      category: "temporal traversal",
-      question: "Did certification arrive before the current Meridian launch, and by how many days?",
-      atoms: [
-        atom("meridian_terms_anchor", "Meridian launch terms."),
-        atom("meridian_launch_old", "The initial launch day was Monday.", "stale", "verified"),
-        atom("meridian_launch_current", "The current launch day is Wednesday.", "active", "verified"),
-        atom("meridian_cert_anchor", "Meridian certification schedule."),
-        atom("meridian_cert_arrival", "Certification arrives Tuesday.", "active", "verified")
-      ],
-      compounds: [
-        compound("cmp_meridian_terms", "Meridian launch", "meridian_terms_anchor", ["meridian_terms_anchor", "meridian_launch_old", "meridian_launch_current"]),
-        compound("cmp_meridian_cert", "Meridian certification", "meridian_cert_anchor", ["meridian_cert_anchor", "meridian_cert_arrival"])
-      ],
-      links: [
-        { from: "meridian_launch_old", to: "meridian_launch_current", relation: "superseded_by" },
-        { from: "meridian_cert_anchor", to: "meridian_terms_anchor", relation: "gates" }
-      ],
-      gold: { answers: ["Yes, by 1 day", "yes, one day", "1 day before"], answerContains: ["yes", "1", "day"], requiredEvidence: ["meridian_launch_current", "meridian_cert_arrival"], forbiddenEvidence: ["meridian_launch_old"] }
-    },
-    {
-      id: "resource-lineage",
-      title: "Resource result connected to an external benchmark",
-      category: "resource lineage",
-      question: "After the parser change, how many benchmark cases are unaffected by the remaining errors?",
-      atoms: [
-        atom("parser_anchor", "Parser change result."),
-        atom("parser_errors_before", "Before the change there were 14 remaining errors.", "stale", "verified"),
-        atom("parser_errors_after", "After the change there are 5 remaining errors.", "active", "verified"),
-        atom("parser_cases_per_error", "Each remaining error affects 2 benchmark cases.", "active", "verified"),
-        atom("benchmark_population", "The benchmark contains 300 cases.", "active", "verified")
-      ],
-      compounds: [compound("cmp_parser", "Parser change", "parser_anchor", ["parser_anchor", "parser_errors_before", "parser_errors_after", "parser_cases_per_error"])],
-      links: [{ from: "parser_anchor", to: "benchmark_population", relation: "measured_against" }],
-      gold: { answers: ["290 cases", "290"], answerContains: ["290"], requiredEvidence: ["parser_errors_after", "parser_cases_per_error", "benchmark_population"], forbiddenEvidence: ["parser_errors_before"] }
-    },
-    {
-      id: "revoked-membership",
-      title: "Revocation inside an access compound",
-      category: "revocation",
-      question: "Who currently has Meridian lab access?",
-      atoms: [
-        atom("access_anchor", "Meridian access plan."),
-        atom("access_alice_grant", "Alice was granted lab access.", "stale", "verified"),
-        atom("access_alice_revoke", "Alice's lab access was revoked.", "active", "verified"),
-        atom("access_bob_archive", "Bob has archive access only.", "active", "verified"),
-        atom("access_carol_lab", "Carol has active lab access.", "active", "verified")
-      ],
-      compounds: [compound("cmp_access", "Meridian access", "access_anchor", ["access_anchor", "access_alice_grant", "access_alice_revoke", "access_bob_archive", "access_carol_lab"])],
-      links: [{ from: "access_alice_grant", to: "access_alice_revoke", relation: "revoked_by" }],
-      gold: { answers: ["Carol", "Carol only"], answerContains: ["carol"], answerExcludes: ["alice", "bob"], requiredEvidence: ["access_alice_revoke", "access_carol_lab"] }
-    },
-    {
-      id: "three-compound-aggregation",
-      title: "Aggregation across three compounds",
-      category: "global synthesis",
-      question: "What is the total validated shipment count across Atlas East, Atlas West, and Atlas North after recalls and damage?",
-      atoms: [
-        atom("atlas_east_anchor", "Atlas East shipment."),
-        atom("atlas_east_shipped", "Atlas East shipped 12 validated units.", "active", "verified"),
-        atom("atlas_east_recalled", "Atlas East recalled 2 of those units.", "active", "verified"),
-        atom("atlas_west_anchor", "Atlas West shipment."),
-        atom("atlas_west_shipped", "Atlas West shipped 9 validated units.", "active", "verified"),
-        atom("atlas_west_pending", "One separate Atlas West unit is pending and excluded from the validated count.", "active", "verified"),
-        atom("atlas_north_anchor", "Atlas North shipment."),
-        atom("atlas_north_shipped", "Atlas North shipped 8 validated units.", "active", "verified"),
-        atom("atlas_north_damaged", "Atlas North marked 2 of those units as damaged.", "active", "verified")
-      ],
-      compounds: [
-        compound("cmp_atlas_east", "Atlas East", "atlas_east_anchor", ["atlas_east_anchor", "atlas_east_shipped", "atlas_east_recalled"]),
-        compound("cmp_atlas_west", "Atlas West", "atlas_west_anchor", ["atlas_west_anchor", "atlas_west_shipped", "atlas_west_pending"]),
-        compound("cmp_atlas_north", "Atlas North", "atlas_north_anchor", ["atlas_north_anchor", "atlas_north_shipped", "atlas_north_damaged"])
-      ],
-      links: [
-        { from: "atlas_east_anchor", to: "atlas_west_anchor", relation: "aggregates_with" },
-        { from: "atlas_west_anchor", to: "atlas_north_anchor", relation: "aggregates_with" }
-      ],
-      gold: { answers: ["25 units", "25"], answerContains: ["25"], requiredEvidence: ["atlas_east_shipped", "atlas_east_recalled", "atlas_west_shipped", "atlas_west_pending", "atlas_north_shipped", "atlas_north_damaged"] }
-    }
-  ];
+  return hardSubgraphCases().map((testCase, index) => addDistractors(testCase, index));
 }
 
 function addDistractors(testCase: SubgraphCaseSpec, caseIndex: number): SubgraphCaseSpec {
@@ -493,13 +301,13 @@ function addDistractors(testCase: SubgraphCaseSpec, caseIndex: number): Subgraph
     const id = `cmp_noise_${caseIndex}_${group}`;
     const anchorKey = `noise_${caseIndex}_${group}_anchor`;
     const members = [anchorKey];
-    next.atoms.push(atom(anchorKey, `Archived ${testCase.category} record ${group + 1}; unrelated to the named project in the question.`, "stale", "claim"));
+    next.atoms.push(atom(anchorKey, `Archived unrelated record group ${group + 1}; never part of a named active project.`, "stale", "claim"));
     for (let item = 0; item < 5; item += 1) {
       const key = `noise_${caseIndex}_${group}_${item}`;
       members.push(key);
       next.atoms.push(atom(key, `Archived value ${caseIndex * 100 + group * 10 + item}; do not use for a current named-project answer.`, "stale", "claim"));
     }
-    next.compounds.push(compound(id, `Archived ${testCase.category} ${group + 1}`, anchorKey, members));
+    next.compounds.push(compound(id, `Unrelated archive ${group + 1}`, anchorKey, members));
   }
   return next;
 }
@@ -715,7 +523,7 @@ function aggregateResults(results: SubgraphCaseResult[]): SubgraphAggregate {
     enoughToConclude,
     reason: enoughToConclude
       ? `The non-tied paired result favors ${advantage > 0 ? "the compound primitive" : "the flat primitive"} with an exact two-sided sign-test p-value of ${pairedSignTestP.toFixed(4)}. This is enough to justify a larger preregistered follow-up, not immediate product promotion.`
-      : `The exact two-sided paired sign-test p-value is ${pairedSignTestP.toFixed(4)}. Ten exploratory cases do not provide enough separation for a product decision; retain the result as directional evidence and run a larger preregistered set.`
+      : `The exact two-sided paired sign-test p-value is ${pairedSignTestP.toFixed(4)}. This frozen ${results.length}-case run does not provide enough separation at alpha 0.05; report the null result without adding or replacing cases.`
   };
 }
 
