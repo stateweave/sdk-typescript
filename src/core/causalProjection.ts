@@ -3,7 +3,7 @@ import { projectGraph, type Cluster } from "./projection.js";
 import type { CausalWeaveSnapshot } from "./causalTypes.js";
 import type { StateGraph } from "./types.js";
 
-export type CausalProjectionCluster = Pick<Cluster, "id" | "label" | "summary" | "nodeCount" | "edgeCount" | "dominantType">;
+export type CausalProjectionCluster = Pick<Cluster, "id" | "label" | "summary" | "nodeCount" | "edgeCount" | "dominantType" | "nodeIds">;
 
 export type CausalProjection = {
   focusNodeIds: string[];
@@ -35,8 +35,8 @@ export function projectCausalSnapshot(snapshot: CausalWeaveSnapshot): CausalProj
     focusNodeIds: unique(projected.focusNodes.filter((node) => currentNodeIds.has(toSourceId(node.id))).map((node) => toSourceId(node.id))),
     timelineNodeIds,
     focusClusterIds: projected.focusClusterIds.filter((id) => !systemClusterIds.has(id)),
-    bigBrainClusters: projected.bigBrainClusters.map(compactCluster),
-    peripheralClusters: projected.peripheralClusters.map(compactCluster)
+    bigBrainClusters: projected.bigBrainClusters.map((cluster) => compactCluster(cluster, toSourceId)),
+    peripheralClusters: projected.peripheralClusters.map((cluster) => compactCluster(cluster, toSourceId))
   };
 }
 
@@ -72,14 +72,15 @@ function projectionKey(node: CausalWeaveSnapshot["nodes"][number]): string | und
   return undefined;
 }
 
-function compactCluster(cluster: Cluster): CausalProjectionCluster {
+function compactCluster(cluster: Cluster, toSourceId: (id: string) => string): CausalProjectionCluster {
   return {
     id: cluster.id,
     label: cluster.label,
     summary: cluster.summary,
     nodeCount: cluster.nodeCount,
     edgeCount: cluster.edgeCount,
-    dominantType: cluster.dominantType
+    dominantType: cluster.dominantType,
+    nodeIds: cluster.nodeIds.map(toSourceId)
   };
 }
 

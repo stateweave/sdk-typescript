@@ -144,7 +144,7 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   const url = requestUrl(request);
 
   if (request.method === "GET" && url.pathname === "/api/health") {
-    json(response, 200, { ok: true, provider: providerName(), agentEngine: "causal-weave-v3", defaultSystemPrompt: defaultAgentSystemPrompt, defaultProjectionTargetTokens: 16_000, defaultMaxIterations: 30 });
+    json(response, 200, { ok: true, provider: providerName(), agentEngine: "causal-weave-v3", defaultSystemPrompt: defaultAgentSystemPrompt, defaultProjectionTargetTokens: 16_000, defaultProjectionMaxNodes: 16, defaultContextMode: "molecular", defaultMaxIterations: 30 });
     return;
   }
 
@@ -941,6 +941,8 @@ function createPublicAgent(body: RunRequest): Agent {
     tools: agentTools,
     maxIterations: safeMaxIterations(body.maxIterations),
     projectionTargetTokens: safeProjectionTarget(body.projectionTargetTokens),
+    projectionMaxNodes: 16,
+    contextMode: "molecular",
     systemPrompt: safeSystemPrompt(body.systemPrompt),
     state: body.state
   });

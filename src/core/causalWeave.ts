@@ -1,14 +1,18 @@
 import { createHash } from "node:crypto";
 import { estimateStateWeaveTokens, type StateWeaveTokenEstimate } from "../llm/tokenizer.js";
 import { projectCausalSnapshot, type CausalProjection } from "./causalProjection.js";
-import type { CausalNodeKind, CausalWeaveNode, CausalWeaveSnapshot } from "./causalTypes.js";
+import type { CausalContextMode, CausalNodeKind, CausalWeaveNode, CausalWeaveSnapshot } from "./causalTypes.js";
 
 export type { CausalNodeKind, CausalWeaveNode, CausalWeaveSnapshot } from "./causalTypes.js";
+
+export type { CausalContextMode } from "./causalTypes.js";
 
 export type CausalCompileResult = {
   prompt: string;
   nodeIds: string[];
   tokenEstimate: StateWeaveTokenEstimate;
+  contextMode: CausalContextMode;
+  molecules: { id: string; label: string; nodeIds: string[]; expanded: boolean }[];
 };
 
 export type CausalAppend = {
@@ -93,11 +97,12 @@ export class CausalWeave {
     };
   }
 
-  compile(args: { query?: string; maxTokens?: number; targetTokens?: number; maxNodes?: number } = {}): CausalCompileResult {
+  compile(args: { query?: string; maxTokens?: number; targetTokens?: number; maxNodes?: number; contextMode?: CausalContextMode } = {}): CausalCompileResult {
     if (!this.order.length) throw new Error("Cannot compile an empty Causal Weave.");
     const maxTokens = boundedCompileBudget(args.maxTokens ?? 64_000, "maxTokens");
     const targetTokens = boundedCompileBudget(Math.min(args.targetTokens ?? maxTokens, maxTokens), "targetTokens");
     const maxNodes = boundedPositiveInteger(args.maxNodes ?? 48, "maxNodes");
+    const contextMode = args.contextMode ?? "causal";
     const snapshot = this.snapshot();
     const overview = projectCausalSnapshot(snapshot);
     const selected = new Set<string>();
@@ -151,7 +156,10 @@ export class CausalWeave {
     let chosen = this.order.filter((id) => selected.has(id));
     const digest = renderGraphDigest(this.order.map((id) => this.nodes.get(id)!), this.resourceHeads);
     const render = (payloadLimit?: number): { prompt: string; estimate: StateWeaveTokenEstimate } => {
-      const prompt = renderCompiledWeave(chosen.map((id) => this.nodes.get(id)!), this.frontierIds, digest, overview, payloadLimit);
+      const visibleNodes = chosen.map((id) => this.nodes.get(id)!);
+      const prompt = contextMode === "molecular"
+        ? renderMolecularWeave(visibleNodes, this.order.map((id) => this.nodes.get(id)!), this.frontierIds, overview, payloadLimit)
+        : renderCompiledWeave(visibleNodes, this.frontierIds, digest, overview, payloadLimit);
       return { prompt, estimate: estimateStateWeaveTokens(prompt) };
     };
     let rendered = render();
@@ -191,7 +199,14 @@ export class CausalWeave {
     if (rendered.estimate.estimatedTokens > maxTokens) {
       throw new CausalPromptBudgetExceededError(`Mandatory Causal Weave state cannot fit within the ${maxTokens}-token prompt budget.`);
     }
-    return { prompt: rendered.prompt, nodeIds: chosen, tokenEstimate: rendered.estimate };
+    const visible = new Set(chosen);
+    const molecules = overview.bigBrainClusters.map((cluster) => ({
+      id: cluster.id,
+      label: cluster.label,
+      nodeIds: cluster.nodeIds.filter((id) => visible.has(id)),
+      expanded: cluster.nodeIds.some((id) => visible.has(id))
+    }));
+    return { prompt: rendered.prompt, nodeIds: chosen, tokenEstimate: rendered.estimate, contextMode, molecules };
   }
 }
 
@@ -225,6 +240,76 @@ export function assertValidCausalWeaveSnapshot(snapshot: CausalWeaveSnapshot): v
 function causalNodeId(kind: CausalNodeKind, parents: string[], payload: unknown, resourceKey?: string): string {
   const digest = createHash("sha256").update(stableStringify({ kind, parents, payload, resourceKey })).digest("hex");
   return `cw_${digest.slice(0, 24)}`;
+}
+
+function renderMolecularWeave(
+  nodes: CausalWeaveNode[],
+  allNodes: CausalWeaveNode[],
+  frontier: Set<string>,
+  overview: CausalProjection,
+  payloadLimit?: number
+): string {
+  const visible = new Set(nodes.map((node) => node.id));
+  const clusterByNode = new Map<string, CausalProjection["bigBrainClusters"][number]>();
+  for (const cluster of overview.bigBrainClusters) for (const nodeId of cluster.nodeIds) clusterByNode.set(nodeId, cluster);
+  const expanded = new Set(nodes.map((node) => clusterByNode.get(node.id)?.id).filter((id): id is string => Boolean(id)));
+  const expandedMolecules = overview.bigBrainClusters.filter((cluster) => expanded.has(cluster.id));
+  const collapsedMap = overview.bigBrainClusters.filter((cluster) => !expanded.has(cluster.id)).slice(-8);
+  const orderedMolecules = uniqueBy([...expandedMolecules, ...collapsedMap], (cluster) => cluster.id);
+  const aliases = new Map(orderedMolecules.map((cluster, index) => [cluster.id, `M${index + 1}`]));
+  const lines = [
+    "MOLECULAR_WEAVE/1",
+    "This is a deterministic zoomable view over one immutable causal graph. MOLECULE lines are outer-map nodes; EXPANDED blocks expose selected source atoms. PORT lines preserve causal connections across molecule boundaries. Molecules never own or duplicate source truth.",
+    `frontier: ${[...frontier].map(shortId).join(", ") || "(empty)"}`,
+    "",
+    "<MAP>"
+  ];
+  for (const molecule of orderedMolecules) {
+    lines.push(`MOLECULE ${aliases.get(molecule.id)}${expanded.has(molecule.id) ? " EXPANDED" : ""} nodes=${molecule.nodeCount} type=${molecule.dominantType} label=${JSON.stringify(truncate(molecule.label, 100))}`);
+  }
+  const omitted = overview.bigBrainClusters.length - orderedMolecules.length;
+  if (omitted > 0) lines.push(`MOLECULES_OMITTED count=${omitted}`);
+
+  const ports = new Map<string, number>();
+  for (const node of allNodes) {
+    const target = clusterByNode.get(node.id)?.id;
+    if (!target) continue;
+    for (const parentId of node.parents) {
+      const source = clusterByNode.get(parentId)?.id;
+      if (!source || source === target || !expanded.has(source) || !expanded.has(target)) continue;
+      const key = `${source}\u0000${target}`;
+      ports.set(key, (ports.get(key) ?? 0) + 1);
+    }
+  }
+  for (const [key, count] of ports) {
+    const [source, target] = key.split("\u0000");
+    lines.push(`PORT ${aliases.get(source)} --causes:${count}--> ${aliases.get(target)}`);
+  }
+  lines.push("</MAP>", "");
+
+  for (const molecule of orderedMolecules.filter((cluster) => expanded.has(cluster.id))) {
+    const members = nodes.filter((node) => clusterByNode.get(node.id)?.id === molecule.id);
+    if (!members.length) continue;
+    lines.push(`<EXPANDED id=${JSON.stringify(aliases.get(molecule.id))} label=${JSON.stringify(truncate(molecule.label, 100))}>`);
+    for (const node of members) {
+      const nodeLimit = payloadLimit ?? (node.kind === "system" ? 64_000 : node.kind === "tool_result" || node.kind === "resource" ? 8_000 : 4_000);
+      lines.push(`ATOM ${shortId(node.id)} kind=${node.kind}${frontier.has(node.id) ? " HEAD" : ""} parents=${node.parents.map(shortId).join(",") || "root"}`, truncate(payloadText(node.payload), nodeLimit));
+    }
+    lines.push("</EXPANDED>", "");
+  }
+
+  const unclustered = nodes.filter((node) => !clusterByNode.has(node.id));
+  if (unclustered.length) {
+    lines.push('<EXPANDED id="molecule_unclustered" label="Unclustered causal atoms">');
+    for (const node of unclustered) {
+      const nodeLimit = payloadLimit ?? (node.kind === "system" ? 64_000 : 4_000);
+      lines.push(`ATOM ${shortId(node.id)} kind=${node.kind}${frontier.has(node.id) ? " HEAD" : ""} parents=${node.parents.map(shortId).join(",") || "root"}`, truncate(payloadText(node.payload), nodeLimit));
+    }
+    lines.push("</EXPANDED>");
+  }
+
+  if (!nodes.some((node) => node.kind === "goal")) lines.push("", "The current goal is represented by the active frontier and visible causal atoms.");
+  return lines.join("\n").trim();
 }
 
 function renderCompiledWeave(
@@ -294,6 +379,16 @@ function clusterLines(clusters: CausalProjection["bigBrainClusters"], limit: num
   });
   if (clusters.length > shown.length) lines.push(`- ... +${clusters.length - shown.length} topic clusters omitted; use the current focus and query to retrieve them`);
   return lines;
+}
+
+function uniqueBy<T>(values: T[], key: (value: T) => string): T[] {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const id = key(value);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
 }
 
 function uniqueNodes(nodes: CausalWeaveNode[]): CausalWeaveNode[] {

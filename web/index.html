@@ -68,7 +68,7 @@
           <div id="chat" class="chat">
             <div class="empty-state">
               <h2>Ask anything.</h2>
-              <p>StateWeave keeps one immutable causal graph, then compiles a bounded working frontier for every model call.</p>
+              <p>StateWeave keeps one immutable causal graph, then compiles a compact molecular view for every model call.</p>
             </div>
           </div>
 
@@ -83,13 +83,13 @@
           <div class="graph-card">
             <div class="graph-heading">
               <div>
-                <p class="eyebrow">Immutable causal graph</p>
+                <p class="eyebrow">Molecular view · immutable truth</p>
                 <h2>StateWeave memory</h2>
                 <p><strong>StateWeave primitive:</strong> ordinary model actions grow content-addressed causal nodes. Every action points to the exact state compiled for that inference; a deterministic bounded projection keeps the whole graph available without replaying a transcript.</p>
               </div>
             </div>
             <div class="workspace-switcher" aria-label="Right panel view">
-              <button id="graph-view-tab" class="tab active" type="button" aria-selected="true">Graph memory</button>
+              <button id="graph-view-tab" class="tab active" type="button" aria-selected="true">Molecular graph</button>
               <button id="tools-view-tab" class="tab" type="button" aria-selected="false">Agent tools</button>
               <button id="files-view-tab" class="tab" type="button" aria-selected="false">Workspace files</button>
             </div>
@@ -129,7 +129,7 @@
           </div>
 
           <details class="model-io-panel">
-            <summary>Latest model loop: causal graph → bounded context → action · click either log to copy</summary>
+            <summary>Latest model loop: causal graph → molecular context → action · click either log to copy</summary>
             <div class="comparison single">
               <article class="compare-column">
                 <label>Exact model input / compiled causal context</label>
@@ -146,7 +146,7 @@
         <section class="card quickstart-card" aria-label="Quick Start">
           <p class="eyebrow">Quick Start</p>
           <h2>Start a graph-native agent</h2>
-          <p class="muted-copy">Primitive: <code>immutable causal graph → bounded context → ordinary action → causal graph</code>. There is one public agent class and no provider transcript primitive.</p>
+          <p class="muted-copy">Primitive: <code>immutable causal graph → molecular context → ordinary action → causal graph</code>. There is one public agent class and no provider transcript primitive.</p>
           <pre class="code quickstart-code"><code>import { Agent, createModelFromEnv } from "stateweave";
 
 const agent = new Agent({
