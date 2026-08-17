@@ -42,6 +42,7 @@ export type SubgraphArmResult = {
   evidenceClean: boolean;
   fullPass: boolean;
   latencyMs: number;
+  providerAttempts: number;
 };
 
 export type SubgraphCaseResult = {
@@ -194,7 +195,7 @@ function initialState(provider: string, modelName = "configured default"): Subgr
       "Flat uses the current CAUSAL_WEAVE/1 compiler. Compound uses COMPOUND_WEAVE/1 membership, expansion, and boundary ports.",
       "Arm order alternates across cases to reduce first-call bias.",
       "Deterministic semantic-token scoring checks answer correctness and exact evidence keys; no LLM judge is used.",
-      "Each arm receives the same 1,024-token output ceiling.",
+      "Each arm receives the same 1,024-token output ceiling and the same bounded retry policy for transient provider overloads.",
       "Explicit compound membership is the tested primitive and is not available to the flat arm."
     ],
     calibrationNote: "An initial calibration pass used a 320-token output ceiling and exact-phrase scoring. It was excluded because GLM exhausted the ceiling before visible output on three compound calls and the scorer rejected semantically correct wording. The raw calibration state remains preserved separately on the lab volume.",
@@ -205,9 +206,24 @@ function initialState(provider: string, modelName = "configured default"): Subgr
 async function runArm(model: Model, testCase: SubgraphCaseSpec, arm: SubgraphArm, order: number): Promise<SubgraphArmResult> {
   const prompt = arm === "flat" ? compileFlat(testCase) : compileCompound(testCase);
   const started = performance.now();
-  const output = await model.complete({ prompt, mode: "text", system: providerSystem, parameters: { temperature: 0, maxTokens: 1_024 } });
+  const { output, attempts } = await completeWithRetry(model, prompt);
   const latencyMs = Math.round(performance.now() - started);
-  return scoreOutput(testCase, arm, order, prompt, output, latencyMs);
+  return { ...scoreOutput(testCase, arm, order, prompt, output, latencyMs), providerAttempts: attempts };
+}
+
+async function completeWithRetry(model: Model, prompt: string): Promise<{ output: ModelOutput; attempts: number }> {
+  const delays = [10_000, 30_000, 60_000];
+  for (let attempt = 1; attempt <= delays.length + 1; attempt += 1) {
+    try {
+      const output = await model.complete({ prompt, mode: "text", system: providerSystem, parameters: { temperature: 0, maxTokens: 1_024 } });
+      return { output, attempts: attempt };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempt > delays.length || !/\b(?:429|529)\b|overload|temporar/i.test(message)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delays[attempt - 1]));
+    }
+  }
+  throw new Error("Provider retry loop ended unexpectedly.");
 }
 
 export function compileFlat(testCase: SubgraphCaseSpec): string {
@@ -614,7 +630,8 @@ export function scoreOutput(testCase: SubgraphCaseSpec, arm: SubgraphArm, order:
     evidenceComplete,
     evidenceClean,
     fullPass: answerCorrect && evidenceComplete && evidenceClean,
-    latencyMs
+    latencyMs,
+    providerAttempts: 1
   };
 }
 
