@@ -12,6 +12,7 @@ import { createDefaultTools, describeTools } from "../tools/fileSystemTools.js";
 import { listChallengerScenarios, readChallengerScenario } from "../evals/challengerScenarioLibrary.js";
 import { InfiniteAgentHarness } from "../evals/infiniteAgentHarness.js";
 import { SdkBuildBenchmarkApi } from "./sdkBuildBenchmark.js";
+import { SubgraphExperimentHarness } from "./subgraphExperiment.js";
 
 type RunRequest = {
   input?: unknown;
@@ -103,6 +104,15 @@ const model = createModelFromEnv();
 const workspaceDir = path.resolve(process.env.STATEWEAVE_WORKSPACE_DIR ?? "/data/workspace");
 const agentTools = createDefaultTools({ rootDir: workspaceDir });
 const sdkBuildBenchmark = new SdkBuildBenchmarkApi(path.resolve(process.env.STATEWEAVE_SDK_BENCHMARK_DIR ?? "/data/sdk-build-benchmark"));
+const subgraphExperiment = new SubgraphExperimentHarness({
+  model,
+  statePath: path.resolve(process.env.STATEWEAVE_SUBGRAPH_EXPERIMENT_STATE ?? "/data/subgraph-experiment.json"),
+  provider: providerName(),
+  modelName: process.env.ANTHROPIC_MODEL ?? "configured default"
+});
+const subgraphExperimentReady = subgraphExperiment.initialize().catch((error: unknown) => {
+  console.error(`Failed to initialize subgraph experiment: ${error instanceof Error ? error.message : String(error)}`);
+});
 
 const infiniteAgentHarness = new InfiniteAgentHarness({ rootDir: path.resolve(process.env.STATEWEAVE_INFINITE_AGENT_DIR ?? "/data/infinite-agent"), model });
 const infiniteAgentReady = infiniteAgentHarness.initialize();
@@ -181,6 +191,19 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
 
   if (request.method === "POST" && url.pathname === "/api/stateweave/judge") {
     await judgeStateWeaveComparison(request, response);
+    return;
+  }
+
+  if (url.pathname === "/api/subgraph-experiment/state" && request.method === "GET") {
+    await subgraphExperimentReady;
+    json(response, 200, subgraphExperiment.publicState());
+    return;
+  }
+
+  if (url.pathname === "/api/subgraph-experiment/start" && request.method === "POST") {
+    await subgraphExperimentReady;
+    const result = subgraphExperiment.start();
+    json(response, result.status, result.body);
     return;
   }
 

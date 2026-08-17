@@ -38,7 +38,23 @@ type CompareResponse = {
   };
 };
 
-type PageName = "state" | "quickstart" | "ab" | "protocol-experiment" | "sdk-build" | "infinite" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
+type PageName = "state" | "quickstart" | "ab" | "protocol-experiment" | "subgraph-experiment" | "sdk-build" | "infinite" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
+type SubgraphArmResult = { promptTokens: number; providerInputTokens?: number; rawOutput: string; answer?: string; evidence: string[]; formatValid: boolean; answerCorrect: boolean; evidenceComplete: boolean; evidenceClean: boolean; fullPass: boolean; latencyMs: number };
+type SubgraphCaseResult = { id: string; title: string; category: string; question: string; goldAnswer: string; requiredEvidence: string[]; order: ("flat" | "compound")[]; flat: SubgraphArmResult; compound: SubgraphArmResult; winner: "flat" | "compound" | "both" | "neither" };
+type SubgraphExperimentState = {
+  status: "not_started" | "running" | "done" | "error";
+  provider: string;
+  model: string;
+  fixtureSha256: string;
+  hypothesis: string;
+  primitive: { name: string; definition: string; down: string; up: string; across: string };
+  method: string[];
+  cases: SubgraphCaseResult[];
+  aggregate?: { cases: number; flatAnswerCorrect: number; compoundAnswerCorrect: number; flatFullPass: number; compoundFullPass: number; pairedWins: { flat: number; compound: number; tiesBoth: number; tiesNeither: number }; averagePromptTokens: { flat: number; compound: number }; averageLatencyMs: { flat: number; compound: number }; pairedSignTestP: number; conclusion: "compound_better" | "flat_better" | "no_clear_difference"; enoughToConclude: boolean; reason: string };
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+};
 type SdkBuildEnvironment = { slot: number; status: string; progress?: { iteration: number; phase: string; modelCalls: number; toolCalls: number; totalInputTokens?: number; outputTokens?: number; detail: string; updatedAt: string } };
 type SdkBuildCandidate = { status: string; finalAnswer?: string; error?: string; previewReady: boolean; attempt?: number; maxIterations?: number; previousAttempts?: { attempt: number; maxIterations: number; status: string }[] };
 type SdkBuildVariantC = { version: string; status: string; progress?: SdkBuildEnvironment["progress"]; finalAnswer?: string; error?: string; metrics?: Record<string, number>; previewReady: boolean; importRepairedPreviewReady?: boolean; attempt?: number; maxIterations?: number; previousAttempts?: { attempt: number; maxIterations: number; status: string }[]; requestedAt?: string; startedAt?: string; completedAt?: string };
@@ -127,6 +143,8 @@ type LiveStreamLog = { metadata?: Partial<AgentRunMetadata>; steps: Map<number, 
 let activePage: PageName = pageFromHash();
 let sdkBuildState: SdkBuildPublicState | undefined;
 let sdkBuildPollTimer: number | undefined;
+let subgraphState: SubgraphExperimentState | undefined;
+let subgraphPollTimer: number | undefined;
 let sdkBuildPreviewRunId: string | undefined;
 let sdkBuildPreviewCRunId: string | undefined;
 let multiSuiteId: SuiteId = suiteIdForPage(activePage) ?? "prompt-one";
@@ -497,6 +515,7 @@ const stateTab = element<HTMLButtonElement>("state-tab");
 const quickstartTab = element<HTMLButtonElement>("quickstart-tab");
 const abTab = element<HTMLButtonElement>("ab-tab");
 const protocolTab = element<HTMLButtonElement>("protocol-tab");
+const subgraphTab = element<HTMLButtonElement>("subgraph-tab");
 const multiTab = element<HTMLButtonElement>("multi-tab");
 const multiTwoTab = element<HTMLButtonElement>("multi-two-tab");
 const multiThreeTab = element<HTMLButtonElement>("multi-three-tab");
@@ -510,6 +529,8 @@ const quickstartPage = element<HTMLElement>("quickstart-page");
 const abPage = element<HTMLElement>("ab-page");
 const protocolPage = element<HTMLElement>("protocol-page");
 const protocolReport = element<HTMLElement>("protocol-report");
+const subgraphPage = element<HTMLElement>("subgraph-page");
+const subgraphReport = element<HTMLElement>("subgraph-report");
 const multiPage = element<HTMLElement>("multi-page");
 const sdkBuildPage = element<HTMLElement>("sdk-build-page");
 const infinitePage = element<HTMLElement>("infinite-page");
@@ -616,6 +637,7 @@ sdkBuildPrompt.textContent = oneShotSdkBuildPrompt;
 const sdkPromptStats = oneShotPromptStats();
 sdkBuildPromptStats.textContent = `${sdkPromptStats.words.toLocaleString()} words · ${sdkPromptStats.characters.toLocaleString()} characters · fixed for both participants`;
 renderProtocolExperiment();
+void loadSubgraphExperiment();
 
 setActivePage(activePage, false);
 renderAgentSettings();
@@ -629,6 +651,7 @@ stateTab.addEventListener("click", () => setActivePage("state"));
 quickstartTab.addEventListener("click", () => setActivePage("quickstart"));
 abTab.addEventListener("click", () => setActivePage("ab"));
 protocolTab.addEventListener("click", () => setActivePage("protocol-experiment"));
+subgraphTab.addEventListener("click", () => setActivePage("subgraph-experiment"));
 multiTab.addEventListener("click", () => setActivePage("prompt-one"));
 multiTwoTab.addEventListener("click", () => setActivePage("prompt-two"));
 multiThreeTab.addEventListener("click", () => setActivePage("prompt-three"));
@@ -658,7 +681,7 @@ reset.addEventListener("click", () => {
   if (activePage === "state") resetStateWeaveChat();
   else if (activePage === "quickstart") setActivePage("state");
   else if (activePage === "ab") resetAbTests();
-  else if (activePage === "protocol-experiment" || activePage === "sdk-build") setActivePage("state");
+  else if (activePage === "protocol-experiment" || activePage === "subgraph-experiment" || activePage === "sdk-build") setActivePage("state");
   else void resetCurrentMultiTest();
 });
 input.addEventListener("keydown", (event) => {
@@ -737,6 +760,10 @@ chat.addEventListener("click", (event) => {
   if (handleArtifactPreviewClick(event)) return;
 });
 chat.addEventListener("toggle", handleStreamAccordionToggle, true);
+subgraphReport.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target : undefined;
+  if (target?.closest<HTMLButtonElement>("button[data-subgraph-start]")) void startSubgraphExperiment();
+});
 abResults.addEventListener("click", (event) => {
   if (handleArtifactPreviewClick(event)) return;
   const target = event.target instanceof Element ? event.target : undefined;
@@ -760,6 +787,7 @@ function pageFromHash(): PageName {
   if (location.hash === "#quick-start") return "quickstart";
   if (location.hash === "#ab") return "ab";
   if (location.hash === "#protocol-experiment") return "protocol-experiment";
+  if (location.hash === "#subgraph-experiment") return "subgraph-experiment";
   if (location.hash === "#sdk-build") return "sdk-build";
   if (location.hash === "#infinite") return "infinite";
   if (location.hash === "#prompt-one") return "prompt-one";
@@ -889,6 +917,7 @@ function setActivePage(page: PageName, updateHash = true): void {
   const isQuickstart = page === "quickstart";
   const isAb = page === "ab";
   const isProtocolExperiment = page === "protocol-experiment";
+  const isSubgraphExperiment = page === "subgraph-experiment";
   const isSdkBuild = page === "sdk-build";
   const nextSuiteId = suiteIdForPage(page);
   const isMulti = Boolean(nextSuiteId);
@@ -906,6 +935,8 @@ function setActivePage(page: PageName, updateHash = true): void {
   abTab.setAttribute("aria-selected", String(isAb));
   protocolTab.classList.toggle("active", isProtocolExperiment);
   protocolTab.setAttribute("aria-selected", String(isProtocolExperiment));
+  subgraphTab.classList.toggle("active", isSubgraphExperiment);
+  subgraphTab.setAttribute("aria-selected", String(isSubgraphExperiment));
   multiTab.classList.toggle("active", page === "prompt-one");
   multiTab.setAttribute("aria-selected", String(page === "prompt-one"));
   multiTwoTab.classList.toggle("active", page === "prompt-two");
@@ -931,6 +962,8 @@ function setActivePage(page: PageName, updateHash = true): void {
   abPage.classList.toggle("active", isAb);
   protocolPage.hidden = !isProtocolExperiment;
   protocolPage.classList.toggle("active", isProtocolExperiment);
+  subgraphPage.hidden = !isSubgraphExperiment;
+  subgraphPage.classList.toggle("active", isSubgraphExperiment);
   multiPage.hidden = !isMulti;
   multiPage.classList.toggle("active", isMulti);
   sdkBuildPage.hidden = !isSdkBuild;
@@ -939,9 +972,9 @@ function setActivePage(page: PageName, updateHash = true): void {
   infinitePage.classList.toggle("active", isInfinite);
   multiTitle.textContent = suite.title;
   multiDescription.textContent = suite.description;
-  reset.textContent = isState ? "Reset" : isQuickstart || isProtocolExperiment || isSdkBuild ? "Back to chat" : isAb ? "Reset A/B" : isInfinite ? "Reset harness" : `Reset ${suite.title.toLowerCase()}`;
+  reset.textContent = isState ? "Reset" : isQuickstart || isProtocolExperiment || isSubgraphExperiment || isSdkBuild ? "Back to chat" : isAb ? "Reset A/B" : isInfinite ? "Reset harness" : `Reset ${suite.title.toLowerCase()}`;
   syncMultiModeControls();
-  if (updateHash) history.replaceState(null, "", isState ? location.pathname : isQuickstart ? "#quick-start" : isAb ? "#ab" : isProtocolExperiment ? "#protocol-experiment" : isSdkBuild ? "#sdk-build" : isInfinite ? "#infinite" : `#${suite.id}`);
+  if (updateHash) history.replaceState(null, "", isState ? location.pathname : isQuickstart ? "#quick-start" : isAb ? "#ab" : isProtocolExperiment ? "#protocol-experiment" : isSubgraphExperiment ? "#subgraph-experiment" : isSdkBuild ? "#sdk-build" : isInfinite ? "#infinite" : `#${suite.id}`);
   if (isMulti) void resumeStoredEvalRun();
   else stopBackgroundPoll();
   if (isInfinite) {
@@ -952,6 +985,8 @@ function setActivePage(page: PageName, updateHash = true): void {
   }
   if (isSdkBuild) startSdkBuildPoll();
   else stopSdkBuildPoll();
+  if (isSubgraphExperiment) startSubgraphPoll();
+  else stopSubgraphPoll();
   if (isState) input.focus();
   else if (isAb) abInput.focus();
   else if (isSdkBuild) sdkBuildCopy.focus();
@@ -1005,6 +1040,122 @@ function renderProtocolExperiment(): void {
     <section class="protocol-section"><div class="protocol-section-heading"><div><p class="eyebrow">StateWeave verification</p><h3>Runtime replay passed</h3></div><span class="protocol-runtime-badge">${escapeHtml(probe.status)}</span></div><div class="protocol-runtime-grid"><div><strong>${probe.steps} steps</strong><span>read → final</span></div><div><strong>${probe.protocolErrors}</strong><span>protocol-error nodes</span></div><div><strong>${escapeHtml(String(probe.stateRoundTripBytes))} bytes</strong><span>validated state export</span></div><div><strong>${escapeHtml(probe.finalAnswer)}</strong><span>final answer</span></div></div><p class="protocol-footnote">The tuned envelope was passed through the public <code>Agent</code>, a real scoped workspace tool, immutable causal state, and state serialization. The replay produced system, user, tool call, tool result, resource, and assistant-output nodes.</p></section>
     <section class="protocol-section"><div class="protocol-section-heading"><div><p class="eyebrow">Representative held-out outputs</p><h3>What changed</h3></div><p>These are examples from the same frozen evaluation result.</p></div><div class="protocol-samples">${samples}</div></section>
     <section class="protocol-section protocol-method"><p class="eyebrow">Objective and plan</p><h3>Why this experiment exists</h3><ol><li>Measure whether a very small model can reliably produce the SDK's ordinary action envelope.</li><li>Train only on positive protocol traces with no chain-of-thought, secrets, review metadata, or held-out gold.</li><li>Compare first-pass validity, retries, exact tool arguments, adversarial behavior, and a real StateWeave runtime replay.</li><li>Keep parsing, validation, security, graph lineage, and successful-run commits deterministic in the runtime.</li></ol><p><strong>Limitation:</strong> this is a protocol experiment hosted in the D.O.T. repository. It does not measure semantic D.O.T. behavior, general reasoning quality, or production task success.</p></section>`;
+}
+
+async function loadSubgraphExperiment(): Promise<void> {
+  try {
+    const response = await fetch(`${apiBase}/api/subgraph-experiment/state`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`State request failed (${response.status})`);
+    subgraphState = await response.json() as SubgraphExperimentState;
+    renderSubgraphExperiment(subgraphState);
+    if (subgraphState.status === "running") startSubgraphPoll();
+  } catch (error) {
+    subgraphReport.innerHTML = `<div class="message error"><div>${escapeHtml(error instanceof Error ? error.message : String(error))}</div></div>`;
+  }
+}
+
+async function startSubgraphExperiment(): Promise<void> {
+  const button = subgraphReport.querySelector<HTMLButtonElement>("button[data-subgraph-start]");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Starting…";
+  }
+  try {
+    const response = await fetch(`${apiBase}/api/subgraph-experiment/start`, { method: "POST" });
+    const body = await response.json() as { state?: SubgraphExperimentState; message?: string };
+    if (!response.ok && !body.state) throw new Error(body.message ?? `Start failed (${response.status})`);
+    if (body.state) {
+      subgraphState = body.state;
+      renderSubgraphExperiment(body.state);
+      startSubgraphPoll();
+    }
+  } catch (error) {
+    subgraphReport.insertAdjacentHTML("afterbegin", `<div class="message error"><div>${escapeHtml(error instanceof Error ? error.message : String(error))}</div></div>`);
+  }
+}
+
+function startSubgraphPoll(): void {
+  stopSubgraphPoll();
+  if (subgraphState?.status !== "running") return;
+  subgraphPollTimer = window.setTimeout(async () => {
+    await loadSubgraphExperiment();
+    if (subgraphState?.status === "running") startSubgraphPoll();
+  }, 2_000);
+}
+
+function stopSubgraphPoll(): void {
+  if (subgraphPollTimer !== undefined) window.clearTimeout(subgraphPollTimer);
+  subgraphPollTimer = undefined;
+}
+
+function renderSubgraphExperiment(state: SubgraphExperimentState): void {
+  const aggregate = state.aggregate;
+  const completed = state.cases.length;
+  const verdict = !aggregate
+    ? state.status === "running" ? `${completed} / 10 complete` : "Awaiting experiment"
+    : aggregate.enoughToConclude
+      ? aggregate.conclusion === "compound_better" ? "Compound primitive wins this pilot" : aggregate.conclusion === "flat_better" ? "Current flat primitive wins this pilot" : "No clear difference"
+      : "Directional only — more tests needed";
+  const startButton = state.status === "not_started" ? `<button class="button primary" type="button" data-subgraph-start>Run ten paired tests</button>` : "";
+  const progress = state.status === "running" ? `<div class="subgraph-progress"><span style="width:${completed * 10}%"></span></div>` : "";
+  const scoreCards = aggregate ? `
+    <section class="protocol-stat-grid" aria-label="Subgraph experiment scores">
+      <article><small>Answer accuracy</small><strong>${aggregate.flatAnswerCorrect}/10 → ${aggregate.compoundAnswerCorrect}/10</strong><span>flat → compound</span></article>
+      <article><small>Full evidence pass</small><strong>${aggregate.flatFullPass}/10 → ${aggregate.compoundFullPass}/10</strong><span>answer + required evidence + no stale evidence</span></article>
+      <article><small>Paired wins</small><strong>${aggregate.pairedWins.flat} : ${aggregate.pairedWins.compound}</strong><span>flat : compound · ${aggregate.pairedWins.tiesBoth} both · ${aggregate.pairedWins.tiesNeither} neither · p=${(aggregate.pairedSignTestP ?? 1).toFixed(4)}</span></article>
+      <article><small>Average prompt</small><strong>${aggregate.averagePromptTokens.flat} → ${aggregate.averagePromptTokens.compound}</strong><span>estimated tokens · flat → compound</span></article>
+    </section>` : "";
+  const resultRows = state.cases.map((record, index) => `
+    <tr>
+      <td>${index + 1}. ${escapeHtml(record.title)}</td>
+      <td>${subgraphPassLabel(record.flat)}</td>
+      <td>${subgraphPassLabel(record.compound)}</td>
+      <td><strong>${escapeHtml(record.winner)}</strong></td>
+      <td>${record.flat.promptTokens.toLocaleString()} / ${record.compound.promptTokens.toLocaleString()}</td>
+    </tr>`).join("");
+  const caseDetails = state.cases.map((record, index) => `
+    <details class="subgraph-case">
+      <summary><span>${index + 1}. ${escapeHtml(record.title)}</span><strong>${escapeHtml(record.winner)}</strong></summary>
+      <div class="subgraph-case-body">
+        <p><strong>Question:</strong> ${escapeHtml(record.question)}</p>
+        <p><strong>Gold:</strong> ${escapeHtml(record.goldAnswer)}</p>
+        <p><strong>Required evidence:</strong> ${record.requiredEvidence.map((key) => `<code>${escapeHtml(key)}</code>`).join(" ")}</p>
+        <div class="protocol-output-grid">
+          ${subgraphArmHtml("Current flat", record.flat)}
+          ${subgraphArmHtml("Compound node", record.compound)}
+        </div>
+      </div>
+    </details>`).join("");
+  subgraphReport.innerHTML = `
+    <section class="protocol-hero">
+      <div><p class="eyebrow">Primitive experiment · ${escapeHtml(state.primitive.name)}</p><h2>A node can act as an outer node and an expandable inner graph.</h2><p>${escapeHtml(state.hypothesis)}</p>${progress}</div>
+      <div class="protocol-verdict"><span>Status</span><strong>${escapeHtml(verdict)}</strong><small>${state.status === "error" ? escapeHtml(state.error ?? "Experiment failed") : `${completed} paired cases completed · ${escapeHtml(state.provider)} · ${escapeHtml(state.model)}`}</small>${startButton}</div>
+    </section>
+    ${scoreCards}
+    <section class="protocol-section subgraph-language"><div class="protocol-section-heading"><div><p class="eyebrow">Common language</p><h3>${escapeHtml(state.primitive.name)}</h3></div><p>${escapeHtml(state.primitive.definition)}</p></div><pre>MAP
+  COMPOUND_NODE project_release EXPANDED
+  ATOM market_constraint
+  PORT project_release --constrained_by--&gt; atom:market_constraint
+
+EXPANDED project_release {
+  ATOM decision
+  ATOM evidence
+  BOND evidence --supports--&gt; decision
+}</pre><div class="subgraph-moves"><span><strong>Down</strong>${escapeHtml(state.primitive.down)}</span><span><strong>Up</strong>${escapeHtml(state.primitive.up)}</span><span><strong>Across</strong>${escapeHtml(state.primitive.across)}</span></div></section>
+    <section class="protocol-section"><div class="protocol-section-heading"><div><p class="eyebrow">Method</p><h3>Same evidence, different primitive</h3></div><p>The gold answers were held server-side and deterministic scoring replaced subjective LLM judging. Fixture <code>${escapeHtml(state.fixtureSha256.slice(0, 12))}</code>.</p></div><ol class="subgraph-method">${state.method.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol></section>
+    ${state.cases.length ? `<section class="protocol-section"><div class="protocol-section-heading"><div><p class="eyebrow">All ten cases</p><h3>Paired result ledger</h3></div><p>Full means the answer was correct, all required evidence keys were cited, and stale or forbidden evidence was not cited.</p></div><div class="protocol-table-wrap"><table class="protocol-table subgraph-table"><thead><tr><th>Case</th><th>Flat</th><th>Compound</th><th>Winner</th><th>Prompt tokens F/C</th></tr></thead><tbody>${resultRows}</tbody></table></div></section>` : ""}
+    ${caseDetails ? `<section class="protocol-section"><div class="protocol-section-heading"><div><p class="eyebrow">Full report</p><h3>Questions, outputs, and evidence</h3></div><p>Open each case to inspect both raw model answers.</p></div><div class="subgraph-cases">${caseDetails}</div></section>` : ""}
+    ${aggregate ? `<section class="protocol-section protocol-method"><p class="eyebrow">Conclusion</p><h3>${escapeHtml(verdict)}</h3><p>${escapeHtml(aggregate.reason)}</p><p><strong>Important:</strong> explicit compound membership is the tested capability. This pilot does not prove that a runtime can infer perfect compound boundaries automatically.</p></section>` : ""}`;
+}
+
+function subgraphPassLabel(result: SubgraphArmResult): string {
+  if (result.fullPass) return '<span class="protocol-pass">full</span>';
+  if (result.answerCorrect) return '<span class="protocol-warn">answer only</span>';
+  return '<span class="subgraph-fail">fail</span>';
+}
+
+function subgraphArmHtml(label: string, result: SubgraphArmResult): string {
+  return `<div><small>${escapeHtml(label)} · ${subgraphPassLabel(result)} · ${result.promptTokens.toLocaleString()} tokens · ${result.latencyMs.toLocaleString()} ms</small><pre>${escapeHtml(result.rawOutput)}</pre><p class="subgraph-evidence"><strong>Evidence:</strong> ${result.evidence.length ? result.evidence.map((key) => `<code>${escapeHtml(key)}</code>`).join(" ") : "none"}</p></div>`;
 }
 
 function startSdkBuildPoll(): void {
