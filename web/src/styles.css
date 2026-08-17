@@ -4127,6 +4127,62 @@ label {
   line-height: 1.55;
 }
 
+.subgraph-progress {
+  height: 5px;
+  margin-top: 16px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.subgraph-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--stateweave);
+  transition: width 240ms ease;
+}
+
+.subgraph-language pre {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #111827;
+  padding: 16px;
+  overflow: auto;
+  color: #e5e7eb;
+  font: 0.78rem/1.55 var(--mono-font, ui-monospace, monospace);
+}
+
+.subgraph-moves {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.subgraph-moves span {
+  display: grid;
+  gap: 4px;
+  border-radius: 9px;
+  background: #fafafa;
+  padding: 12px;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.subgraph-moves strong { color: var(--foreground); }
+.subgraph-method { display: grid; gap: 7px; margin: 0; padding-left: 22px; color: var(--muted-foreground); line-height: 1.5; }
+.subgraph-fail { display: inline-flex; border-radius: 999px; background: #fee2e2; padding: 5px 9px; color: #991b1b; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+.subgraph-cases { display: grid; gap: 9px; }
+.subgraph-case { overflow: hidden; border: 1px solid var(--border); border-radius: 10px; }
+.subgraph-case summary { display: flex; justify-content: space-between; gap: 12px; padding: 12px 14px; cursor: pointer; background: #fafafa; font-weight: 750; }
+.subgraph-case-body { display: grid; gap: 9px; padding: 14px; color: var(--muted-foreground); font-size: 0.84rem; line-height: 1.5; }
+.subgraph-case-body .protocol-output-grid { border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+.subgraph-evidence { padding: 0 12px 12px; color: var(--muted-foreground); font-size: 0.76rem; }
+.subgraph-evidence code { overflow-wrap: anywhere; }
+
 @media (max-width: 800px) {
   .protocol-hero { grid-template-columns: 1fr; padding: 18px; }
   .protocol-verdict { border-left: 0; border-top: 3px solid var(--stateweave); padding: 12px 0 0; }
@@ -4140,7 +4196,8 @@ label {
 @media (max-width: 520px) {
   .protocol-stat-grid,
   .protocol-runtime-grid,
-  .protocol-output-grid { grid-template-columns: 1fr; }
+  .protocol-output-grid,
+  .subgraph-moves { grid-template-columns: 1fr; }
   .protocol-output-grid > div + div { border-top: 1px solid var(--border); border-left: 0; }
   .protocol-table { min-width: 0; table-layout: fixed; font-size: 0.68rem; }
   .protocol-table th,

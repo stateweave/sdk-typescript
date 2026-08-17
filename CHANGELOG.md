@@ -7,6 +7,7 @@
 - Emit causal `verification` nodes for recognized successful post-mutation reads, syntax checks, and explicit application checks.
 - Enforce prompt-budget and configuration validation, strengthen imported-state validation, and fail before provider invocation when mandatory context cannot fit.
 - Bound protocol/completion retry failures by three consecutive retry iterations, resetting the streak after each accepted tool action instead of counting separated retries across the run trace.
+- Add an isolated ten-case lab experiment comparing the current flat causal projection with a compound node that acts as both an outer node and an expandable subgraph.
 
 ## 0.1.0
 
