@@ -39,7 +39,7 @@ type CompareResponse = {
 };
 
 type PageName = "state" | "quickstart" | "ab" | "protocol-experiment" | "subgraph-experiment" | "sdk-build" | "infinite" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
-type SubgraphArmResult = { promptTokens: number; providerInputTokens?: number; rawOutput: string; answer?: string; evidence: string[]; formatValid: boolean; answerCorrect: boolean; evidenceComplete: boolean; evidenceClean: boolean; fullPass: boolean; latencyMs: number };
+type SubgraphArmResult = { promptTokens: number; providerInputTokens?: number; rawOutput: string; answer?: string; evidence: string[]; formatValid: boolean; answerCorrect: boolean; evidenceComplete: boolean; evidenceClean: boolean; fullPass: boolean; latencyMs: number; providerAttempts: number };
 type SubgraphCaseResult = { id: string; title: string; category: string; question: string; goldAnswer: string; requiredEvidence: string[]; order: ("flat" | "compound")[]; flat: SubgraphArmResult; compound: SubgraphArmResult; winner: "flat" | "compound" | "both" | "neither" };
 type SubgraphExperimentState = {
   status: "not_started" | "running" | "done" | "error";
