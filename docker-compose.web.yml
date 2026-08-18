@@ -18,6 +18,7 @@ services:
       ANTHROPIC_TEMPERATURE: ${ANTHROPIC_TEMPERATURE:-0}
       STATEWEAVE_RUN_STORE: ${STATEWEAVE_RUN_STORE:-/data/eval-runs.json}
       STATEWEAVE_TRACE_DIR: ${STATEWEAVE_TRACE_DIR:-/data/traces}
+      STATEWEAVE_SESSION_DIR: ${STATEWEAVE_SESSION_DIR:-/data/sessions}
       STATEWEAVE_WORKSPACE_DIR: ${STATEWEAVE_WORKSPACE_DIR:-/data/workspace}
     volumes:
       - stateweave-web-data:/data

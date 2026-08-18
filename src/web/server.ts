@@ -1,10 +1,11 @@
 import "dotenv/config";
+import { randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Agent, AgentRunError, defaultAgentSystemPrompt, type AgentState } from "../agent/agent.js";
+import { Agent, AgentRunError, defaultAgentSystemPrompt, type AgentProgress, type AgentRunMetadata, type AgentStartMetadata, type AgentState } from "../agent/agent.js";
 import { runStateWeave, StateWeaveRunError } from "../agent/stateweaveRunner.js";
 import type { GraphFrame, StateWeaveRunMetadata, TraceStep } from "../core/types.js";
 import { createModelFromEnv } from "../llm/factory.js";
@@ -13,6 +14,7 @@ import { listChallengerScenarios, readChallengerScenario } from "../evals/challe
 import { InfiniteAgentHarness } from "../evals/infiniteAgentHarness.js";
 import { SdkBuildBenchmarkApi } from "./sdkBuildBenchmark.js";
 import { SubgraphExperimentHarness } from "./subgraphExperiment.js";
+import { SessionConflictError, SessionCorruptError, SessionNotFoundError, StateWeaveSessionStore, type SessionUsageRecord, type StateWeaveSessionView } from "./stateweaveSessionStore.js";
 
 type RunRequest = {
   input?: unknown;
@@ -23,6 +25,13 @@ type RunRequest = {
   systemPrompt?: unknown;
   nodeTypes?: unknown;
   messages?: unknown;
+  sessionId?: unknown;
+  expectedTurnId?: unknown;
+};
+
+type CreateSessionRequest = {
+  state?: unknown;
+  usageHistory?: unknown;
 };
 
 type JudgeRequest = {
@@ -99,6 +108,8 @@ const basePath = normalizeBasePath(process.env.STATEWEAVE_WEB_BASE_PATH ?? "/");
 const distDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../dist-web");
 const runStorePath = path.resolve(process.env.STATEWEAVE_RUN_STORE ?? ".stateweave/eval-runs.json");
 const traceDir = path.resolve(process.env.STATEWEAVE_TRACE_DIR ?? ".stateweave/traces");
+const sessionDir = path.resolve(process.env.STATEWEAVE_SESSION_DIR ?? ".stateweave/sessions");
+const sessionStore = new StateWeaveSessionStore(sessionDir);
 const challengerScenarioDir = path.resolve(process.env.STATEWEAVE_CHALLENGER_SCENARIO_DIR ?? path.join(process.cwd(), "data/challenger-scenarios"));
 const model = createModelFromEnv();
 const workspaceDir = path.resolve(process.env.STATEWEAVE_WORKSPACE_DIR ?? "/data/workspace");
@@ -144,7 +155,28 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   const url = requestUrl(request);
 
   if (request.method === "GET" && url.pathname === "/api/health") {
-    json(response, 200, { ok: true, provider: providerName(), agentEngine: "causal-weave-v3", defaultSystemPrompt: defaultAgentSystemPrompt, defaultProjectionTargetTokens: 16_000, defaultProjectionMaxNodes: 16, defaultContextMode: "molecular", defaultMaxIterations: 30 });
+    json(response, 200, { ok: true, provider: providerName(), agentEngine: "causal-weave-v3", sessionStorage: "jsonl", defaultSystemPrompt: defaultAgentSystemPrompt, defaultProjectionTargetTokens: 16_000, defaultProjectionMaxNodes: 16, defaultContextMode: "molecular", defaultMaxIterations: 30 });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/stateweave/sessions") {
+    await createStateWeaveSession(request, response);
+    return;
+  }
+
+  const stateSessionMatch = url.pathname.match(/^\/api\/stateweave\/sessions\/(sws_[0-9a-f]{32})$/);
+  if (stateSessionMatch && request.method === "GET") {
+    await getStateWeaveSession(stateSessionMatch[1], response);
+    return;
+  }
+
+  if (stateSessionMatch && request.method === "DELETE") {
+    await deleteStateWeaveSession(stateSessionMatch[1], response);
+    return;
+  }
+
+  if (url.pathname === "/api/stateweave/sessions" || url.pathname.startsWith("/api/stateweave/sessions/")) {
+    privateJson(response, url.pathname === "/api/stateweave/sessions" ? 405 : 404, { error: url.pathname === "/api/stateweave/sessions" ? "Method not allowed" : "StateWeave session not found" });
     return;
   }
 
@@ -338,6 +370,38 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   await serveStatic(url.pathname, response, request.method === "HEAD");
 }
 
+async function createStateWeaveSession(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  const body = (await readJson(request, 8_000_000)) as CreateSessionRequest;
+  if (body.state !== undefined && !isAgentState(body.state)) {
+    privateJson(response, 400, { error: "state must be a valid AgentState object" });
+    return;
+  }
+  try {
+    const session = await sessionStore.create({ ...(body.state ? { state: body.state } : {}), usageHistory: body.usageHistory });
+    privateJson(response, 201, session);
+  } catch (error) {
+    privateJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+async function getStateWeaveSession(sessionId: string, response: ServerResponse): Promise<void> {
+  try {
+    privateJson(response, 200, await sessionStore.load(sessionId));
+  } catch (error) {
+    writeSessionError(response, error);
+  }
+}
+
+async function deleteStateWeaveSession(sessionId: string, response: ServerResponse): Promise<void> {
+  try {
+    await sessionStore.delete(sessionId);
+    response.writeHead(204, { "cache-control": "private, no-store" });
+    response.end();
+  } catch (error) {
+    writeSessionError(response, error);
+  }
+}
+
 async function streamStateWeaveRun(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const body = (await readJson(request)) as RunRequest;
   if (typeof body.input !== "string" || !body.input.trim()) {
@@ -345,27 +409,85 @@ async function streamStateWeaveRun(request: IncomingMessage, response: ServerRes
     return;
   }
 
+  let session: StateWeaveSessionView | undefined;
   let agent: Agent;
   try {
-    agent = createPublicAgent(body);
+    session = await requestedSession(body);
+    agent = createPublicAgent({ ...body, ...(session ? { state: session.state } : {}) });
   } catch (error) {
-    json(response, 400, { error: error instanceof Error ? error.message : String(error) });
+    if (error instanceof SessionNotFoundError || error instanceof SessionConflictError || error instanceof SessionCorruptError) writeSessionError(response, error);
+    else json(response, 400, { error: error instanceof Error ? error.message : String(error) });
     return;
   }
 
+  const input = body.input.trim();
+  let startMetadata: AgentStartMetadata | undefined;
+  let lastProgress: AgentProgress | undefined;
   response.writeHead(200, {
     "content-type": "application/x-ndjson; charset=utf-8",
-    "cache-control": "no-cache, no-transform",
+    "cache-control": "private, no-store, no-transform",
     "x-accel-buffering": "no"
   });
+  if (session) response.write(`${JSON.stringify({ type: "session", session: sessionReference(session) })}\n`);
   try {
-    for await (const event of agent.streamEvents(body.input)) {
-      if (event.type === "final") await persistTrace("stream", body.input.trim(), event.result.trace, event.result.metadata);
+    for await (const event of agent.streamEvents(input)) {
+      if (event.type === "metadata") startMetadata = event.metadata;
+      if (event.type === "progress") lastProgress = event.progress;
+      if (event.type !== "final") {
+        response.write(`${JSON.stringify(event)}\n`);
+        continue;
+      }
+      if (session) {
+        try {
+          const commit = await sessionStore.commitTurn({
+            sessionId: session.sessionId,
+            expectedParentId: session.currentTurnId,
+            input,
+            previousState: session.state,
+            state: event.result.state,
+            finalAnswer: event.result.finalAnswer,
+            metadata: event.result.metadata
+          });
+          response.write(`${JSON.stringify({ type: "session_commit", session: { ...commit, storage: "jsonl" } })}\n`);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const failed = await sessionStore.appendFailure({
+            sessionId: session.sessionId,
+            expectedParentId: session.currentTurnId,
+            input,
+            error: message,
+            runId: event.result.metadata.runId,
+            usage: failedUsageFromMetadata(event.result.metadata)
+          });
+          await persistTrace("stream-conflict", input, event.result.trace, event.result.metadata);
+          response.write(`${JSON.stringify({ type: "session_failure", session: { ...failed, storage: "jsonl" } })}\n`);
+          response.write(`${JSON.stringify({ type: "error", message, metrics: usageMetrics(event.result.metadata) })}\n`);
+          return;
+        }
+      }
+      await persistTrace("stream", input, event.result.trace, event.result.metadata);
       response.write(`${JSON.stringify(event)}\n`);
     }
   } catch (error) {
-    if (error instanceof AgentRunError) await persistTrace("stream-error", body.input.trim(), error.trace, error.metrics);
-    response.write(`${JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error), state: error instanceof AgentRunError ? error.state : undefined, graph: error instanceof AgentRunError ? error.graph : undefined, trace: error instanceof AgentRunError ? error.trace : undefined, metrics: error instanceof AgentRunError ? error.metrics : undefined })}\n`);
+    const metrics = error instanceof AgentRunError ? error.metrics : progressMetrics(lastProgress);
+    if (error instanceof AgentRunError) await persistTrace("stream-error", input, error.trace, error.metrics);
+    if (session) {
+      try {
+        const usage = failureUsage(startMetadata, metrics);
+        const failed = await sessionStore.appendFailure({
+          sessionId: session.sessionId,
+          expectedParentId: session.currentTurnId,
+          input,
+          error: error instanceof Error ? error.message : String(error),
+          ...(startMetadata?.runId ? { runId: startMetadata.runId } : {}),
+          ...(usage ? { usage } : {})
+        });
+        response.write(`${JSON.stringify({ type: "session_failure", session: { ...failed, storage: "jsonl" } })}\n`);
+      } catch (sessionError) {
+        console.error(`Failed to persist StateWeave session error: ${sessionError instanceof Error ? sessionError.message : String(sessionError)}`);
+      }
+    }
+    response.write(`${JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error), state: error instanceof AgentRunError ? error.state : undefined, graph: error instanceof AgentRunError ? error.graph : undefined, trace: error instanceof AgentRunError ? error.trace : undefined, metrics })}\n`);
   } finally {
     response.end();
   }
@@ -379,11 +501,14 @@ async function runStateWeaveTurn(request: IncomingMessage, response: ServerRespo
   }
 
   const input = body.input.trim();
+  let session: StateWeaveSessionView | undefined;
   let agent: Agent;
   try {
-    agent = createPublicAgent(body);
+    session = await requestedSession(body);
+    agent = createPublicAgent({ ...body, ...(session ? { state: session.state } : {}) });
   } catch (error) {
-    json(response, 400, { error: error instanceof Error ? error.message : String(error) });
+    if (error instanceof SessionNotFoundError || error instanceof SessionConflictError || error instanceof SessionCorruptError) writeSessionError(response, error);
+    else json(response, 400, { error: error instanceof Error ? error.message : String(error) });
     return;
   }
   let stateweave;
@@ -392,21 +517,41 @@ async function runStateWeaveTurn(request: IncomingMessage, response: ServerRespo
   } catch (error) {
     if (error instanceof AgentRunError) {
       await persistTrace("chat-error", input, error.trace, error.metrics);
-      json(response, 500, { error: error.message, state: error.state, graph: error.graph, trace: error.trace, metrics: error.metrics });
+      if (session) await sessionStore.appendFailure({ sessionId: session.sessionId, expectedParentId: session.currentTurnId, input, error: error.message });
+      privateJson(response, 500, { error: error.message, state: error.state, graph: error.graph, trace: error.trace, metrics: error.metrics });
       return;
     }
     throw error;
   }
+  let commit;
+  if (session) {
+    try {
+      commit = await sessionStore.commitTurn({
+        sessionId: session.sessionId,
+        expectedParentId: session.currentTurnId,
+        input,
+        previousState: session.state,
+        state: stateweave.state,
+        finalAnswer: stateweave.finalAnswer,
+        metadata: stateweave.metadata
+      });
+    } catch (error) {
+      await sessionStore.appendFailure({ sessionId: session.sessionId, expectedParentId: session.currentTurnId, input, error: error instanceof Error ? error.message : String(error), runId: stateweave.metadata.runId, usage: failedUsageFromMetadata(stateweave.metadata) });
+      writeSessionError(response, error);
+      return;
+    }
+  }
   await persistTrace("chat", input, stateweave.trace, stateweave.metadata);
 
-  json(response, 200, {
+  privateJson(response, 200, {
     stateweave: {
       stateAfter: stateweave.state,
       output: stateweave.finalAnswer,
       trace: stateweave.trace,
       graph: stateweave.graph,
       metadata: stateweave.metadata
-    }
+    },
+    ...(commit ? { session: { ...commit, storage: "jsonl" } } : {})
   });
 }
 
@@ -832,7 +977,10 @@ async function persistTrace(kind: string, input: string, trace: unknown[], metad
   try {
     await mkdir(traceDir, { recursive: true });
     const createdAt = new Date().toISOString();
-    const name = `${Date.now()}-${safeFilePart(kind)}-${safeFilePart(input).slice(0, 64) || "stateweave"}.json`;
+    const runId = metadata && typeof metadata === "object" && "runId" in metadata && typeof (metadata as { runId?: unknown }).runId === "string"
+      ? safeFilePart((metadata as { runId: string }).runId).slice(0, 72)
+      : randomUUID();
+    const name = `${Date.now()}-${safeFilePart(kind)}-${runId}.json`;
     await writeFile(path.join(traceDir, name), JSON.stringify({ kind, input, createdAt, metadata, trace }, null, 2));
   } catch (error) {
     console.error(`Failed to persist StateWeave trace: ${error instanceof Error ? error.message : String(error)}`);
@@ -922,16 +1070,109 @@ function requestUrl(request: IncomingMessage): URL {
   return url;
 }
 
-async function readJson(request: IncomingMessage): Promise<unknown> {
+async function readJson(request: IncomingMessage, maxBytes = 1_000_000): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
-    if (size > 1_000_000) throw new Error("Request body too large");
+    if (size > maxBytes) throw new Error("Request body too large");
     chunks.push(buffer);
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+}
+
+async function requestedSession(body: RunRequest): Promise<StateWeaveSessionView | undefined> {
+  if (body.sessionId === undefined) return undefined;
+  if (typeof body.sessionId !== "string") throw new Error("sessionId must be a StateWeave session ID.");
+  if (body.state !== undefined) throw new Error("State cannot be supplied with a server-owned session.");
+  if (body.expectedTurnId !== undefined && typeof body.expectedTurnId !== "string") throw new Error("expectedTurnId must be a session turn ID.");
+  const session = await sessionStore.load(body.sessionId);
+  const expected = typeof body.expectedTurnId === "string" ? body.expectedTurnId : undefined;
+  if (session.currentTurnId !== expected) throw new SessionConflictError("The session advanced in another browser tab. Reload before continuing.", session.currentTurnId);
+  return session;
+}
+
+function sessionReference(session: StateWeaveSessionView): Record<string, unknown> {
+  return {
+    sessionId: session.sessionId,
+    ...(session.currentTurnId ? { currentTurnId: session.currentTurnId } : {}),
+    turnCount: session.turnCount,
+    interactionCount: session.interactionCount,
+    storage: "jsonl"
+  };
+}
+
+type FailureMetrics = Partial<Pick<AgentRunMetadata, "latestContextTokens" | "peakContextTokens" | "totalInputTokens" | "outputTokens" | "modelCalls" | "tokenCountSource">>;
+type FailedUsage = Omit<SessionUsageRecord, "turn" | "status">;
+
+function failureUsage(start: AgentStartMetadata | undefined, metrics: FailureMetrics | undefined): FailedUsage | undefined {
+  if (!start || !metrics || !metrics.modelCalls) return undefined;
+  return {
+    runId: start.runId,
+    startedAt: start.startedAt,
+    completedAt: new Date().toISOString(),
+    latestContextTokens: metrics.latestContextTokens ?? metrics.peakContextTokens ?? 0,
+    peakContextTokens: metrics.peakContextTokens ?? metrics.latestContextTokens ?? 0,
+    totalInputTokens: metrics.totalInputTokens ?? 0,
+    outputTokens: metrics.outputTokens ?? 0,
+    modelCalls: metrics.modelCalls,
+    maxPromptTokens: start.maxPromptTokens,
+    projectionTargetTokens: start.projectionTargetTokens,
+    tokenCountSource: metrics.tokenCountSource ?? "estimated"
+  };
+}
+
+function failedUsageFromMetadata(metadata: AgentRunMetadata): FailedUsage {
+  return {
+    runId: metadata.runId,
+    startedAt: metadata.startedAt,
+    completedAt: metadata.completedAt,
+    latestContextTokens: metadata.latestContextTokens,
+    peakContextTokens: metadata.peakContextTokens,
+    totalInputTokens: metadata.totalInputTokens,
+    outputTokens: metadata.outputTokens,
+    modelCalls: metadata.modelCalls,
+    maxPromptTokens: metadata.maxPromptTokens,
+    projectionTargetTokens: metadata.projectionTargetTokens,
+    tokenCountSource: metadata.tokenCountSource
+  };
+}
+
+function usageMetrics(metadata: AgentRunMetadata): FailureMetrics {
+  return {
+    latestContextTokens: metadata.latestContextTokens,
+    peakContextTokens: metadata.peakContextTokens,
+    totalInputTokens: metadata.totalInputTokens,
+    outputTokens: metadata.outputTokens,
+    modelCalls: metadata.modelCalls,
+    tokenCountSource: metadata.tokenCountSource
+  };
+}
+
+function progressMetrics(progress: AgentProgress | undefined): FailureMetrics | undefined {
+  if (!progress?.modelCalls) return undefined;
+  return {
+    latestContextTokens: progress.contextTokens ?? progress.peakContextTokens ?? 0,
+    peakContextTokens: progress.peakContextTokens ?? progress.contextTokens ?? 0,
+    totalInputTokens: progress.totalInputTokens,
+    outputTokens: progress.outputTokens,
+    modelCalls: progress.modelCalls,
+    tokenCountSource: progress.tokenCountSource ?? "estimated"
+  };
+}
+
+function writeSessionError(response: ServerResponse, error: unknown): void {
+  const status = error instanceof SessionNotFoundError ? 404 : error instanceof SessionConflictError ? 409 : 500;
+  privateJson(response, status, {
+    error: error instanceof Error ? error.message : String(error),
+    ...(error instanceof SessionConflictError && error.currentTurnId ? { currentTurnId: error.currentTurnId } : {})
+  });
+}
+
+function privateJson(response: ServerResponse, status: number, body: unknown): void {
+  response.writeHead(status, { "content-type": "application/json", "cache-control": "private, no-store" });
+  response.end(JSON.stringify(body));
 }
 
 function createPublicAgent(body: RunRequest): Agent {

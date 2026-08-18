@@ -8,6 +8,7 @@ import { promptSixCases, promptSixCategoryOrder, promptSixHypothesis, type Promp
 import { oneShotPromptStats, oneShotSdkBuildPrompt } from "../../src/evals/oneShotSdkBenchmark.js";
 import { protocolExperiment } from "./protocolExperiment.js";
 import { maxTokenUsageHistory, parseTokenUsageHistory, renderTokenUsageView, type TokenUsagePoint, type TokenUsageStatus } from "./tokenUsage.js";
+import type { SessionHistoryEntry, StateWeaveSessionView } from "../../src/web/stateweaveSessionTypes.js";
 import "./styles.css";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -21,7 +22,9 @@ type AgentPayload = {
   metadata: AgentRunMetadata;
 };
 
-type StateWeaveResponse = { stateweave: AgentPayload };
+type SessionReference = { sessionId: string; currentTurnId?: string; turnId?: string; turn?: number; turnCount?: number; interactionCount?: number; storage: "jsonl" };
+type SessionStreamEvent = { type: "session" | "session_commit" | "session_failure"; session: SessionReference };
+type StateWeaveResponse = { stateweave: AgentPayload; session: SessionReference };
 type CompareResponse = {
   traditional: {
     messages: ModelMessage[];
@@ -146,9 +149,16 @@ type LiveStreamStep = {
 type LiveStreamLog = { metadata?: Partial<AgentRunMetadata>; steps: Map<number, LiveStreamStep>; events: string[]; prompt?: string; latestStep?: number; finalAnswer?: string };
 
 class StateWeaveStreamError extends Error {
-  constructor(message: string, readonly metrics?: Partial<AgentUsageMetrics>) {
+  constructor(message: string, readonly metrics?: Partial<AgentUsageMetrics>, readonly session?: SessionReference) {
     super(message);
     this.name = "StateWeaveStreamError";
+  }
+}
+
+class StateWeaveRequestError extends Error {
+  constructor(message: string, readonly statusCode: number) {
+    super(message);
+    this.name = "StateWeaveRequestError";
   }
 }
 
@@ -179,6 +189,9 @@ let selectedFilePath: string | undefined;
 let workspaceFiles: WorkspaceFile[] = [];
 let tokenUsageHistory: TokenUsagePoint[] = [];
 let activeTokenUsage: TokenUsagePoint | undefined;
+let stateSessionId: string | undefined;
+let stateSessionTurnId: string | undefined;
+let stateSessionReady: Promise<void>;
 
 const defaultAgentSettings: AgentSettings = {
   systemPrompt: "You are a StateWeave agent. Complete the user's task accurately, use tools when needed, and preserve durable working state in the causal graph.",
@@ -186,7 +199,8 @@ const defaultAgentSettings: AgentSettings = {
   maxIterations: 30
 };
 const agentSettingsStorageKey = "stateweave.agentSettings.v2";
-const stateChatStorageKey = "stateweave.chat.v2";
+const stateSessionStorageKey = "stateweave.session.v1";
+const legacyStateChatStorageKey = "stateweave.chat.v2";
 let agentSettings = loadAgentSettings();
 const primaryGraphViewState: GraphViewState = { positions: new Map<string, GraphPosition>(), collapsedMoleculeIds: new Set<string>() };
 const copyPayloads = new Map<string, string>();
@@ -664,7 +678,8 @@ void loadHealth();
 void loadTools();
 void loadWorkspaceFiles();
 renderTokenUsage();
-restoreStateChat();
+send.disabled = true;
+stateSessionReady = initializeStateSession();
 
 stateTab.addEventListener("click", () => setActivePage("state"));
 quickstartTab.addEventListener("click", () => setActivePage("quickstart"));
@@ -697,7 +712,7 @@ abForm.addEventListener("submit", (event) => {
   void runAbTest();
 });
 reset.addEventListener("click", () => {
-  if (activePage === "state") resetStateWeaveChat();
+  if (activePage === "state") void resetStateWeaveChat();
   else if (activePage === "quickstart") setActivePage("state");
   else if (activePage === "ab") resetAbTests();
   else if (activePage === "protocol-experiment" || activePage === "subgraph-experiment" || activePage === "sdk-build") setActivePage("state");
@@ -717,7 +732,7 @@ resetAgentSettings.addEventListener("click", () => {
   saveAgentSettings();
   renderAgentSettings();
   agentState = undefined;
-  resetStateWeaveChat();
+  void resetStateWeaveChat();
 });
 abInput.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
@@ -745,15 +760,15 @@ rebootFiles.addEventListener("click", () => void rebootWorkspaceFiles());
 exportGraph.addEventListener("click", () => openGraphTransfer("export"));
 importGraph.addEventListener("click", () => openGraphTransfer("import"));
 clearMessages.addEventListener("click", () => {
-  if (!agentState && !localStorage.getItem(stateChatStorageKey)) {
+  if (!agentState && !tokenUsageHistory.length) {
     status.textContent = "Messages already clear.";
     return;
   }
-  if (confirm("Clear StateWeave messages and graph? Workspace files will stay intact.")) resetStateWeaveChat();
+  if (confirm("Clear StateWeave messages and graph? Workspace files will stay intact.")) void resetStateWeaveChat();
 });
 closeTransfer.addEventListener("click", closeGraphTransfer);
 copyTransfer.addEventListener("click", () => void copyText(transferText.value, copyTransfer));
-applyImport.addEventListener("click", applyGraphImport);
+applyImport.addEventListener("click", () => void applyGraphImport());
 transferModal.addEventListener("click", (event) => {
   if (event.target === transferModal) closeGraphTransfer();
 });
@@ -843,50 +858,131 @@ function saveAgentSettings(): void {
   localStorage.setItem(agentSettingsStorageKey, JSON.stringify(agentSettings));
 }
 
-function persistStateChat(): void {
+async function initializeStateSession(): Promise<void> {
+  status.textContent = "Opening durable session…";
   try {
-    if (!agentState && !tokenUsageHistory.length) {
-      localStorage.removeItem(stateChatStorageKey);
-      return;
+    const storedId = storedSessionId();
+    let session: StateWeaveSessionView | undefined;
+    if (storedId) {
+      try {
+        session = await fetchStateSession(storedId);
+      } catch (error) {
+        if (!(error instanceof StateWeaveRequestError) || error.statusCode !== 404) throw error;
+        localStorage.removeItem(stateSessionStorageKey);
+      }
     }
-    localStorage.setItem(stateChatStorageKey, JSON.stringify({
-      ...(agentState ? { state: agentState } : {}),
-      chatHtml: chat.innerHTML,
-      tokenUsage: tokenUsageHistory,
-      savedAt: new Date().toISOString()
-    }));
-  } catch {
-    status.textContent = "Chat is too large for browser persistence; export the state to preserve it.";
+    if (!session) {
+      const hadLegacyState = localStorage.getItem(legacyStateChatStorageKey) !== null;
+      const legacy = legacySessionSeed();
+      session = await createStateSession(legacy);
+      persistSessionReference(session.sessionId);
+      if (hadLegacyState) localStorage.removeItem(legacyStateChatStorageKey);
+    }
+    applyStateSession(session, true);
+    send.disabled = false;
+  } catch (error) {
+    status.textContent = `Session storage unavailable · ${error instanceof Error ? error.message : String(error)}`;
+    send.disabled = true;
   }
 }
 
-function restoreStateChat(): void {
-  const raw = localStorage.getItem(stateChatStorageKey);
-  if (!raw) return;
+function storedSessionId(): string | undefined {
+  const raw = localStorage.getItem(stateSessionStorageKey);
+  if (!raw) return undefined;
   try {
-    const saved = JSON.parse(raw) as { state?: unknown; chatHtml?: unknown; tokenUsage?: unknown };
-    if (saved.state !== undefined && !isAgentStateLike(saved.state)) throw new Error("Invalid saved state");
-    if (typeof saved.chatHtml !== "string") throw new Error("Invalid saved chat");
-    agentState = saved.state;
-    tokenUsageHistory = parseTokenUsageHistory(saved.tokenUsage);
-    activeTokenUsage = undefined;
-    chat.innerHTML = saved.chatHtml;
-    if (agentState) {
-      const graphValue = agentStateToGraph(agentState);
-      renderGraph(graphValue);
-      stateInput.textContent = compactAgentState(agentState);
-      stateOutput.textContent = "Restored the browser-persisted causal graph. Continue the chat or export it.";
-      status.textContent = `Restored · ${graphValue.nodes.length} nodes / ${graphValue.edges.length} edges`;
-    } else {
-      status.textContent = `Restored · ${tokenUsageHistory.length} token record${tokenUsageHistory.length === 1 ? "" : "s"}`;
-    }
-    renderTokenUsage();
+    const value = JSON.parse(raw) as { sessionId?: unknown };
+    return typeof value.sessionId === "string" && /^sws_[0-9a-f]{32}$/.test(value.sessionId) ? value.sessionId : undefined;
   } catch {
-    localStorage.removeItem(stateChatStorageKey);
-    tokenUsageHistory = [];
-    activeTokenUsage = undefined;
-    renderTokenUsage();
+    return undefined;
   }
+}
+
+function legacySessionSeed(): { state?: AgentState; usageHistory: TokenUsagePoint[] } {
+  const raw = localStorage.getItem(legacyStateChatStorageKey);
+  if (!raw) return { usageHistory: [] };
+  try {
+    const value = JSON.parse(raw) as { state?: unknown; tokenUsage?: unknown };
+    return {
+      ...(isAgentStateLike(value.state) ? { state: value.state } : {}),
+      usageHistory: parseTokenUsageHistory(value.tokenUsage)
+    };
+  } catch {
+    return { usageHistory: [] };
+  }
+}
+
+async function createStateSession(seed: { state?: AgentState; usageHistory?: TokenUsagePoint[] } = {}): Promise<StateWeaveSessionView> {
+  const response = await fetch(`${apiBase}/api/stateweave/sessions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...(seed.state ? { state: seed.state } : {}), usageHistory: seed.usageHistory ?? [] })
+  });
+  const body = await response.json() as StateWeaveSessionView | { error?: string };
+  if (!response.ok) throw new StateWeaveRequestError("error" in body && body.error ? body.error : `Session creation failed (${response.status})`, response.status);
+  return body as StateWeaveSessionView;
+}
+
+async function fetchStateSession(sessionId: string): Promise<StateWeaveSessionView> {
+  const response = await fetch(`${apiBase}/api/stateweave/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" });
+  const body = await response.json() as StateWeaveSessionView | { error?: string };
+  if (!response.ok) throw new StateWeaveRequestError("error" in body && body.error ? body.error : `Session load failed (${response.status})`, response.status);
+  return body as StateWeaveSessionView;
+}
+
+async function deleteStateSession(sessionId: string): Promise<void> {
+  const response = await fetch(`${apiBase}/api/stateweave/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+  if (!response.ok && response.status !== 404) throw new Error(`Session deletion failed (${response.status})`);
+}
+
+function persistSessionReference(sessionId: string): void {
+  localStorage.setItem(stateSessionStorageKey, JSON.stringify({ sessionId }));
+}
+
+function applyStateSession(session: StateWeaveSessionView, restored: boolean): void {
+  stateSessionId = session.sessionId;
+  stateSessionTurnId = session.currentTurnId;
+  agentState = session.state;
+  tokenUsageHistory = parseTokenUsageHistory(session.usageHistory);
+  activeTokenUsage = undefined;
+  persistSessionReference(session.sessionId);
+  renderSessionHistory(session.history, session.historyTruncated);
+  if (agentState) {
+    const graphValue = agentStateToGraph(agentState);
+    renderGraph(graphValue);
+    stateInput.textContent = compactAgentState(agentState);
+    stateOutput.textContent = "Restored from the authoritative server JSONL session.";
+    status.textContent = `${restored ? "Restored" : "Ready"} · JSONL ${session.turnCount} committed turn${session.turnCount === 1 ? "" : "s"} · ${graphValue.nodes.length} nodes`;
+  } else {
+    resetRenderedGraph();
+    stateInput.textContent = "No turn yet.";
+    stateOutput.textContent = "Server JSONL session ready.";
+    status.textContent = "Ready · server JSONL session";
+  }
+  renderTokenUsage();
+}
+
+function renderSessionHistory(history: SessionHistoryEntry[], truncated: boolean): void {
+  chat.innerHTML = truncated ? `<div class="session-history-notice">Earlier messages remain in the server JSONL log.</div>` : "";
+  for (const entry of history) {
+    if (entry.role === "user") {
+      chat.insertAdjacentHTML("beforeend", `<div class="message user"${entry.nodeId ? ` data-node-id="${escapeAttribute(entry.nodeId)}"` : ""}><div class="markdown">${renderMarkdown(entry.content)}</div></div>`);
+    } else if (entry.role === "assistant") {
+      chat.insertAdjacentHTML("beforeend", `<article class="answer state-answer assistant-final-card"${entry.nodeId ? ` data-node-id="${escapeAttribute(entry.nodeId)}"` : ""}><div class="assistant-final-header"><span>StateWeave</span></div><div class="assistant-final-body">${responseHtml(entry.content)}</div></article>`);
+    } else {
+      chat.insertAdjacentHTML("beforeend", `<div class="message error"><div>${escapeHtml(entry.content)}</div></div>`);
+    }
+  }
+  if (!history.length) chat.innerHTML = `<div class="empty-state"><h2>Ask anything.</h2><p>StateWeave keeps one immutable causal graph and compiles a compact molecular view for every model call.</p></div>`;
+  scrollChat(chat);
+}
+
+function resetRenderedGraph(): void {
+  primaryGraphViewState.selectedNodeId = undefined;
+  primaryGraphViewState.positions.clear();
+  primaryGraphViewState.collapsedMoleculeIds.clear();
+  stopGraphAnimation(primaryGraphViewState);
+  graph.className = "graph-empty";
+  graph.textContent = "No graph yet.";
 }
 
 function renderAgentSettings(): void {
@@ -1427,6 +1523,11 @@ function formatSdkBuildDuration(value: number): string {
 async function sendStateWeaveMessage(): Promise<void> {
   const text = input.value.trim();
   if (!text || stateRunning) return;
+  await stateSessionReady;
+  if (!stateSessionId) {
+    status.textContent = "Durable session is unavailable.";
+    return;
+  }
 
   stateRunning = true;
   send.disabled = true;
@@ -1440,7 +1541,7 @@ async function sendStateWeaveMessage(): Promise<void> {
   const live = createLiveStreamLog();
 
   try {
-    const result = await streamStateWeave(text, agentState, agentSettings, (event) => {
+    const result = await streamStateWeave(text, stateSessionId, stateSessionTurnId, agentSettings, (event) => {
       updateActiveTokenUsage(event);
       updateLiveStreamLog(live, event);
       updatePendingStateWeave(pending, live);
@@ -1452,19 +1553,38 @@ async function sendStateWeaveMessage(): Promise<void> {
       }
     });
     agentState = result.stateweave.stateAfter;
+    stateSessionTurnId = result.session.turnId ?? result.session.currentTurnId;
+    if (typeof result.session.turn === "number" && activeTokenUsage) activeTokenUsage.turn = result.session.turn;
     commitTokenUsageTurn("done", result.stateweave.metadata);
     const assistantMessage = finalizePendingStateWeave(pending, result.stateweave.output, live);
     linkLatestConversationNodes(result.stateweave.graph, userMessage, assistantMessage);
     renderStateWeave(result.stateweave);
     void loadWorkspaceFiles();
-    status.textContent = `Done · StateGraph ${result.stateweave.graph.nodes.length} nodes / ${result.stateweave.graph.edges.length} edges`;
-    persistStateChat();
+    status.textContent = `Done · JSONL committed · StateGraph ${result.stateweave.graph.nodes.length} nodes / ${result.stateweave.graph.edges.length} edges`;
   } catch (error) {
-    commitTokenUsageTurn("failed", error instanceof StateWeaveStreamError ? error.metrics : undefined);
-    failPendingStateWeave(pending, error instanceof Error ? error.message : String(error), live);
-    status.textContent = "Failed.";
+    if (error instanceof StateWeaveRequestError && error.statusCode === 409 && stateSessionId) {
+      try {
+        applyStateSession(await fetchStateSession(stateSessionId), true);
+        status.textContent = "Session advanced in another tab · reloaded; message was not sent.";
+      } catch (reloadError) {
+        commitTokenUsageTurn("failed");
+        failPendingStateWeave(pending, reloadError instanceof Error ? reloadError.message : String(reloadError), live);
+        status.textContent = "Session reload failed.";
+      }
+    } else if (error instanceof StateWeaveRequestError && error.statusCode === 404) {
+      const replacement = await createStateSession();
+      applyStateSession(replacement, false);
+      status.textContent = "Previous session was unavailable · created a new JSONL session; message was not sent.";
+    } else {
+      if (error instanceof StateWeaveStreamError) {
+        stateSessionTurnId = error.session?.currentTurnId ?? stateSessionTurnId;
+        if (typeof error.session?.turn === "number" && activeTokenUsage) activeTokenUsage.turn = error.session.turn;
+      }
+      commitTokenUsageTurn("failed", error instanceof StateWeaveStreamError ? error.metrics : undefined);
+      failPendingStateWeave(pending, error instanceof Error ? error.message : String(error), live);
+      status.textContent = "Failed · error recorded in server JSONL.";
+    }
   } finally {
-    persistStateChat();
     stateRunning = false;
     send.disabled = false;
     reset.disabled = false;
@@ -1504,37 +1624,45 @@ async function runAbTest(): Promise<void> {
   }
 }
 
-async function streamStateWeave(text: string, state: AgentState | undefined, settings: AgentSettings, onEvent: (event: AgentStreamEvent) => void): Promise<StateWeaveResponse> {
+async function streamStateWeave(text: string, sessionId: string, expectedTurnId: string | undefined, settings: AgentSettings, onEvent: (event: AgentStreamEvent) => void): Promise<StateWeaveResponse> {
   const response = await fetch(`${apiBase}/api/stateweave/run`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ input: text, state, systemPrompt: settings.systemPrompt, projectionTargetTokens: settings.projectionTargetTokens, maxIterations: settings.maxIterations })
+    body: JSON.stringify({ input: text, sessionId, ...(expectedTurnId ? { expectedTurnId } : {}), systemPrompt: settings.systemPrompt, projectionTargetTokens: settings.projectionTargetTokens, maxIterations: settings.maxIterations })
   });
 
   if (!response.ok) {
     const body = (await response.json().catch(() => undefined)) as { error?: string } | undefined;
-    throw new Error(body?.error ?? `Request failed (${response.status})`);
+    throw new StateWeaveRequestError(body?.error ?? `Request failed (${response.status})`, response.status);
   }
   if (!response.body) throw new Error("Streaming response body was empty.");
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let final: StateWeaveResponse | undefined;
+  let finalPayload: AgentPayload | undefined;
   let terminalError: StreamErrorEvent | undefined;
+  let sessionReference: SessionReference | undefined;
+  let failedSession: SessionReference | undefined;
 
   const consumeLine = (line: string): void => {
     if (!line.trim()) return;
-    const event = JSON.parse(line) as AgentStreamEvent | StreamErrorEvent;
+    const event = JSON.parse(line) as AgentStreamEvent | StreamErrorEvent | SessionStreamEvent;
+    if (event.type === "session" || event.type === "session_commit") {
+      sessionReference = event.session;
+      return;
+    }
+    if (event.type === "session_failure") {
+      failedSession = event.session;
+      return;
+    }
     if (event.type === "final") {
-      final = {
-        stateweave: {
-          stateAfter: event.result.state,
-          output: event.result.finalAnswer,
-          trace: event.result.trace,
-          graph: event.result.graph,
-          metadata: event.result.metadata
-        }
+      finalPayload = {
+        stateAfter: event.result.state,
+        output: event.result.finalAnswer,
+        trace: event.result.trace,
+        graph: event.result.graph,
+        metadata: event.result.metadata
       };
     } else if (event.type === "error") {
       terminalError = event;
@@ -1553,9 +1681,10 @@ async function streamStateWeave(text: string, state: AgentState | undefined, set
   buffer += decoder.decode();
   consumeLine(buffer);
 
-  if (terminalError) throw new StateWeaveStreamError(terminalError.message, terminalError.metrics);
-  if (!final) throw new Error("StateWeave stream ended without a final result.");
-  return final;
+  if (terminalError) throw new StateWeaveStreamError(terminalError.message, terminalError.metrics, failedSession);
+  if (!finalPayload) throw new Error("StateWeave stream ended without a final result.");
+  if (!sessionReference?.turnId) throw new Error("StateWeave final result was not committed to the JSONL session.");
+  return { stateweave: finalPayload, session: sessionReference };
 }
 
 async function compareStateWeave(text: string, frame: GraphFrame | undefined, messages: ChatMessage[]): Promise<CompareResponse> {
@@ -1676,8 +1805,8 @@ function applyTokenUsageMetadata(point: TokenUsagePoint, metadata: Partial<Agent
 
 async function loadHealth(): Promise<void> {
   const response = await fetch(`${apiBase}/api/health`).catch(() => undefined);
-  const health = response?.ok ? ((await response.json()) as { provider?: string; defaultContextMode?: string }) : undefined;
-  provider.textContent = health?.provider ? `Provider: ${health.provider}${health.defaultContextMode ? ` · ${health.defaultContextMode}` : ""}` : "Provider unavailable";
+  const health = response?.ok ? ((await response.json()) as { provider?: string; defaultContextMode?: string; sessionStorage?: string }) : undefined;
+  provider.textContent = health?.provider ? `Provider: ${health.provider}${health.defaultContextMode ? ` · ${health.defaultContextMode}` : ""}${health.sessionStorage ? ` · ${health.sessionStorage}` : ""}` : "Provider unavailable";
 }
 
 async function loadTools(): Promise<void> {
@@ -1908,26 +2037,22 @@ function closeGraphTransfer(): void {
   transferModal.hidden = true;
 }
 
-function applyGraphImport(): void {
+async function applyGraphImport(): Promise<void> {
+  applyImport.disabled = true;
   try {
     const state = parseImportedAgentState(transferText.value);
-    agentState = state;
-    tokenUsageHistory = [];
-    activeTokenUsage = undefined;
-    renderTokenUsage();
-    primaryGraphViewState.selectedNodeId = undefined;
-    primaryGraphViewState.positions.clear();
-    primaryGraphViewState.collapsedMoleculeIds.clear();
-    const graphValue = agentStateToGraph(state);
-    renderGraph(graphValue);
-    stateInput.textContent = compactAgentState(state);
-    stateOutput.textContent = "Imported AgentState. The next turn will continue from this causal frontier.";
-    status.textContent = `Imported · ${graphValue.nodes.length} nodes / ${graphValue.edges.length} edges`;
-    persistStateChat();
+    const previousSessionId = stateSessionId;
+    const session = await createStateSession({ state, usageHistory: [] });
+    applyStateSession(session, false);
+    if (previousSessionId && previousSessionId !== session.sessionId) void deleteStateSession(previousSessionId).catch(() => undefined);
+    stateOutput.textContent = "Imported AgentState into a new authoritative JSONL session.";
+    status.textContent = `Imported · JSONL · ${state.nodes.length} nodes`;
     closeGraphTransfer();
     setActivePage("state");
   } catch (error) {
     transferHelp.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    applyImport.disabled = false;
   }
 }
 
@@ -1961,24 +2086,25 @@ function isAgentStateLike(value: unknown): value is AgentState {
   return candidate.version === 1 && Array.isArray(candidate.nodes) && Array.isArray(candidate.frontier);
 }
 
-function resetStateWeaveChat(): void {
-  agentState = undefined;
-  tokenUsageHistory = [];
-  activeTokenUsage = undefined;
-  input.value = "";
-  localStorage.removeItem(stateChatStorageKey);
-  primaryGraphViewState.selectedNodeId = undefined;
-  primaryGraphViewState.positions.clear();
-  primaryGraphViewState.collapsedMoleculeIds.clear();
-  stopGraphAnimation(primaryGraphViewState);
-  chat.innerHTML = `<div class="empty-state"><h2>Ask anything.</h2><p>StateWeave keeps one immutable causal graph and compiles a compact molecular view for every model call.</p></div>`;
-  stateInput.textContent = "No turn yet.";
-  stateOutput.textContent = "No output yet.";
-  graph.className = "graph-empty";
-  graph.textContent = "No graph yet.";
-  renderTokenUsage();
-  status.textContent = "Reset.";
-  input.focus();
+async function resetStateWeaveChat(): Promise<void> {
+  if (stateRunning) return;
+  send.disabled = true;
+  reset.disabled = true;
+  const previousSessionId = stateSessionId;
+  try {
+    const session = await createStateSession();
+    input.value = "";
+    applyStateSession(session, false);
+    localStorage.removeItem(legacyStateChatStorageKey);
+    if (previousSessionId && previousSessionId !== session.sessionId) void deleteStateSession(previousSessionId).catch(() => undefined);
+    status.textContent = "Reset · new server JSONL session";
+    input.focus();
+  } catch (error) {
+    status.textContent = `Reset failed · ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    send.disabled = false;
+    reset.disabled = false;
+  }
 }
 
 function resetAbTests(): void {

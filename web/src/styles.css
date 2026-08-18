@@ -275,6 +275,17 @@ h3 {
   scroll-behavior: smooth;
 }
 
+.session-history-notice {
+  margin: 0 0 12px;
+  border: 1px solid #bae6fd;
+  border-radius: 10px;
+  background: #f0f9ff;
+  padding: 8px 10px;
+  color: #075985;
+  font-size: 0.72rem;
+  text-align: center;
+}
+
 .empty-state {
   display: grid;
   place-items: center;

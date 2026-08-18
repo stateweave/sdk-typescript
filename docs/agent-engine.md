@@ -86,6 +86,14 @@ const result = await agent.run("Continue the task");
 
 The agent uses ordinary tool schemas and executors. It adds no memory tool and no graph-only action. The model may choose a different action sequence because its state differs; its capabilities do not.
 
+## Development lab session persistence
+
+The development chat stores authoritative sessions as append-only JSONL under `STATEWEAVE_SESSION_DIR` (Docker default `/data/sessions`). The browser retains only a random 128-bit session id; it does not persist `AgentState`, rendered chat HTML, or token history.
+
+A session starts with a versioned header. Successful turns append one `turn_commit` containing only new immutable causal nodes, the committed frontier, provider usage metadata, and enough user/answer text to rebuild the chat. Failed runs append `run_error` without advancing the committed frontier. Every 50 successful turns adds a validated full-state checkpoint. Replay validates node identity, sequence, parents, frontier, state hash, turn lineage, and checkpoint counters. A final unterminated JSONL tail is ignored and truncated before the next append, while malformed complete records fail closed. File locks serialize append operations, and expected-parent comparison rejects stale browser tabs before a divergent commit.
+
+Existing browser-owned lab state migrates once through a validated bootstrap entry. Reset and import create a new server session before deleting the previous exact session. Session APIs are private/no-store, expose no listing route, and use unguessable ids. The older per-run JSON files under `STATEWEAVE_TRACE_DIR` remain separate diagnostic traces; they include compiled prompts and raw model outputs and are not session recovery state.
+
 ## Current limitations
 
 - Black-box providers still receive a linear token rendering; StateWeave does not claim arbitrary transformer KV-cache composition.
