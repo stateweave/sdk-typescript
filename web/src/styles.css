@@ -1883,6 +1883,11 @@ label {
   font-size: 0.64rem;
 }
 
+.dual-token-arm > footer small {
+  max-width: 68%;
+  text-align: right;
+}
+
 .dual-token-arm > div {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1912,6 +1917,54 @@ label {
   text-transform: none;
 }
 
+.dual-memory-accounting {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.dual-memory-accounting article {
+  padding: 11px 12px;
+}
+
+.dual-memory-accounting article + article {
+  border-left: 1px solid var(--border);
+}
+
+.dual-memory-accounting article.stateweave { box-shadow: inset 0 2px #06a9c2; }
+.dual-memory-accounting article.traditional { box-shadow: inset 0 2px #ea580c; }
+
+.dual-memory-accounting strong {
+  font-size: 0.72rem;
+}
+
+.dual-memory-accounting article p,
+.dual-memory-accounting > p {
+  margin-top: 4px;
+  color: var(--muted-foreground);
+  font-size: 0.67rem;
+  line-height: 1.45;
+}
+
+.dual-memory-accounting code {
+  border-radius: 3px;
+  background: #f4f4f5;
+  padding: 1px 3px;
+  color: var(--foreground);
+  font-size: 0.63rem;
+}
+
+.dual-memory-accounting > p {
+  grid-column: 1 / -1;
+  margin: 0;
+  border-top: 1px solid var(--border);
+  background: #fafafa;
+  padding: 9px 12px;
+}
+
 .dual-token-summary {
   display: flex;
   flex-wrap: wrap;
@@ -1919,6 +1972,11 @@ label {
   padding: 9px 11px;
   color: var(--muted-foreground);
   font-size: 0.66rem;
+}
+
+.dual-token-summary-label {
+  color: var(--foreground);
+  font-weight: 800;
 }
 
 .dual-token-summary strong {
@@ -2017,7 +2075,7 @@ label {
 .dual-token-ledger td small {
   display: block;
   margin-top: 2px;
-  color: #c2410c;
+  color: var(--muted-foreground);
 }
 
 .traditional-memory-panel {
@@ -3448,8 +3506,14 @@ label {
   }
 
   .dual-token-latest,
+  .dual-memory-accounting,
   .traditional-memory-panel {
     grid-template-columns: 1fr;
+  }
+
+  .dual-memory-accounting article + article {
+    border-top: 1px solid var(--border);
+    border-left: 0;
   }
 
   .dual-token-charts > header,

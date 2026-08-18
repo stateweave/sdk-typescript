@@ -52,10 +52,14 @@ it("renders paired StateWeave and traditional usage on one turn axis", () => {
 
   expect(rendered.countLabel).toBe("1 paired turn");
   expect(rendered.html).toContain("Same input, two memory primitives");
-  expect(rendered.html).toContain("Input by turn");
-  expect(rendered.html).toContain("Output by turn");
-  expect(rendered.html).toContain("Peak context by turn");
+  expect(rendered.html).toContain("Summed API input by turn");
+  expect(rendered.html).toContain("Summed API output by turn");
+  expect(rendered.html).toContain("Peak single request by turn");
+  expect(rendered.html).toContain("chronological transcript is not replayed");
+  expect(rendered.html).toContain("complete active <code>messages[]</code>");
+  expect(rendered.html).toContain("Neither is context size");
   expect(rendered.html).toContain("900 summary input");
+  expect(rendered.html).toContain("2 model calls · replayed transcript");
   expect(rendered.html).toContain("traditional input");
 });
 

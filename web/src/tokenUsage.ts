@@ -135,7 +135,7 @@ export function renderDualTokenUsageView(
   if (!statePoints.length && !traditionalPoints.length) {
     return {
       countLabel,
-      html: `<div class="token-usage-empty"><div class="token-empty-lines" aria-hidden="true"><span></span><span></span><span></span></div><h4>No paired usage recorded yet</h4><p>Each message runs both memory primitives. Their provider input, output, and peak context will share one turn axis.</p></div>`
+      html: `<div class="token-usage-empty"><div class="token-empty-lines" aria-hidden="true"><span></span><span></span><span></span></div><h4>No paired usage recorded yet</h4><p>Each message runs both memory primitives. Charts separate summed API traffic from the largest context sent in one request.</p></div>`
     };
   }
 
@@ -151,7 +151,13 @@ export function renderDualTokenUsageView(
         ${dualLatestArmHtml("StateWeave", "stateweave", statePoints.at(-1), stateTotalInput, stateTotalOutput)}
         ${dualLatestArmHtml("Traditional", "traditional", traditionalPoints.at(-1), traditionalTotalInput, traditionalTotalOutput)}
       </section>
-      <section class="dual-token-summary" aria-label="Cumulative token comparison">
+      <section class="dual-memory-accounting" aria-label="How context and input tokens differ">
+        <article class="stateweave"><strong>StateWeave · projected graph</strong><p>Each call recompiles a bounded selection from the complete causal graph. Relevant prior content can return, but the chronological transcript is not replayed.</p></article>
+        <article class="traditional"><strong>Traditional · replayed transcript</strong><p>Each call sends the complete active <code>messages[]</code>. At 48K estimated tokens, older messages become one summary and the latest six remain verbatim.</p></article>
+        <p><strong>Reading the numbers:</strong> summed input adds every model request within that turn; cumulative input adds those usage totals across turns. Neither is context size. Peak single request is the largest actual context sent once.</p>
+      </section>
+      <section class="dual-token-summary" aria-label="Cumulative provider token comparison">
+        <span class="dual-token-summary-label">Cumulative usage</span>
         <span><strong>${formatAxisTokens(stateTotalInput)}</strong> StateWeave input</span>
         <span><strong>${formatAxisTokens(traditionalTotalInput)}</strong> traditional input</span>
         <span><strong>${formatAxisTokens(stateTotalOutput)}</strong> StateWeave output</span>
@@ -167,11 +173,13 @@ export function renderDualTokenUsageView(
 function dualLatestArmHtml(label: string, css: string, point: TokenUsagePoint | undefined, totalInput: number, totalOutput: number): string {
   if (!point) return `<article class="dual-token-arm ${css} empty"><header><strong>${label}</strong><span>Waiting</span></header><p>No measured turn yet.</p></article>`;
   const peak = Math.max(point.peakContextTokens, point.latestContextTokens);
-  const compaction = point.compactions ? `<small>${point.compactions} compaction${point.compactions === 1 ? "" : "s"} · ${(point.compactionInputTokens ?? 0).toLocaleString()} summary input</small>` : `<small>${point.modelCalls} model call${point.modelCalls === 1 ? "" : "s"}</small>`;
+  const memoryLabel = css === "stateweave" ? "projected graph" : "replayed transcript";
+  const compaction = point.compactions ? ` · ${point.compactions} compaction${point.compactions === 1 ? "" : "s"} · ${(point.compactionInputTokens ?? 0).toLocaleString()} summary input` : "";
+  const callLabel = `<small>${point.modelCalls} model call${point.modelCalls === 1 ? "" : "s"} · ${memoryLabel}${compaction}</small>`;
   return `<article class="dual-token-arm ${css}">
     <header><strong>${label}</strong><span>T${point.turn} ${escapeHtml(point.status)}</span></header>
-    <div><span>Turn input<strong>${formatTokens(point.totalInputTokens)}</strong></span><span>Turn output<strong>${formatTokens(point.outputTokens)}</strong></span><span>Peak context<strong>${formatTokens(peak)}</strong></span><span>Cumulative<strong>${formatTokens(totalInput + totalOutput)}</strong></span></div>
-    <footer><span>${escapeHtml(sourceLabel(point))}</span>${compaction}</footer>
+    <div><span>Summed input<strong>${formatTokens(point.totalInputTokens)}</strong></span><span>Summed output<strong>${formatTokens(point.outputTokens)}</strong></span><span>Peak single request<strong>${formatTokens(peak)}</strong></span><span>Cumulative I/O<strong>${formatTokens(totalInput + totalOutput)}</strong></span></div>
+    <footer><span>${escapeHtml(sourceLabel(point))}</span>${callLabel}</footer>
   </article>`;
 }
 
@@ -181,9 +189,9 @@ function dualUsageChartHtml(statePoints: TokenUsagePoint[], traditionalPoints: T
   const turnValues = [...new Set([...state.keys(), ...traditional.keys()])].sort((a, b) => a - b).slice(-maxTokenChartPoints);
   if (!turnValues.length) return "";
   const panels = [
-    { key: "totalInputTokens" as const, title: "Input by turn", note: "All model calls, including traditional summary compaction" },
-    { key: "outputTokens" as const, title: "Output by turn", note: "Agent output plus compaction output when present" },
-    { key: "peakContextTokens" as const, title: "Peak context by turn", note: "Largest single model call in each arm" }
+    { key: "totalInputTokens" as const, title: "Summed API input by turn", note: "Adds every model request in the turn; not context carried forward" },
+    { key: "outputTokens" as const, title: "Summed API output by turn", note: "Adds every model response, including compaction output" },
+    { key: "peakContextTokens" as const, title: "Peak single request by turn", note: "Largest actual context sent once by each arm" }
   ];
   return `<section class="dual-token-charts"><header><div><h4>Same input, two memory primitives</h4><p>Shared turn axis · latest ${turnValues.length} paired turn${turnValues.length === 1 ? "" : "s"}</p></div><div class="dual-chart-legend"><span class="stateweave">StateWeave</span><span class="traditional">Traditional</span></div></header>${panels.map((panel) => dualChartPanel(panel.title, panel.note, panel.key, turnValues, state, traditional)).join("")}</section>`;
 }
@@ -216,12 +224,12 @@ function dualUsageLedgerHtml(statePoints: TokenUsagePoint[], traditionalPoints: 
   const state = new Map(statePoints.map((point) => [point.turn, point]));
   const traditional = new Map(traditionalPoints.map((point) => [point.turn, point]));
   const turns = [...new Set([...state.keys(), ...traditional.keys()])].sort((a, b) => b - a).slice(0, 100);
-  const cell = (point: TokenUsagePoint | undefined): string => point ? `${point.totalInputTokens.toLocaleString()} / ${point.outputTokens.toLocaleString()} / ${point.peakContextTokens.toLocaleString()}` : "-";
+  const cell = (point: TokenUsagePoint | undefined, memory: string): string => point ? `${point.totalInputTokens.toLocaleString()} / ${point.outputTokens.toLocaleString()} / ${point.peakContextTokens.toLocaleString()}<small>${point.modelCalls} model call${point.modelCalls === 1 ? "" : "s"} · ${memory}</small>` : "-";
   const rows = turns.map((turn) => {
     const baseline = traditional.get(turn);
-    return `<tr><th scope="row">T${turn}</th><td>${cell(state.get(turn))}</td><td>${cell(baseline)}${baseline?.compactions ? `<small>${baseline.compactions} compact</small>` : ""}</td></tr>`;
+    return `<tr><th scope="row">T${turn}</th><td>${cell(state.get(turn), "projected graph")}</td><td>${cell(baseline, "replayed transcript")}${baseline?.compactions ? `<small>${baseline.compactions} compaction${baseline.compactions === 1 ? "" : "s"}</small>` : ""}</td></tr>`;
   }).join("");
-  return `<details class="token-ledger dual-token-ledger"><summary>Paired ledger · ${turns.length} turn${turns.length === 1 ? "" : "s"}</summary><div class="token-ledger-scroll"><table><thead><tr><th>Turn</th><th>StateWeave in / out / peak</th><th>Traditional in / out / peak</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+  return `<details class="token-ledger dual-token-ledger"><summary>Paired ledger · ${turns.length} turn${turns.length === 1 ? "" : "s"} · summed input / output / peak request</summary><div class="token-ledger-scroll"><table><thead><tr><th>Turn</th><th>StateWeave summed in / out / peak</th><th>Traditional summed in / out / peak</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
 }
 
 function usageChartHtml(points: TokenUsagePoint[]): string {
