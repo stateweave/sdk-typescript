@@ -28,8 +28,20 @@ class AnthropicCachedStreamModel implements Model {
   }
 
   async *stream(_input: ModelInput): AsyncIterable<ModelToken> {
-    yield { type: "metadata", metadata: { provider: "anthropic", event: "message_start", usage: { input_tokens: 17, output_tokens: 1, cache_read_input_tokens: 11, cache_creation_input_tokens: 5 } } };
+    yield { type: "metadata", metadata: { provider: "anthropic", event: "message_start", usage: { input_tokens: 0, output_tokens: 0 } } };
     yield { type: "token", token: "FINAL: cached answer" };
+    yield { type: "metadata", metadata: { provider: "anthropic", event: "message_delta", usage: { input_tokens: 17, output_tokens: 3, cache_read_input_tokens: 11, cache_creation_input_tokens: 5 } } };
+  }
+}
+
+class IncompleteUsageStreamModel implements Model {
+  async complete(_input: ModelInput): Promise<ModelOutput> {
+    throw new Error("The incomplete usage probe must use Model.stream().");
+  }
+
+  async *stream(_input: ModelInput): AsyncIterable<ModelToken> {
+    yield { type: "metadata", metadata: { provider: "anthropic", event: "message_start", usage: { input_tokens: 0, output_tokens: 0 } } };
+    yield { type: "token", token: "FINAL: incomplete usage answer" };
     yield { type: "metadata", metadata: { provider: "anthropic", event: "message_delta", usage: { output_tokens: 3 } } };
   }
 }
@@ -134,6 +146,21 @@ it("counts cached Anthropic input toward the context window", async () => {
     expect(final.result.metadata.totalInputTokens).toBe(33);
     expect(final.result.metadata.outputTokens).toBe(3);
     expect(final.result.metadata.tokenCountSource).toBe("provider");
+  }
+});
+
+it("labels incomplete provider usage as estimated instead of reporting zero input", async () => {
+  const agent = new Agent({ model: new IncompleteUsageStreamModel(), tools: [], enforceCompletionEvidence: false });
+  const events = [];
+
+  for await (const event of agent.streamEvents("Answer with incomplete provider usage")) events.push(event);
+
+  const final = events.find((event) => event.type === "final");
+  expect(final?.type).toBe("final");
+  if (final?.type === "final") {
+    expect(final.result.metadata.latestContextTokens).toBeGreaterThan(0);
+    expect(final.result.metadata.totalInputTokens).toBeGreaterThan(0);
+    expect(final.result.metadata.tokenCountSource).toBe("estimated");
   }
 });
 

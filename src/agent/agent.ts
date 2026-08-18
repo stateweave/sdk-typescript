@@ -265,16 +265,21 @@ function usageFromStreamMetadata(events: Record<string, unknown>[]): ModelUsage 
     provider ??= typeof event.provider === "string" ? event.provider : undefined;
     const nestedUsage = asRecord(event.usage);
     const usage = Object.keys(nestedUsage).length ? nestedUsage : event;
-    normalizedInputTokens ??= numberValue(usage.inputTokens);
-    rawInputTokens ??= numberValue(usage.input_tokens);
+    const currentNormalizedInputTokens = numberValue(usage.inputTokens);
+    const currentRawInputTokens = numberValue(usage.input_tokens);
     const currentOutputTokens = numberValue(usage.outputTokens) ?? numberValue(usage.output_tokens);
+    const currentUncachedInputTokens = numberValue(usage.uncachedInputTokens) ?? numberValue(usage.uncached_input_tokens);
+    const currentCacheReadInputTokens = numberValue(usage.cacheReadInputTokens) ?? numberValue(usage.cache_read_input_tokens);
+    const currentCacheCreationInputTokens = numberValue(usage.cacheCreationInputTokens) ?? numberValue(usage.cache_creation_input_tokens);
+    if (currentNormalizedInputTokens !== undefined) normalizedInputTokens = currentNormalizedInputTokens;
+    if (currentRawInputTokens !== undefined) rawInputTokens = currentRawInputTokens;
     if (currentOutputTokens !== undefined) outputTokens = currentOutputTokens;
-    uncachedInputTokens ??= numberValue(usage.uncachedInputTokens) ?? numberValue(usage.uncached_input_tokens);
-    cacheReadInputTokens ??= numberValue(usage.cacheReadInputTokens) ?? numberValue(usage.cache_read_input_tokens);
-    cacheCreationInputTokens ??= numberValue(usage.cacheCreationInputTokens) ?? numberValue(usage.cache_creation_input_tokens);
+    if (currentUncachedInputTokens !== undefined) uncachedInputTokens = currentUncachedInputTokens;
+    if (currentCacheReadInputTokens !== undefined) cacheReadInputTokens = currentCacheReadInputTokens;
+    if (currentCacheCreationInputTokens !== undefined) cacheCreationInputTokens = currentCacheCreationInputTokens;
   }
   const inputTokens = normalizedInputTokens ?? rawInputTokens;
-  if (inputTokens === undefined || outputTokens === undefined) return undefined;
+  if (inputTokens === undefined || inputTokens <= 0 || outputTokens === undefined) return undefined;
   const cachedRead = cacheReadInputTokens ?? 0;
   const cachedCreation = cacheCreationInputTokens ?? 0;
   const resolvedUncachedInputTokens = uncachedInputTokens ?? (provider === "anthropic" ? rawInputTokens : undefined);
