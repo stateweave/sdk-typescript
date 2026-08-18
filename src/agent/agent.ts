@@ -9,7 +9,7 @@ import type { Model, ModelInput, ModelOutput, ModelUsage } from "../llm/model.js
 import { estimateStateWeaveTokens } from "../llm/tokenizer.js";
 import { createDefaultTools } from "../tools/fileSystemTools.js";
 import type { Tool } from "../tools/types.js";
-import { defaultSemanticNodeTypes, type AgentArgs, type AgentModelEvent, type AgentProgress, type AgentRunOptions, type AgentRunResult, type AgentState, type AgentStreamEvent, type AgentTraceStep, type SemanticNodeType } from "./types.js";
+import { defaultSemanticNodeTypes, type AgentArgs, type AgentModelEvent, type AgentProgress, type AgentRunOptions, type AgentRunResult, type AgentState, type AgentStreamEvent, type AgentTraceStep, type SemanticNodeType, type TokenCountSource } from "./types.js";
 import {
   agentSystemPrompt,
   completionEvidenceGaps,
@@ -254,29 +254,36 @@ async function collectStreamedModelOutput(
 }
 
 function usageFromStreamMetadata(events: Record<string, unknown>[]): ModelUsage | undefined {
-  let inputTokens: number | undefined;
+  let provider: string | undefined;
+  let normalizedInputTokens: number | undefined;
+  let rawInputTokens: number | undefined;
   let outputTokens: number | undefined;
   let uncachedInputTokens: number | undefined;
   let cacheReadInputTokens: number | undefined;
   let cacheCreationInputTokens: number | undefined;
   for (const event of events) {
+    provider ??= typeof event.provider === "string" ? event.provider : undefined;
     const nestedUsage = asRecord(event.usage);
     const usage = Object.keys(nestedUsage).length ? nestedUsage : event;
-    inputTokens ??= numberValue(usage.inputTokens) ?? numberValue(usage.input_tokens);
-    outputTokens ??= numberValue(usage.outputTokens) ?? numberValue(usage.output_tokens);
+    normalizedInputTokens ??= numberValue(usage.inputTokens);
+    rawInputTokens ??= numberValue(usage.input_tokens);
+    const currentOutputTokens = numberValue(usage.outputTokens) ?? numberValue(usage.output_tokens);
+    if (currentOutputTokens !== undefined) outputTokens = currentOutputTokens;
     uncachedInputTokens ??= numberValue(usage.uncachedInputTokens) ?? numberValue(usage.uncached_input_tokens);
     cacheReadInputTokens ??= numberValue(usage.cacheReadInputTokens) ?? numberValue(usage.cache_read_input_tokens);
     cacheCreationInputTokens ??= numberValue(usage.cacheCreationInputTokens) ?? numberValue(usage.cache_creation_input_tokens);
   }
+  const inputTokens = normalizedInputTokens ?? rawInputTokens;
   if (inputTokens === undefined || outputTokens === undefined) return undefined;
   const cachedRead = cacheReadInputTokens ?? 0;
   const cachedCreation = cacheCreationInputTokens ?? 0;
-  const totalInputTokens = uncachedInputTokens === undefined ? inputTokens : uncachedInputTokens + cachedRead + cachedCreation;
+  const resolvedUncachedInputTokens = uncachedInputTokens ?? (provider === "anthropic" ? rawInputTokens : undefined);
+  const totalInputTokens = resolvedUncachedInputTokens === undefined ? inputTokens : resolvedUncachedInputTokens + cachedRead + cachedCreation;
   return {
     inputTokens: totalInputTokens,
     outputTokens,
     totalTokens: totalInputTokens + outputTokens,
-    ...(uncachedInputTokens === undefined ? {} : { uncachedInputTokens }),
+    ...(resolvedUncachedInputTokens === undefined ? {} : { uncachedInputTokens: resolvedUncachedInputTokens }),
     ...(cacheReadInputTokens === undefined ? {} : { cacheReadInputTokens }),
     ...(cacheCreationInputTokens === undefined ? {} : { cacheCreationInputTokens })
   };
@@ -295,10 +302,17 @@ type RuntimeResult = {
     modelCalls: number;
     toolCalls: number;
     latestContextTokens: number;
+    peakContextTokens: number;
     totalInputTokens: number;
     outputTokens: number;
+    tokenCountSource: TokenCountSource;
   };
 };
+
+function resolveTokenCountSource(modelCalls: number, providerUsageCalls: number): TokenCountSource {
+  if (providerUsageCalls === 0) return "estimated";
+  return providerUsageCalls === modelCalls ? "provider" : "mixed";
+}
 
 class AgentRuntime {
   private readonly model: Model;
@@ -360,8 +374,10 @@ class AgentRuntime {
     const evidence = createCompletionEvidence();
     const trace: AgentTraceStep[] = [];
     let modelCalls = 0;
+    let providerUsageCalls = 0;
     let toolCalls = 0;
     let latestContextTokens = 0;
+    let peakContextTokens = 0;
     let totalInputTokens = 0;
     let outputTokens = 0;
     let repeatedInvalidOutput = "";
@@ -370,7 +386,15 @@ class AgentRuntime {
     let repeatedMissingEvidenceCount = 0;
     let consecutiveRetryCount = 0;
     let lastMutationIteration = 0;
-    const metrics = (): RuntimeResult["metrics"] => ({ modelCalls, toolCalls, latestContextTokens, totalInputTokens, outputTokens });
+    const metrics = (): RuntimeResult["metrics"] => ({
+      modelCalls,
+      toolCalls,
+      latestContextTokens,
+      peakContextTokens,
+      totalInputTokens,
+      outputTokens,
+      tokenCountSource: resolveTokenCountSource(modelCalls, providerUsageCalls)
+    });
     const progress = (iteration: number, phase: AgentProgress["phase"], detail: string, extra: Partial<AgentProgress> = {}): void => {
       const includeGraph = phase === "context" || phase === "final" || phase === "retrying";
       options.onProgress?.({
@@ -380,6 +404,7 @@ class AgentRuntime {
         toolCalls,
         totalInputTokens,
         outputTokens,
+        ...(modelCalls ? { tokenCountSource: resolveTokenCountSource(modelCalls, providerUsageCalls), peakContextTokens } : {}),
         detail,
         ...(includeGraph ? { graph: agentStateToGraph(this.weave.snapshot()) } : {}),
         ...extra
@@ -410,7 +435,9 @@ class AgentRuntime {
         ? await collectStreamedModelOutput(this.model, modelInput, iteration, options.onModelEvent)
         : await this.model.complete(modelInput);
       modelCalls += 1;
+      if (output.usage) providerUsageCalls += 1;
       latestContextTokens = output.usage?.inputTokens ?? compiled.tokenEstimate.estimatedTokens;
+      peakContextTokens = Math.max(peakContextTokens, latestContextTokens);
       totalInputTokens += latestContextTokens;
       outputTokens += output.usage?.outputTokens ?? estimateStateWeaveTokens(output.text).estimatedTokens;
 

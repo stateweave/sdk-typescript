@@ -7,6 +7,7 @@ import { promptFiveCases, promptFiveCategoryOrder, type PromptFiveCategory } fro
 import { promptSixCases, promptSixCategoryOrder, promptSixHypothesis, type PromptSixCategory, type PromptSixHypothesis } from "./promptSix.js";
 import { oneShotPromptStats, oneShotSdkBuildPrompt } from "../../src/evals/oneShotSdkBenchmark.js";
 import { protocolExperiment } from "./protocolExperiment.js";
+import { maxTokenUsageHistory, parseTokenUsageHistory, renderTokenUsageView, type TokenUsagePoint, type TokenUsageStatus } from "./tokenUsage.js";
 import "./styles.css";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -126,8 +127,10 @@ type WorkspaceFile = { path: string; size: number; updatedAt: string; mime: stri
 type WorkspaceFileContent = WorkspaceFile & { content: string };
 type PreviewSource = { kind: "srcdoc" | "url"; value: string };
 type TransferMode = "export" | "import";
-type WorkspaceViewName = "graph" | "tools" | "files";
+type WorkspaceViewName = "graph" | "tools" | "files" | "usage";
 type AgentSettings = { systemPrompt: string; projectionTargetTokens: number; maxIterations: number };
+type AgentUsageMetrics = Pick<AgentRunMetadata, "latestContextTokens" | "peakContextTokens" | "totalInputTokens" | "outputTokens" | "modelCalls" | "tokenCountSource">;
+type StreamErrorEvent = { type: "error"; message: string; metrics?: Partial<AgentUsageMetrics> };
 type LiveStreamStep = {
   step: number;
   phase: AgentProgress["phase"];
@@ -141,6 +144,13 @@ type LiveStreamStep = {
   edgeCount?: number;
 };
 type LiveStreamLog = { metadata?: Partial<AgentRunMetadata>; steps: Map<number, LiveStreamStep>; events: string[]; prompt?: string; latestStep?: number; finalAnswer?: string };
+
+class StateWeaveStreamError extends Error {
+  constructor(message: string, readonly metrics?: Partial<AgentUsageMetrics>) {
+    super(message);
+    this.name = "StateWeaveStreamError";
+  }
+}
 
 let activePage: PageName = pageFromHash();
 let sdkBuildState: SdkBuildPublicState | undefined;
@@ -167,6 +177,8 @@ let artifactPreviewCounter = 0;
 let transferMode: TransferMode = "export";
 let selectedFilePath: string | undefined;
 let workspaceFiles: WorkspaceFile[] = [];
+let tokenUsageHistory: TokenUsagePoint[] = [];
+let activeTokenUsage: TokenUsagePoint | undefined;
 
 const defaultAgentSettings: AgentSettings = {
   systemPrompt: "You are a StateWeave agent. Complete the user's task accurately, use tools when needed, and preserve durable working state in the causal graph.",
@@ -599,9 +611,13 @@ const stateOutput = element<HTMLElement>("state-output");
 const graphViewTab = element<HTMLButtonElement>("graph-view-tab");
 const toolsViewTab = element<HTMLButtonElement>("tools-view-tab");
 const filesViewTab = element<HTMLButtonElement>("files-view-tab");
+const tokenUsageViewTab = element<HTMLButtonElement>("token-usage-view-tab");
 const graphView = element<HTMLElement>("graph-view");
 const toolsView = element<HTMLElement>("tools-view");
 const filesView = element<HTMLElement>("files-view");
+const tokenUsageView = element<HTMLElement>("token-usage-view");
+const tokenUsageCount = element<HTMLElement>("token-usage-count");
+const tokenUsageContent = element<HTMLElement>("token-usage-content");
 const graph = element<HTMLElement>("graph");
 const toolList = element<HTMLElement>("tool-list");
 const toolCount = element<HTMLElement>("tool-count");
@@ -647,6 +663,7 @@ renderMultiProgress();
 void loadHealth();
 void loadTools();
 void loadWorkspaceFiles();
+renderTokenUsage();
 restoreStateChat();
 
 stateTab.addEventListener("click", () => setActivePage("state"));
@@ -722,6 +739,7 @@ multiConfirmJudges.addEventListener("change", () => {
 graphViewTab.addEventListener("click", () => setWorkspaceView("graph"));
 toolsViewTab.addEventListener("click", () => setWorkspaceView("tools"));
 filesViewTab.addEventListener("click", () => setWorkspaceView("files"));
+tokenUsageViewTab.addEventListener("click", () => setWorkspaceView("usage"));
 refreshFiles.addEventListener("click", () => void loadWorkspaceFiles());
 rebootFiles.addEventListener("click", () => void rebootWorkspaceFiles());
 exportGraph.addEventListener("click", () => openGraphTransfer("export"));
@@ -827,11 +845,16 @@ function saveAgentSettings(): void {
 
 function persistStateChat(): void {
   try {
-    if (!agentState) {
+    if (!agentState && !tokenUsageHistory.length) {
       localStorage.removeItem(stateChatStorageKey);
       return;
     }
-    localStorage.setItem(stateChatStorageKey, JSON.stringify({ state: agentState, chatHtml: chat.innerHTML, savedAt: new Date().toISOString() }));
+    localStorage.setItem(stateChatStorageKey, JSON.stringify({
+      ...(agentState ? { state: agentState } : {}),
+      chatHtml: chat.innerHTML,
+      tokenUsage: tokenUsageHistory,
+      savedAt: new Date().toISOString()
+    }));
   } catch {
     status.textContent = "Chat is too large for browser persistence; export the state to preserve it.";
   }
@@ -841,17 +864,28 @@ function restoreStateChat(): void {
   const raw = localStorage.getItem(stateChatStorageKey);
   if (!raw) return;
   try {
-    const saved = JSON.parse(raw) as { state?: unknown; chatHtml?: unknown };
-    if (!isAgentStateLike(saved.state) || typeof saved.chatHtml !== "string") throw new Error("Invalid saved chat");
+    const saved = JSON.parse(raw) as { state?: unknown; chatHtml?: unknown; tokenUsage?: unknown };
+    if (saved.state !== undefined && !isAgentStateLike(saved.state)) throw new Error("Invalid saved state");
+    if (typeof saved.chatHtml !== "string") throw new Error("Invalid saved chat");
     agentState = saved.state;
+    tokenUsageHistory = parseTokenUsageHistory(saved.tokenUsage);
+    activeTokenUsage = undefined;
     chat.innerHTML = saved.chatHtml;
-    const graphValue = agentStateToGraph(agentState);
-    renderGraph(graphValue);
-    stateInput.textContent = compactAgentState(agentState);
-    stateOutput.textContent = "Restored the browser-persisted causal graph. Continue the chat or export it.";
-    status.textContent = `Restored · ${graphValue.nodes.length} nodes / ${graphValue.edges.length} edges`;
+    if (agentState) {
+      const graphValue = agentStateToGraph(agentState);
+      renderGraph(graphValue);
+      stateInput.textContent = compactAgentState(agentState);
+      stateOutput.textContent = "Restored the browser-persisted causal graph. Continue the chat or export it.";
+      status.textContent = `Restored · ${graphValue.nodes.length} nodes / ${graphValue.edges.length} edges`;
+    } else {
+      status.textContent = `Restored · ${tokenUsageHistory.length} token record${tokenUsageHistory.length === 1 ? "" : "s"}`;
+    }
+    renderTokenUsage();
   } catch {
     localStorage.removeItem(stateChatStorageKey);
+    tokenUsageHistory = [];
+    activeTokenUsage = undefined;
+    renderTokenUsage();
   }
 }
 
@@ -897,7 +931,8 @@ function setWorkspaceView(view: WorkspaceViewName): void {
   const items = [
     { name: "graph", tab: graphViewTab, panel: graphView },
     { name: "tools", tab: toolsViewTab, panel: toolsView },
-    { name: "files", tab: filesViewTab, panel: filesView }
+    { name: "files", tab: filesViewTab, panel: filesView },
+    { name: "usage", tab: tokenUsageViewTab, panel: tokenUsageView }
   ] as const;
   for (const item of items) {
     const active = item.name === view;
@@ -907,6 +942,7 @@ function setWorkspaceView(view: WorkspaceViewName): void {
     item.panel.hidden = !active;
   }
   if (view === "files") void loadWorkspaceFiles();
+  if (view === "usage") renderTokenUsage();
 }
 
 function currentSuite(): PromptSuite {
@@ -1396,6 +1432,7 @@ async function sendStateWeaveMessage(): Promise<void> {
   send.disabled = true;
   reset.disabled = true;
   input.value = "";
+  startTokenUsageTurn();
   status.textContent = "Thinking…";
   clearEmptyState(chat);
   const userMessage = appendUser(text);
@@ -1404,6 +1441,7 @@ async function sendStateWeaveMessage(): Promise<void> {
 
   try {
     const result = await streamStateWeave(text, agentState, agentSettings, (event) => {
+      updateActiveTokenUsage(event);
       updateLiveStreamLog(live, event);
       updatePendingStateWeave(pending, live);
       stateOutput.textContent = formatLiveStreamLog(live);
@@ -1414,6 +1452,7 @@ async function sendStateWeaveMessage(): Promise<void> {
       }
     });
     agentState = result.stateweave.stateAfter;
+    commitTokenUsageTurn("done", result.stateweave.metadata);
     const assistantMessage = finalizePendingStateWeave(pending, result.stateweave.output, live);
     linkLatestConversationNodes(result.stateweave.graph, userMessage, assistantMessage);
     renderStateWeave(result.stateweave);
@@ -1421,6 +1460,7 @@ async function sendStateWeaveMessage(): Promise<void> {
     status.textContent = `Done · StateGraph ${result.stateweave.graph.nodes.length} nodes / ${result.stateweave.graph.edges.length} edges`;
     persistStateChat();
   } catch (error) {
+    commitTokenUsageTurn("failed", error instanceof StateWeaveStreamError ? error.metrics : undefined);
     failPendingStateWeave(pending, error instanceof Error ? error.message : String(error), live);
     status.textContent = "Failed.";
   } finally {
@@ -1481,11 +1521,11 @@ async function streamStateWeave(text: string, state: AgentState | undefined, set
   const decoder = new TextDecoder();
   let buffer = "";
   let final: StateWeaveResponse | undefined;
-  let terminalError: string | undefined;
+  let terminalError: StreamErrorEvent | undefined;
 
   const consumeLine = (line: string): void => {
     if (!line.trim()) return;
-    const event = JSON.parse(line) as AgentStreamEvent | { type: "error"; message: string };
+    const event = JSON.parse(line) as AgentStreamEvent | StreamErrorEvent;
     if (event.type === "final") {
       final = {
         stateweave: {
@@ -1497,7 +1537,7 @@ async function streamStateWeave(text: string, state: AgentState | undefined, set
         }
       };
     } else if (event.type === "error") {
-      terminalError = event.message;
+      terminalError = event;
     }
     if (event.type === "metadata" || event.type === "progress" || event.type === "final") onEvent(event);
   };
@@ -1513,7 +1553,7 @@ async function streamStateWeave(text: string, state: AgentState | undefined, set
   buffer += decoder.decode();
   consumeLine(buffer);
 
-  if (terminalError) throw new Error(terminalError);
+  if (terminalError) throw new StateWeaveStreamError(terminalError.message, terminalError.metrics);
   if (!final) throw new Error("StateWeave stream ended without a final result.");
   return final;
 }
@@ -1552,6 +1592,86 @@ function renderStateWeave(result: AgentPayload): void {
   stateInput.textContent = result.trace.at(-1)?.prompt ?? "No compiled causal context captured.";
   stateOutput.textContent = formatAgentOutput(result.trace, result.output, result.metadata);
   renderGraph(result.graph);
+}
+
+function renderTokenUsage(): void {
+  const view = renderTokenUsageView(tokenUsageHistory, activeTokenUsage);
+  tokenUsageCount.textContent = view.countLabel;
+  tokenUsageContent.innerHTML = view.html;
+}
+
+function startTokenUsageTurn(): void {
+  const turn = (tokenUsageHistory.at(-1)?.turn ?? 0) + 1;
+  activeTokenUsage = {
+    turn,
+    runId: `pending_${turn}`,
+    startedAt: new Date().toISOString(),
+    latestContextTokens: 0,
+    peakContextTokens: 0,
+    totalInputTokens: 0,
+    outputTokens: 0,
+    modelCalls: 0,
+    maxPromptTokens: 64_000,
+    projectionTargetTokens: agentSettings.projectionTargetTokens,
+    status: "running"
+  };
+  renderTokenUsage();
+}
+
+function updateActiveTokenUsage(event: AgentStreamEvent): void {
+  if (!activeTokenUsage) return;
+  if (event.type === "metadata") {
+    activeTokenUsage.runId = event.metadata.runId;
+    activeTokenUsage.startedAt = event.metadata.startedAt;
+    activeTokenUsage.maxPromptTokens = event.metadata.maxPromptTokens;
+    activeTokenUsage.projectionTargetTokens = event.metadata.projectionTargetTokens;
+  } else if (event.type === "progress") {
+    const progress = event.progress;
+    activeTokenUsage.modelCalls = progress.modelCalls;
+    activeTokenUsage.totalInputTokens = progress.totalInputTokens;
+    activeTokenUsage.outputTokens = progress.outputTokens;
+    activeTokenUsage.tokenCountSource = progress.tokenCountSource ?? activeTokenUsage.tokenCountSource;
+    if (typeof progress.contextTokens === "number") activeTokenUsage.latestContextTokens = progress.contextTokens;
+    activeTokenUsage.peakContextTokens = Math.max(
+      activeTokenUsage.peakContextTokens,
+      progress.peakContextTokens ?? 0,
+      progress.contextTokens ?? 0
+    );
+  } else if (event.type === "final") {
+    applyTokenUsageMetadata(activeTokenUsage, event.result.metadata);
+  }
+  renderTokenUsage();
+}
+
+function commitTokenUsageTurn(statusValue: Exclude<TokenUsageStatus, "running">, metadata?: Partial<AgentRunMetadata>): void {
+  if (!activeTokenUsage) return;
+  if (metadata) applyTokenUsageMetadata(activeTokenUsage, metadata);
+  if (activeTokenUsage.modelCalls === 0 && activeTokenUsage.totalInputTokens === 0 && activeTokenUsage.outputTokens === 0) {
+    activeTokenUsage = undefined;
+    renderTokenUsage();
+    return;
+  }
+  const point: TokenUsagePoint = {
+    ...activeTokenUsage,
+    status: statusValue,
+    completedAt: typeof metadata?.completedAt === "string" ? metadata.completedAt : new Date().toISOString()
+  };
+  tokenUsageHistory = [...tokenUsageHistory, point].slice(-maxTokenUsageHistory);
+  activeTokenUsage = undefined;
+  renderTokenUsage();
+}
+
+function applyTokenUsageMetadata(point: TokenUsagePoint, metadata: Partial<AgentRunMetadata>): void {
+  if (typeof metadata.runId === "string") point.runId = metadata.runId;
+  if (typeof metadata.startedAt === "string") point.startedAt = metadata.startedAt;
+  if (typeof metadata.latestContextTokens === "number") point.latestContextTokens = metadata.latestContextTokens;
+  if (typeof metadata.peakContextTokens === "number") point.peakContextTokens = metadata.peakContextTokens;
+  if (typeof metadata.totalInputTokens === "number") point.totalInputTokens = metadata.totalInputTokens;
+  if (typeof metadata.outputTokens === "number") point.outputTokens = metadata.outputTokens;
+  if (typeof metadata.modelCalls === "number") point.modelCalls = metadata.modelCalls;
+  if (typeof metadata.maxPromptTokens === "number") point.maxPromptTokens = metadata.maxPromptTokens;
+  if (typeof metadata.projectionTargetTokens === "number") point.projectionTargetTokens = metadata.projectionTargetTokens;
+  if (metadata.tokenCountSource === "provider" || metadata.tokenCountSource === "estimated" || metadata.tokenCountSource === "mixed") point.tokenCountSource = metadata.tokenCountSource;
 }
 
 async function loadHealth(): Promise<void> {
@@ -1792,6 +1912,9 @@ function applyGraphImport(): void {
   try {
     const state = parseImportedAgentState(transferText.value);
     agentState = state;
+    tokenUsageHistory = [];
+    activeTokenUsage = undefined;
+    renderTokenUsage();
     primaryGraphViewState.selectedNodeId = undefined;
     primaryGraphViewState.positions.clear();
     primaryGraphViewState.collapsedMoleculeIds.clear();
@@ -1840,6 +1963,8 @@ function isAgentStateLike(value: unknown): value is AgentState {
 
 function resetStateWeaveChat(): void {
   agentState = undefined;
+  tokenUsageHistory = [];
+  activeTokenUsage = undefined;
   input.value = "";
   localStorage.removeItem(stateChatStorageKey);
   primaryGraphViewState.selectedNodeId = undefined;
@@ -1851,6 +1976,7 @@ function resetStateWeaveChat(): void {
   stateOutput.textContent = "No output yet.";
   graph.className = "graph-empty";
   graph.textContent = "No graph yet.";
+  renderTokenUsage();
   status.textContent = "Reset.";
   input.focus();
 }

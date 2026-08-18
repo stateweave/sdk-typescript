@@ -22,6 +22,18 @@ class StreamOnlyModel implements Model {
   }
 }
 
+class AnthropicCachedStreamModel implements Model {
+  async complete(_input: ModelInput): Promise<ModelOutput> {
+    throw new Error("The cache usage probe must use Model.stream().");
+  }
+
+  async *stream(_input: ModelInput): AsyncIterable<ModelToken> {
+    yield { type: "metadata", metadata: { provider: "anthropic", event: "message_start", usage: { input_tokens: 17, output_tokens: 1, cache_read_input_tokens: 11, cache_creation_input_tokens: 5 } } };
+    yield { type: "token", token: "FINAL: cached answer" };
+    yield { type: "metadata", metadata: { provider: "anthropic", event: "message_delta", usage: { output_tokens: 3 } } };
+  }
+}
+
 class SequenceModel implements Model {
   private index = 0;
 
@@ -102,8 +114,36 @@ it("forwards provider tokens and metadata through streamEvents", async () => {
   if (final?.type === "final") {
     expect(final.result.finalAnswer).toBe("streamed answer");
     expect(final.result.metadata.totalInputTokens).toBe(19);
+    expect(final.result.metadata.peakContextTokens).toBe(19);
     expect(final.result.metadata.outputTokens).toBe(3);
+    expect(final.result.metadata.tokenCountSource).toBe("provider");
   }
+});
+
+it("counts cached Anthropic input toward the context window", async () => {
+  const agent = new Agent({ model: new AnthropicCachedStreamModel(), tools: [], enforceCompletionEvidence: false });
+  const events = [];
+
+  for await (const event of agent.streamEvents("Answer from cached context")) events.push(event);
+
+  const final = events.find((event) => event.type === "final");
+  expect(final?.type).toBe("final");
+  if (final?.type === "final") {
+    expect(final.result.metadata.latestContextTokens).toBe(33);
+    expect(final.result.metadata.peakContextTokens).toBe(33);
+    expect(final.result.metadata.totalInputTokens).toBe(33);
+    expect(final.result.metadata.outputTokens).toBe(3);
+    expect(final.result.metadata.tokenCountSource).toBe("provider");
+  }
+});
+
+it("labels tokenizer fallback counts as estimated", async () => {
+  const agent = new Agent({ model: new SequenceModel(["FINAL: estimated answer"]), tools: [], enforceCompletionEvidence: false });
+  const result = await agent.run("Answer without provider usage");
+
+  expect(result.metadata.latestContextTokens).toBeGreaterThan(0);
+  expect(result.metadata.peakContextTokens).toBe(result.metadata.latestContextTokens);
+  expect(result.metadata.tokenCountSource).toBe("estimated");
 });
 
 it("records recognized successful checks as verification nodes", async () => {

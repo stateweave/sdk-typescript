@@ -89,9 +89,10 @@
               </div>
             </div>
             <div class="workspace-switcher" aria-label="Right panel view">
-              <button id="graph-view-tab" class="tab active" type="button" aria-selected="true">Molecular graph</button>
-              <button id="tools-view-tab" class="tab" type="button" aria-selected="false">Agent tools</button>
-              <button id="files-view-tab" class="tab" type="button" aria-selected="false">Workspace files</button>
+              <button id="graph-view-tab" class="tab active" type="button" aria-controls="graph-view" aria-selected="true">Molecular graph</button>
+              <button id="tools-view-tab" class="tab" type="button" aria-controls="tools-view" aria-selected="false">Agent tools</button>
+              <button id="files-view-tab" class="tab" type="button" aria-controls="files-view" aria-selected="false">Workspace files</button>
+              <button id="token-usage-view-tab" class="tab" type="button" aria-controls="token-usage-view" aria-selected="false">Token usage</button>
             </div>
             <div class="workspace-views">
               <div id="graph-view" class="workspace-view active">
@@ -124,6 +125,17 @@
                     <p class="muted-copy">Open a file to inspect or render HTML/SVG output.</p>
                   </section>
                 </div>
+              </aside>
+              <aside id="token-usage-view" class="workspace-view token-usage-panel" aria-label="LLM token usage" hidden>
+                <header class="token-usage-header">
+                  <div>
+                    <p class="eyebrow">Provider telemetry</p>
+                    <h3>Context and token usage</h3>
+                    <p>Per-turn provider input and output, plus peak context-window use across each agent loop.</p>
+                  </div>
+                  <span id="token-usage-count" class="badge">No turns</span>
+                </header>
+                <div id="token-usage-content" class="token-usage-content"></div>
               </aside>
             </div>
           </div>

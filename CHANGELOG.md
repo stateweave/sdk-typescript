@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Promote deterministic big-brain, peripheral, focus, and timeline projection into the public `Agent` compiler without compacting the append-only graph.
-- Forward provider token and metadata events through `Agent.streamEvents()` while preserving ordinary action parsing and transactional commits.
+- Forward provider token and metadata events through `Agent.streamEvents()` while preserving ordinary action parsing and transactional commits; report peak context, provider-versus-estimated provenance, and complete cached input usage, with a persistent per-turn token chart in the development lab.
 - Emit causal `verification` nodes for recognized successful post-mutation reads, syntax checks, and explicit application checks.
 - Enforce prompt-budget and configuration validation, strengthen imported-state validation, and fail before provider invocation when mandatory context cannot fit.
 - Bound protocol/completion retry failures by three consecutive retry iterations, resetting the streak after each accepted tool action instead of counting separated retries across the run trace.

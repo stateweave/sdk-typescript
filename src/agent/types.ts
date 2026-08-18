@@ -46,6 +46,8 @@ export type AgentModelEvent =
   | { type: "token"; iteration: number; token: string }
   | { type: "metadata"; iteration: number; metadata: Record<string, unknown> };
 
+export type TokenCountSource = "provider" | "estimated" | "mixed";
+
 export type AgentProgress = {
   iteration: number;
   phase: "context" | "model" | "tool" | "final" | "retrying";
@@ -53,6 +55,8 @@ export type AgentProgress = {
   toolCalls: number;
   totalInputTokens: number;
   outputTokens: number;
+  tokenCountSource?: TokenCountSource;
+  peakContextTokens?: number;
   detail: string;
   contextTokens?: number;
   prompt?: string;
@@ -93,8 +97,10 @@ export type AgentRunMetadata = {
   modelCalls: number;
   toolCalls: number;
   latestContextTokens: number;
+  peakContextTokens: number;
   totalInputTokens: number;
   outputTokens: number;
+  tokenCountSource: TokenCountSource;
   status: "done";
 };
 
@@ -106,7 +112,7 @@ export type AgentRunResult = {
   metadata: AgentRunMetadata;
 };
 
-export type AgentStartMetadata = Omit<AgentRunMetadata, "completedAt" | "durationMs" | "stepCount" | "modelCalls" | "toolCalls" | "latestContextTokens" | "totalInputTokens" | "outputTokens" | "status">;
+export type AgentStartMetadata = Omit<AgentRunMetadata, "completedAt" | "durationMs" | "stepCount" | "modelCalls" | "toolCalls" | "latestContextTokens" | "peakContextTokens" | "totalInputTokens" | "outputTokens" | "tokenCountSource" | "status">;
 
 export type AgentStreamEvent =
   | { type: "metadata"; metadata: AgentStartMetadata }
