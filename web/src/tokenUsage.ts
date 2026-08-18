@@ -189,6 +189,7 @@ function dualUsageChartHtml(statePoints: TokenUsagePoint[], traditionalPoints: T
   const turnValues = [...new Set([...state.keys(), ...traditional.keys()])].sort((a, b) => a - b).slice(-maxTokenChartPoints);
   if (!turnValues.length) return "";
   const panels = [
+    { key: "latestContextTokens" as const, title: "Context carried into the final call", note: "StateWeave projection vs traditional active transcript; compaction appears as a drop" },
     { key: "totalInputTokens" as const, title: "Summed API input by turn", note: "Adds every model request in the turn; not context carried forward" },
     { key: "outputTokens" as const, title: "Summed API output by turn", note: "Adds every model response, including compaction output" },
     { key: "peakContextTokens" as const, title: "Peak single request by turn", note: "Largest actual context sent once by each arm" }
@@ -196,7 +197,7 @@ function dualUsageChartHtml(statePoints: TokenUsagePoint[], traditionalPoints: T
   return `<section class="dual-token-charts"><header><div><h4>Same input, two memory primitives</h4><p>Shared turn axis · latest ${turnValues.length} paired turn${turnValues.length === 1 ? "" : "s"}</p></div><div class="dual-chart-legend"><span class="stateweave">StateWeave</span><span class="traditional">Traditional</span></div></header>${panels.map((panel) => dualChartPanel(panel.title, panel.note, panel.key, turnValues, state, traditional)).join("")}</section>`;
 }
 
-function dualChartPanel(title: string, note: string, key: "totalInputTokens" | "outputTokens" | "peakContextTokens", turns: number[], state: Map<number, TokenUsagePoint>, traditional: Map<number, TokenUsagePoint>): string {
+function dualChartPanel(title: string, note: string, key: "latestContextTokens" | "totalInputTokens" | "outputTokens" | "peakContextTokens", turns: number[], state: Map<number, TokenUsagePoint>, traditional: Map<number, TokenUsagePoint>): string {
   const width = 880;
   const height = 190;
   const plot = { left: 66, right: 22, top: 18, bottom: 36 };

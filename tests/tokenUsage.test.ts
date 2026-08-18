@@ -52,6 +52,8 @@ it("renders paired StateWeave and traditional usage on one turn axis", () => {
 
   expect(rendered.countLabel).toBe("1 paired turn");
   expect(rendered.html).toContain("Same input, two memory primitives");
+  expect(rendered.html).toContain("Context carried into the final call");
+  expect(rendered.html).toContain("StateWeave projection vs traditional active transcript; compaction appears as a drop");
   expect(rendered.html).toContain("Summed API input by turn");
   expect(rendered.html).toContain("Summed API output by turn");
   expect(rendered.html).toContain("Peak single request by turn");
