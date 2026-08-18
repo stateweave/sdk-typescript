@@ -247,6 +247,30 @@ it("cancels an active native model call", async () => {
   await expect(run).rejects.toMatchObject({ name: "AbortError" });
 });
 
+it("uses a transcript-only system prompt without StateWeave semantic state", () => {
+  const agent = new AgenticBaseline({ model: new SequenceModel(), tools: [], systemPrompt: "Common instruction", transcriptOnly: true });
+  const system = agent.getMessages()[0]?.content ?? "";
+  expect(system).toContain("transcript is your complete working memory");
+  expect(system).not.toContain("causal state");
+  expect(system).not.toContain("semantic nodes");
+});
+
+it("fails before the agent call when six retained messages cannot fit the hard ceiling", async () => {
+  const model = new CompactionModel();
+  const prior: AgenticMessage[] = [
+    { role: "system", content: "System protocol" },
+    ...Array.from({ length: 7 }, (_, index) => ({ role: index % 2 ? "assistant" as const : "user" as const, content: `large-${index}-${"x".repeat(120)}` }))
+  ];
+  const agent = new AgenticBaseline({ model, tools: [], systemPrompt: "Maintain the workspace.", messages: prior, maxContextTokens: 180, transcriptOnly: true, compaction: { thresholdTokens: 20, retainMessages: 6 } });
+
+  const result = await agent.run("another large request");
+
+  expect(result.completed).toBe(false);
+  expect(result.error).toContain("hard ceiling");
+  expect(result.compactions).toBe(1);
+  expect(model.prompts).toHaveLength(1);
+});
+
 it("summarizes older messages at the threshold and preserves the latest six", async () => {
   const model = new CompactionModel();
   const messages: AgenticMessage[] = [
@@ -265,6 +289,9 @@ it("summarizes older messages at the threshold and preserves the latest six", as
   const compacted = agent.getMessages();
   expect(result.answer).toBe("Continued after compaction.");
   expect(result.compactions).toBe(1);
+  expect(result.compactionModelCalls).toBe(1);
+  expect(result.compactionInputTokens).toBeGreaterThan(0);
+  expect(result.peakContextTokens).toBeGreaterThan(0);
   expect(result.modelCalls).toBe(2);
   expect(compacted[1].content).toContain("COMPACTED TRANSCRIPT SUMMARY");
   expect(compacted.some((message) => message.content.startsWith("old-3-"))).toBe(true);

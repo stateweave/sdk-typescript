@@ -5,7 +5,8 @@ import {
   executeAgentTool,
   parseToolCall,
   providerSystem,
-  recordCompletionEvidence
+  recordCompletionEvidence,
+  transcriptAgentSystemPrompt
 } from "../agent/toolProtocol.js";
 import type { Model } from "../llm/model.js";
 import { estimateStateWeaveTokens } from "../llm/tokenizer.js";
@@ -19,13 +20,18 @@ export type AgenticTurnResult = {
   failureKind?: "agent" | "provider";
   error?: string;
   contextTokens: number;
+  peakContextTokens: number;
   totalInputTokens: number;
   outputTokens: number;
-  tokenCountSource: "provider" | "estimated";
+  tokenCountSource: "provider" | "estimated" | "mixed";
   modelCalls: number;
   toolCalls: number;
   latencyMs: number;
   compactions: number;
+  compactionInputTokens: number;
+  compactionOutputTokens: number;
+  compactionModelCalls: number;
+  lastPrompt: string;
 };
 
 export type AgenticProgress = {
@@ -34,6 +40,11 @@ export type AgenticProgress = {
   modelCalls: number;
   toolCalls: number;
   detail: string;
+  contextTokens: number;
+  peakContextTokens: number;
+  totalInputTokens: number;
+  outputTokens: number;
+  tokenCountSource?: "provider" | "estimated" | "mixed";
 };
 
 export type AgenticRunOptions = {
@@ -49,9 +60,10 @@ export class AgenticBaseline {
   private readonly compaction?: { thresholdTokens: number; retainMessages: number };
   private readonly providerSystem?: string;
   private readonly enforceCompletionEvidence: boolean;
+  private readonly transcriptOnly: boolean;
   private messages: AgenticMessage[];
 
-  constructor(args: { model: Model; tools: Tool[]; systemPrompt: string; maxIterations?: number; maxContextTokens?: number; compaction?: { thresholdTokens: number; retainMessages: number }; messages?: AgenticMessage[]; providerSystem?: string; enforceCompletionEvidence?: boolean }) {
+  constructor(args: { model: Model; tools: Tool[]; systemPrompt: string; maxIterations?: number; maxContextTokens?: number; compaction?: { thresholdTokens: number; retainMessages: number }; messages?: AgenticMessage[]; providerSystem?: string; enforceCompletionEvidence?: boolean; transcriptOnly?: boolean }) {
     this.model = args.model;
     this.tools = new Map(args.tools.map((tool) => [tool.name, tool]));
     this.maxIterations = args.maxIterations ?? 12;
@@ -59,7 +71,10 @@ export class AgenticBaseline {
     this.compaction = args.compaction;
     this.providerSystem = args.providerSystem;
     this.enforceCompletionEvidence = args.enforceCompletionEvidence ?? false;
-    this.messages = args.messages?.length ? structuredClone(args.messages) : [{ role: "system", content: agentSystemPrompt(args.systemPrompt, args.tools) }];
+    this.transcriptOnly = args.transcriptOnly ?? false;
+    const systemMessage = args.transcriptOnly ? transcriptAgentSystemPrompt(args.systemPrompt, args.tools) : agentSystemPrompt(args.systemPrompt, args.tools);
+    this.messages = args.messages?.length ? structuredClone(args.messages) : [{ role: "system", content: systemMessage }];
+    if (args.transcriptOnly && this.messages.length) this.messages[0] = { role: "system", content: systemMessage };
   }
 
   getMessages(): AgenticMessage[] {
@@ -73,34 +88,54 @@ export class AgenticBaseline {
   async run(task: string, options: AgenticRunOptions = {}): Promise<AgenticTurnResult> {
     const startedAt = Date.now();
     let contextTokens = 0;
+    let peakContextTokens = 0;
     let totalInputTokens = 0;
     let outputTokens = 0;
-    let tokenCountSource: "provider" | "estimated" = "provider";
+    let providerUsageCalls = 0;
+    let estimatedUsageCalls = 0;
     let toolCalls = 0;
     let modelCalls = 0;
     let compactions = 0;
+    let compactionInputTokens = 0;
+    let compactionOutputTokens = 0;
+    let compactionModelCalls = 0;
+    let lastPrompt = "";
     let repeatedInvalidOutput = "";
     let repeatedInvalidCount = 0;
     let repeatedMissingEvidence = "";
     let repeatedMissingEvidenceCount = 0;
     let consecutiveRetryCount = 0;
     const evidence = createCompletionEvidence();
-    const progress = (iteration: number, phase: AgenticProgress["phase"], detail: string): void => {
-      options.onProgress?.({ iteration, phase, modelCalls, toolCalls, detail });
+    const tokenCountSource = (): "provider" | "estimated" | "mixed" | undefined => {
+      if (providerUsageCalls && estimatedUsageCalls) return "mixed";
+      if (providerUsageCalls) return "provider";
+      if (estimatedUsageCalls) return "estimated";
+      return undefined;
     };
+    const progress = (iteration: number, phase: AgenticProgress["phase"], detail: string): void => {
+      options.onProgress?.({ iteration, phase, modelCalls, toolCalls, detail, contextTokens, peakContextTokens, totalInputTokens, outputTokens, ...(tokenCountSource() ? { tokenCountSource: tokenCountSource() } : {}) });
+    };
+    const resultFields = () => ({
+      contextTokens,
+      peakContextTokens,
+      totalInputTokens,
+      outputTokens,
+      tokenCountSource: tokenCountSource() ?? "estimated" as const,
+      modelCalls,
+      toolCalls,
+      latencyMs: Date.now() - startedAt,
+      compactions,
+      compactionInputTokens,
+      compactionOutputTokens,
+      compactionModelCalls,
+      lastPrompt
+    });
     const failedResult = (message: string): AgenticTurnResult => ({
       answer: `(agent error: ${message})`,
       completed: false,
       failureKind: "agent",
       error: message,
-      contextTokens,
-      totalInputTokens,
-      outputTokens,
-      tokenCountSource,
-      modelCalls,
-      toolCalls,
-      latencyMs: Date.now() - startedAt,
-      compactions
+      ...resultFields()
     });
 
     options.signal?.throwIfAborted();
@@ -111,20 +146,32 @@ export class AgenticBaseline {
     outputTokens += initialCompaction.outputTokens;
     modelCalls += initialCompaction.modelCalls;
     compactions += initialCompaction.compactions;
-    if (!initialCompaction.providerCounted) tokenCountSource = "estimated";
+    compactionInputTokens += initialCompaction.inputTokens;
+    compactionOutputTokens += initialCompaction.outputTokens;
+    compactionModelCalls += initialCompaction.modelCalls;
+    peakContextTokens = Math.max(peakContextTokens, initialCompaction.inputTokens);
+    if (initialCompaction.modelCalls) {
+      if (initialCompaction.providerCounted) providerUsageCalls += initialCompaction.modelCalls;
+      else estimatedUsageCalls += initialCompaction.modelCalls;
+    }
+    if (initialCompaction.error) return failedResult(initialCompaction.error);
 
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       options.signal?.throwIfAborted();
       const prompt = serializeAgenticMessages(this.messages);
+      lastPrompt = prompt;
+      const estimatedInput = estimateStateWeaveTokens(prompt).estimatedTokens;
+      if (this.transcriptOnly && estimatedInput > this.maxContextTokens) return failedResult(`Traditional transcript requires ${estimatedInput} estimated tokens after compaction, above the ${this.maxContextTokens} token hard ceiling.`);
       progress(iteration, "model", `Waiting for native model iteration ${iteration}`);
       const output = await this.model.complete({ prompt, mode: "text", system: providerSystem(this.providerSystem, "Follow the supplied tool protocol exactly. Return one TOOL_CALL JSON object or one FINAL response."), signal: options.signal });
       modelCalls += 1;
-      const estimatedInput = estimateStateWeaveTokens(prompt).estimatedTokens;
       const estimatedOutput = estimateStateWeaveTokens(output.text).estimatedTokens;
       contextTokens = output.usage?.inputTokens ?? estimatedInput;
+      peakContextTokens = Math.max(peakContextTokens, contextTokens);
       totalInputTokens += contextTokens;
       outputTokens += output.usage?.outputTokens ?? estimatedOutput;
-      if (!output.usage) tokenCountSource = "estimated";
+      if (output.usage) providerUsageCalls += 1;
+      else estimatedUsageCalls += 1;
       this.messages.push({ role: "assistant", content: output.text });
 
       const call = parseToolCall(output.text);
@@ -158,7 +205,7 @@ export class AgenticBaseline {
           continue;
         }
         progress(iteration, "final", "Transcript agent produced an evidence-backed final answer");
-        return { answer, completed: true, contextTokens, totalInputTokens, outputTokens, tokenCountSource, modelCalls, toolCalls, latencyMs: Date.now() - startedAt, compactions };
+        return { answer, completed: true, ...resultFields() };
       }
 
       repeatedInvalidOutput = "";
@@ -183,13 +230,21 @@ export class AgenticBaseline {
       outputTokens += compaction.outputTokens;
       modelCalls += compaction.modelCalls;
       compactions += compaction.compactions;
-      if (!compaction.providerCounted) tokenCountSource = "estimated";
+      compactionInputTokens += compaction.inputTokens;
+      compactionOutputTokens += compaction.outputTokens;
+      compactionModelCalls += compaction.modelCalls;
+      peakContextTokens = Math.max(peakContextTokens, compaction.inputTokens);
+      if (compaction.modelCalls) {
+        if (compaction.providerCounted) providerUsageCalls += compaction.modelCalls;
+        else estimatedUsageCalls += compaction.modelCalls;
+      }
+      if (compaction.error) return failedResult(compaction.error);
     }
 
     return failedResult(`Transcript agent recursion limit reached after ${this.maxIterations} iterations.`);
   }
 
-  private async maintainContext(signal?: AbortSignal): Promise<{ inputTokens: number; outputTokens: number; modelCalls: number; compactions: number; providerCounted: boolean }> {
+  private async maintainContext(signal?: AbortSignal): Promise<{ inputTokens: number; outputTokens: number; modelCalls: number; compactions: number; providerCounted: boolean; error?: string }> {
     if (!this.compaction) {
       this.truncate();
       return { inputTokens: 0, outputTokens: 0, modelCalls: 0, compactions: 0, providerCounted: true };
@@ -212,8 +267,9 @@ export class AgenticBaseline {
       serializeAgenticMessages(older)
     ].join("\n");
     signal?.throwIfAborted();
-    const output = await this.model.complete({ prompt, mode: "text", system: providerSystem(this.providerSystem, "Produce a faithful compacted working-memory summary for the next turn."), signal });
     const estimatedInput = estimateStateWeaveTokens(prompt).estimatedTokens;
+    if (this.transcriptOnly && estimatedInput > this.maxContextTokens) return { inputTokens: 0, outputTokens: 0, modelCalls: 0, compactions: 0, providerCounted: true, error: `Traditional compaction requires ${estimatedInput} estimated tokens, above the ${this.maxContextTokens} token hard ceiling.` };
+    const output = await this.model.complete({ prompt, mode: "text", system: providerSystem(this.providerSystem, "Produce a faithful compacted working-memory summary for the next turn."), signal });
     const estimatedOutput = estimateStateWeaveTokens(output.text).estimatedTokens;
     this.messages = [system, { role: "assistant", content: `COMPACTED TRANSCRIPT SUMMARY:\n${output.text.trim()}` }, ...tail];
     return {

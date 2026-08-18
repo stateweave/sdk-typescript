@@ -15,6 +15,11 @@ export type TokenUsagePoint = {
   totalInputTokens: number;
   outputTokens: number;
   modelCalls: number;
+  toolCalls?: number;
+  compactions?: number;
+  compactionInputTokens?: number;
+  compactionOutputTokens?: number;
+  compactionModelCalls?: number;
   maxPromptTokens: number;
   projectionTargetTokens: number;
   tokenCountSource?: TokenCountSource;
@@ -47,6 +52,11 @@ export function parseTokenUsageHistory(value: unknown): TokenUsagePoint[] {
       totalInputTokens,
       outputTokens,
       modelCalls,
+      ...(tokenNumber(record.toolCalls) !== undefined ? { toolCalls: tokenNumber(record.toolCalls) } : {}),
+      ...(tokenNumber(record.compactions) !== undefined ? { compactions: tokenNumber(record.compactions) } : {}),
+      ...(tokenNumber(record.compactionInputTokens) !== undefined ? { compactionInputTokens: tokenNumber(record.compactionInputTokens) } : {}),
+      ...(tokenNumber(record.compactionOutputTokens) !== undefined ? { compactionOutputTokens: tokenNumber(record.compactionOutputTokens) } : {}),
+      ...(tokenNumber(record.compactionModelCalls) !== undefined ? { compactionModelCalls: tokenNumber(record.compactionModelCalls) } : {}),
       maxPromptTokens,
       projectionTargetTokens: Math.min(requestedProjection, maxPromptTokens),
       ...(isTokenCountSource(record.tokenCountSource) ? { tokenCountSource: record.tokenCountSource } : {}),
@@ -109,6 +119,109 @@ export function renderTokenUsageView(history: TokenUsagePoint[], active?: TokenU
       ${usageLedgerHtml(allPoints)}
     `
   };
+}
+
+export function renderDualTokenUsageView(
+  stateHistory: TokenUsagePoint[],
+  traditionalHistory: TokenUsagePoint[],
+  activeState?: TokenUsagePoint,
+  activeTraditional?: TokenUsagePoint
+): { countLabel: string; html: string } {
+  const statePoints = activeState ? [...stateHistory, activeState] : stateHistory;
+  const traditionalPoints = activeTraditional ? [...traditionalHistory, activeTraditional] : traditionalHistory;
+  const turns = Math.max(stateHistory.at(-1)?.turn ?? 0, traditionalHistory.at(-1)?.turn ?? 0);
+  const live = Boolean(activeState || activeTraditional);
+  const countLabel = turns ? `${turns.toLocaleString()} paired turn${turns === 1 ? "" : "s"}${live ? " · live" : ""}` : live ? "Paired turn · live" : "No turns";
+  if (!statePoints.length && !traditionalPoints.length) {
+    return {
+      countLabel,
+      html: `<div class="token-usage-empty"><div class="token-empty-lines" aria-hidden="true"><span></span><span></span><span></span></div><h4>No paired usage recorded yet</h4><p>Each message runs both memory primitives. Their provider input, output, and peak context will share one turn axis.</p></div>`
+    };
+  }
+
+  const stateTotalInput = sum(statePoints, (point) => point.totalInputTokens);
+  const traditionalTotalInput = sum(traditionalPoints, (point) => point.totalInputTokens);
+  const stateTotalOutput = sum(statePoints, (point) => point.outputTokens);
+  const traditionalTotalOutput = sum(traditionalPoints, (point) => point.outputTokens);
+  const compactions = sum(traditionalPoints, (point) => point.compactions ?? 0);
+  return {
+    countLabel,
+    html: `
+      <section class="dual-token-latest" aria-label="Latest paired token usage">
+        ${dualLatestArmHtml("StateWeave", "stateweave", statePoints.at(-1), stateTotalInput, stateTotalOutput)}
+        ${dualLatestArmHtml("Traditional", "traditional", traditionalPoints.at(-1), traditionalTotalInput, traditionalTotalOutput)}
+      </section>
+      <section class="dual-token-summary" aria-label="Cumulative token comparison">
+        <span><strong>${formatAxisTokens(stateTotalInput)}</strong> StateWeave input</span>
+        <span><strong>${formatAxisTokens(traditionalTotalInput)}</strong> traditional input</span>
+        <span><strong>${formatAxisTokens(stateTotalOutput)}</strong> StateWeave output</span>
+        <span><strong>${formatAxisTokens(traditionalTotalOutput)}</strong> traditional output</span>
+        <span><strong>${compactions.toLocaleString()}</strong> compaction${compactions === 1 ? "" : "s"}</span>
+      </section>
+      ${dualUsageChartHtml(statePoints, traditionalPoints)}
+      ${dualUsageLedgerHtml(statePoints, traditionalPoints)}
+    `
+  };
+}
+
+function dualLatestArmHtml(label: string, css: string, point: TokenUsagePoint | undefined, totalInput: number, totalOutput: number): string {
+  if (!point) return `<article class="dual-token-arm ${css} empty"><header><strong>${label}</strong><span>Waiting</span></header><p>No measured turn yet.</p></article>`;
+  const peak = Math.max(point.peakContextTokens, point.latestContextTokens);
+  const compaction = point.compactions ? `<small>${point.compactions} compaction${point.compactions === 1 ? "" : "s"} · ${(point.compactionInputTokens ?? 0).toLocaleString()} summary input</small>` : `<small>${point.modelCalls} model call${point.modelCalls === 1 ? "" : "s"}</small>`;
+  return `<article class="dual-token-arm ${css}">
+    <header><strong>${label}</strong><span>T${point.turn} ${escapeHtml(point.status)}</span></header>
+    <div><span>Turn input<strong>${formatTokens(point.totalInputTokens)}</strong></span><span>Turn output<strong>${formatTokens(point.outputTokens)}</strong></span><span>Peak context<strong>${formatTokens(peak)}</strong></span><span>Cumulative<strong>${formatTokens(totalInput + totalOutput)}</strong></span></div>
+    <footer><span>${escapeHtml(sourceLabel(point))}</span>${compaction}</footer>
+  </article>`;
+}
+
+function dualUsageChartHtml(statePoints: TokenUsagePoint[], traditionalPoints: TokenUsagePoint[]): string {
+  const state = new Map(statePoints.map((point) => [point.turn, point]));
+  const traditional = new Map(traditionalPoints.map((point) => [point.turn, point]));
+  const turnValues = [...new Set([...state.keys(), ...traditional.keys()])].sort((a, b) => a - b).slice(-maxTokenChartPoints);
+  if (!turnValues.length) return "";
+  const panels = [
+    { key: "totalInputTokens" as const, title: "Input by turn", note: "All model calls, including traditional summary compaction" },
+    { key: "outputTokens" as const, title: "Output by turn", note: "Agent output plus compaction output when present" },
+    { key: "peakContextTokens" as const, title: "Peak context by turn", note: "Largest single model call in each arm" }
+  ];
+  return `<section class="dual-token-charts"><header><div><h4>Same input, two memory primitives</h4><p>Shared turn axis · latest ${turnValues.length} paired turn${turnValues.length === 1 ? "" : "s"}</p></div><div class="dual-chart-legend"><span class="stateweave">StateWeave</span><span class="traditional">Traditional</span></div></header>${panels.map((panel) => dualChartPanel(panel.title, panel.note, panel.key, turnValues, state, traditional)).join("")}</section>`;
+}
+
+function dualChartPanel(title: string, note: string, key: "totalInputTokens" | "outputTokens" | "peakContextTokens", turns: number[], state: Map<number, TokenUsagePoint>, traditional: Map<number, TokenUsagePoint>): string {
+  const width = 880;
+  const height = 190;
+  const plot = { left: 66, right: 22, top: 18, bottom: 36 };
+  const values = turns.flatMap((turn) => [state.get(turn)?.[key] ?? 0, traditional.get(turn)?.[key] ?? 0]);
+  const maximum = niceTokenCeiling(Math.max(...values, 1));
+  const x = (index: number): number => turns.length === 1 ? plot.left + (width - plot.left - plot.right) / 2 : plot.left + index / (turns.length - 1) * (width - plot.left - plot.right);
+  const y = (value: number): number => plot.top + (height - plot.top - plot.bottom) - value / maximum * (height - plot.top - plot.bottom);
+  const pathFor = (points: Map<number, TokenUsagePoint>): string => turns.map((turn, index) => `${index ? "L" : "M"}${x(index).toFixed(2)},${y(points.get(turn)?.[key] ?? 0).toFixed(2)}`).join(" ");
+  const dots = (points: Map<number, TokenUsagePoint>, css: string): string => turns.map((turn, index) => {
+    const point = points.get(turn);
+    if (!point) return "";
+    const compacted = css === "traditional" && (point.compactions ?? 0) > 0;
+    return `<circle class="dual-chart-dot ${css}${compacted ? " compacted" : ""}" cx="${x(index).toFixed(2)}" cy="${y(point[key]).toFixed(2)}" r="4" tabindex="0"><title>${css === "stateweave" ? "StateWeave" : "Traditional"} turn ${turn}: ${point[key].toLocaleString()} tokens${compacted ? ` · ${point.compactions} compaction` : ""}</title></circle>`;
+  }).join("");
+  const labels = turns.map((turn, index) => (index === 0 || index === turns.length - 1 || index % Math.max(1, Math.ceil(turns.length / 7)) === 0) ? `<text x="${x(index).toFixed(2)}" y="${height - 10}" text-anchor="middle">T${turn}</text>` : "").join("");
+  const grid = [0, .5, 1].map((fraction) => {
+    const value = maximum * (1 - fraction);
+    const position = plot.top + fraction * (height - plot.top - plot.bottom);
+    return `<g class="token-chart-grid"><line x1="${plot.left}" y1="${position}" x2="${width - plot.right}" y2="${position}"></line><text x="${plot.left - 10}" y="${position + 4}">${formatAxisTokens(value)}</text></g>`;
+  }).join("");
+  return `<article class="dual-chart-panel"><div><h5>${title}</h5><p>${note}</p></div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttribute(title)} comparing StateWeave and traditional messages">${grid}${labels}<path class="dual-chart-line stateweave" d="${pathFor(state)}"></path><path class="dual-chart-line traditional" d="${pathFor(traditional)}"></path>${dots(state, "stateweave")}${dots(traditional, "traditional")}</svg></article>`;
+}
+
+function dualUsageLedgerHtml(statePoints: TokenUsagePoint[], traditionalPoints: TokenUsagePoint[]): string {
+  const state = new Map(statePoints.map((point) => [point.turn, point]));
+  const traditional = new Map(traditionalPoints.map((point) => [point.turn, point]));
+  const turns = [...new Set([...state.keys(), ...traditional.keys()])].sort((a, b) => b - a).slice(0, 100);
+  const cell = (point: TokenUsagePoint | undefined): string => point ? `${point.totalInputTokens.toLocaleString()} / ${point.outputTokens.toLocaleString()} / ${point.peakContextTokens.toLocaleString()}` : "-";
+  const rows = turns.map((turn) => {
+    const baseline = traditional.get(turn);
+    return `<tr><th scope="row">T${turn}</th><td>${cell(state.get(turn))}</td><td>${cell(baseline)}${baseline?.compactions ? `<small>${baseline.compactions} compact</small>` : ""}</td></tr>`;
+  }).join("");
+  return `<details class="token-ledger dual-token-ledger"><summary>Paired ledger · ${turns.length} turn${turns.length === 1 ? "" : "s"}</summary><div class="token-ledger-scroll"><table><thead><tr><th>Turn</th><th>StateWeave in / out / peak</th><th>Traditional in / out / peak</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
 }
 
 function usageChartHtml(points: TokenUsagePoint[]): string {

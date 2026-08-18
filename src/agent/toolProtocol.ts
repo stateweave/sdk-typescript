@@ -74,6 +74,19 @@ export function providerSystem(common: string | undefined, instruction: string):
   return common ?? instruction;
 }
 
+export function transcriptAgentSystemPrompt(systemPrompt: string, tools: Tool[]): string {
+  return [
+    systemPrompt,
+    tools.length ? "You have a persistent workspace and must use tools to inspect current files before changing them." : "Answer from the conversation history and current request; no tools are available.",
+    "The transcript is your complete working memory. Follow later user corrections over older statements and preserve concrete constraints across turns.",
+    tools.length ? "For one tool action, return exactly TOOL_CALL followed by one JSON object: {\"name\":\"tool_name\",\"args\":{...}}. Keep each write_file content value under 2,500 characters and build longer artifacts through multiple write/edit calls so the JSON envelope cannot be truncated." : "Do not return TOOL_CALL because no tools are available.",
+    "Finish with FINAL: followed by a concise human answer.",
+    tools.length ? "Never claim a file changed unless a write_file or edit_file result confirms it. Prefer read_file before edit_file. bash_command is read-only and allowlisted." : "Do not claim external actions occurred.",
+    "Available tools:",
+    ...(tools.length ? tools.map((tool) => `- ${tool.name}: ${tool.description}`) : ["- none"])
+  ].join("\n");
+}
+
 export function agentSystemPrompt(systemPrompt: string, tools: Tool[], nodeTypes: SemanticNodeType[] = defaultSemanticNodeTypes, allowDynamicNodeTypes = false): string {
   const stateFormat = 'Optional state entries use {"type":"type_name","key":"stable-key","content":"durable content or structured data"}.';
   return [

@@ -1,0 +1,150 @@
+import { appendFile, mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, expect, it } from "vitest";
+import type { AgentRunMetadata, AgentState } from "../src/agent/types.js";
+import { CausalWeave } from "../src/core/causalWeave.js";
+import type { AgenticMessage } from "../src/evals/agenticBaseline.js";
+import { DualSessionConflictError, DualSessionCorruptError, DualSessionNotFoundError, DualSessionStore } from "../src/web/dualSessionStore.js";
+import type { DualUsageRecord } from "../src/web/dualSessionTypes.js";
+
+const tempDirs: string[] = [];
+afterEach(async () => Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))));
+
+async function store(checkpointEvery = 50): Promise<{ root: string; value: DualSessionStore }> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-dual-"));
+  tempDirs.push(root);
+  return { root, value: new DualSessionStore(root, checkpointEvery) };
+}
+
+function nextState(previous: AgentState | undefined, input: string, answer: string): AgentState {
+  const weave = new CausalWeave(previous);
+  if (!previous) weave.append({ kind: "system", payload: "system", parents: [], advance: false });
+  weave.append({ kind: "goal", payload: input });
+  weave.append({ kind: "answer", payload: answer });
+  return weave.snapshot();
+}
+
+function metadata(runId: string, inputTokens = 100): AgentRunMetadata {
+  return {
+    runId, engine: "causal-weave-v3", tools: [], startedAt: "2026-08-18T12:00:00.000Z", completedAt: "2026-08-18T12:00:01.000Z", durationMs: 1000,
+    maxIterations: 30, maxPromptTokens: 64_000, projectionTargetTokens: 16_000, projectionMaxNodes: 16, contextMode: "molecular", nodeTypes: [], allowDynamicNodeTypes: false,
+    stepCount: 1, modelCalls: 1, toolCalls: 0, latestContextTokens: inputTokens, peakContextTokens: inputTokens, totalInputTokens: inputTokens, outputTokens: 10, tokenCountSource: "provider", status: "done"
+  };
+}
+
+function usage(runId: string, compactions = 0): Omit<DualUsageRecord, "turn" | "status"> {
+  return {
+    runId, startedAt: "2026-08-18T12:00:00.000Z", completedAt: "2026-08-18T12:00:01.000Z", latestContextTokens: 120, peakContextTokens: 180, totalInputTokens: 220,
+    outputTokens: 20, modelCalls: 1 + compactions, toolCalls: 0, maxPromptTokens: 64_000, contextTargetTokens: 48_000, tokenCountSource: "provider", compactions,
+    compactionInputTokens: compactions ? 100 : 0, compactionOutputTokens: compactions ? 10 : 0, compactionModelCalls: compactions
+  };
+}
+
+function messages(input: string, answer: string, summary?: string): AgenticMessage[] {
+  return [
+    { role: "system", content: "traditional system" },
+    ...(summary ? [{ role: "assistant" as const, content: `COMPACTED TRANSCRIPT SUMMARY:\n${summary}` }] : []),
+    { role: "user", content: input },
+    { role: "assistant", content: `FINAL: ${answer}` }
+  ];
+}
+
+it("atomically persists both arms on one paired turn", async () => {
+  const { root, value } = await store();
+  const created = await value.create();
+  const state = nextState(undefined, "build it", "built");
+  const commit = await value.commitPair({
+    sessionId: created.sessionId,
+    input: "build it",
+    previousTraditionalMessages: [],
+    stateweave: { status: "done", state, answer: "built", metadata: metadata("sw_1") },
+    traditional: { status: "done", messages: messages("build it", "built traditionally"), answer: "built traditionally", usage: usage("tr_1") }
+  });
+
+  const restored = await value.load(created.sessionId);
+  expect(restored).toMatchObject({ storage: "jsonl-dual", currentTurnId: commit.turnId, turnCount: 1 });
+  expect(restored.stateweave.state).toEqual(state);
+  expect(restored.turns[0]).toMatchObject({ input: "build it", stateweave: { status: "done", answer: "built" }, traditional: { status: "done", answer: "built traditionally" } });
+  expect(restored.stateweave.usageHistory[0].totalInputTokens).toBe(100);
+  expect(restored.traditional.usageHistory[0].totalInputTokens).toBe(220);
+  const records = (await readFile(path.join(root, `${created.sessionId}.jsonl`), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+  expect(records.map((record) => record.type)).toEqual(["session", "paired_turn"]);
+  expect(records[1].stateweave).not.toHaveProperty("state");
+});
+
+it("advances only the successful arm when its pair fails", async () => {
+  const { value } = await store();
+  const created = await value.create();
+  const state = nextState(undefined, "question", "state answer");
+  await value.commitPair({
+    sessionId: created.sessionId, input: "question", previousTraditionalMessages: [],
+    stateweave: { status: "done", state, answer: "state answer", metadata: metadata("sw") },
+    traditional: { status: "failed", error: "provider unavailable", usage: usage("tr_fail") }
+  });
+  const restored = await value.loadForRun(created.sessionId);
+  expect(restored.stateweave.state).toEqual(state);
+  expect(restored.traditionalMessages).toEqual([]);
+  expect(restored.turns[0]).toMatchObject({ traditional: { status: "failed", error: "provider unavailable" } });
+  expect(restored.traditional.usageHistory[0].status).toBe("failed");
+});
+
+it("persists compacted active messages and compaction cost", async () => {
+  const { value } = await store();
+  const created = await value.create();
+  const firstState = nextState(undefined, "one", "one answer");
+  const firstMessages = messages("one", "one answer");
+  const first = await value.commitPair({ sessionId: created.sessionId, input: "one", previousTraditionalMessages: [], stateweave: { status: "done", state: firstState, answer: "one answer", metadata: metadata("sw1") }, traditional: { status: "done", messages: firstMessages, answer: "one answer", usage: usage("tr1") } });
+  const secondState = nextState(firstState, "two", "two answer");
+  const compacted = messages("two", "two answer", "durable summary of turn one");
+  await value.commitPair({ sessionId: created.sessionId, expectedTurnId: first.turnId, input: "two", previousState: firstState, previousTraditionalMessages: firstMessages, stateweave: { status: "done", state: secondState, answer: "two answer", metadata: metadata("sw2") }, traditional: { status: "done", messages: compacted, answer: "two answer", usage: usage("tr2", 1) } });
+  const restored = await value.loadForRun(created.sessionId);
+  expect(restored.traditionalMessages).toEqual(compacted);
+  expect(restored.traditional.totalCompactions).toBe(1);
+  expect(restored.traditional.usageHistory[1]).toMatchObject({ compactions: 1, compactionInputTokens: 100 });
+  expect(restored.traditional.history.map((entry) => entry.content)).toEqual(["one", "one answer", "two", "two answer"]);
+});
+
+it("serializes concurrent paired commits and rejects one stale branch", async () => {
+  const { value } = await store();
+  const created = await value.create();
+  const make = (label: string) => value.commitPair({ sessionId: created.sessionId, input: label, previousTraditionalMessages: [], stateweave: { status: "done" as const, state: nextState(undefined, label, label), answer: label, metadata: metadata(`sw_${label}`) }, traditional: { status: "done" as const, messages: messages(label, label), answer: label, usage: usage(`tr_${label}`) } });
+  const outcomes = await Promise.allSettled([make("left"), make("right")]);
+  expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+  expect(outcomes.find((outcome) => outcome.status === "rejected")).toMatchObject({ reason: expect.any(DualSessionConflictError) });
+  expect((await value.load(created.sessionId)).turnCount).toBe(1);
+});
+
+it("writes validated checkpoints for both memory primitives", async () => {
+  const { root, value } = await store(1);
+  const created = await value.create();
+  const state = nextState(undefined, "one", "done");
+  const active = messages("one", "done");
+  await value.commitPair({ sessionId: created.sessionId, input: "one", previousTraditionalMessages: [], stateweave: { status: "done", state, answer: "done", metadata: metadata("sw") }, traditional: { status: "done", messages: active, answer: "done", usage: usage("tr") } });
+  const records = (await readFile(path.join(root, `${created.sessionId}.jsonl`), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+  expect(records.at(-1)).toMatchObject({ type: "checkpoint", turnCount: 1, state, traditionalMessages: active });
+  expect((await value.loadForRun(created.sessionId)).traditionalMessages).toEqual(active);
+});
+
+it("repairs an unterminated tail but fails closed on complete corruption", async () => {
+  const { root, value } = await store();
+  const created = await value.create();
+  const file = path.join(root, `${created.sessionId}.jsonl`);
+  await appendFile(file, '{"type":"paired_turn"');
+  expect((await value.load(created.sessionId)).turnCount).toBe(0);
+  const state = nextState(undefined, "one", "done");
+  await value.commitPair({ sessionId: created.sessionId, input: "one", previousTraditionalMessages: [], stateweave: { status: "done", state, answer: "done", metadata: metadata("sw") }, traditional: { status: "done", messages: messages("one", "done"), answer: "done", usage: usage("tr") } });
+  expect((await value.load(created.sessionId)).turnCount).toBe(1);
+  await appendFile(file, "not-json\n");
+  await expect(value.load(created.sessionId)).rejects.toBeInstanceOf(DualSessionCorruptError);
+});
+
+it("supports StateWeave bootstrap imports and exact deletion", async () => {
+  const { value } = await store();
+  const state = nextState(undefined, "legacy", "legacy answer");
+  const created = await value.create({ state });
+  expect(created.stateweave.state).toEqual(state);
+  expect(created.turnCount).toBe(0);
+  await value.delete(created.sessionId);
+  await expect(value.load(created.sessionId)).rejects.toBeInstanceOf(DualSessionNotFoundError);
+});

@@ -7,7 +7,8 @@ import { promptFiveCases, promptFiveCategoryOrder, type PromptFiveCategory } fro
 import { promptSixCases, promptSixCategoryOrder, promptSixHypothesis, type PromptSixCategory, type PromptSixHypothesis } from "./promptSix.js";
 import { oneShotPromptStats, oneShotSdkBuildPrompt } from "../../src/evals/oneShotSdkBenchmark.js";
 import { protocolExperiment } from "./protocolExperiment.js";
-import { maxTokenUsageHistory, parseTokenUsageHistory, renderTokenUsageView, type TokenUsagePoint, type TokenUsageStatus } from "./tokenUsage.js";
+import { maxTokenUsageHistory, parseTokenUsageHistory, renderDualTokenUsageView, type TokenUsagePoint, type TokenUsageStatus } from "./tokenUsage.js";
+import type { DualArm, DualSessionView, DualTurnView, DualUsageRecord } from "../../src/web/dualSessionTypes.js";
 import type { SessionHistoryEntry, StateWeaveSessionView } from "../../src/web/stateweaveSessionTypes.js";
 import "./styles.css";
 
@@ -25,6 +26,15 @@ type AgentPayload = {
 type SessionReference = { sessionId: string; currentTurnId?: string; turnId?: string; turn?: number; turnCount?: number; interactionCount?: number; storage: "jsonl" };
 type SessionStreamEvent = { type: "session" | "session_commit" | "session_failure"; session: SessionReference };
 type StateWeaveResponse = { stateweave: AgentPayload; session: SessionReference };
+type DualSessionReference = { sessionId: string; currentTurnId?: string; turnId?: string; turn?: number; turnCount?: number; storage: "jsonl-dual" };
+type TraditionalProgress = { iteration: number; phase: string; modelCalls: number; toolCalls: number; detail: string; contextTokens: number; peakContextTokens: number; totalInputTokens: number; outputTokens: number; tokenCountSource?: "provider" | "estimated" | "mixed" };
+type DualArmResult = { status: "done"; output: string; usage?: DualUsageRecord; lastPrompt?: string; activeMessageCount?: number; stateAfter?: AgentState; trace?: AgentTraceStep[]; graph?: StateGraph; metadata?: AgentRunMetadata } | { status: "failed"; error: string; usage?: DualUsageRecord; lastPrompt?: string };
+type DualRunResponse = { session: DualSessionReference; result: { stateweave: DualArmResult; traditional: DualArmResult } };
+type DualStreamEvent =
+  | { type: "dual_session"; session: DualSessionReference }
+  | { type: "arm_event"; arm: DualArm; event: AgentStreamEvent | { type: "progress"; progress: TraditionalProgress } }
+  | { type: "dual_commit"; session: DualSessionReference; result: DualRunResponse["result"] }
+  | { type: "error"; message: string; currentTurnId?: string };
 type CompareResponse = {
   traditional: {
     messages: ModelMessage[];
@@ -189,17 +199,26 @@ let selectedFilePath: string | undefined;
 let workspaceFiles: WorkspaceFile[] = [];
 let tokenUsageHistory: TokenUsagePoint[] = [];
 let activeTokenUsage: TokenUsagePoint | undefined;
+let traditionalTokenUsageHistory: TokenUsagePoint[] = [];
+let activeTraditionalTokenUsage: TokenUsagePoint | undefined;
 let stateSessionId: string | undefined;
 let stateSessionTurnId: string | undefined;
-let stateSessionReady: Promise<void>;
+let dualSessionId: string | undefined;
+let dualSessionTurnId: string | undefined;
+let dualSessionView: DualSessionView | undefined;
+let activeArm: DualArm = "stateweave";
+let dualSessionReady: Promise<void>;
 
+const legacyStateWeaveSystemPrompt = "You are a StateWeave agent. Complete the user's task accurately, use tools when needed, and preserve durable working state in the causal graph.";
 const defaultAgentSettings: AgentSettings = {
-  systemPrompt: "You are a StateWeave agent. Complete the user's task accurately, use tools when needed, and preserve durable working state in the causal graph.",
+  systemPrompt: "You are a careful agent. Complete the user's task accurately, use tools when needed, and preserve durable user facts, constraints, and corrections across turns.",
   projectionTargetTokens: 16_000,
   maxIterations: 30
 };
 const agentSettingsStorageKey = "stateweave.agentSettings.v2";
 const stateSessionStorageKey = "stateweave.session.v1";
+const dualSessionStorageKey = "stateweave.dualSession.v1";
+const activeArmStorageKey = "stateweave.activeArm.v1";
 const legacyStateChatStorageKey = "stateweave.chat.v2";
 let agentSettings = loadAgentSettings();
 const primaryGraphViewState: GraphViewState = { positions: new Map<string, GraphPosition>(), collapsedMoleculeIds: new Set<string>() };
@@ -610,6 +629,8 @@ const challengerScenarioHeading = element<HTMLElement>("challenger-scenario-head
 const challengerScenarioContent = element<HTMLElement>("challenger-scenario-content");
 // The Infinite tab polls the server-owned agent harness through one state endpoint.
 const chat = element<HTMLElement>("chat");
+const stateweaveArm = element<HTMLButtonElement>("stateweave-arm");
+const traditionalArm = element<HTMLButtonElement>("traditional-arm");
 const form = element<HTMLFormElement>("composer");
 const input = element<HTMLTextAreaElement>("input");
 const send = element<HTMLButtonElement>("send");
@@ -622,6 +643,13 @@ const agentMaxIterations = element<HTMLInputElement>("agent-max-iterations");
 const resetAgentSettings = element<HTMLButtonElement>("reset-agent-settings");
 const stateInput = element<HTMLElement>("state-input");
 const stateOutput = element<HTMLElement>("state-output");
+const modelIoSummary = element<HTMLElement>("model-io-summary");
+const modelInputLabel = element<HTMLElement>("model-input-label");
+const modelOutputLabel = element<HTMLElement>("model-output-label");
+const memoryViewEyebrow = element<HTMLElement>("memory-view-eyebrow");
+const memoryViewTitle = element<HTMLElement>("memory-view-title");
+const memoryViewDescription = element<HTMLElement>("memory-view-description");
+const workspaceFilesEyebrow = element<HTMLElement>("workspace-files-eyebrow");
 const graphViewTab = element<HTMLButtonElement>("graph-view-tab");
 const toolsViewTab = element<HTMLButtonElement>("tools-view-tab");
 const filesViewTab = element<HTMLButtonElement>("files-view-tab");
@@ -674,14 +702,18 @@ void loadSubgraphExperiment();
 setActivePage(activePage, false);
 renderAgentSettings();
 renderMultiProgress();
+activeArm = loadActiveArm();
 void loadHealth();
 void loadTools();
 void loadWorkspaceFiles();
 renderTokenUsage();
+applyActiveArm();
 send.disabled = true;
-stateSessionReady = initializeStateSession();
+dualSessionReady = initializeDualSession();
 
 stateTab.addEventListener("click", () => setActivePage("state"));
+stateweaveArm.addEventListener("click", () => setActiveArm("stateweave"));
+traditionalArm.addEventListener("click", () => setActiveArm("traditional"));
 quickstartTab.addEventListener("click", () => setActivePage("quickstart"));
 abTab.addEventListener("click", () => setActivePage("ab"));
 protocolTab.addEventListener("click", () => setActivePage("protocol-experiment"));
@@ -705,14 +737,14 @@ sdkBuildScoreForm.addEventListener("submit", (event) => {
 infiniteOpenGraph.addEventListener("click", () => void openInfiniteGraph());
 form.addEventListener("submit", (event) => {
   event.preventDefault();
-  void sendStateWeaveMessage();
+  void sendDualMessage();
 });
 abForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void runAbTest();
 });
 reset.addEventListener("click", () => {
-  if (activePage === "state") void resetStateWeaveChat();
+  if (activePage === "state") void resetDualChat();
   else if (activePage === "quickstart") setActivePage("state");
   else if (activePage === "ab") resetAbTests();
   else if (activePage === "protocol-experiment" || activePage === "subgraph-experiment" || activePage === "sdk-build") setActivePage("state");
@@ -721,7 +753,7 @@ reset.addEventListener("click", () => {
 input.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
     event.preventDefault();
-    void sendStateWeaveMessage();
+    void sendDualMessage();
   }
 });
 agentSystemPrompt.addEventListener("input", saveAgentSettingsFromForm);
@@ -732,7 +764,7 @@ resetAgentSettings.addEventListener("click", () => {
   saveAgentSettings();
   renderAgentSettings();
   agentState = undefined;
-  void resetStateWeaveChat();
+  void resetDualChat();
 });
 abInput.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
@@ -760,11 +792,11 @@ rebootFiles.addEventListener("click", () => void rebootWorkspaceFiles());
 exportGraph.addEventListener("click", () => openGraphTransfer("export"));
 importGraph.addEventListener("click", () => openGraphTransfer("import"));
 clearMessages.addEventListener("click", () => {
-  if (!agentState && !tokenUsageHistory.length) {
+  if (!dualSessionView?.turnCount) {
     status.textContent = "Messages already clear.";
     return;
   }
-  if (confirm("Clear StateWeave messages and graph? Workspace files will stay intact.")) void resetStateWeaveChat();
+  if (confirm("Clear both message histories and the StateWeave graph? Workspace files will stay intact and the traditional workspace will resync from StateWeave.")) void resetDualChat();
 });
 closeTransfer.addEventListener("click", closeGraphTransfer);
 copyTransfer.addEventListener("click", () => void copyText(transferText.value, copyTransfer));
@@ -845,7 +877,7 @@ function loadAgentSettings(): AgentSettings {
   try {
     const parsed = JSON.parse(raw) as Partial<AgentSettings>;
     return {
-      systemPrompt: typeof parsed.systemPrompt === "string" && parsed.systemPrompt.trim() ? parsed.systemPrompt : defaultAgentSettings.systemPrompt,
+      systemPrompt: typeof parsed.systemPrompt === "string" && parsed.systemPrompt.trim() && parsed.systemPrompt !== legacyStateWeaveSystemPrompt ? parsed.systemPrompt : defaultAgentSettings.systemPrompt,
       projectionTargetTokens: normalizeProjectionTarget(parsed.projectionTargetTokens),
       maxIterations: normalizeMaxIterations(parsed.maxIterations)
     };
@@ -856,6 +888,154 @@ function loadAgentSettings(): AgentSettings {
 
 function saveAgentSettings(): void {
   localStorage.setItem(agentSettingsStorageKey, JSON.stringify(agentSettings));
+}
+
+function loadActiveArm(): DualArm {
+  return localStorage.getItem(activeArmStorageKey) === "traditional" ? "traditional" : "stateweave";
+}
+
+function setActiveArm(arm: DualArm): void {
+  if (activeArm === arm) return;
+  activeArm = arm;
+  localStorage.setItem(activeArmStorageKey, arm);
+  selectedFilePath = undefined;
+  applyActiveArm();
+  if (dualSessionView) renderDualSessionHistory(dualSessionView.turns, dualSessionView.historyTruncated);
+  void loadWorkspaceFiles();
+}
+
+function applyActiveArm(): void {
+  const stateSelected = activeArm === "stateweave";
+  stateweaveArm.classList.toggle("active", stateSelected);
+  traditionalArm.classList.toggle("active", !stateSelected);
+  stateweaveArm.setAttribute("aria-pressed", String(stateSelected));
+  traditionalArm.setAttribute("aria-pressed", String(!stateSelected));
+  for (const answer of chat.querySelectorAll<HTMLElement>("[data-arm-answer]")) answer.hidden = answer.dataset.armAnswer !== activeArm;
+  workspaceFilesEyebrow.textContent = stateSelected ? "StateWeave workspace" : "Traditional workspace";
+  memoryViewEyebrow.textContent = stateSelected ? "Molecular view · immutable truth" : "Transcript view · summary compaction";
+  memoryViewTitle.textContent = stateSelected ? "StateWeave memory" : "Traditional messages";
+  memoryViewDescription.innerHTML = stateSelected
+    ? "<strong>StateWeave primitive:</strong> ordinary model actions grow content-addressed causal nodes. Every action points to the exact state compiled for that inference; a deterministic bounded projection keeps the whole graph available without replaying a transcript."
+    : "<strong>Traditional primitive:</strong> ordinary <code>messages[]</code> accumulate user, assistant, and tool entries. At 48K estimated tokens, older history becomes one summary while the latest six messages remain verbatim.";
+  graphViewTab.textContent = stateSelected ? "Molecular graph" : "Active transcript";
+  modelIoSummary.textContent = stateSelected ? "Latest StateWeave loop: causal graph → molecular context → action · click either log to copy" : "Latest traditional loop: messages → summary compaction → action · click either log to copy";
+  modelInputLabel.textContent = stateSelected ? "Exact model input / compiled causal context" : "Exact model input / active messages transcript";
+  modelOutputLabel.textContent = stateSelected ? "Model actions, tools, retries, and trace metadata" : "Traditional actions, tools, compaction, and usage";
+  if (!dualSessionView) return;
+  if (stateSelected) {
+    const state = dualSessionView.stateweave.state;
+    if (state) renderGraph(agentStateToGraph(state));
+    else resetRenderedGraph();
+    stateInput.textContent = state ? compactAgentState(state) : "No StateWeave turn yet.";
+    stateOutput.textContent = "StateWeave arm restored from the paired JSONL session.";
+  } else {
+    renderTraditionalMemoryPanel(dualSessionView);
+    stateInput.textContent = dualSessionView.traditional.activeContext;
+    stateOutput.textContent = `Traditional transcript restored · ${dualSessionView.traditional.activeMessageCount} active messages · ${dualSessionView.traditional.totalCompactions} compactions.`;
+  }
+}
+
+async function initializeDualSession(): Promise<void> {
+  status.textContent = "Opening paired JSONL session…";
+  try {
+    const storedId = storedDualSessionId();
+    let session: DualSessionView | undefined;
+    if (storedId) {
+      try {
+        session = await fetchDualSession(storedId);
+      } catch (error) {
+        if (!(error instanceof StateWeaveRequestError) || error.statusCode !== 404) throw error;
+        localStorage.removeItem(dualSessionStorageKey);
+      }
+    }
+    if (!session) session = await createDualSession();
+    applyDualSession(session, true);
+    send.disabled = false;
+  } catch (error) {
+    status.textContent = `Paired session unavailable · ${error instanceof Error ? error.message : String(error)}`;
+    send.disabled = true;
+  }
+}
+
+function storedDualSessionId(): string | undefined {
+  const raw = localStorage.getItem(dualSessionStorageKey);
+  if (!raw) return undefined;
+  try {
+    const value = JSON.parse(raw) as { sessionId?: unknown };
+    return typeof value.sessionId === "string" && /^swd_[0-9a-f]{32}$/.test(value.sessionId) ? value.sessionId : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function createDualSession(state?: AgentState): Promise<DualSessionView> {
+  const response = await fetch(`${apiBase}/api/dual/sessions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...(state ? { state } : {}) })
+  });
+  const body = await response.json() as DualSessionView | { error?: string };
+  if (!response.ok) throw new StateWeaveRequestError("error" in body && body.error ? body.error : `Paired session creation failed (${response.status})`, response.status);
+  return body as DualSessionView;
+}
+
+async function fetchDualSession(sessionId: string): Promise<DualSessionView> {
+  const response = await fetch(`${apiBase}/api/dual/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" });
+  const body = await response.json() as DualSessionView | { error?: string };
+  if (!response.ok) throw new StateWeaveRequestError("error" in body && body.error ? body.error : `Paired session load failed (${response.status})`, response.status);
+  return body as DualSessionView;
+}
+
+async function deleteDualSession(sessionId: string): Promise<void> {
+  const response = await fetch(`${apiBase}/api/dual/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+  if (!response.ok && response.status !== 404) throw new Error(`Paired session deletion failed (${response.status})`);
+}
+
+function applyDualSession(session: DualSessionView, restored: boolean): void {
+  dualSessionView = session;
+  dualSessionId = session.sessionId;
+  dualSessionTurnId = session.currentTurnId;
+  agentState = session.stateweave.state;
+  tokenUsageHistory = parseTokenUsageHistory(session.stateweave.usageHistory.map((usage) => ({ ...usage, projectionTargetTokens: usage.contextTargetTokens })));
+  traditionalTokenUsageHistory = parseTokenUsageHistory(session.traditional.usageHistory.map((usage) => ({ ...usage, projectionTargetTokens: usage.contextTargetTokens })));
+  activeTokenUsage = undefined;
+  activeTraditionalTokenUsage = undefined;
+  localStorage.setItem(dualSessionStorageKey, JSON.stringify({ sessionId: session.sessionId }));
+  localStorage.removeItem(legacyStateChatStorageKey);
+  localStorage.removeItem(stateSessionStorageKey);
+  renderDualSessionHistory(session.turns, session.historyTruncated);
+  applyActiveArm();
+  renderTokenUsage();
+  const graphValue = agentState ? agentStateToGraph(agentState) : undefined;
+  status.textContent = session.turnCount
+    ? `${restored ? "Restored" : "Ready"} · ${session.turnCount} paired turn${session.turnCount === 1 ? "" : "s"}${graphValue ? ` · ${graphValue.nodes.length} StateWeave nodes` : ""}`
+    : "Ready · both arms run on every input";
+}
+
+function renderDualSessionHistory(turns: DualTurnView[], truncated: boolean): void {
+  chat.innerHTML = truncated ? `<div class="session-history-notice">Earlier paired turns remain in the server JSONL log.</div>` : "";
+  for (const turn of turns) {
+    chat.insertAdjacentHTML("beforeend", `<div class="message user"><div class="markdown">${renderMarkdown(turn.input)}</div></div>`);
+    chat.insertAdjacentHTML("beforeend", dualAnswerHtml("stateweave", turn.stateweave, turn.turn));
+    chat.insertAdjacentHTML("beforeend", dualAnswerHtml("traditional", turn.traditional, turn.turn));
+  }
+  if (!turns.length) chat.innerHTML = `<div class="empty-state"><h2>One input. Two memory primitives.</h2><p>Every message runs StateWeave and traditional messages in parallel with isolated workspaces.</p></div>`;
+  applyActiveArm();
+  scrollChat(chat);
+}
+
+function dualAnswerHtml(arm: DualArm, result: DualTurnView[DualArm], turn: number): string {
+  const hidden = arm !== activeArm ? " hidden" : "";
+  const label = arm === "stateweave" ? "StateWeave" : "Traditional";
+  if (result.status === "failed") return `<article class="answer state-answer assistant-final-card arm-failed" data-arm-answer="${arm}"${hidden}><div class="assistant-final-header"><span>${label}</span><small>T${turn} failed</small></div><div class="assistant-final-body"><div class="message error"><div>${escapeHtml(result.error ?? "Arm failed")}</div></div></div></article>`;
+  const compacted = arm === "traditional" && result.usage?.compactions ? `<small>${result.usage.compactions} compaction${result.usage.compactions === 1 ? "" : "s"}</small>` : `<small>T${turn}</small>`;
+  return `<article class="answer state-answer assistant-final-card" data-arm-answer="${arm}"${hidden}><div class="assistant-final-header"><span>${label}</span>${compacted}</div><div class="assistant-final-body">${responseHtml(result.answer ?? "")}</div></article>`;
+}
+
+function renderTraditionalMemoryPanel(session: DualSessionView): void {
+  const latest = session.traditional.usageHistory.at(-1);
+  graph.className = "traditional-memory-panel";
+  graph.innerHTML = `<article><span>Active transcript</span><strong>${session.traditional.activeMessageCount.toLocaleString()} messages</strong><p>System prompt, compacted summary when needed, and the latest six transcript messages.</p></article><article><span>Compactions</span><strong>${session.traditional.totalCompactions.toLocaleString()}</strong><p>${latest?.compactions ? `${latest.compactions} occurred on the latest turn.` : "No compaction on the latest turn."}</p></article><article><span>Context policy</span><strong>48K threshold</strong><p>Summary plus six messages under the shared 64K hard ceiling.</p></article>`;
 }
 
 async function initializeStateSession(): Promise<void> {
@@ -1520,10 +1700,198 @@ function formatSdkBuildDuration(value: number): string {
   return `${minutes}m ${seconds % 60}s`;
 }
 
+async function sendDualMessage(): Promise<void> {
+  const text = input.value.trim();
+  if (!text || stateRunning) return;
+  await dualSessionReady;
+  if (!dualSessionId) {
+    status.textContent = "Paired session is unavailable.";
+    return;
+  }
+
+  stateRunning = true;
+  send.disabled = true;
+  reset.disabled = true;
+  stateweaveArm.disabled = true;
+  traditionalArm.disabled = true;
+  input.value = "";
+  startDualTokenUsageTurn();
+  status.textContent = "Running both arms in parallel…";
+  clearEmptyState(chat);
+  appendUser(text);
+  const statePending = appendDualPending("stateweave");
+  const traditionalPending = appendDualPending("traditional");
+  const stateLive = createLiveStreamLog();
+  const traditionalLog: string[] = [];
+
+  try {
+    const result = await streamDualRun(text, dualSessionId, dualSessionTurnId, agentSettings, (event) => {
+      if (event.arm === "stateweave") {
+        const stateEvent = event.event as AgentStreamEvent;
+        updateActiveTokenUsage(stateEvent);
+        updateLiveStreamLog(stateLive, stateEvent);
+        updateDualPending(statePending, stateLive.events.at(-1) ?? "StateWeave is running");
+        if (stateEvent.type === "progress") {
+          if (stateEvent.progress.prompt && activeArm === "stateweave") stateInput.textContent = stateEvent.progress.prompt;
+          if (stateEvent.progress.graph && activeArm === "stateweave") renderGraph(stateEvent.progress.graph);
+        }
+      } else {
+        const progress = (event.event as { type: "progress"; progress: TraditionalProgress }).progress;
+        updateActiveTraditionalUsage(progress);
+        traditionalLog.push(`${progress.phase.toUpperCase()} · ${progress.detail}`);
+        updateDualPending(traditionalPending, progress.detail);
+        if (activeArm === "traditional") stateOutput.textContent = traditionalLog.join("\n");
+      }
+      const stateCalls = activeTokenUsage?.modelCalls ?? 0;
+      const traditionalCalls = activeTraditionalTokenUsage?.modelCalls ?? 0;
+      status.textContent = `Parallel run · ${stateCalls} StateWeave / ${traditionalCalls} traditional model calls`;
+    });
+    dualSessionTurnId = result.session.turnId ?? result.session.currentTurnId;
+    const authoritative = await fetchDualSession(dualSessionId);
+    applyDualSession(authoritative, false);
+    const stateResult = result.result.stateweave;
+    const traditionalResult = result.result.traditional;
+    if (stateResult.status === "done" && stateResult.metadata && stateResult.trace && stateResult.graph) {
+      if (activeArm === "stateweave") renderStateWeave({ stateAfter: stateResult.stateAfter!, output: stateResult.output, trace: stateResult.trace, graph: stateResult.graph, metadata: stateResult.metadata });
+    }
+    if (traditionalResult.status === "done" && traditionalResult.usage) {
+      if (activeArm === "traditional") {
+        stateInput.textContent = traditionalResult.lastPrompt ?? authoritative.traditional.activeContext;
+        stateOutput.textContent = formatTraditionalResult(traditionalResult, traditionalLog);
+      }
+    }
+    const failures = [stateResult.status === "failed" ? "StateWeave" : "", traditionalResult.status === "failed" ? "traditional" : ""].filter(Boolean);
+    status.textContent = failures.length ? `Paired turn committed · ${failures.join(" and ")} failed without advancing its memory` : `Done · paired JSONL committed · both arms completed`;
+    void loadWorkspaceFiles();
+  } catch (error) {
+    if (error instanceof StateWeaveRequestError && error.statusCode === 409 && dualSessionId) {
+      try {
+        applyDualSession(await fetchDualSession(dualSessionId), true);
+        status.textContent = "Paired session advanced in another tab · reloaded; input was not sent.";
+      } catch (reloadError) {
+        failDualPending(statePending, reloadError instanceof Error ? reloadError.message : String(reloadError));
+        failDualPending(traditionalPending, reloadError instanceof Error ? reloadError.message : String(reloadError));
+        status.textContent = "Paired session reload failed.";
+      }
+    } else if (error instanceof StateWeaveRequestError && error.statusCode === 404) {
+      applyDualSession(await createDualSession(), false);
+      status.textContent = "Previous paired session was unavailable · created a new one; input was not sent.";
+    } else {
+      failDualPending(statePending, error instanceof Error ? error.message : String(error));
+      failDualPending(traditionalPending, error instanceof Error ? error.message : String(error));
+      activeTokenUsage = undefined;
+      activeTraditionalTokenUsage = undefined;
+      renderTokenUsage();
+      status.textContent = "Paired run failed before commit.";
+    }
+  } finally {
+    stateRunning = false;
+    send.disabled = false;
+    reset.disabled = false;
+    stateweaveArm.disabled = false;
+    traditionalArm.disabled = false;
+    input.focus();
+  }
+}
+
+function appendDualPending(arm: DualArm): HTMLElement {
+  const label = arm === "stateweave" ? "StateWeave" : "Traditional";
+  chat.insertAdjacentHTML("beforeend", `<article class="answer state-answer assistant-final-card streaming-answer" data-arm-answer="${arm}"${arm !== activeArm ? " hidden" : ""}><div class="assistant-final-header"><span>${label}</span><small>running</small></div><div class="assistant-final-body"><p data-dual-progress>Preparing ${label} memory…</p></div></article>`);
+  scrollChat(chat);
+  return chat.lastElementChild as HTMLElement;
+}
+
+function updateDualPending(pending: HTMLElement, detail: string): void {
+  const target = pending.querySelector<HTMLElement>("[data-dual-progress]");
+  if (target) target.textContent = detail;
+}
+
+function failDualPending(pending: HTMLElement, message: string): void {
+  pending.classList.remove("streaming-answer");
+  pending.classList.add("arm-failed");
+  const target = pending.querySelector<HTMLElement>(".assistant-final-body");
+  if (target) target.innerHTML = `<div class="message error"><div>${escapeHtml(message)}</div></div>`;
+}
+
+function startDualTokenUsageTurn(): void {
+  const turn = (dualSessionView?.turnCount ?? 0) + 1;
+  const startedAt = new Date().toISOString();
+  activeTokenUsage = {
+    turn, runId: `pending_state_${turn}`, startedAt, latestContextTokens: 0, peakContextTokens: 0, totalInputTokens: 0, outputTokens: 0, modelCalls: 0,
+    maxPromptTokens: 64_000, projectionTargetTokens: agentSettings.projectionTargetTokens, status: "running"
+  };
+  activeTraditionalTokenUsage = {
+    turn, runId: `pending_traditional_${turn}`, startedAt, latestContextTokens: 0, peakContextTokens: 0, totalInputTokens: 0, outputTokens: 0, modelCalls: 0,
+    maxPromptTokens: 64_000, projectionTargetTokens: 48_000, compactions: 0, compactionInputTokens: 0, compactionOutputTokens: 0, compactionModelCalls: 0, status: "running"
+  };
+  renderTokenUsage();
+}
+
+function updateActiveTraditionalUsage(progress: TraditionalProgress): void {
+  if (!activeTraditionalTokenUsage) return;
+  activeTraditionalTokenUsage.modelCalls = progress.modelCalls;
+  activeTraditionalTokenUsage.toolCalls = progress.toolCalls;
+  activeTraditionalTokenUsage.latestContextTokens = progress.contextTokens;
+  activeTraditionalTokenUsage.peakContextTokens = progress.peakContextTokens;
+  activeTraditionalTokenUsage.totalInputTokens = progress.totalInputTokens;
+  activeTraditionalTokenUsage.outputTokens = progress.outputTokens;
+  activeTraditionalTokenUsage.tokenCountSource = progress.tokenCountSource;
+  renderTokenUsage();
+}
+
+function formatTraditionalResult(result: Extract<DualArmResult, { status: "done" }>, log: string[]): string {
+  const usage = result.usage;
+  return [
+    ...log,
+    "",
+    `FINAL · ${result.output}`,
+    usage ? `USAGE · ${usage.totalInputTokens.toLocaleString()} input · ${usage.outputTokens.toLocaleString()} output · ${usage.peakContextTokens.toLocaleString()} peak context` : "",
+    usage?.compactions ? `COMPACTION · ${usage.compactions} call · ${usage.compactionInputTokens.toLocaleString()} input · ${usage.compactionOutputTokens.toLocaleString()} output` : "COMPACTION · none"
+  ].filter(Boolean).join("\n");
+}
+
+async function streamDualRun(text: string, sessionId: string, expectedTurnId: string | undefined, settings: AgentSettings, onArmEvent: (event: Extract<DualStreamEvent, { type: "arm_event" }>) => void): Promise<DualRunResponse> {
+  const response = await fetch(`${apiBase}/api/dual/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ input: text, sessionId, ...(expectedTurnId ? { expectedTurnId } : {}), systemPrompt: settings.systemPrompt, projectionTargetTokens: settings.projectionTargetTokens, maxIterations: settings.maxIterations })
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => undefined)) as { error?: string } | undefined;
+    throw new StateWeaveRequestError(body?.error ?? `Paired request failed (${response.status})`, response.status);
+  }
+  if (!response.body) throw new Error("Paired streaming response body was empty.");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let committed: DualRunResponse | undefined;
+  let terminalError: string | undefined;
+  const consume = (line: string): void => {
+    if (!line.trim()) return;
+    const event = JSON.parse(line) as DualStreamEvent;
+    if (event.type === "arm_event") onArmEvent(event);
+    else if (event.type === "dual_commit") committed = { session: event.session, result: event.result };
+    else if (event.type === "error") terminalError = event.message;
+  };
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() ?? "";
+    for (const line of lines) consume(line);
+  }
+  buffer += decoder.decode();
+  consume(buffer);
+  if (terminalError) throw new Error(terminalError);
+  if (!committed) throw new Error("Paired stream ended without an atomic JSONL commit.");
+  return committed;
+}
+
 async function sendStateWeaveMessage(): Promise<void> {
   const text = input.value.trim();
   if (!text || stateRunning) return;
-  await stateSessionReady;
+  await dualSessionReady;
   if (!stateSessionId) {
     status.textContent = "Durable session is unavailable.";
     return;
@@ -1724,7 +2092,7 @@ function renderStateWeave(result: AgentPayload): void {
 }
 
 function renderTokenUsage(): void {
-  const view = renderTokenUsageView(tokenUsageHistory, activeTokenUsage);
+  const view = renderDualTokenUsageView(tokenUsageHistory, traditionalTokenUsageHistory, activeTokenUsage, activeTraditionalTokenUsage);
   tokenUsageCount.textContent = view.countLabel;
   tokenUsageContent.innerHTML = view.html;
 }
@@ -1810,7 +2178,7 @@ async function loadHealth(): Promise<void> {
 }
 
 async function loadTools(): Promise<void> {
-  const response = await fetch(`${apiBase}/api/stateweave/tools`).catch(() => undefined);
+  const response = await fetch(`${apiBase}/api/stateweave/tools?arm=${activeArm}`).catch(() => undefined);
   const body = response?.ok ? ((await response.json()) as { tools?: ToolInfo[]; workspaceDir?: string }) : undefined;
   const tools = body?.tools ?? [];
   toolCount.textContent = tools.length ? `${tools.length} tools` : "Unavailable";
@@ -1820,7 +2188,7 @@ async function loadTools(): Promise<void> {
 }
 
 async function loadWorkspaceFiles(): Promise<void> {
-  const response = await fetch(`${apiBase}/api/stateweave/files`).catch(() => undefined);
+  const response = await fetch(`${apiBase}/api/stateweave/files?arm=${activeArm}`).catch(() => undefined);
   const body = response?.ok ? ((await response.json()) as { files?: WorkspaceFile[] }) : undefined;
   workspaceFiles = sortWorkspaceFiles(body?.files ?? []);
   fileCount.textContent = workspaceFiles.length ? `${workspaceFiles.length} file${workspaceFiles.length === 1 ? "" : "s"}` : "0 files";
@@ -1833,7 +2201,7 @@ async function openWorkspaceFile(filePath: string): Promise<void> {
   selectedFilePath = filePath;
   renderWorkspaceFileList();
   fileViewer.innerHTML = workspaceFileLoadingHtml(filePath);
-  const response = await fetch(`${apiBase}/api/stateweave/files/read?path=${encodeURIComponent(filePath)}`);
+  const response = await fetch(`${apiBase}/api/stateweave/files/read?path=${encodeURIComponent(filePath)}&arm=${activeArm}`);
   const body = (await response.json()) as WorkspaceFileContent | { error?: string };
   if (!response.ok || !isWorkspaceFileContent(body)) {
     fileViewer.innerHTML = workspaceFileErrorHtml("error" in body ? body.error ?? "Failed to read file." : "Failed to read file.");
@@ -1857,7 +2225,7 @@ function renderWorkspaceFileList(): void {
 
 async function rebootWorkspaceFiles(): Promise<void> {
   if (!confirm("Reboot workspace files? This removes all files written by the agent in the workspace.")) return;
-  const response = await fetch(`${apiBase}/api/stateweave/files/reboot`, { method: "POST" });
+  const response = await fetch(`${apiBase}/api/stateweave/files/reboot?arm=${activeArm}`, { method: "POST" });
   if (!response.ok) {
     const body = (await response.json().catch(() => undefined)) as { error?: string } | undefined;
     fileViewer.innerHTML = workspaceFileErrorHtml(body?.error ?? "Failed to reboot workspace.");
@@ -2006,7 +2374,7 @@ function formatFileTimestamp(value: string): string {
 
 function workspaceFilePreviewUrl(filePath: string): string {
   const encodedPath = filePath.split("/").map((segment) => encodeURIComponent(segment)).join("/");
-  return `${apiBase}/api/stateweave/files/preview/${encodedPath}`;
+  return `${apiBase}/api/stateweave/files/preview/${encodedPath}?arm=${activeArm}`;
 }
 
 function looksLikeCompleteSvg(content: string): boolean {
@@ -2041,12 +2409,12 @@ async function applyGraphImport(): Promise<void> {
   applyImport.disabled = true;
   try {
     const state = parseImportedAgentState(transferText.value);
-    const previousSessionId = stateSessionId;
-    const session = await createStateSession({ state, usageHistory: [] });
-    applyStateSession(session, false);
-    if (previousSessionId && previousSessionId !== session.sessionId) void deleteStateSession(previousSessionId).catch(() => undefined);
-    stateOutput.textContent = "Imported AgentState into a new authoritative JSONL session.";
-    status.textContent = `Imported · JSONL · ${state.nodes.length} nodes`;
+    const previousSessionId = dualSessionId;
+    const session = await createDualSession(state);
+    applyDualSession(session, false);
+    if (previousSessionId && previousSessionId !== session.sessionId) void deleteDualSession(previousSessionId).catch(() => undefined);
+    stateOutput.textContent = "Imported AgentState into the StateWeave arm of a new paired JSONL session. Traditional messages start empty.";
+    status.textContent = `Imported · paired JSONL · ${state.nodes.length} StateWeave nodes`;
     closeGraphTransfer();
     setActivePage("state");
   } catch (error) {
@@ -2084,6 +2452,27 @@ function isAgentStateLike(value: unknown): value is AgentState {
   if (!value || typeof value !== "object") return false;
   const candidate = value as { version?: unknown; nodes?: unknown; frontier?: unknown };
   return candidate.version === 1 && Array.isArray(candidate.nodes) && Array.isArray(candidate.frontier);
+}
+
+async function resetDualChat(): Promise<void> {
+  if (stateRunning) return;
+  send.disabled = true;
+  reset.disabled = true;
+  const previousSessionId = dualSessionId;
+  try {
+    const session = await createDualSession();
+    input.value = "";
+    applyDualSession(session, false);
+    localStorage.removeItem(legacyStateChatStorageKey);
+    if (previousSessionId && previousSessionId !== session.sessionId) void deleteDualSession(previousSessionId).catch(() => undefined);
+    status.textContent = "Reset · new paired JSONL session · traditional workspace resynced";
+    input.focus();
+  } catch (error) {
+    status.textContent = `Reset failed · ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    send.disabled = false;
+    reset.disabled = false;
+  }
 }
 
 async function resetStateWeaveChat(): Promise<void> {

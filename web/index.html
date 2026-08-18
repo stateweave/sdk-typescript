@@ -12,7 +12,7 @@
         <div>
           <p class="eyebrow">Development</p>
           <h1>StateWeave Chat Lab</h1>
-          <p class="topbar-copy">Use graph-native StateWeave chat, or switch to A/B testing against regular <code>messages[]</code>.</p>
+          <p class="topbar-copy">Each chat input runs graph-native StateWeave and traditional <code>messages[]</code> in parallel.</p>
         </div>
         <div class="topbar-actions">
           <span id="provider" class="badge">Checking provider…</span>
@@ -21,7 +21,7 @@
       </header>
 
       <nav class="tabs" aria-label="Lab pages">
-        <button id="state-tab" class="tab active" type="button" aria-controls="state-page" aria-selected="true">StateWeave</button>
+        <button id="state-tab" class="tab active" type="button" aria-controls="state-page" aria-selected="true">Parallel chat</button>
         <button id="quickstart-tab" class="tab" type="button" aria-controls="quickstart-page" aria-selected="false">Quick Start</button>
         <button id="ab-tab" class="tab" type="button" aria-controls="ab-page" aria-selected="false">A/B testing</button>
         <button id="protocol-tab" class="tab" type="button" aria-controls="protocol-page" aria-selected="false">Protocol lab</button>
@@ -37,10 +37,16 @@
       </nav>
 
       <main id="state-page" class="page active shell">
-        <section class="card chat-card" aria-label="StateWeave chat">
+        <section class="card chat-card" aria-label="Parallel agent chat">
           <div class="chat-toolbar">
-            <span class="eyebrow">SDK Agent · causal engine</span>
             <div>
+              <span class="eyebrow">Parallel agent comparison</span>
+              <div class="arm-switcher" role="group" aria-label="Displayed memory primitive">
+                <button id="stateweave-arm" class="arm-switch active" type="button" aria-pressed="true">StateWeave</button>
+                <button id="traditional-arm" class="arm-switch" type="button" aria-pressed="false">Traditional</button>
+              </div>
+            </div>
+            <div class="chat-actions">
               <button id="export-graph" class="button secondary small-button" type="button">Export</button>
               <button id="import-graph" class="button secondary small-button" type="button">Import</button>
               <button id="clear-messages" class="button secondary small-button danger-button" type="button">Clear messages</button>
@@ -54,7 +60,7 @@
                 <textarea id="agent-system-prompt" rows="4"></textarea>
               </label>
               <label>
-                <span>Working projection tokens</span>
+                <span>StateWeave projection tokens</span>
                 <input id="agent-projection-target" type="number" min="1000" max="64000" step="1000" />
               </label>
               <label>
@@ -63,7 +69,7 @@
               </label>
               <button id="reset-agent-settings" class="button secondary small-button" type="button">Reset defaults</button>
             </div>
-            <p class="muted-copy">Settings persist in this browser and are sent with every StateWeave chat turn.</p>
+            <p class="muted-copy">Settings persist in this browser. Both arms share the model, tools, and 64K ceiling; StateWeave uses this projection target while traditional messages compact at 48K.</p>
           </details>
           <div id="chat" class="chat">
             <div class="empty-state">
@@ -83,9 +89,9 @@
           <div class="graph-card">
             <div class="graph-heading">
               <div>
-                <p class="eyebrow">Molecular view · immutable truth</p>
-                <h2>StateWeave memory</h2>
-                <p><strong>StateWeave primitive:</strong> ordinary model actions grow content-addressed causal nodes. Every action points to the exact state compiled for that inference; a deterministic bounded projection keeps the whole graph available without replaying a transcript.</p>
+                <p id="memory-view-eyebrow" class="eyebrow">Molecular view · immutable truth</p>
+                <h2 id="memory-view-title">StateWeave memory</h2>
+                <p id="memory-view-description"><strong>StateWeave primitive:</strong> ordinary model actions grow content-addressed causal nodes. Every action points to the exact state compiled for that inference; a deterministic bounded projection keeps the whole graph available without replaying a transcript.</p>
               </div>
             </div>
             <div class="workspace-switcher" aria-label="Right panel view">
@@ -110,7 +116,7 @@
                   <section class="files-sidebar" aria-label="Workspace file list">
                     <div class="tools-panel-header files-sidebar-header">
                       <div>
-                        <p class="eyebrow">Workspace files</p>
+                        <p id="workspace-files-eyebrow" class="eyebrow">StateWeave workspace</p>
                         <strong>Project browser</strong>
                       </div>
                       <span id="file-count" class="badge">Loading…</span>
@@ -130,8 +136,8 @@
                 <header class="token-usage-header">
                   <div>
                     <p class="eyebrow">Provider telemetry</p>
-                    <h3>Context and token usage</h3>
-                    <p>Per-turn provider input and output, plus peak context-window use across each agent loop.</p>
+                    <h3>StateWeave vs traditional</h3>
+                    <p>Provider input, output, and peak context for both arms on the same paired-turn axis.</p>
                   </div>
                   <span id="token-usage-count" class="badge">No turns</span>
                 </header>
@@ -141,12 +147,12 @@
           </div>
 
           <details class="model-io-panel">
-            <summary>Latest model loop: causal graph → molecular context → action · click either log to copy</summary>
+            <summary id="model-io-summary">Latest StateWeave loop: causal graph → molecular context → action · click either log to copy</summary>
             <div class="comparison single">
               <article class="compare-column">
-                <label>Exact model input / compiled causal context</label>
+                <label id="model-input-label">Exact model input / compiled causal context</label>
                 <pre id="state-input" class="code">No turn yet.</pre>
-                <label>Model actions, tools, retries, and trace metadata</label>
+                <label id="model-output-label">Model actions, tools, retries, and trace metadata</label>
                 <pre id="state-output" class="code small">No output yet.</pre>
               </article>
             </div>

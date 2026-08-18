@@ -78,6 +78,7 @@ export class MockModel implements Model {
     const identity = identityOutput(source, inputNodeId);
     const task = inferTask(lower);
     if (input.prompt.startsWith("CAUSAL_WEAVE/1") || input.prompt.startsWith("MOLECULAR_WEAVE/1")) return `FINAL: ${identity?.answer ?? finalFor(task)}`;
+    if (input.mode === "text" && input.prompt.startsWith("SYSTEM:") && input.prompt.includes("transcript is your complete working memory")) return `FINAL: ${identity?.answer ?? finalFor(task)}`;
     if (identity && input.mode === "text") return identity.answer;
     if (identity && input.mode !== "text") return identity.swx;
 

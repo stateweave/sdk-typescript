@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { maxTokenUsageHistory, parseTokenUsageHistory, renderTokenUsageView, type TokenUsagePoint } from "../web/src/tokenUsage.js";
+import { maxTokenUsageHistory, parseTokenUsageHistory, renderDualTokenUsageView, renderTokenUsageView, type TokenUsagePoint } from "../web/src/tokenUsage.js";
 
 function point(turn: number, overrides: Partial<TokenUsagePoint> = {}): TokenUsagePoint {
   return {
@@ -42,6 +42,21 @@ it("migrates records created before peak-context telemetry", () => {
     latestContextTokens: 1_001,
     peakContextTokens: 1_001
   });
+});
+
+it("renders paired StateWeave and traditional usage on one turn axis", () => {
+  const rendered = renderDualTokenUsageView(
+    [point(1, { totalInputTokens: 1_200, outputTokens: 80 })],
+    [point(1, { runId: "traditional_1", totalInputTokens: 2_400, outputTokens: 120, projectionTargetTokens: 48_000, compactions: 1, compactionInputTokens: 900, compactionOutputTokens: 30, compactionModelCalls: 1 })]
+  );
+
+  expect(rendered.countLabel).toBe("1 paired turn");
+  expect(rendered.html).toContain("Same input, two memory primitives");
+  expect(rendered.html).toContain("Input by turn");
+  expect(rendered.html).toContain("Output by turn");
+  expect(rendered.html).toContain("Peak context by turn");
+  expect(rendered.html).toContain("900 summary input");
+  expect(rendered.html).toContain("traditional input");
 });
 
 it("renders exact turn series, count provenance, and failed usage", () => {

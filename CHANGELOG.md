@@ -10,6 +10,7 @@
 - Add an isolated compound-node lab experiment comparing the current flat causal projection with a node that acts as both an outer node and an expandable subgraph; follow the exploratory ten-case pilots with a frozen 22-case difficult preregistered run.
 - Add opt-in molecular context compilation over unchanged causal truth, deterministic molecule metadata in graph views, and a development-lab molecular graph with expandable/collapsible turn subgraphs.
 - Replace browser-owned lab graph persistence with replay-safe server JSONL sessions: causal-node deltas, commit frontiers, failed-run records, periodic validated checkpoints, stale-writer fencing, torn-tail recovery, one-time localStorage migration, and token/chart restoration from the durable log.
+- Add a primary dual-agent chat where every input concurrently runs unchanged StateWeave and a traditional persistent `messages[]` arm with identical tools in isolated workspaces; atomically persist both outcomes in paired JSONL, compact the traditional transcript at 48K into a summary plus six messages, and chart both arms' provider input/output, peak context, and compaction cost on one turn axis.
 
 ## 0.1.0
 

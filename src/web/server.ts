@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,10 +11,13 @@ import type { GraphFrame, StateWeaveRunMetadata, TraceStep } from "../core/types
 import { createModelFromEnv } from "../llm/factory.js";
 import { createDefaultTools, describeTools } from "../tools/fileSystemTools.js";
 import { listChallengerScenarios, readChallengerScenario } from "../evals/challengerScenarioLibrary.js";
+import { AgenticBaseline, type AgenticProgress, type AgenticTurnResult } from "../evals/agenticBaseline.js";
 import { InfiniteAgentHarness } from "../evals/infiniteAgentHarness.js";
 import { SdkBuildBenchmarkApi } from "./sdkBuildBenchmark.js";
 import { SubgraphExperimentHarness } from "./subgraphExperiment.js";
 import { SessionConflictError, SessionCorruptError, SessionNotFoundError, StateWeaveSessionStore, type SessionUsageRecord, type StateWeaveSessionView } from "./stateweaveSessionStore.js";
+import { DualSessionConflictError, DualSessionCorruptError, DualSessionNotFoundError, DualSessionStore, type StateWeavePairOutcome, type TraditionalPairOutcome } from "./dualSessionStore.js";
+import type { DualSessionView, DualUsageRecord, LoadedDualSession } from "./dualSessionTypes.js";
 
 type RunRequest = {
   input?: unknown;
@@ -32,6 +35,15 @@ type RunRequest = {
 type CreateSessionRequest = {
   state?: unknown;
   usageHistory?: unknown;
+};
+
+type DualRunRequest = {
+  input?: unknown;
+  sessionId?: unknown;
+  expectedTurnId?: unknown;
+  maxIterations?: unknown;
+  projectionTargetTokens?: unknown;
+  systemPrompt?: unknown;
 };
 
 type JudgeRequest = {
@@ -110,10 +122,24 @@ const runStorePath = path.resolve(process.env.STATEWEAVE_RUN_STORE ?? ".statewea
 const traceDir = path.resolve(process.env.STATEWEAVE_TRACE_DIR ?? ".stateweave/traces");
 const sessionDir = path.resolve(process.env.STATEWEAVE_SESSION_DIR ?? ".stateweave/sessions");
 const sessionStore = new StateWeaveSessionStore(sessionDir);
+const dualSessionDir = path.resolve(process.env.STATEWEAVE_DUAL_SESSION_DIR ?? ".stateweave/dual-sessions");
+const dualSessionStore = new DualSessionStore(dualSessionDir);
 const challengerScenarioDir = path.resolve(process.env.STATEWEAVE_CHALLENGER_SCENARIO_DIR ?? path.join(process.cwd(), "data/challenger-scenarios"));
 const model = createModelFromEnv();
 const workspaceDir = path.resolve(process.env.STATEWEAVE_WORKSPACE_DIR ?? "/data/workspace");
-const agentTools = createDefaultTools({ rootDir: workspaceDir });
+const traditionalWorkspaceDir = path.resolve(process.env.STATEWEAVE_TRADITIONAL_WORKSPACE_DIR ?? "/data/workspace-traditional");
+if (traditionalWorkspaceDir === workspaceDir || traditionalWorkspaceDir.startsWith(`${workspaceDir}${path.sep}`) || workspaceDir.startsWith(`${traditionalWorkspaceDir}${path.sep}`)) throw new Error("StateWeave and traditional workspaces must be distinct sibling roots.");
+const agentTools = createComparisonTools(workspaceDir);
+const traditionalTools = createComparisonTools(traditionalWorkspaceDir);
+if (JSON.stringify(describeTools(agentTools)) !== JSON.stringify(describeTools(traditionalTools))) throw new Error("StateWeave and traditional arms must expose identical tool definitions.");
+function createComparisonTools(rootDir: string): ReturnType<typeof createDefaultTools> {
+  return createDefaultTools({ rootDir }).map((tool) => ({ ...tool, description: tool.description.replaceAll(rootDir, "<workspace>") }));
+}
+
+const traditionalCompactionThreshold = 48_000;
+const traditionalRetainMessages = 6;
+const dualDefaultSystemPrompt = "You are a careful agent. Complete the user's task accurately, use tools when needed, and preserve durable user facts, constraints, and corrections across turns.";
+let dualWorkspaceQueue: Promise<void> = Promise.resolve();
 const sdkBuildBenchmark = new SdkBuildBenchmarkApi(path.resolve(process.env.STATEWEAVE_SDK_BENCHMARK_DIR ?? "/data/sdk-build-benchmark"));
 const subgraphExperiment = new SubgraphExperimentHarness({
   model,
@@ -155,7 +181,30 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   const url = requestUrl(request);
 
   if (request.method === "GET" && url.pathname === "/api/health") {
-    json(response, 200, { ok: true, provider: providerName(), agentEngine: "causal-weave-v3", sessionStorage: "jsonl", defaultSystemPrompt: defaultAgentSystemPrompt, defaultProjectionTargetTokens: 16_000, defaultProjectionMaxNodes: 16, defaultContextMode: "molecular", defaultMaxIterations: 30 });
+    json(response, 200, { ok: true, provider: providerName(), agentEngine: "causal-weave-v3", sessionStorage: "jsonl-dual", comparison: { arms: ["stateweave", "traditional"], execution: "parallel", traditionalCompactionTokens: traditionalCompactionThreshold, traditionalRetainMessages }, defaultSystemPrompt: dualDefaultSystemPrompt, defaultProjectionTargetTokens: 16_000, defaultProjectionMaxNodes: 16, defaultContextMode: "molecular", defaultMaxIterations: 30 });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/dual/sessions") {
+    await createDualSession(request, response);
+    return;
+  }
+
+  const dualSessionMatch = url.pathname.match(/^\/api\/dual\/sessions\/(swd_[0-9a-f]{32})$/);
+  if (dualSessionMatch && request.method === "GET") {
+    await getDualSession(dualSessionMatch[1], response);
+    return;
+  }
+  if (dualSessionMatch && request.method === "DELETE") {
+    await deleteDualSession(dualSessionMatch[1], response);
+    return;
+  }
+  if (url.pathname === "/api/dual/sessions" || url.pathname.startsWith("/api/dual/sessions/")) {
+    privateJson(response, url.pathname === "/api/dual/sessions" ? 405 : 404, { error: url.pathname === "/api/dual/sessions" ? "Method not allowed" : "Dual session not found" });
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/api/dual/run") {
+    await streamDualRun(request, response);
     return;
   }
 
@@ -181,28 +230,31 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   }
 
   if (request.method === "GET" && url.pathname === "/api/stateweave/tools") {
-    json(response, 200, { tools: describeTools(agentTools), workspaceDir });
+    const arm = workspaceArm(url);
+    const selectedTools = arm === "traditional" ? traditionalTools : agentTools;
+    json(response, 200, { tools: describeTools(selectedTools), workspaceDir: workspaceRoot(arm), arm });
     return;
   }
 
   if (request.method === "GET" && url.pathname === "/api/stateweave/files") {
-    json(response, 200, { files: await listWorkspaceFiles(), workspaceDir });
+    const arm = workspaceArm(url);
+    json(response, 200, { files: await listWorkspaceFiles(workspaceRoot(arm)), workspaceDir: workspaceRoot(arm), arm });
     return;
   }
 
   if (request.method === "GET" && url.pathname === "/api/stateweave/files/read") {
-    await readWorkspaceFile(url, response);
+    await readWorkspaceFile(url, response, workspaceRoot(workspaceArm(url)));
     return;
   }
 
   const workspacePreviewMatch = url.pathname.match(/^\/api\/stateweave\/files\/preview(?:\/(.*))?$/);
   if (workspacePreviewMatch && (request.method === "GET" || request.method === "HEAD")) {
-    await serveWorkspacePreview(workspacePreviewMatch[1] ?? "", response, request.method === "HEAD");
+    await serveWorkspacePreview(workspacePreviewMatch[1] ?? "", response, request.method === "HEAD", workspaceRoot(workspaceArm(url)));
     return;
   }
 
   if (request.method === "POST" && url.pathname === "/api/stateweave/files/reboot") {
-    await rebootWorkspace(response);
+    await rebootWorkspace(response, workspaceRoot(workspaceArm(url)));
     return;
   }
 
@@ -368,6 +420,194 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   }
 
   await serveStatic(url.pathname, response, request.method === "HEAD");
+}
+
+async function createDualSession(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  const body = (await readJson(request, 8_000_000)) as CreateSessionRequest;
+  if (body.state !== undefined && !isAgentState(body.state)) {
+    privateJson(response, 400, { error: "state must be a valid AgentState object" });
+    return;
+  }
+  let session: DualSessionView | undefined;
+  try {
+    session = await dualSessionStore.create({ ...(body.state ? { state: body.state } : {}) });
+    await withDualWorkspaceLock(synchronizeTraditionalWorkspace);
+    privateJson(response, 201, session);
+  } catch (error) {
+    if (session) await dualSessionStore.delete(session.sessionId).catch(() => undefined);
+    privateJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+async function getDualSession(sessionId: string, response: ServerResponse): Promise<void> {
+  try {
+    privateJson(response, 200, await dualSessionStore.load(sessionId));
+  } catch (error) {
+    writeDualSessionError(response, error);
+  }
+}
+
+async function deleteDualSession(sessionId: string, response: ServerResponse): Promise<void> {
+  try {
+    await dualSessionStore.delete(sessionId);
+    response.writeHead(204, { "cache-control": "private, no-store" });
+    response.end();
+  } catch (error) {
+    writeDualSessionError(response, error);
+  }
+}
+
+async function streamDualRun(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  await withDualWorkspaceLock(() => streamDualRunLocked(request, response));
+}
+
+async function streamDualRunLocked(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  const body = (await readJson(request)) as DualRunRequest;
+  if (typeof body.input !== "string" || !body.input.trim()) {
+    privateJson(response, 400, { error: "input is required" });
+    return;
+  }
+  if (typeof body.sessionId !== "string" || !/^swd_[0-9a-f]{32}$/.test(body.sessionId)) {
+    privateJson(response, 400, { error: "sessionId must be a dual session ID" });
+    return;
+  }
+  if (body.expectedTurnId !== undefined && typeof body.expectedTurnId !== "string") {
+    privateJson(response, 400, { error: "expectedTurnId must be a paired turn ID" });
+    return;
+  }
+
+  let session: LoadedDualSession;
+  try {
+    session = await dualSessionStore.loadForRun(body.sessionId);
+    if (session.currentTurnId !== body.expectedTurnId) throw new DualSessionConflictError("The paired session advanced in another browser tab. Reload before continuing.", session.currentTurnId);
+  } catch (error) {
+    writeDualSessionError(response, error);
+    return;
+  }
+
+  const input = body.input.trim();
+  const systemPrompt = safeSystemPrompt(body.systemPrompt) ?? dualDefaultSystemPrompt;
+  const maxIterations = safeMaxIterations(body.maxIterations);
+  const projectionTargetTokens = safeProjectionTarget(body.projectionTargetTokens) ?? 16_000;
+  const stateAgent = new Agent({
+    model,
+    tools: agentTools,
+    maxIterations,
+    maxPromptTokens: 64_000,
+    projectionTargetTokens,
+    projectionMaxNodes: 16,
+    contextMode: "molecular",
+    systemPrompt,
+    state: session.stateweave.state
+  });
+  const traditionalAgent = new AgenticBaseline({
+    model,
+    tools: traditionalTools,
+    systemPrompt,
+    maxIterations,
+    maxContextTokens: 64_000,
+    compaction: { thresholdTokens: traditionalCompactionThreshold, retainMessages: traditionalRetainMessages },
+    messages: session.traditionalMessages,
+    enforceCompletionEvidence: true,
+    transcriptOnly: true
+  });
+
+  response.writeHead(200, {
+    "content-type": "application/x-ndjson; charset=utf-8",
+    "cache-control": "private, no-store, no-transform",
+    "x-accel-buffering": "no"
+  });
+  const write = (value: unknown): void => { if (!response.destroyed) response.write(`${JSON.stringify(value)}\n`); };
+  write({ type: "dual_session", session: dualSessionReference(session) });
+
+  let stateStart: AgentStartMetadata | undefined;
+  let stateProgress: AgentProgress | undefined;
+  const stateRun = async (): Promise<{ outcome: StateWeavePairOutcome; result: Record<string, unknown> }> => {
+    try {
+      for await (const event of stateAgent.streamEvents(input)) {
+        if (event.type === "metadata") stateStart = event.metadata;
+        if (event.type === "progress") stateProgress = event.progress;
+        if (event.type !== "final") {
+          write({ type: "arm_event", arm: "stateweave", event });
+          continue;
+        }
+        await persistTrace("dual-stateweave", input, event.result.trace, event.result.metadata);
+        return {
+          outcome: { status: "done", state: event.result.state, answer: event.result.finalAnswer, metadata: event.result.metadata },
+          result: { status: "done", stateAfter: event.result.state, output: event.result.finalAnswer, trace: event.result.trace, graph: event.result.graph, metadata: event.result.metadata }
+        };
+      }
+      throw new Error("StateWeave stream ended without a final result.");
+    } catch (error) {
+      if (error instanceof AgentRunError) await persistTrace("dual-stateweave-error", input, error.trace, error.metrics);
+      const message = error instanceof Error ? error.message : String(error);
+      const usage = dualStateFailureUsage(stateStart, error instanceof AgentRunError ? error.metrics : progressMetrics(stateProgress));
+      return {
+        outcome: { status: "failed", error: message, ...(usage ? { usage } : {}) },
+        result: { status: "failed", error: message, ...(usage ? { usage: { ...usage, status: "failed" } } : {}) }
+      };
+    }
+  };
+
+  const traditionalRunId = `traditional_${randomUUID()}`;
+  const traditionalStartedAt = new Date().toISOString();
+  const traditionalRun = async (): Promise<{ outcome: TraditionalPairOutcome; result: Record<string, unknown> }> => {
+    try {
+      const run = await traditionalAgent.run(input, {
+        onProgress: (progress: AgenticProgress) => write({ type: "arm_event", arm: "traditional", event: { type: "progress", progress } })
+      });
+      const usage = traditionalUsage(traditionalRunId, traditionalStartedAt, run);
+      if (!run.completed) {
+        const error = run.error ?? "Traditional transcript agent did not complete.";
+        return { outcome: { status: "failed", error, usage }, result: { status: "failed", error, usage: { ...usage, status: "failed" }, lastPrompt: run.lastPrompt } };
+      }
+      return {
+        outcome: { status: "done", messages: traditionalAgent.getMessages(), answer: run.answer, usage },
+        result: { status: "done", output: run.answer, usage: { ...usage, status: "done" }, lastPrompt: run.lastPrompt, activeMessageCount: traditionalAgent.getMessages().length }
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { outcome: { status: "failed", error: message }, result: { status: "failed", error: message } };
+    }
+  };
+
+  try {
+    const [stateweave, traditional] = await Promise.all([stateRun(), traditionalRun()]);
+    const commit = await dualSessionStore.commitPair({
+      sessionId: session.sessionId,
+      expectedTurnId: session.currentTurnId,
+      input,
+      previousState: session.stateweave.state,
+      previousTraditionalMessages: session.traditionalMessages,
+      stateweave: stateweave.outcome,
+      traditional: traditional.outcome
+    });
+    write({ type: "dual_commit", session: commit, result: { stateweave: stateweave.result, traditional: traditional.result } });
+  } catch (error) {
+    write({ type: "error", message: error instanceof Error ? error.message : String(error), ...(error instanceof DualSessionConflictError && error.currentTurnId ? { currentTurnId: error.currentTurnId } : {}) });
+  } finally {
+    response.end();
+  }
+}
+
+async function withDualWorkspaceLock<T>(operation: () => Promise<T>): Promise<T> {
+  const previous = dualWorkspaceQueue;
+  let release = (): void => undefined;
+  dualWorkspaceQueue = new Promise<void>((resolve) => { release = resolve; });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+}
+
+async function synchronizeTraditionalWorkspace(): Promise<void> {
+  await mkdir(workspaceDir, { recursive: true });
+  if (traditionalWorkspaceDir === "/" || traditionalWorkspaceDir.length < 8) throw new Error(`Refusing to synchronize unsafe traditional workspace path: ${traditionalWorkspaceDir}`);
+  await rm(traditionalWorkspaceDir, { recursive: true, force: true });
+  await mkdir(traditionalWorkspaceDir, { recursive: true });
+  await cp(workspaceDir, traditionalWorkspaceDir, { recursive: true, force: true });
 }
 
 async function createStateWeaveSession(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -869,10 +1109,18 @@ async function persistEvalRuns(): Promise<void> {
   await rename(tmp, runStorePath);
 }
 
-async function listWorkspaceFiles(): Promise<WorkspaceFile[]> {
-  await mkdir(workspaceDir, { recursive: true });
+function workspaceArm(url: URL): "stateweave" | "traditional" {
+  return url.searchParams.get("arm") === "traditional" ? "traditional" : "stateweave";
+}
+
+function workspaceRoot(arm: "stateweave" | "traditional"): string {
+  return arm === "traditional" ? traditionalWorkspaceDir : workspaceDir;
+}
+
+async function listWorkspaceFiles(rootDir: string): Promise<WorkspaceFile[]> {
+  await mkdir(rootDir, { recursive: true });
   const files: WorkspaceFile[] = [];
-  await collectWorkspaceFiles(workspaceDir, "", files);
+  await collectWorkspaceFiles(rootDir, "", files);
   return files.sort((a, b) => a.path.localeCompare(b.path));
 }
 
@@ -892,20 +1140,20 @@ async function collectWorkspaceFiles(dir: string, prefix: string, files: Workspa
   }
 }
 
-async function readWorkspaceFile(url: URL, response: ServerResponse): Promise<void> {
+async function readWorkspaceFile(url: URL, response: ServerResponse, rootDir: string): Promise<void> {
   const requestedPath = url.searchParams.get("path");
   if (!requestedPath) {
     json(response, 400, { error: "path is required" });
     return;
   }
-  const filePath = resolveWorkspaceFilePath(requestedPath);
+  const filePath = resolveWorkspaceFilePath(requestedPath, rootDir);
   const content = await readFile(filePath, "utf8");
   const info = await stat(filePath);
   const mime = fileMime(requestedPath);
   json(response, 200, { path: requestedPath, content, size: info.size, updatedAt: info.mtime.toISOString(), mime, renderable: isRenderableMime(mime) });
 }
 
-async function serveWorkspacePreview(encodedPath: string, response: ServerResponse, headOnly: boolean): Promise<void> {
+async function serveWorkspacePreview(encodedPath: string, response: ServerResponse, headOnly: boolean, rootDir: string): Promise<void> {
   if (!encodedPath) {
     json(response, 400, { error: "workspace preview path is required" });
     return;
@@ -919,7 +1167,7 @@ async function serveWorkspacePreview(encodedPath: string, response: ServerRespon
     return;
   }
 
-  const filePath = resolveWorkspaceFilePath(requestedPath);
+  const filePath = resolveWorkspaceFilePath(requestedPath, rootDir);
   const fileStat = await stat(filePath).catch(() => undefined);
   if (!fileStat?.isFile()) {
     json(response, 404, { error: "Workspace preview file not found" });
@@ -944,17 +1192,17 @@ async function serveWorkspacePreview(encodedPath: string, response: ServerRespon
   createReadStream(filePath).pipe(response);
 }
 
-async function rebootWorkspace(response: ServerResponse): Promise<void> {
-  if (workspaceDir === "/" || workspaceDir.length < 8) throw new Error(`Refusing to reboot unsafe workspace path: ${workspaceDir}`);
-  await rm(workspaceDir, { recursive: true, force: true });
-  await mkdir(workspaceDir, { recursive: true });
+async function rebootWorkspace(response: ServerResponse, rootDir: string): Promise<void> {
+  if (rootDir === "/" || rootDir.length < 8) throw new Error(`Refusing to reboot unsafe workspace path: ${rootDir}`);
+  await rm(rootDir, { recursive: true, force: true });
+  await mkdir(rootDir, { recursive: true });
   json(response, 200, { ok: true, files: [] });
 }
 
-function resolveWorkspaceFilePath(requestedPath: string): string {
+function resolveWorkspaceFilePath(requestedPath: string, rootDir: string): string {
   if (path.isAbsolute(requestedPath)) throw new Error("File paths must be relative to the workspace.");
-  const resolved = path.resolve(workspaceDir, requestedPath);
-  if (resolved !== workspaceDir && !resolved.startsWith(`${workspaceDir}${path.sep}`)) throw new Error(`Path escapes the workspace: ${requestedPath}`);
+  const resolved = path.resolve(rootDir, requestedPath);
+  if (resolved !== rootDir && !resolved.startsWith(`${rootDir}${path.sep}`)) throw new Error(`Path escapes the workspace: ${requestedPath}`);
   return resolved;
 }
 
@@ -1103,7 +1351,60 @@ function sessionReference(session: StateWeaveSessionView): Record<string, unknow
   };
 }
 
-type FailureMetrics = Partial<Pick<AgentRunMetadata, "latestContextTokens" | "peakContextTokens" | "totalInputTokens" | "outputTokens" | "modelCalls" | "tokenCountSource">>;
+function dualSessionReference(session: Pick<DualSessionView, "sessionId" | "currentTurnId" | "turnCount" | "storage">): Record<string, unknown> {
+  return {
+    sessionId: session.sessionId,
+    ...(session.currentTurnId ? { currentTurnId: session.currentTurnId } : {}),
+    turnCount: session.turnCount,
+    storage: session.storage
+  };
+}
+
+function traditionalUsage(runId: string, startedAt: string, result: AgenticTurnResult): Omit<DualUsageRecord, "turn" | "status"> {
+  return {
+    runId,
+    startedAt,
+    completedAt: new Date().toISOString(),
+    latestContextTokens: result.contextTokens,
+    peakContextTokens: result.peakContextTokens,
+    totalInputTokens: result.totalInputTokens,
+    outputTokens: result.outputTokens,
+    modelCalls: result.modelCalls,
+    toolCalls: result.toolCalls,
+    maxPromptTokens: 64_000,
+    contextTargetTokens: traditionalCompactionThreshold,
+    tokenCountSource: result.tokenCountSource,
+    compactions: result.compactions,
+    compactionInputTokens: result.compactionInputTokens,
+    compactionOutputTokens: result.compactionOutputTokens,
+    compactionModelCalls: result.compactionModelCalls
+  };
+}
+
+function dualStateFailureUsage(start: AgentStartMetadata | undefined, metrics: FailureMetrics | undefined): Omit<DualUsageRecord, "turn" | "status"> | undefined {
+  const base = failureUsage(start, metrics);
+  if (!base) return undefined;
+  return {
+    runId: base.runId,
+    startedAt: base.startedAt,
+    completedAt: base.completedAt,
+    latestContextTokens: base.latestContextTokens,
+    peakContextTokens: base.peakContextTokens,
+    totalInputTokens: base.totalInputTokens,
+    outputTokens: base.outputTokens,
+    modelCalls: base.modelCalls,
+    toolCalls: metrics?.toolCalls ?? 0,
+    maxPromptTokens: base.maxPromptTokens,
+    contextTargetTokens: base.projectionTargetTokens,
+    tokenCountSource: base.tokenCountSource,
+    compactions: 0,
+    compactionInputTokens: 0,
+    compactionOutputTokens: 0,
+    compactionModelCalls: 0
+  };
+}
+
+type FailureMetrics = Partial<Pick<AgentRunMetadata, "latestContextTokens" | "peakContextTokens" | "totalInputTokens" | "outputTokens" | "modelCalls" | "toolCalls" | "tokenCountSource">>;
 type FailedUsage = Omit<SessionUsageRecord, "turn" | "status">;
 
 function failureUsage(start: AgentStartMetadata | undefined, metrics: FailureMetrics | undefined): FailedUsage | undefined {
@@ -1146,6 +1447,7 @@ function usageMetrics(metadata: AgentRunMetadata): FailureMetrics {
     totalInputTokens: metadata.totalInputTokens,
     outputTokens: metadata.outputTokens,
     modelCalls: metadata.modelCalls,
+    toolCalls: metadata.toolCalls,
     tokenCountSource: metadata.tokenCountSource
   };
 }
@@ -1158,8 +1460,17 @@ function progressMetrics(progress: AgentProgress | undefined): FailureMetrics | 
     totalInputTokens: progress.totalInputTokens,
     outputTokens: progress.outputTokens,
     modelCalls: progress.modelCalls,
+    toolCalls: progress.toolCalls,
     tokenCountSource: progress.tokenCountSource ?? "estimated"
   };
+}
+
+function writeDualSessionError(response: ServerResponse, error: unknown): void {
+  const status = error instanceof DualSessionNotFoundError ? 404 : error instanceof DualSessionConflictError ? 409 : 500;
+  privateJson(response, status, {
+    error: error instanceof Error ? error.message : String(error),
+    ...(error instanceof DualSessionConflictError && error.currentTurnId ? { currentTurnId: error.currentTurnId } : {})
+  });
 }
 
 function writeSessionError(response: ServerResponse, error: unknown): void {

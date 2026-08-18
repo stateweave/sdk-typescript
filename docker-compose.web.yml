@@ -19,7 +19,9 @@ services:
       STATEWEAVE_RUN_STORE: ${STATEWEAVE_RUN_STORE:-/data/eval-runs.json}
       STATEWEAVE_TRACE_DIR: ${STATEWEAVE_TRACE_DIR:-/data/traces}
       STATEWEAVE_SESSION_DIR: ${STATEWEAVE_SESSION_DIR:-/data/sessions}
+      STATEWEAVE_DUAL_SESSION_DIR: ${STATEWEAVE_DUAL_SESSION_DIR:-/data/dual-sessions}
       STATEWEAVE_WORKSPACE_DIR: ${STATEWEAVE_WORKSPACE_DIR:-/data/workspace}
+      STATEWEAVE_TRADITIONAL_WORKSPACE_DIR: ${STATEWEAVE_TRADITIONAL_WORKSPACE_DIR:-/data/workspace-traditional}
     volumes:
       - stateweave-web-data:/data
     ports:
