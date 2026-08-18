@@ -21,6 +21,7 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV STATEWEAVE_RUN_STORE=/data/eval-runs.json
 ENV STATEWEAVE_TRACE_DIR=/data/traces
+ENV STATEWEAVE_SESSION_DIR=/data/sessions
 ENV STATEWEAVE_WORKSPACE_DIR=/data/workspace
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
