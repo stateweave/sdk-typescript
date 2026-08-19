@@ -73,6 +73,27 @@ it("atomically persists both arms on one paired turn", async () => {
   expect(records[1].stateweave).not.toHaveProperty("state");
 });
 
+it("lists saved sessions with bounded conversation previews", async () => {
+  const { value } = await store();
+  const empty = await value.create();
+  const active = await value.create();
+  const state = nextState(undefined, "A very long first prompt ".repeat(20), "answer");
+  await value.commitPair({
+    sessionId: active.sessionId,
+    input: "A very long first prompt ".repeat(20),
+    previousTraditionalMessages: [],
+    stateweave: { status: "done", state, answer: "answer", metadata: metadata("sw-list") },
+    traditional: { status: "done", messages: messages("A very long first prompt ".repeat(20), "answer"), answer: "answer", usage: usage("tr-list") }
+  });
+  const sessions = await value.list();
+  expect(sessions).toHaveLength(2);
+  expect(sessions.find((session) => session.sessionId === empty.sessionId)).toMatchObject({ turnCount: 0, title: "New conversation", preview: "No messages yet" });
+  const listed = sessions.find((session) => session.sessionId === active.sessionId);
+  expect(listed).toMatchObject({ turnCount: 1, title: expect.stringContaining("A very long first prompt") });
+  expect(listed?.title.length).toBeLessThanOrEqual(140);
+  expect(listed?.preview.length).toBeLessThanOrEqual(140);
+});
+
 it("advances only the successful arm when its pair fails", async () => {
   const { value } = await store();
   const created = await value.create();

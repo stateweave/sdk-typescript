@@ -189,6 +189,10 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     await createDualSession(request, response);
     return;
   }
+  if (request.method === "GET" && url.pathname === "/api/dual/sessions") {
+    await listDualSessions(response);
+    return;
+  }
 
   const dualSessionMatch = url.pathname.match(/^\/api\/dual\/sessions\/(swd_[0-9a-f]{32})$/);
   if (dualSessionMatch && request.method === "GET") {
@@ -420,6 +424,14 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   }
 
   await serveStatic(url.pathname, response, request.method === "HEAD");
+}
+
+async function listDualSessions(response: ServerResponse): Promise<void> {
+  try {
+    privateJson(response, 200, { sessions: await dualSessionStore.list() });
+  } catch (error) {
+    privateJson(response, 500, { error: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 async function createDualSession(request: IncomingMessage, response: ServerResponse): Promise<void> {

@@ -8,7 +8,7 @@ import { promptSixCases, promptSixCategoryOrder, promptSixHypothesis, type Promp
 import { oneShotPromptStats, oneShotSdkBuildPrompt } from "../../src/evals/oneShotSdkBenchmark.js";
 import { protocolExperiment } from "./protocolExperiment.js";
 import { maxTokenUsageHistory, parseTokenUsageHistory, renderDualTokenUsageView, type TokenUsagePoint, type TokenUsageStatus } from "./tokenUsage.js";
-import type { DualArm, DualSessionView, DualTurnView, DualUsageRecord } from "../../src/web/dualSessionTypes.js";
+import type { DualArm, DualSessionSummary, DualSessionView, DualTurnView, DualUsageRecord } from "../../src/web/dualSessionTypes.js";
 import type { SessionHistoryEntry, StateWeaveSessionView } from "../../src/web/stateweaveSessionTypes.js";
 import "./styles.css";
 
@@ -671,6 +671,7 @@ const rebootFiles = element<HTMLButtonElement>("reboot-files");
 const exportGraph = element<HTMLButtonElement>("export-graph");
 const importGraph = element<HTMLButtonElement>("import-graph");
 const clearMessages = element<HTMLButtonElement>("clear-messages");
+const dualSessionList = element<HTMLElement>("dual-session-list");
 const transferModal = element<HTMLElement>("graph-transfer-modal");
 const transferTitle = element<HTMLElement>("graph-transfer-title");
 const transferHelp = element<HTMLElement>("graph-transfer-help");
@@ -792,11 +793,12 @@ rebootFiles.addEventListener("click", () => void rebootWorkspaceFiles());
 exportGraph.addEventListener("click", () => openGraphTransfer("export"));
 importGraph.addEventListener("click", () => openGraphTransfer("import"));
 clearMessages.addEventListener("click", () => {
-  if (!dualSessionView?.turnCount) {
-    status.textContent = "Messages already clear.";
-    return;
-  }
-  if (confirm("Clear both message histories and the StateWeave graph? Workspace files will stay intact and the traditional workspace will resync from StateWeave.")) void resetDualChat();
+  if (stateRunning) return;
+  void resetDualChat();
+});
+dualSessionList.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button[data-session-id]") : undefined;
+  if (target?.dataset.sessionId) void selectDualSession(target.dataset.sessionId);
 });
 closeTransfer.addEventListener("click", closeGraphTransfer);
 copyTransfer.addEventListener("click", () => void copyText(transferText.value, copyTransfer));
@@ -948,12 +950,19 @@ async function initializeDualSession(): Promise<void> {
         localStorage.removeItem(dualSessionStorageKey);
       }
     }
+    if (!session) {
+      const recent = await fetchDualSessions().catch(() => []);
+      const latest = recent[0];
+      if (latest) session = await fetchDualSession(latest.sessionId).catch(() => undefined);
+    }
     if (!session) session = await createDualSession();
     applyDualSession(session, true);
     send.disabled = false;
+    void loadDualSessions();
   } catch (error) {
     status.textContent = `Paired session unavailable · ${error instanceof Error ? error.message : String(error)}`;
     send.disabled = true;
+    dualSessionList.innerHTML = `<div class="session-list-status">Sessions unavailable.</div>`;
   }
 }
 
@@ -986,9 +995,60 @@ async function fetchDualSession(sessionId: string): Promise<DualSessionView> {
   return body as DualSessionView;
 }
 
-async function deleteDualSession(sessionId: string): Promise<void> {
-  const response = await fetch(`${apiBase}/api/dual/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
-  if (!response.ok && response.status !== 404) throw new Error(`Paired session deletion failed (${response.status})`);
+async function fetchDualSessions(): Promise<DualSessionSummary[]> {
+  const response = await fetch(`${apiBase}/api/dual/sessions`, { cache: "no-store" });
+  const body = await response.json() as { sessions?: DualSessionSummary[]; error?: string };
+  if (!response.ok || !Array.isArray(body.sessions)) throw new Error(body.error ?? `Session list failed (${response.status})`);
+  return body.sessions;
+}
+
+async function loadDualSessions(): Promise<void> {
+  try {
+    renderDualSessionList(await fetchDualSessions());
+  } catch {
+    dualSessionList.innerHTML = `<div class="session-list-status">Sessions unavailable.</div>`;
+  }
+}
+
+function renderDualSessionList(sessions: DualSessionSummary[]): void {
+  if (!sessions.length) {
+    dualSessionList.innerHTML = `<div class="session-list-empty">No saved conversations yet.</div>`;
+    return;
+  }
+  dualSessionList.innerHTML = sessions.map((session) => {
+    const active = session.sessionId === dualSessionId;
+    const turns = `${session.turnCount.toLocaleString()} turn${session.turnCount === 1 ? "" : "s"}`;
+    return `<button class="session-item${active ? " active" : ""}" type="button" data-session-id="${escapeAttribute(session.sessionId)}" aria-current="${active ? "page" : "false"}"><span class="session-item-copy"><strong>${escapeHtml(session.title)}</strong><span>${escapeHtml(session.preview)}</span></span><span class="session-item-meta">${turns} · ${escapeHtml(formatSessionDate(session.updatedAt))}</span></button>`;
+  }).join("");
+}
+
+function formatSessionDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+async function selectDualSession(sessionId: string): Promise<void> {
+  if (stateRunning || sessionId === dualSessionId) return;
+  send.disabled = true;
+  reset.disabled = true;
+  status.textContent = "Loading conversation…";
+  try {
+    const session = await fetchDualSession(sessionId);
+    input.value = "";
+    selectedFilePath = undefined;
+    applyDualSession(session, true);
+    await loadWorkspaceFiles();
+    status.textContent = `Loaded · ${session.turnCount.toLocaleString()} paired turn${session.turnCount === 1 ? "" : "s"}`;
+    await loadDualSessions();
+    input.focus();
+  } catch (error) {
+    status.textContent = `Conversation unavailable · ${error instanceof Error ? error.message : String(error)}`;
+    await loadDualSessions();
+  } finally {
+    send.disabled = false;
+    reset.disabled = false;
+  }
 }
 
 function applyDualSession(session: DualSessionView, restored: boolean): void {
@@ -1763,6 +1823,7 @@ async function sendDualMessage(): Promise<void> {
     const failures = [stateResult.status === "failed" ? "StateWeave" : "", traditionalResult.status === "failed" ? "traditional" : ""].filter(Boolean);
     status.textContent = failures.length ? `Paired turn committed · ${failures.join(" and ")} failed without advancing its memory` : `Done · paired JSONL committed · both arms completed`;
     void loadWorkspaceFiles();
+    void loadDualSessions();
   } catch (error) {
     if (error instanceof StateWeaveRequestError && error.statusCode === 409 && dualSessionId) {
       try {
@@ -1775,6 +1836,7 @@ async function sendDualMessage(): Promise<void> {
       }
     } else if (error instanceof StateWeaveRequestError && error.statusCode === 404) {
       applyDualSession(await createDualSession(), false);
+      void loadDualSessions();
       status.textContent = "Previous paired session was unavailable · created a new one; input was not sent.";
     } else {
       failDualPending(statePending, error instanceof Error ? error.message : String(error));
@@ -2409,10 +2471,9 @@ async function applyGraphImport(): Promise<void> {
   applyImport.disabled = true;
   try {
     const state = parseImportedAgentState(transferText.value);
-    const previousSessionId = dualSessionId;
     const session = await createDualSession(state);
     applyDualSession(session, false);
-    if (previousSessionId && previousSessionId !== session.sessionId) void deleteDualSession(previousSessionId).catch(() => undefined);
+    void loadDualSessions();
     stateOutput.textContent = "Imported AgentState into the StateWeave arm of a new paired JSONL session. Traditional messages start empty.";
     status.textContent = `Imported · paired JSONL · ${state.nodes.length} StateWeave nodes`;
     closeGraphTransfer();
@@ -2458,14 +2519,13 @@ async function resetDualChat(): Promise<void> {
   if (stateRunning) return;
   send.disabled = true;
   reset.disabled = true;
-  const previousSessionId = dualSessionId;
   try {
     const session = await createDualSession();
     input.value = "";
     applyDualSession(session, false);
     localStorage.removeItem(legacyStateChatStorageKey);
-    if (previousSessionId && previousSessionId !== session.sessionId) void deleteDualSession(previousSessionId).catch(() => undefined);
-    status.textContent = "Reset · new paired JSONL session · traditional workspace resynced";
+    void loadDualSessions();
+    status.textContent = "New chat · previous conversations remain saved";
     input.focus();
   } catch (error) {
     status.textContent = `Reset failed · ${error instanceof Error ? error.message : String(error)}`;

@@ -47,6 +47,15 @@ export type DualArmHistoryEntry = {
   turn: number;
 };
 
+export type DualSessionSummary = {
+  sessionId: string;
+  createdAt: string;
+  updatedAt: string;
+  turnCount: number;
+  title: string;
+  preview: string;
+};
+
 export type DualSessionView = {
   sessionId: string;
   currentTurnId?: string;

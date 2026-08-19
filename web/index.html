@@ -49,9 +49,18 @@
             <div class="chat-actions">
               <button id="export-graph" class="button secondary small-button" type="button">Export</button>
               <button id="import-graph" class="button secondary small-button" type="button">Import</button>
-              <button id="clear-messages" class="button secondary small-button danger-button" type="button">Clear messages</button>
             </div>
           </div>
+          <section class="session-browser" aria-label="Recent conversations">
+            <div class="session-browser-header">
+              <div>
+                <p class="eyebrow">Conversations</p>
+                <strong>Recent sessions</strong>
+              </div>
+              <button id="clear-messages" class="button secondary small-button" type="button">New chat</button>
+            </div>
+            <div id="dual-session-list" class="session-list" role="list" aria-live="polite">Loading conversations…</div>
+          </section>
           <details class="agent-settings">
             <summary>Agent settings</summary>
             <div class="agent-settings-grid">

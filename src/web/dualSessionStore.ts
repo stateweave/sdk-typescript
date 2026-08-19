@@ -1,12 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
-import { mkdir, open, readFile, rm, stat, truncate } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, rm, stat, truncate } from "node:fs/promises";
 import path from "node:path";
 import type { AgentRunMetadata, AgentState } from "../agent/types.js";
 import type { CausalWeaveNode } from "../core/causalTypes.js";
 import { assertValidCausalWeaveSnapshot } from "../core/causalWeave.js";
 import { serializeAgenticMessages, type AgenticMessage } from "../evals/agenticBaseline.js";
-import type { DualArmHistoryEntry, DualSessionView, DualTurnView, DualUsageRecord, LoadedDualSession } from "./dualSessionTypes.js";
-export type { DualSessionView, DualUsageRecord } from "./dualSessionTypes.js";
+import type { DualArmHistoryEntry, DualSessionSummary, DualSessionView, DualTurnView, DualUsageRecord, LoadedDualSession } from "./dualSessionTypes.js";
+export type { DualSessionSummary, DualSessionView, DualUsageRecord } from "./dualSessionTypes.js";
 
 const sessionVersion = 1;
 const maxLogBytes = 512 * 1024 * 1024;
@@ -97,6 +97,37 @@ export class DualSessionStore {
 
   async load(sessionId: string): Promise<DualSessionView> {
     return publicView(await this.loadInternal(sessionId));
+  }
+
+  async list(limit = 50): Promise<DualSessionSummary[]> {
+    await this.ensureRoot();
+    const entries = await readdir(this.rootDir, { withFileTypes: true });
+    const candidates = await Promise.all(entries
+      .filter((entry) => entry.isFile() && /^swd_[0-9a-f]{32}\.jsonl$/.test(entry.name))
+      .map(async (entry) => {
+        const sessionId = entry.name.slice(0, -".jsonl".length);
+        const file = path.join(this.rootDir, entry.name);
+        const fileStat = await stat(file).catch(() => undefined);
+        return fileStat ? { sessionId, updatedAt: new Date(fileStat.mtimeMs).toISOString(), createdAt: new Date(fileStat.birthtimeMs || fileStat.ctimeMs || fileStat.mtimeMs).toISOString() } : undefined;
+      }));
+    const summaries: DualSessionSummary[] = [];
+    for (const candidate of candidates.filter((value): value is NonNullable<typeof value> => Boolean(value)).sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)).slice(0, Math.max(1, Math.min(limit, 100)))) {
+      try {
+        const session = await this.load(candidate.sessionId);
+        const lastInput = session.turns.at(-1)?.input;
+        summaries.push({
+          sessionId: session.sessionId,
+          createdAt: candidate.createdAt,
+          updatedAt: candidate.updatedAt,
+          turnCount: session.turnCount,
+          title: session.turns.length ? boundedSessionText(session.turns[0].input) : "New conversation",
+          preview: lastInput ? boundedSessionText(lastInput) : "No messages yet"
+        });
+      } catch {
+        // Corrupt or concurrently deleted sessions stay fail-closed and out of the picker.
+      }
+    }
+    return summaries;
   }
 
   async loadForRun(sessionId: string): Promise<LoadedDualSession> {
@@ -499,6 +530,11 @@ function isAgentState(value: unknown): value is AgentState {
 
 function boundedError(value: string): string {
   return value.slice(0, 8_000);
+}
+
+function boundedSessionText(value: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > 140 ? `${normalized.slice(0, 137)}…` : normalized;
 }
 
 function newSessionId(): string {
