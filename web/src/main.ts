@@ -206,6 +206,7 @@ let stateSessionTurnId: string | undefined;
 let dualSessionId: string | undefined;
 let dualSessionTurnId: string | undefined;
 let dualSessionView: DualSessionView | undefined;
+let contextMenuSessionId: string | undefined;
 let activeArm: DualArm = "stateweave";
 let dualSessionReady: Promise<void>;
 
@@ -672,6 +673,8 @@ const exportGraph = element<HTMLButtonElement>("export-graph");
 const importGraph = element<HTMLButtonElement>("import-graph");
 const clearMessages = element<HTMLButtonElement>("clear-messages");
 const dualSessionList = element<HTMLElement>("dual-session-list");
+const dualSessionContextMenu = element<HTMLElement>("dual-session-context-menu");
+const deleteDualSessionButton = element<HTMLButtonElement>("delete-dual-session");
 const transferModal = element<HTMLElement>("graph-transfer-modal");
 const transferTitle = element<HTMLElement>("graph-transfer-title");
 const transferHelp = element<HTMLElement>("graph-transfer-help");
@@ -800,6 +803,33 @@ dualSessionList.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button[data-session-id]") : undefined;
   if (target?.dataset.sessionId) void selectDualSession(target.dataset.sessionId);
 });
+dualSessionList.addEventListener("contextmenu", (event) => {
+  const target = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button[data-session-id]") : undefined;
+  if (!target?.dataset.sessionId) return;
+  event.preventDefault();
+  if (stateRunning) {
+    status.textContent = "Finish the current paired run before deleting a conversation.";
+    return;
+  }
+  openDualSessionContextMenu(target.dataset.sessionId, event.clientX, event.clientY);
+});
+dualSessionList.addEventListener("keydown", (event) => {
+  if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey)) return;
+  const target = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button[data-session-id]") : undefined;
+  if (!target?.dataset.sessionId || stateRunning) return;
+  event.preventDefault();
+  const rect = target.getBoundingClientRect();
+  openDualSessionContextMenu(target.dataset.sessionId, rect.left + Math.min(rect.width, 180), rect.top + rect.height);
+});
+deleteDualSessionButton.addEventListener("click", () => void deleteSelectedDualSession());
+document.addEventListener("click", (event) => {
+  if (!(event.target instanceof Node) || !dualSessionContextMenu.contains(event.target)) closeDualSessionContextMenu();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeDualSessionContextMenu();
+});
+window.addEventListener("blur", closeDualSessionContextMenu);
+window.addEventListener("resize", closeDualSessionContextMenu);
 closeTransfer.addEventListener("click", closeGraphTransfer);
 copyTransfer.addEventListener("click", () => void copyText(transferText.value, copyTransfer));
 applyImport.addEventListener("click", () => void applyGraphImport());
@@ -995,6 +1025,13 @@ async function fetchDualSession(sessionId: string): Promise<DualSessionView> {
   return body as DualSessionView;
 }
 
+async function deleteDualSession(sessionId: string): Promise<void> {
+  const response = await fetch(`${apiBase}/api/dual/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+  if (response.ok || response.status === 404) return;
+  const body = await response.json().catch(() => ({})) as { error?: string };
+  throw new StateWeaveRequestError(body.error ?? `Paired session deletion failed (${response.status})`, response.status);
+}
+
 async function fetchDualSessions(): Promise<DualSessionSummary[]> {
   const response = await fetch(`${apiBase}/api/dual/sessions`, { cache: "no-store" });
   const body = await response.json() as { sessions?: DualSessionSummary[]; error?: string };
@@ -1018,8 +1055,62 @@ function renderDualSessionList(sessions: DualSessionSummary[]): void {
   dualSessionList.innerHTML = sessions.map((session) => {
     const active = session.sessionId === dualSessionId;
     const turns = `${session.turnCount.toLocaleString()} turn${session.turnCount === 1 ? "" : "s"}`;
-    return `<button class="session-item${active ? " active" : ""}" type="button" data-session-id="${escapeAttribute(session.sessionId)}" aria-current="${active ? "page" : "false"}"><span class="session-item-copy"><strong>${escapeHtml(session.title)}</strong><span>${escapeHtml(session.preview)}</span></span><span class="session-item-meta">${turns} · ${escapeHtml(formatSessionDate(session.updatedAt))}</span></button>`;
+    return `<button class="session-item${active ? " active" : ""}" type="button" data-session-id="${escapeAttribute(session.sessionId)}" aria-current="${active ? "page" : "false"}" aria-haspopup="menu"><span class="session-item-copy"><strong>${escapeHtml(session.title)}</strong><span>${escapeHtml(session.preview)}</span></span><span class="session-item-meta">${turns} · ${escapeHtml(formatSessionDate(session.updatedAt))}</span></button>`;
   }).join("");
+}
+
+function openDualSessionContextMenu(sessionId: string, clientX: number, clientY: number): void {
+  contextMenuSessionId = sessionId;
+  dualSessionContextMenu.hidden = false;
+  const menuRect = dualSessionContextMenu.getBoundingClientRect();
+  const margin = 8;
+  dualSessionContextMenu.style.left = `${Math.max(margin, Math.min(clientX, window.innerWidth - menuRect.width - margin))}px`;
+  dualSessionContextMenu.style.top = `${Math.max(margin, Math.min(clientY, window.innerHeight - menuRect.height - margin))}px`;
+  deleteDualSessionButton.focus();
+}
+
+function closeDualSessionContextMenu(): void {
+  if (dualSessionContextMenu.hidden) return;
+  const sessionId = contextMenuSessionId;
+  const shouldRestoreFocus = document.activeElement === deleteDualSessionButton;
+  dualSessionContextMenu.hidden = true;
+  contextMenuSessionId = undefined;
+  if (shouldRestoreFocus && sessionId) dualSessionList.querySelector<HTMLButtonElement>(`button[data-session-id="${CSS.escape(sessionId)}"]`)?.focus();
+}
+
+async function deleteSelectedDualSession(): Promise<void> {
+  const sessionId = contextMenuSessionId;
+  closeDualSessionContextMenu();
+  if (!sessionId || stateRunning) return;
+  if (!confirm("Delete this conversation? This permanently removes both StateWeave and Traditional history from the paired JSONL session.")) return;
+  send.disabled = true;
+  reset.disabled = true;
+  const deletingActive = sessionId === dualSessionId;
+  let replacement: DualSessionView | undefined;
+  let deleted = false;
+  try {
+    if (deletingActive) replacement = await createDualSession();
+    await deleteDualSession(sessionId);
+    deleted = true;
+    if (replacement) {
+      input.value = "";
+      selectedFilePath = undefined;
+      applyDualSession(replacement, false);
+      await loadWorkspaceFiles();
+      status.textContent = "Conversation deleted · new chat ready";
+      localStorage.removeItem(legacyStateChatStorageKey);
+    } else {
+      status.textContent = "Conversation deleted";
+    }
+    await loadDualSessions();
+    input.focus();
+  } catch (error) {
+    if (replacement && !deleted) await deleteDualSession(replacement.sessionId).catch(() => undefined);
+    status.textContent = `Delete failed · ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    send.disabled = false;
+    reset.disabled = false;
+  }
 }
 
 function formatSessionDate(value: string): string {
