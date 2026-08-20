@@ -60,6 +60,13 @@
               <button id="clear-messages" class="button secondary small-button" type="button">New chat</button>
             </div>
             <div id="dual-session-list" class="session-list" role="list" aria-live="polite">Loading conversations…</div>
+            <div class="long-horizon-controller">
+              <div>
+                <strong>Long horizon</strong>
+                <span id="long-horizon-status">Paused · manual messages always go next</span>
+              </div>
+              <button id="long-horizon-toggle" class="button secondary small-button long-horizon-toggle" type="button" aria-pressed="false"><span aria-hidden="true">▶</span> Play</button>
+            </div>
             <div id="dual-session-context-menu" class="session-context-menu" role="menu" hidden>
               <button id="delete-dual-session" class="session-context-action danger" type="button" role="menuitem">Delete conversation</button>
             </div>

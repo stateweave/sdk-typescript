@@ -98,6 +98,12 @@ Replay validates entry lineage, turn sequence, causal state, state hashes, trans
 
 The Token usage workspace plots both arms on the same turn axis: summed input, output, peak single-call context, cumulative totals, tool/model calls, provenance, and traditional compaction cost. The arm switch changes only which response, active memory view, model loop, and isolated filesystem the UI displays. It never changes execution: every submitted input runs both arms.
 
+### Long-horizon director
+
+The session picker includes one Play/Pause control for an unlimited browser-owned long-horizon loop. `POST /api/dual/director` loads the selected paired session, gives one separate model call a bounded latest 40,000-character view of user inputs plus both arm answers, and requests one fresh standalone user task. The output is normalized, capped at 2,000 characters, rejected and retried once when it contains obvious conversation-dependent language, then sent unchanged through the ordinary paired-run endpoint. Director usage is separate from both comparison arms.
+
+Play schedules another generated task after each committed pair; Pause prevents the next generated task but never interrupts the pair already running. The composer remains available during a run. Manual messages enter a browser-local FIFO and always run before a generated prompt waiting for dispatch. Switching/resetting sessions stops playback and clears that transient queue. Refresh also returns playback to Paused; committed paired turns remain authoritative in JSONL.
+
 ## Current limitations
 
 - Black-box providers still receive a linear token rendering; StateWeave does not claim arbitrary transformer KV-cache composition.

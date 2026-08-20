@@ -15,6 +15,7 @@ import { AgenticBaseline, type AgenticProgress, type AgenticTurnResult } from ".
 import { InfiniteAgentHarness } from "../evals/infiniteAgentHarness.js";
 import { SdkBuildBenchmarkApi } from "./sdkBuildBenchmark.js";
 import { SubgraphExperimentHarness } from "./subgraphExperiment.js";
+import { generateLongHorizonPrompt } from "./longHorizonDirector.js";
 import { SessionConflictError, SessionCorruptError, SessionNotFoundError, StateWeaveSessionStore, type SessionUsageRecord, type StateWeaveSessionView } from "./stateweaveSessionStore.js";
 import { DualSessionConflictError, DualSessionCorruptError, DualSessionNotFoundError, DualSessionStore, type StateWeavePairOutcome, type TraditionalPairOutcome } from "./dualSessionStore.js";
 import type { DualSessionView, DualUsageRecord, LoadedDualSession } from "./dualSessionTypes.js";
@@ -44,6 +45,10 @@ type DualRunRequest = {
   maxIterations?: unknown;
   projectionTargetTokens?: unknown;
   systemPrompt?: unknown;
+};
+
+type LongHorizonDirectorRequest = {
+  sessionId?: unknown;
 };
 
 type JudgeRequest = {
@@ -209,6 +214,10 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   }
   if (request.method === "POST" && url.pathname === "/api/dual/run") {
     await streamDualRun(request, response);
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/api/dual/director") {
+    await createLongHorizonPrompt(request, response);
     return;
   }
 
@@ -431,6 +440,21 @@ async function listDualSessions(response: ServerResponse): Promise<void> {
     privateJson(response, 200, { sessions: await dualSessionStore.list() });
   } catch (error) {
     privateJson(response, 500, { error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+async function createLongHorizonPrompt(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  const body = (await readJson(request, 8_000)) as LongHorizonDirectorRequest;
+  if (typeof body.sessionId !== "string" || !/^swd_[0-9a-f]{32}$/.test(body.sessionId)) {
+    privateJson(response, 400, { error: "sessionId must be a dual session ID" });
+    return;
+  }
+  try {
+    const session = await dualSessionStore.load(body.sessionId);
+    privateJson(response, 200, await generateLongHorizonPrompt(model, session));
+  } catch (error) {
+    if (error instanceof DualSessionNotFoundError || error instanceof DualSessionCorruptError) writeDualSessionError(response, error);
+    else privateJson(response, 502, { error: error instanceof Error ? error.message : String(error) });
   }
 }
 

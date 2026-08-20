@@ -207,6 +207,10 @@ let dualSessionId: string | undefined;
 let dualSessionTurnId: string | undefined;
 let dualSessionView: DualSessionView | undefined;
 let contextMenuSessionId: string | undefined;
+let longHorizonPlaying = false;
+let dualQueuePumping = false;
+let queuedDirectorInput: string | undefined;
+const queuedManualInputs: string[] = [];
 let activeArm: DualArm = "stateweave";
 let dualSessionReady: Promise<void>;
 
@@ -675,6 +679,8 @@ const clearMessages = element<HTMLButtonElement>("clear-messages");
 const dualSessionList = element<HTMLElement>("dual-session-list");
 const dualSessionContextMenu = element<HTMLElement>("dual-session-context-menu");
 const deleteDualSessionButton = element<HTMLButtonElement>("delete-dual-session");
+const longHorizonToggle = element<HTMLButtonElement>("long-horizon-toggle");
+const longHorizonStatus = element<HTMLElement>("long-horizon-status");
 const transferModal = element<HTMLElement>("graph-transfer-modal");
 const transferTitle = element<HTMLElement>("graph-transfer-title");
 const transferHelp = element<HTMLElement>("graph-transfer-help");
@@ -712,6 +718,7 @@ void loadTools();
 void loadWorkspaceFiles();
 renderTokenUsage();
 applyActiveArm();
+renderLongHorizonController();
 send.disabled = true;
 dualSessionReady = initializeDualSession();
 
@@ -741,7 +748,7 @@ sdkBuildScoreForm.addEventListener("submit", (event) => {
 infiniteOpenGraph.addEventListener("click", () => void openInfiniteGraph());
 form.addEventListener("submit", (event) => {
   event.preventDefault();
-  void sendDualMessage();
+  queueManualDualMessage();
 });
 abForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -757,7 +764,7 @@ reset.addEventListener("click", () => {
 input.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
     event.preventDefault();
-    void sendDualMessage();
+    queueManualDualMessage();
   }
 });
 agentSystemPrompt.addEventListener("input", saveAgentSettingsFromForm);
@@ -822,6 +829,7 @@ dualSessionList.addEventListener("keydown", (event) => {
   openDualSessionContextMenu(target.dataset.sessionId, rect.left + Math.min(rect.width, 180), rect.top + rect.height);
 });
 deleteDualSessionButton.addEventListener("click", () => void deleteSelectedDualSession());
+longHorizonToggle.addEventListener("click", toggleLongHorizon);
 document.addEventListener("click", (event) => {
   if (!(event.target instanceof Node) || !dualSessionContextMenu.contains(event.target)) closeDualSessionContextMenu();
 });
@@ -1082,6 +1090,7 @@ async function deleteSelectedDualSession(): Promise<void> {
   const sessionId = contextMenuSessionId;
   closeDualSessionContextMenu();
   if (!sessionId || stateRunning) return;
+  stopLongHorizon();
   if (!confirm("Delete this conversation? This permanently removes both StateWeave and Traditional history from the paired JSONL session.")) return;
   send.disabled = true;
   reset.disabled = true;
@@ -1121,6 +1130,7 @@ function formatSessionDate(value: string): string {
 
 async function selectDualSession(sessionId: string): Promise<void> {
   if (stateRunning || sessionId === dualSessionId) return;
+  stopLongHorizon();
   send.disabled = true;
   reset.disabled = true;
   status.textContent = "Loading conversation…";
@@ -1851,8 +1861,91 @@ function formatSdkBuildDuration(value: number): string {
   return `${minutes}m ${seconds % 60}s`;
 }
 
-async function sendDualMessage(): Promise<void> {
+function queueManualDualMessage(): void {
   const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  queuedManualInputs.push(text);
+  renderLongHorizonController();
+  void pumpDualQueue();
+}
+
+function toggleLongHorizon(): void {
+  longHorizonPlaying = !longHorizonPlaying;
+  if (!longHorizonPlaying) queuedDirectorInput = undefined;
+  renderLongHorizonController();
+  if (longHorizonPlaying) void pumpDualQueue();
+}
+
+function stopLongHorizon(): void {
+  longHorizonPlaying = false;
+  queuedDirectorInput = undefined;
+  queuedManualInputs.length = 0;
+  renderLongHorizonController();
+}
+
+function renderLongHorizonController(detail?: string): void {
+  longHorizonToggle.setAttribute("aria-pressed", String(longHorizonPlaying));
+  send.textContent = stateRunning ? "Queue next" : "Send";
+  longHorizonToggle.innerHTML = longHorizonPlaying ? `<span aria-hidden="true">Ⅱ</span> Pause` : `<span aria-hidden="true">▶</span> Play`;
+  if (detail) {
+    longHorizonStatus.textContent = detail;
+    return;
+  }
+  if (queuedManualInputs.length) {
+    longHorizonStatus.textContent = `${longHorizonPlaying ? "Playing" : "Paused"} · ${queuedManualInputs.length} manual message${queuedManualInputs.length === 1 ? "" : "s"} queued next`;
+    return;
+  }
+  if (stateRunning) {
+    longHorizonStatus.textContent = `${longHorizonPlaying ? "Playing" : "Paused"} · paired turn running`;
+    return;
+  }
+  longHorizonStatus.textContent = longHorizonPlaying ? "Playing · preparing the next standalone prompt" : "Paused · manual messages always go next";
+}
+
+async function generateDirectorInput(sessionId: string): Promise<string> {
+  const response = await fetch(`${apiBase}/api/dual/director`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sessionId })
+  });
+  const body = await response.json() as { prompt?: string; error?: string };
+  if (!response.ok || typeof body.prompt !== "string") throw new Error(body.error ?? `Long-horizon director failed (${response.status})`);
+  return body.prompt;
+}
+
+async function pumpDualQueue(): Promise<void> {
+  if (dualQueuePumping || stateRunning) return;
+  dualQueuePumping = true;
+  let queueError: string | undefined;
+  try {
+    let text = queuedManualInputs.shift();
+    if (!text && longHorizonPlaying) {
+      if (!queuedDirectorInput) {
+        renderLongHorizonController("Playing · writing a standalone prompt…");
+        if (!dualSessionId) throw new Error("Paired session is unavailable.");
+        queuedDirectorInput = await generateDirectorInput(dualSessionId);
+        if (!longHorizonPlaying) queuedDirectorInput = undefined;
+      }
+      text = queuedManualInputs.shift();
+      if (!text && longHorizonPlaying) {
+        text = queuedDirectorInput;
+        queuedDirectorInput = undefined;
+      }
+    }
+    if (text) await runDualMessage(text);
+  } catch (error) {
+    longHorizonPlaying = false;
+    queuedDirectorInput = undefined;
+    queueError = `Paused · ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    dualQueuePumping = false;
+    renderLongHorizonController(queueError);
+    if (queuedManualInputs.length || longHorizonPlaying) window.setTimeout(() => void pumpDualQueue(), 600);
+  }
+}
+
+async function runDualMessage(text: string): Promise<void> {
   if (!text || stateRunning) return;
   await dualSessionReady;
   if (!dualSessionId) {
@@ -1861,7 +1954,7 @@ async function sendDualMessage(): Promise<void> {
   }
 
   stateRunning = true;
-  send.disabled = true;
+  renderLongHorizonController();
   reset.disabled = true;
   stateweaveArm.disabled = true;
   traditionalArm.disabled = true;
@@ -1939,7 +2032,7 @@ async function sendDualMessage(): Promise<void> {
     }
   } finally {
     stateRunning = false;
-    send.disabled = false;
+    renderLongHorizonController();
     reset.disabled = false;
     stateweaveArm.disabled = false;
     traditionalArm.disabled = false;
@@ -2608,6 +2701,7 @@ function isAgentStateLike(value: unknown): value is AgentState {
 
 async function resetDualChat(): Promise<void> {
   if (stateRunning) return;
+  stopLongHorizon();
   send.disabled = true;
   reset.disabled = true;
   try {

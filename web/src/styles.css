@@ -313,6 +313,43 @@ h3 {
   align-self: center;
 }
 
+.long-horizon-controller {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #fff;
+}
+
+.long-horizon-controller > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.long-horizon-controller strong {
+  color: var(--foreground);
+  font-size: 0.7rem;
+}
+
+.long-horizon-controller span:not([aria-hidden]) {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 0.62rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.long-horizon-toggle[aria-pressed="true"] {
+  border-color: #a5f3fc;
+  background: #ecfeff;
+  color: #0e7490;
+}
+
 .session-context-menu[hidden] {
   display: none;
 }

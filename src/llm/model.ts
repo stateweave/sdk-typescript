@@ -75,6 +75,7 @@ export class MockModel implements Model {
     const inputNodeId = input.frame?.frame.latestInputNodeId ?? "user_input_1";
     const lower = source.toLowerCase();
     if (lower.includes("evaluate a blind a/b answer comparison")) return mockJudge(source);
+    if (source.includes("LONG_HORIZON_DIRECTOR/1")) return "Explain why ocean tides occur and distinguish the roles of the Moon and the Sun. Keep the answer under 200 words.";
     const identity = identityOutput(source, inputNodeId);
     const task = inferTask(lower);
     if (input.prompt.startsWith("CAUSAL_WEAVE/1") || input.prompt.startsWith("MOLECULAR_WEAVE/1")) return `FINAL: ${identity?.answer ?? finalFor(task)}`;

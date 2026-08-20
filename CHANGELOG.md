@@ -13,6 +13,7 @@
 - Add a primary dual-agent chat where every input concurrently runs unchanged StateWeave and a traditional persistent `messages[]` arm with identical tools in isolated workspaces; atomically persist both outcomes in paired JSONL, compact the traditional transcript at 48K into a summary plus six messages, and chart both arms' provider input/output, peak context, and compaction cost on one turn axis.
 - Add a server-backed recent-session picker with ChatGPT-style conversation switching and New chat behavior; sessions are retained across resets and a new device opens the most recently updated saved conversation.
 - Add a right-click/keyboard context menu for permanent paired-session deletion, removing the JSONL record containing both StateWeave and Traditional histories with confirmation.
+- Add an unlimited play/pause long-horizon director that reads bounded paired history, generates fresh standalone prompts, sends each through both arms, and queues manual messages ahead of the next generated turn without interrupting an active run.
 
 ## 0.1.0
 
