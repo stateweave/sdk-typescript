@@ -17,6 +17,7 @@ export type TokenUsagePoint = {
   modelCalls: number;
   toolCalls?: number;
   compactions?: number;
+  compactionAttempts?: number;
   compactionInputTokens?: number;
   compactionOutputTokens?: number;
   compactionModelCalls?: number;
@@ -54,6 +55,7 @@ export function parseTokenUsageHistory(value: unknown): TokenUsagePoint[] {
       modelCalls,
       ...(tokenNumber(record.toolCalls) !== undefined ? { toolCalls: tokenNumber(record.toolCalls) } : {}),
       ...(tokenNumber(record.compactions) !== undefined ? { compactions: tokenNumber(record.compactions) } : {}),
+      ...(tokenNumber(record.compactionAttempts) !== undefined ? { compactionAttempts: tokenNumber(record.compactionAttempts) } : {}),
       ...(tokenNumber(record.compactionInputTokens) !== undefined ? { compactionInputTokens: tokenNumber(record.compactionInputTokens) } : {}),
       ...(tokenNumber(record.compactionOutputTokens) !== undefined ? { compactionOutputTokens: tokenNumber(record.compactionOutputTokens) } : {}),
       ...(tokenNumber(record.compactionModelCalls) !== undefined ? { compactionModelCalls: tokenNumber(record.compactionModelCalls) } : {}),
@@ -144,6 +146,7 @@ export function renderDualTokenUsageView(
   const stateTotalOutput = sum(statePoints, (point) => point.outputTokens);
   const traditionalTotalOutput = sum(traditionalPoints, (point) => point.outputTokens);
   const compactions = sum(traditionalPoints, (point) => point.compactions ?? 0);
+  const compactionAttempts = sum(traditionalPoints, (point) => point.compactionAttempts ?? point.compactions ?? 0);
   return {
     countLabel,
     html: `
@@ -153,7 +156,7 @@ export function renderDualTokenUsageView(
       </section>
       <section class="dual-memory-accounting" aria-label="How context and input tokens differ">
         <article class="stateweave"><strong>StateWeave · projected graph</strong><p>Each call recompiles a bounded selection from the complete causal graph. Relevant prior content can return, but the chronological transcript is not replayed.</p></article>
-        <article class="traditional"><strong>Traditional · replayed transcript</strong><p>Each call sends the complete active <code>messages[]</code>. At 48K estimated tokens, older messages become one summary and the latest six remain verbatim.</p></article>
+        <article class="traditional"><strong>Traditional · replayed transcript</strong><p>Each call sends the complete active <code>messages[]</code>. Before a turn would cross 30K estimated tokens, older messages become one validated durable summary and the latest six remain verbatim.</p></article>
         <p><strong>Reading the numbers:</strong> summed input adds every model request within that turn; cumulative input adds those usage totals across turns. Neither is context size. Peak single request is the largest actual context sent once.</p>
       </section>
       <section class="dual-token-summary" aria-label="Cumulative provider token comparison">
@@ -162,7 +165,8 @@ export function renderDualTokenUsageView(
         <span><strong>${formatAxisTokens(traditionalTotalInput)}</strong> traditional input</span>
         <span><strong>${formatAxisTokens(stateTotalOutput)}</strong> StateWeave output</span>
         <span><strong>${formatAxisTokens(traditionalTotalOutput)}</strong> traditional output</span>
-        <span><strong>${compactions.toLocaleString()}</strong> compaction${compactions === 1 ? "" : "s"}</span>
+        <span><strong>${compactions.toLocaleString()}</strong> committed compaction${compactions === 1 ? "" : "s"}</span>
+        <span><strong>${compactionAttempts.toLocaleString()}</strong> summary attempt${compactionAttempts === 1 ? "" : "s"}</span>
       </section>
       ${dualUsageChartHtml(statePoints, traditionalPoints)}
       ${dualUsageLedgerHtml(statePoints, traditionalPoints)}
@@ -174,7 +178,10 @@ function dualLatestArmHtml(label: string, css: string, point: TokenUsagePoint | 
   if (!point) return `<article class="dual-token-arm ${css} empty"><header><strong>${label}</strong><span>Waiting</span></header><p>No measured turn yet.</p></article>`;
   const peak = Math.max(point.peakContextTokens, point.latestContextTokens);
   const memoryLabel = css === "stateweave" ? "projected graph" : "replayed transcript";
-  const compaction = point.compactions ? ` · ${point.compactions} compaction${point.compactions === 1 ? "" : "s"} · ${(point.compactionInputTokens ?? 0).toLocaleString()} summary input` : "";
+  const compactionAttempts = point.compactionAttempts ?? point.compactions ?? 0;
+  const compaction = point.compactions || compactionAttempts
+    ? ` · ${point.compactions ?? 0} committed compaction${point.compactions === 1 ? "" : "s"} · ${compactionAttempts} summary attempt${compactionAttempts === 1 ? "" : "s"} · ${(point.compactionInputTokens ?? 0).toLocaleString()} summary input`
+    : "";
   const callLabel = `<small>${point.modelCalls} model call${point.modelCalls === 1 ? "" : "s"} · ${memoryLabel}${compaction}</small>`;
   return `<article class="dual-token-arm ${css}">
     <header><strong>${label}</strong><span>T${point.turn} ${escapeHtml(point.status)}</span></header>
@@ -210,7 +217,8 @@ function dualChartPanel(title: string, note: string, key: "latestContextTokens" 
     const point = points.get(turn);
     if (!point) return "";
     const compacted = css === "traditional" && (point.compactions ?? 0) > 0;
-    return `<circle class="dual-chart-dot ${css}${compacted ? " compacted" : ""}" cx="${x(index).toFixed(2)}" cy="${y(point[key]).toFixed(2)}" r="4" tabindex="0"><title>${css === "stateweave" ? "StateWeave" : "Traditional"} turn ${turn}: ${point[key].toLocaleString()} tokens${compacted ? ` · ${point.compactions} compaction` : ""}</title></circle>`;
+    const attempts = css === "traditional" ? point.compactionAttempts ?? point.compactions ?? 0 : 0;
+    return `<circle class="dual-chart-dot ${css}${compacted ? " compacted" : ""}" cx="${x(index).toFixed(2)}" cy="${y(point[key]).toFixed(2)}" r="4" tabindex="0"><title>${css === "stateweave" ? "StateWeave" : "Traditional"} turn ${turn}: ${point[key].toLocaleString()} tokens${compacted ? ` · ${point.compactions} committed compaction` : attempts ? ` · ${attempts} uncommitted summary attempt` : ""}</title></circle>`;
   }).join("");
   const labels = turns.map((turn, index) => (index === 0 || index === turns.length - 1 || index % Math.max(1, Math.ceil(turns.length / 7)) === 0) ? `<text x="${x(index).toFixed(2)}" y="${height - 10}" text-anchor="middle">T${turn}</text>` : "").join("");
   const grid = [0, .5, 1].map((fraction) => {
@@ -228,7 +236,11 @@ function dualUsageLedgerHtml(statePoints: TokenUsagePoint[], traditionalPoints: 
   const cell = (point: TokenUsagePoint | undefined, memory: string): string => point ? `${point.totalInputTokens.toLocaleString()} / ${point.outputTokens.toLocaleString()} / ${point.peakContextTokens.toLocaleString()}<small>${point.modelCalls} model call${point.modelCalls === 1 ? "" : "s"} · ${memory}</small>` : "-";
   const rows = turns.map((turn) => {
     const baseline = traditional.get(turn);
-    return `<tr><th scope="row">T${turn}</th><td>${cell(state.get(turn), "projected graph")}</td><td>${cell(baseline, "replayed transcript")}${baseline?.compactions ? `<small>${baseline.compactions} compaction${baseline.compactions === 1 ? "" : "s"}</small>` : ""}</td></tr>`;
+    const attempts = baseline?.compactionAttempts ?? baseline?.compactions ?? 0;
+    const compaction = baseline && (baseline.compactions || attempts)
+      ? `<small>${baseline.compactions ?? 0} committed · ${attempts} summary attempt${attempts === 1 ? "" : "s"}</small>`
+      : "";
+    return `<tr><th scope="row">T${turn}</th><td>${cell(state.get(turn), "projected graph")}</td><td>${cell(baseline, "replayed transcript")}${compaction}</td></tr>`;
   }).join("");
   return `<details class="token-ledger dual-token-ledger"><summary>Paired ledger · ${turns.length} turn${turns.length === 1 ? "" : "s"} · summed input / output / peak request</summary><div class="token-ledger-scroll"><table><thead><tr><th>Turn</th><th>StateWeave summed in / out / peak</th><th>Traditional summed in / out / peak</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
 }

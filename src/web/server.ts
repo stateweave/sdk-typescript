@@ -141,7 +141,7 @@ function createComparisonTools(rootDir: string): ReturnType<typeof createDefault
   return createDefaultTools({ rootDir }).map((tool) => ({ ...tool, description: tool.description.replaceAll(rootDir, "<workspace>") }));
 }
 
-const traditionalCompactionThreshold = 48_000;
+const traditionalCompactionThreshold = 30_000;
 const traditionalRetainMessages = 6;
 const dualDefaultSystemPrompt = "You are a careful agent. Complete the user's task accurately, use tools when needed, and preserve durable user facts, constraints, and corrections across turns.";
 let dualWorkspaceQueue: Promise<void> = Promise.resolve();
@@ -542,10 +542,16 @@ async function streamDualRunLocked(request: IncomingMessage, response: ServerRes
     systemPrompt,
     maxIterations,
     maxContextTokens: 64_000,
-    compaction: { thresholdTokens: traditionalCompactionThreshold, retainMessages: traditionalRetainMessages },
+    compaction: {
+      thresholdTokens: traditionalCompactionThreshold,
+      retainMessages: traditionalRetainMessages,
+      durablePreflight: true,
+      validateSummary: true
+    },
     messages: session.traditionalMessages,
     enforceCompletionEvidence: true,
-    transcriptOnly: true
+    transcriptOnly: true,
+    captureProviderFailures: true
   });
 
   response.writeHead(200, {
@@ -595,7 +601,15 @@ async function streamDualRunLocked(request: IncomingMessage, response: ServerRes
       const usage = traditionalUsage(traditionalRunId, traditionalStartedAt, run);
       if (!run.completed) {
         const error = run.error ?? "Traditional transcript agent did not complete.";
-        return { outcome: { status: "failed", error, usage }, result: { status: "failed", error, usage: { ...usage, status: "failed" }, lastPrompt: run.lastPrompt } };
+        return {
+          outcome: {
+            status: "failed",
+            error,
+            usage,
+            ...(run.maintenanceMessages ? { maintainedMessages: run.maintenanceMessages } : {})
+          },
+          result: { status: "failed", error, usage: { ...usage, status: "failed" }, lastPrompt: run.lastPrompt }
+        };
       }
       return {
         outcome: { status: "done", messages: traditionalAgent.getMessages(), answer: run.answer, usage },
@@ -1410,7 +1424,8 @@ function traditionalUsage(runId: string, startedAt: string, result: AgenticTurnR
     maxPromptTokens: 64_000,
     contextTargetTokens: traditionalCompactionThreshold,
     tokenCountSource: result.tokenCountSource,
-    compactions: result.compactions,
+    compactions: result.completed ? result.compactions : result.maintenanceCompactions,
+    compactionAttempts: result.compactionAttempts,
     compactionInputTokens: result.compactionInputTokens,
     compactionOutputTokens: result.compactionOutputTokens,
     compactionModelCalls: result.compactionModelCalls
@@ -1434,6 +1449,7 @@ function dualStateFailureUsage(start: AgentStartMetadata | undefined, metrics: F
     contextTargetTokens: base.projectionTargetTokens,
     tokenCountSource: base.tokenCountSource,
     compactions: 0,
+    compactionAttempts: 0,
     compactionInputTokens: 0,
     compactionOutputTokens: 0,
     compactionModelCalls: 0

@@ -9,7 +9,7 @@ function session(turns: DualTurnView[] = []): DualSessionView {
     turnCount: turns.length,
     storage: "jsonl-dual",
     stateweave: { history: [], usageHistory: [] },
-    traditional: { history: [], usageHistory: [], activeMessageCount: 0, activeContext: "", totalCompactions: 0 },
+    traditional: { history: [], usageHistory: [], activeMessageCount: 0, activeContext: "", totalCompactions: 0, totalCompactionAttempts: 0 },
     turns,
     historyTruncated: false,
     logBytes: 0

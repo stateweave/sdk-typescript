@@ -1,4 +1,4 @@
-import { appendFile, mkdtemp, readFile, rm } from "node:fs/promises";
+import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -33,11 +33,11 @@ function metadata(runId: string, inputTokens = 100): AgentRunMetadata {
   };
 }
 
-function usage(runId: string, compactions = 0): Omit<DualUsageRecord, "turn" | "status"> {
+function usage(runId: string, compactions = 0, compactionAttempts = compactions): Omit<DualUsageRecord, "turn" | "status"> {
   return {
     runId, startedAt: "2026-08-18T12:00:00.000Z", completedAt: "2026-08-18T12:00:01.000Z", latestContextTokens: 120, peakContextTokens: 180, totalInputTokens: 220,
-    outputTokens: 20, modelCalls: 1 + compactions, toolCalls: 0, maxPromptTokens: 64_000, contextTargetTokens: 48_000, tokenCountSource: "provider", compactions,
-    compactionInputTokens: compactions ? 100 : 0, compactionOutputTokens: compactions ? 10 : 0, compactionModelCalls: compactions
+    outputTokens: 20, modelCalls: 1 + compactionAttempts, toolCalls: 0, maxPromptTokens: 64_000, contextTargetTokens: 30_000, tokenCountSource: "provider", compactions, compactionAttempts,
+    compactionInputTokens: compactionAttempts ? 100 : 0, compactionOutputTokens: compactionAttempts ? 10 : 0, compactionModelCalls: compactionAttempts
   };
 }
 
@@ -110,6 +110,65 @@ it("advances only the successful arm when its pair fails", async () => {
   expect(restored.traditional.usageHistory[0].status).toBe("failed");
 });
 
+it("persists preflight maintenance when the following traditional task fails", async () => {
+  const { root, value } = await store(1);
+  const created = await value.create();
+  const firstState = nextState(undefined, "one", "one answer");
+  const firstMessages = messages("one", "one answer");
+  const first = await value.commitPair({ sessionId: created.sessionId, input: "one", previousTraditionalMessages: [], stateweave: { status: "done", state: firstState, answer: "one answer", metadata: metadata("sw1") }, traditional: { status: "done", messages: firstMessages, answer: "one answer", usage: usage("tr1") } });
+  const maintained: AgenticMessage[] = [
+    { role: "system", content: "traditional system" },
+    { role: "assistant", content: "COMPACTED TRANSCRIPT SUMMARY:\ndurable summary of turn one" }
+  ];
+  await value.commitPair({
+    sessionId: created.sessionId,
+    expectedTurnId: first.turnId,
+    input: "two",
+    previousState: firstState,
+    previousTraditionalMessages: firstMessages,
+    stateweave: { status: "failed", error: "state failed", usage: usage("sw_fail") },
+    traditional: { status: "failed", error: "provider unavailable", usage: usage("tr_fail", 1, 1), maintainedMessages: maintained }
+  });
+
+  const restored = await new DualSessionStore(root, 1).loadForRun(created.sessionId);
+  expect(restored.traditionalMessages).toEqual(maintained);
+  expect(restored.traditional.totalCompactions).toBe(1);
+  expect(restored.traditional.totalCompactionAttempts).toBe(1);
+  expect(restored.turns[1]).toMatchObject({ traditional: { status: "failed", usage: { compactions: 1, compactionAttempts: 1 } } });
+  const records = (await readFile(path.join(root, `${created.sessionId}.jsonl`), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+  expect(records.at(-1)).toMatchObject({ type: "checkpoint", traditionalMessages: maintained });
+});
+
+it("migrates legacy failed-turn compactions into attempts rather than committed state", async () => {
+  const { root, value } = await store();
+  const created = await value.create();
+  await value.commitPair({ sessionId: created.sessionId, input: "one", previousTraditionalMessages: [], stateweave: { status: "failed", error: "failed", usage: usage("sw_fail") }, traditional: { status: "failed", error: "legacy failed summary", usage: usage("tr_fail", 0, 1) } });
+  const file = path.join(root, `${created.sessionId}.jsonl`);
+  const records = (await readFile(file, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+  records[1].traditional.usage.compactions = 1;
+  delete records[1].traditional.usage.compactionAttempts;
+  await writeFile(file, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`);
+
+  const restored = await value.loadForRun(created.sessionId);
+  expect(restored.traditional.totalCompactions).toBe(0);
+  expect(restored.traditional.totalCompactionAttempts).toBe(1);
+  expect(restored.turns[0]?.traditional.usage).toMatchObject({ compactions: 0, compactionAttempts: 1 });
+});
+
+it("reports an uncommitted summary attempt without changing active messages", async () => {
+  const { value } = await store();
+  const created = await value.create();
+  const active = messages("one", "answer");
+  const first = await value.commitPair({ sessionId: created.sessionId, input: "one", previousTraditionalMessages: [], stateweave: { status: "done", state: nextState(undefined, "one", "answer"), answer: "answer", metadata: metadata("sw1") }, traditional: { status: "done", messages: active, answer: "answer", usage: usage("tr1") } });
+  const priorState = (await value.loadForRun(created.sessionId)).stateweave.state;
+  await value.commitPair({ sessionId: created.sessionId, expectedTurnId: first.turnId, input: "two", previousState: priorState, previousTraditionalMessages: active, stateweave: { status: "failed", error: "failed", usage: usage("sw_fail") }, traditional: { status: "failed", error: "summary rejected", usage: usage("tr_fail", 0, 2) } });
+
+  const restored = await value.loadForRun(created.sessionId);
+  expect(restored.traditionalMessages).toEqual(active);
+  expect(restored.traditional.totalCompactions).toBe(0);
+  expect(restored.traditional.totalCompactionAttempts).toBe(2);
+});
+
 it("persists compacted active messages and compaction cost", async () => {
   const { value } = await store();
   const created = await value.create();
@@ -122,7 +181,8 @@ it("persists compacted active messages and compaction cost", async () => {
   const restored = await value.loadForRun(created.sessionId);
   expect(restored.traditionalMessages).toEqual(compacted);
   expect(restored.traditional.totalCompactions).toBe(1);
-  expect(restored.traditional.usageHistory[1]).toMatchObject({ compactions: 1, compactionInputTokens: 100 });
+  expect(restored.traditional.totalCompactionAttempts).toBe(1);
+  expect(restored.traditional.usageHistory[1]).toMatchObject({ compactions: 1, compactionAttempts: 1, compactionInputTokens: 100 });
   expect(restored.traditional.history.map((entry) => entry.content)).toEqual(["one", "one answer", "two", "two answer"]);
 });
 

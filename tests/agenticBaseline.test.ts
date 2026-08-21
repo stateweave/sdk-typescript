@@ -116,6 +116,35 @@ class CompactionModel implements Model {
   }
 }
 
+class CompactionThenProviderFailureModel implements Model {
+  readonly prompts: string[] = [];
+
+  async complete(input: ModelInput): Promise<ModelOutput> {
+    this.prompts.push(input.prompt);
+    if (this.prompts.length === 1) return { text: "Durable summary of prior facts, files, constraints, corrections, and unresolved work." };
+    throw new Error("Anthropic request failed (429): rate limited");
+  }
+
+  async *stream(_input: ModelInput): AsyncIterable<ModelToken> {
+    yield { type: "token", token: "FINAL: unreachable" };
+  }
+}
+
+class RetriedCompactionModel implements Model {
+  readonly prompts: string[] = [];
+
+  async complete(input: ModelInput): Promise<ModelOutput> {
+    this.prompts.push(input.prompt);
+    if (this.prompts.length === 1) return { text: "Too short." };
+    if (this.prompts.length === 2) return { text: "Durable facts and artifact details. ".repeat(80) };
+    return { text: "FINAL: Continued after validated compaction." };
+  }
+
+  async *stream(_input: ModelInput): AsyncIterable<ModelToken> {
+    yield { type: "token", token: "FINAL: done" };
+  }
+}
+
 it("runs a persistent messages agent through the same filesystem tools", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-agentic-"));
   try {
@@ -269,6 +298,52 @@ it("fails before the agent call when six retained messages cannot fit the hard c
   expect(result.error).toContain("hard ceiling");
   expect(result.compactions).toBe(1);
   expect(model.prompts).toHaveLength(1);
+});
+
+it("retains validated preflight compaction when the following provider call fails", async () => {
+  const model = new CompactionThenProviderFailureModel();
+  const messages: AgenticMessage[] = [
+    { role: "system", content: "System protocol" },
+    ...Array.from({ length: 8 }, (_, index) => ({ role: index % 2 ? "assistant" as const : "user" as const, content: `old-${index}-${"x".repeat(80)}` }))
+  ];
+  const agent = new AgenticBaseline({
+    model,
+    tools: [],
+    systemPrompt: "Maintain the workspace.",
+    messages,
+    compaction: { thresholdTokens: 20, retainMessages: 6, durablePreflight: true, validateSummary: true },
+    captureProviderFailures: true,
+    transcriptOnly: true
+  });
+
+  const result = await agent.run("new-task");
+
+  expect(result).toMatchObject({ completed: false, failureKind: "provider", compactions: 1, compactionAttempts: 1, maintenanceCompactions: 1, modelCalls: 1 });
+  expect(result.maintenanceMessages?.[1]?.content).toContain("COMPACTED TRANSCRIPT SUMMARY");
+  expect(result.maintenanceMessages?.some((message) => message.content.includes("new-task"))).toBe(false);
+  expect(agent.getMessages().some((message) => message.content === "new-task")).toBe(true);
+});
+
+it("retries a suspiciously short compaction summary before committing it", async () => {
+  const model = new RetriedCompactionModel();
+  const messages: AgenticMessage[] = [
+    { role: "system", content: "System protocol" },
+    ...Array.from({ length: 8 }, (_, index) => ({ role: index % 2 ? "assistant" as const : "user" as const, content: `old-${index}-${"x".repeat(2_000)}` }))
+  ];
+  const agent = new AgenticBaseline({
+    model,
+    tools: [],
+    systemPrompt: "Maintain the workspace.",
+    messages,
+    compaction: { thresholdTokens: 20, retainMessages: 6, durablePreflight: true, validateSummary: true },
+    transcriptOnly: true
+  });
+
+  const result = await agent.run("new-task");
+
+  expect(result).toMatchObject({ completed: true, compactions: 1, compactionAttempts: 2, maintenanceCompactions: 1, compactionModelCalls: 2, modelCalls: 3 });
+  expect(model.prompts[1]).toContain("previous candidate was rejected");
+  expect(agent.getMessages()[1]?.content).toContain("Durable facts and artifact details");
 });
 
 it("summarizes older messages at the threshold and preserves the latest six", async () => {

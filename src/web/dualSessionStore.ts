@@ -20,13 +20,14 @@ export type StateWeavePairOutcome =
 
 export type TraditionalPairOutcome =
   | { status: "done"; messages: AgenticMessage[]; answer: string; usage: Omit<DualUsageRecord, "turn" | "status"> }
-  | { status: "failed"; error: string; usage?: Omit<DualUsageRecord, "turn" | "status"> };
+  | { status: "failed"; error: string; usage?: Omit<DualUsageRecord, "turn" | "status">; maintainedMessages?: AgenticMessage[] };
 
 type SessionHeader = { type: "session"; version: 1; sessionId: string; createdAt: string };
 type BootstrapEntry = { type: "bootstrap"; id: string; parentId: null; timestamp: string; state?: AgentState; stateHash?: string };
 type StoredDoneStateWeave = { status: "done"; answer: string; newNodes: CausalWeaveNode[]; frontier: string[]; stateHash: string; usage: DualUsageRecord };
-type StoredFailedArm = { status: "failed"; error: string; usage?: DualUsageRecord };
+type StoredFailedStateWeave = { status: "failed"; error: string; usage?: DualUsageRecord };
 type StoredDoneTraditional = { status: "done"; answer: string; messages: AgenticMessage[]; messagesHash: string; usage: DualUsageRecord };
+type StoredFailedTraditional = { status: "failed"; error: string; usage?: DualUsageRecord; maintainedMessages?: AgenticMessage[]; maintainedMessagesHash?: string };
 type PairEntry = {
   type: "paired_turn";
   id: string;
@@ -34,8 +35,8 @@ type PairEntry = {
   timestamp: string;
   turn: number;
   input: string;
-  stateweave: StoredDoneStateWeave | StoredFailedArm;
-  traditional: StoredDoneTraditional | StoredFailedArm;
+  stateweave: StoredDoneStateWeave | StoredFailedStateWeave;
+  traditional: StoredDoneTraditional | StoredFailedTraditional;
 };
 type CheckpointEntry = {
   type: "checkpoint";
@@ -146,6 +147,10 @@ export class DualSessionStore {
     if (args.stateweave.status === "done") assertValidCausalWeaveSnapshot(args.stateweave.state);
     assertMessages(args.previousTraditionalMessages);
     if (args.traditional.status === "done") assertMessages(args.traditional.messages);
+    else {
+      if (args.traditional.maintainedMessages) assertMessages(args.traditional.maintainedMessages);
+      if ((args.traditional.usage?.compactions ?? 0) > 0 && !args.traditional.maintainedMessages) throw new DualSessionCorruptError("Committed failed-turn compaction requires maintained traditional messages.");
+    }
     return this.withLock(args.sessionId, async () => {
       const current = await this.loadInternal(args.sessionId);
       await this.repairPartialTail(args.sessionId, current);
@@ -172,7 +177,9 @@ export class DualSessionStore {
       }
       if (this.checkpointEvery > 0 && turn % this.checkpointEvery === 0) {
         const state = args.stateweave.status === "done" ? args.stateweave.state : current.stateweave.state;
-        const traditionalMessages = args.traditional.status === "done" ? args.traditional.messages : current.traditionalMessages;
+        const traditionalMessages = args.traditional.status === "done"
+          ? args.traditional.messages
+          : args.traditional.maintainedMessages ?? current.traditionalMessages;
         const checkpoint: CheckpointEntry = {
           type: "checkpoint",
           id: newEntryId(),
@@ -261,6 +268,13 @@ export class DualSessionStore {
           traditionalHistory.push({ role: "user", content: entry.input, turn: entry.turn }, { role: "assistant", content: entry.traditional.answer, turn: entry.turn });
           traditionalUsage.push(entry.traditional.usage);
         } else {
+          if (entry.traditional.maintainedMessages) {
+            assertMessages(entry.traditional.maintainedMessages);
+            if (!entry.traditional.maintainedMessagesHash || messagesHash(entry.traditional.maintainedMessages) !== entry.traditional.maintainedMessagesHash) throw new DualSessionCorruptError(`Traditional maintenance hash mismatch at ${entry.id}.`);
+            traditionalMessages = structuredClone(entry.traditional.maintainedMessages);
+          } else if (entry.traditional.maintainedMessagesHash) {
+            throw new DualSessionCorruptError(`Traditional maintenance presence mismatch at ${entry.id}.`);
+          }
           traditionalHistory.push({ role: "user", content: entry.input, turn: entry.turn }, { role: "error", content: entry.traditional.error, turn: entry.turn });
           if (entry.traditional.usage) traditionalUsage.push(entry.traditional.usage);
         }
@@ -296,7 +310,8 @@ export class DualSessionStore {
         usageHistory: traditionalUsage.slice(-maxUsageRecords),
         activeMessageCount: traditionalMessages.length,
         activeContext: traditionalMessages.length ? serializeAgenticMessages(traditionalMessages) : "No traditional transcript yet.",
-        totalCompactions: traditionalUsage.reduce((total, usage) => total + usage.compactions, 0)
+        totalCompactions: traditionalUsage.reduce((total, usage) => total + usage.compactions, 0),
+        totalCompactionAttempts: traditionalUsage.reduce((total, usage) => total + (usage.compactionAttempts ?? usage.compactions), 0)
       },
       turns: visibleTurns,
       historyTruncated: visibleTurns.length < turns.length || visibleStateHistory.length < stateHistory.length || visibleTraditionalHistory.length < traditionalHistory.length,
@@ -358,7 +373,7 @@ export class DualSessionStore {
   }
 }
 
-function storeStateWeaveOutcome(turn: number, previous: AgentState | undefined, outcome: StateWeavePairOutcome): StoredDoneStateWeave | StoredFailedArm {
+function storeStateWeaveOutcome(turn: number, previous: AgentState | undefined, outcome: StateWeavePairOutcome): StoredDoneStateWeave | StoredFailedStateWeave {
   if (outcome.status === "failed") return { status: "failed", error: boundedError(outcome.error), ...(outcome.usage ? { usage: { ...outcome.usage, turn, status: "failed" } } : {}) };
   const newNodes = stateDelta(previous, outcome.state);
   return {
@@ -371,8 +386,16 @@ function storeStateWeaveOutcome(turn: number, previous: AgentState | undefined, 
   };
 }
 
-function storeTraditionalOutcome(turn: number, outcome: TraditionalPairOutcome): StoredDoneTraditional | StoredFailedArm {
-  if (outcome.status === "failed") return { status: "failed", error: boundedError(outcome.error), ...(outcome.usage ? { usage: { ...outcome.usage, turn, status: "failed" } } : {}) };
+function storeTraditionalOutcome(turn: number, outcome: TraditionalPairOutcome): StoredDoneTraditional | StoredFailedTraditional {
+  if (outcome.status === "failed") return {
+    status: "failed",
+    error: boundedError(outcome.error),
+    ...(outcome.usage ? { usage: { ...outcome.usage, turn, status: "failed" } } : {}),
+    ...(outcome.maintainedMessages ? {
+      maintainedMessages: structuredClone(outcome.maintainedMessages),
+      maintainedMessagesHash: messagesHash(outcome.maintainedMessages)
+    } : {})
+  };
   return {
     status: "done",
     answer: outcome.answer,
@@ -451,7 +474,19 @@ function parseEntry(value: unknown): SessionEntry {
   }
   if (entry.type === "paired_turn") {
     if (!positiveInteger(entry.turn) || typeof entry.input !== "string" || !isStoredStateArm(entry.stateweave) || !isStoredTraditionalArm(entry.traditional)) throw new DualSessionCorruptError(`Invalid paired turn ${entry.id}.`);
-    return entry as unknown as PairEntry;
+    const pair = entry as unknown as PairEntry;
+    if (pair.traditional.usage && pair.traditional.usage.compactionAttempts === undefined) {
+      const legacyCompactions = pair.traditional.usage.compactions;
+      pair.traditional = {
+        ...pair.traditional,
+        usage: {
+          ...pair.traditional.usage,
+          compactions: pair.traditional.status === "failed" && !pair.traditional.maintainedMessages ? 0 : legacyCompactions,
+          compactionAttempts: legacyCompactions
+        }
+      };
+    }
+    return pair;
   }
   if (entry.type === "checkpoint") {
     if (!positiveInteger(entry.turnCount) || !Array.isArray(entry.traditionalMessages) || typeof entry.traditionalMessagesHash !== "string") throw new DualSessionCorruptError(`Invalid checkpoint ${entry.id}.`);
@@ -461,7 +496,7 @@ function parseEntry(value: unknown): SessionEntry {
   throw new DualSessionCorruptError(`Unsupported dual session entry type: ${String(entry.type)}`);
 }
 
-function assertArmUsage(arm: StoredDoneStateWeave | StoredDoneTraditional | StoredFailedArm, turn: number, label: string): void {
+function assertArmUsage(arm: StoredDoneStateWeave | StoredDoneTraditional | StoredFailedStateWeave | StoredFailedTraditional, turn: number, label: string): void {
   if (!arm.usage) return;
   if (arm.usage.turn !== turn || arm.usage.status !== arm.status) throw new DualSessionCorruptError(`${label} usage does not match paired turn ${turn}.`);
 }
@@ -476,7 +511,17 @@ function isStoredStateArm(value: unknown): boolean {
 function isStoredTraditionalArm(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const arm = value as Record<string, unknown>;
-  if (arm.status === "failed") return typeof arm.error === "string" && (arm.usage === undefined || isUsage(arm.usage));
+  if (arm.status === "failed") {
+    const maintainedMessagesValid = arm.maintainedMessages === undefined
+      ? arm.maintainedMessagesHash === undefined
+      : Array.isArray(arm.maintainedMessages) && typeof arm.maintainedMessagesHash === "string";
+    const usageValid = arm.usage === undefined || isUsage(arm.usage);
+    const committedMaintenanceValid = !arm.usage
+      || (arm.usage as Record<string, unknown>).compactionAttempts === undefined
+      || Number((arm.usage as Record<string, unknown>).compactions) === 0
+      || Array.isArray(arm.maintainedMessages);
+    return typeof arm.error === "string" && maintainedMessagesValid && usageValid && committedMaintenanceValid;
+  }
   return arm.status === "done" && typeof arm.answer === "string" && Array.isArray(arm.messages) && typeof arm.messagesHash === "string" && isUsage(arm.usage);
 }
 
@@ -488,6 +533,7 @@ function isUsage(value: unknown): value is DualUsageRecord {
     && validTimestamp(usage.startedAt)
     && validTimestamp(usage.completedAt)
     && ["latestContextTokens", "peakContextTokens", "totalInputTokens", "outputTokens", "modelCalls", "toolCalls", "maxPromptTokens", "contextTargetTokens", "compactions", "compactionInputTokens", "compactionOutputTokens", "compactionModelCalls"].every((key) => nonNegativeInteger(usage[key]))
+    && (usage.compactionAttempts === undefined || nonNegativeInteger(usage.compactionAttempts))
     && (usage.tokenCountSource === "provider" || usage.tokenCountSource === "estimated" || usage.tokenCountSource === "mixed")
     && (usage.status === "done" || usage.status === "failed");
 }

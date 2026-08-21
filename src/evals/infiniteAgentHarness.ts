@@ -1006,7 +1006,7 @@ async function captureNaiveTurn(
     if (signal.aborted) throw signal.reason;
     const message = error instanceof Error ? error.message : String(error);
     const failureKind = isExternalProviderFailure(error) ? "provider" : "agent";
-    return { answer: `(agent error: ${message})`, completed: false, failureKind, error: message, contextTokens: 0, peakContextTokens: 0, totalInputTokens: 0, outputTokens: 0, tokenCountSource: "estimated", modelCalls: 0, toolCalls: 0, latencyMs: 0, compactions: 0, compactionInputTokens: 0, compactionOutputTokens: 0, compactionModelCalls: 0, lastPrompt: "" };
+    return { answer: `(agent error: ${message})`, completed: false, failureKind, error: message, contextTokens: 0, peakContextTokens: 0, totalInputTokens: 0, outputTokens: 0, tokenCountSource: "estimated", modelCalls: 0, toolCalls: 0, latencyMs: 0, compactions: 0, compactionAttempts: 0, maintenanceCompactions: 0, compactionInputTokens: 0, compactionOutputTokens: 0, compactionModelCalls: 0, lastPrompt: "" };
   }
 }
 

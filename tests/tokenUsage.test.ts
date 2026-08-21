@@ -47,7 +47,7 @@ it("migrates records created before peak-context telemetry", () => {
 it("renders paired StateWeave and traditional usage on one turn axis", () => {
   const rendered = renderDualTokenUsageView(
     [point(1, { totalInputTokens: 1_200, outputTokens: 80 })],
-    [point(1, { runId: "traditional_1", totalInputTokens: 2_400, outputTokens: 120, projectionTargetTokens: 48_000, compactions: 1, compactionInputTokens: 900, compactionOutputTokens: 30, compactionModelCalls: 1 })]
+    [point(1, { runId: "traditional_1", totalInputTokens: 2_400, outputTokens: 120, projectionTargetTokens: 30_000, compactions: 1, compactionAttempts: 2, compactionInputTokens: 900, compactionOutputTokens: 230, compactionModelCalls: 2 })]
   );
 
   expect(rendered.countLabel).toBe("1 paired turn");
@@ -61,6 +61,8 @@ it("renders paired StateWeave and traditional usage on one turn axis", () => {
   expect(rendered.html).toContain("complete active <code>messages[]</code>");
   expect(rendered.html).toContain("Neither is context size");
   expect(rendered.html).toContain("900 summary input");
+  expect(rendered.html).toContain("1 committed compaction");
+  expect(rendered.html).toContain("2 summary attempts");
   expect(rendered.html).toContain("2 model calls · replayed transcript");
   expect(rendered.html).toContain("traditional input");
 });

@@ -20,6 +20,7 @@ export type DualUsageRecord = {
   tokenCountSource: TokenCountSource;
   status: DualArmStatus;
   compactions: number;
+  compactionAttempts?: number;
   compactionInputTokens: number;
   compactionOutputTokens: number;
   compactionModelCalls: number;
@@ -72,6 +73,7 @@ export type DualSessionView = {
     activeMessageCount: number;
     activeContext: string;
     totalCompactions: number;
+    totalCompactionAttempts: number;
   };
   turns: DualTurnView[];
   historyTruncated: boolean;

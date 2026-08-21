@@ -956,7 +956,7 @@ function applyActiveArm(): void {
   memoryViewTitle.textContent = stateSelected ? "StateWeave memory" : "Traditional messages";
   memoryViewDescription.innerHTML = stateSelected
     ? "<strong>StateWeave primitive:</strong> ordinary model actions grow content-addressed causal nodes. Every action points to the exact state compiled for that inference; a deterministic bounded projection keeps the whole graph available without replaying a transcript."
-    : "<strong>Traditional primitive:</strong> ordinary <code>messages[]</code> accumulate user, assistant, and tool entries. At 48K estimated tokens, older history becomes one summary while the latest six messages remain verbatim.";
+    : "<strong>Traditional primitive:</strong> ordinary <code>messages[]</code> accumulate user, assistant, and tool entries. Before a turn would cross 30K estimated tokens, older history becomes one validated durable summary while the latest six messages remain verbatim.";
   graphViewTab.textContent = stateSelected ? "Molecular graph" : "Active transcript";
   modelIoSummary.textContent = stateSelected ? "Latest StateWeave loop: causal graph → molecular context → action · click either log to copy" : "Latest traditional loop: messages → summary compaction → action · click either log to copy";
   modelInputLabel.textContent = stateSelected ? "Exact model input / compiled causal context" : "Exact model input / active messages transcript";
@@ -971,7 +971,7 @@ function applyActiveArm(): void {
   } else {
     renderTraditionalMemoryPanel(dualSessionView);
     stateInput.textContent = dualSessionView.traditional.activeContext;
-    stateOutput.textContent = `Traditional transcript restored · ${dualSessionView.traditional.activeMessageCount} active messages · ${dualSessionView.traditional.totalCompactions} compactions.`;
+    stateOutput.textContent = `Traditional transcript restored · ${dualSessionView.traditional.activeMessageCount} active messages · ${dualSessionView.traditional.totalCompactions} committed compactions · ${dualSessionView.traditional.totalCompactionAttempts} summary attempts.`;
   }
 }
 
@@ -1196,7 +1196,8 @@ function dualAnswerHtml(arm: DualArm, result: DualTurnView[DualArm], turn: numbe
 function renderTraditionalMemoryPanel(session: DualSessionView): void {
   const latest = session.traditional.usageHistory.at(-1);
   graph.className = "traditional-memory-panel";
-  graph.innerHTML = `<article><span>Active transcript</span><strong>${session.traditional.activeMessageCount.toLocaleString()} messages</strong><p>System prompt, compacted summary when needed, and the latest six transcript messages.</p></article><article><span>Compactions</span><strong>${session.traditional.totalCompactions.toLocaleString()}</strong><p>${latest?.compactions ? `${latest.compactions} occurred on the latest turn.` : "No compaction on the latest turn."}</p></article><article><span>Context policy</span><strong>48K threshold</strong><p>Summary plus six messages under the shared 64K hard ceiling.</p></article>`;
+  const attempts = session.traditional.totalCompactionAttempts;
+  graph.innerHTML = `<article><span>Active transcript</span><strong>${session.traditional.activeMessageCount.toLocaleString()} messages</strong><p>System prompt, validated compacted summary when needed, and the latest six transcript messages.</p></article><article><span>Committed compactions</span><strong>${session.traditional.totalCompactions.toLocaleString()}</strong><p>${attempts.toLocaleString()} summary attempt${attempts === 1 ? "" : "s"}; failed validation is never reported as committed.</p></article><article><span>Context policy</span><strong>30K preflight</strong><p>Durable summary plus six messages under the shared 64K hard ceiling.</p></article>`;
 }
 
 async function initializeStateSession(): Promise<void> {
@@ -2005,7 +2006,17 @@ async function runDualMessage(text: string): Promise<void> {
       }
     }
     const failures = [stateResult.status === "failed" ? "StateWeave" : "", traditionalResult.status === "failed" ? "traditional" : ""].filter(Boolean);
-    status.textContent = failures.length ? `Paired turn committed · ${failures.join(" and ")} failed without advancing its memory` : `Done · paired JSONL committed · both arms completed`;
+    if (failures.length) {
+      longHorizonPlaying = false;
+      queuedDirectorInput = undefined;
+      queuedManualInputs.length = 0;
+      const maintenance = traditionalResult.status === "failed" && traditionalResult.usage?.compactions
+        ? " · Traditional preflight compaction retained"
+        : "";
+      status.textContent = `Paired turn committed · ${failures.join(" and ")} failed; task memory did not advance${maintenance} · director paused`;
+    } else {
+      status.textContent = "Done · paired JSONL committed · both arms completed";
+    }
     void loadWorkspaceFiles();
     void loadDualSessions();
   } catch (error) {
@@ -2068,7 +2079,7 @@ function startDualTokenUsageTurn(): void {
   };
   activeTraditionalTokenUsage = {
     turn, runId: `pending_traditional_${turn}`, startedAt, latestContextTokens: 0, peakContextTokens: 0, totalInputTokens: 0, outputTokens: 0, modelCalls: 0,
-    maxPromptTokens: 64_000, projectionTargetTokens: 48_000, compactions: 0, compactionInputTokens: 0, compactionOutputTokens: 0, compactionModelCalls: 0, status: "running"
+    maxPromptTokens: 64_000, projectionTargetTokens: 30_000, compactions: 0, compactionAttempts: 0, compactionInputTokens: 0, compactionOutputTokens: 0, compactionModelCalls: 0, status: "running"
   };
   renderTokenUsage();
 }
@@ -2092,7 +2103,7 @@ function formatTraditionalResult(result: Extract<DualArmResult, { status: "done"
     "",
     `FINAL · ${result.output}`,
     usage ? `USAGE · ${usage.totalInputTokens.toLocaleString()} input · ${usage.outputTokens.toLocaleString()} output · ${usage.peakContextTokens.toLocaleString()} peak context` : "",
-    usage?.compactions ? `COMPACTION · ${usage.compactions} call · ${usage.compactionInputTokens.toLocaleString()} input · ${usage.compactionOutputTokens.toLocaleString()} output` : "COMPACTION · none"
+    usage && (usage.compactions || usage.compactionAttempts) ? `COMPACTION · ${usage.compactions} committed · ${usage.compactionAttempts ?? usage.compactions} attempt${(usage.compactionAttempts ?? usage.compactions) === 1 ? "" : "s"} · ${usage.compactionInputTokens.toLocaleString()} input · ${usage.compactionOutputTokens.toLocaleString()} output` : "COMPACTION · none"
   ].filter(Boolean).join("\n");
 }
 
