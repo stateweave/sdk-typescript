@@ -48,7 +48,7 @@ export class FullStackAppRuntime {
     this.process = child;
     child.stdout?.on("data", (chunk) => this.capture(String(chunk)));
     child.stderr?.on("data", (chunk) => this.capture(String(chunk)));
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    await this.waitUntilReady();
     return this.smoke();
   }
 
@@ -92,6 +92,17 @@ export class FullStackAppRuntime {
       return { ...(await this.status()), ok, healthy: health.ok, pageOk: page.ok, assetsOk, frontendOk: frontend.ok, frontend, acceptance, health: await health.text() };
     } catch (error) {
       return { ...(await this.status()), ok: false, healthy: false, pageOk: false, assetsOk: false, frontendOk: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  private async waitUntilReady(timeoutMs = 3_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline && this.process?.exitCode === null) {
+      try {
+        const response = await fetch(`http://127.0.0.1:${this.port}/api/health`, { signal: AbortSignal.timeout(300) });
+        if (response.ok) return;
+      } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
 
