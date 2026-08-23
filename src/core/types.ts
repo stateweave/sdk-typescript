@@ -30,6 +30,7 @@ export type GraphEdge = {
   to: string;
   type: EdgeType;
   createdAt: string;
+  data?: Record<string, unknown>;
 };
 
 export type StateGraph = {
