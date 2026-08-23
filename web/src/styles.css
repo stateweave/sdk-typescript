@@ -1280,6 +1280,42 @@ label {
   backdrop-filter: blur(10px);
 }
 
+.graph-view-switch {
+  position: absolute;
+  z-index: 4;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  gap: 2px;
+  border: 1px solid rgba(229, 229, 229, 0.92);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 2px;
+  backdrop-filter: blur(10px);
+}
+
+.graph-view-switch button {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 4px 8px;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 0.66rem;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.graph-view-switch button.active {
+  background: #18181b;
+  color: #fafafa;
+}
+
+.graph-view-switch button:focus-visible {
+  outline: 2px solid #0891b2;
+  outline-offset: 2px;
+}
+
 .graph-molecule-strip {
   position: absolute;
   z-index: 3;
@@ -1326,6 +1362,27 @@ label {
 .graph-molecule-chip.collapsed {
   border-color: rgba(8, 145, 178, 0.36);
   background: rgba(236, 254, 255, 0.92);
+}
+
+.graph-molecule-chip.topic.focus,
+.graph-molecule-chip.topic.full {
+  border-color: rgba(124, 58, 237, 0.38);
+  background: rgba(245, 243, 255, 0.94);
+}
+
+.graph-molecule-chip.subgraph {
+  border-color: rgba(8, 145, 178, 0.34);
+  background: rgba(236, 254, 255, 0.92);
+}
+
+.graph-molecule-chip.archive {
+  border-color: rgba(82, 82, 91, 0.28);
+  background: rgba(250, 250, 250, 0.94);
+}
+
+.graph-molecule-chip:active,
+.graph-view-switch button:active {
+  transform: translateY(1px);
 }
 
 .graph-molecule-chip:focus-visible {
@@ -1470,6 +1527,21 @@ label {
   stroke: #0891b2;
   stroke-width: 3;
   stroke-dasharray: 6 4;
+}
+
+.cortex-node.topic circle {
+  fill: #f5f3ff;
+  stroke: #7c3aed;
+  stroke-width: 3;
+  stroke-dasharray: 3 3;
+}
+
+.cortex-node.summary {
+  cursor: pointer;
+}
+
+.cortex-node.summary circle {
+  filter: drop-shadow(0 10px 20px rgba(67, 56, 202, 0.16));
 }
 
 .cortex-node text {
@@ -5343,4 +5415,706 @@ label {
   .protocol-table td { padding: 8px 3px; white-space: normal; overflow-wrap: anywhere; }
   .protocol-table th:first-child,
   .protocol-table td:first-child { width: 43%; }
+}
+
+/* Focused long-horizon comparison lab */
+#app {
+  width: min(1560px, calc(100% - 20px));
+  padding: 10px 0;
+}
+
+.topbar {
+  min-height: 50px;
+  margin-bottom: 8px;
+}
+
+.lab-brand {
+  min-width: 0;
+}
+
+.lab-brand h1 {
+  font-size: 1.02rem;
+  letter-spacing: -0.025em;
+}
+
+.lab-brand .topbar-copy {
+  max-width: 720px;
+  margin-top: 2px;
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.topbar-actions {
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.topbar-actions > .tabs {
+  margin: 0;
+}
+
+.tabs {
+  flex-wrap: nowrap;
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.tab {
+  border-radius: 7px;
+  padding: 6px 9px;
+  font-size: 0.72rem;
+}
+
+.lab-nav-menu {
+  position: relative;
+}
+
+.lab-nav-menu > summary,
+.chat-more > summary {
+  list-style: none;
+}
+
+.lab-nav-menu > summary::-webkit-details-marker,
+.chat-more > summary::-webkit-details-marker,
+.session-browser > summary::-webkit-details-marker {
+  display: none;
+}
+
+.lab-nav-menu > summary {
+  border-radius: 7px;
+  padding: 6px 9px;
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.lab-nav-menu[open] > summary {
+  background: var(--secondary);
+  color: var(--foreground);
+}
+
+.lab-nav-panel {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 7px);
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(124px, 1fr));
+  gap: 3px;
+  width: 286px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.98);
+  padding: 5px;
+  box-shadow: 0 18px 46px rgba(24, 24, 27, 0.14);
+}
+
+.lab-nav-panel .tab {
+  width: 100%;
+  text-align: left;
+}
+
+.topbar .badge {
+  min-height: 28px;
+  max-width: 210px;
+  overflow: hidden;
+  padding: 0 9px;
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar #reset {
+  padding: 6px 9px;
+  font-size: 0.72rem;
+}
+
+#state-page.shell {
+  grid-template-columns: minmax(380px, 0.86fr) minmax(560px, 1.14fr);
+  gap: 0;
+  height: calc(100dvh - 68px);
+  min-height: 640px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 10px 36px rgba(24, 24, 27, 0.05);
+}
+
+#state-page > .card {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+#state-page .chat-card {
+  border-right: 1px solid var(--border);
+}
+
+.mobile-pane-switch {
+  display: none;
+}
+
+#state-page .chat-toolbar {
+  min-height: 56px;
+  border-bottom-color: #ececf0;
+  padding: 7px 9px;
+}
+
+#state-page .chat-toolbar > div {
+  flex-wrap: nowrap;
+}
+
+#state-page .arm-switcher {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: min(100%, 330px);
+  overflow: hidden;
+  border-color: #dedee3;
+  border-radius: 10px;
+  background: #f6f6f7;
+}
+
+#state-page .arm-switch {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  padding: 6px 10px;
+  text-align: left;
+}
+
+#state-page .arm-switch span {
+  font-size: 0.73rem;
+  font-weight: 800;
+}
+
+#state-page .arm-switch small {
+  overflow: hidden;
+  color: #71717a;
+  font-size: 0.59rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#state-page .arm-switch.active small {
+  color: #d4d4d8;
+}
+
+#state-page .chat-actions {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.session-browser {
+  position: relative;
+  width: auto;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.session-browser > summary {
+  display: grid;
+  grid-template-columns: minmax(72px, 132px) auto;
+  gap: 0 7px;
+  align-items: center;
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #fff;
+  padding: 4px 8px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.session-browser > summary > span {
+  display: none;
+}
+
+.session-browser > summary strong {
+  overflow: hidden;
+  font-size: 0.66rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-browser > summary small {
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--muted);
+  font-size: 0.58rem;
+  white-space: nowrap;
+}
+
+.session-browser[open] > summary {
+  border-color: #a5b4fc;
+  background: #fafaff;
+}
+
+.session-browser-panel {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 7px);
+  right: 0;
+  width: min(330px, calc(100vw - 30px));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.98);
+  padding: 7px;
+  box-shadow: 0 18px 46px rgba(24, 24, 27, 0.15);
+}
+
+.session-browser-header {
+  margin: 0 0 5px;
+  padding: 2px 2px 5px;
+}
+
+.session-browser-header strong {
+  font-size: 0.72rem;
+}
+
+.session-list {
+  max-height: min(330px, 48dvh);
+}
+
+.long-horizon-controller {
+  display: flex;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.long-horizon-controller > span:not([aria-hidden]) {
+  max-width: 116px;
+  color: var(--muted);
+  font-size: 0.6rem;
+}
+
+.long-horizon-toggle {
+  min-height: 34px;
+  white-space: nowrap;
+}
+
+.chat-more {
+  position: relative;
+}
+
+.chat-more > summary {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--secondary);
+  padding: 7px 9px;
+  color: var(--secondary-foreground);
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chat-more[open] > summary {
+  border-color: #a5b4fc;
+  background: #fafaff;
+}
+
+.chat-more-panel {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 7px);
+  right: 0;
+  width: min(390px, calc(100vw - 30px));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.99);
+  padding: 8px;
+  box-shadow: 0 18px 46px rgba(24, 24, 27, 0.15);
+}
+
+.chat-more-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+#state-page .agent-settings {
+  margin: 7px 0 0;
+  border-radius: 9px;
+  padding: 7px 8px;
+}
+
+#state-page .agent-settings-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+#state-page .agent-settings-grid label:first-child {
+  grid-column: 1 / -1;
+}
+
+#state-page .agent-settings-grid button {
+  align-self: end;
+}
+
+#state-page .chat {
+  background: #fdfdfd;
+  padding: 14px 16px;
+  scroll-behavior: auto;
+}
+
+#state-page .empty-state {
+  min-height: 240px;
+}
+
+#state-page .empty-state h2 {
+  font-size: 1.08rem;
+}
+
+#state-page .empty-state p {
+  max-width: 330px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+#state-page .message > div,
+#state-page .answer {
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+#state-page .state-stream-card,
+#state-page .assistant-final-card {
+  width: 100%;
+  border-left-width: 2px;
+  box-shadow: none;
+}
+
+#state-page .assistant-final-header {
+  margin-bottom: 6px;
+}
+
+#state-page .composer {
+  gap: 8px;
+  background: #fff;
+  padding: 9px 10px;
+}
+
+#state-page .composer textarea {
+  min-height: 44px;
+  max-height: 130px;
+  border-radius: 9px;
+  padding: 9px 10px;
+  font-size: 0.86rem;
+}
+
+#state-page .composer .primary {
+  min-height: 44px;
+  padding: 8px 14px;
+}
+
+#state-page .status {
+  min-height: 15px;
+  padding: 0 11px 7px;
+  font-size: 0.66rem;
+}
+
+#state-page .compare-card {
+  padding: 0;
+}
+
+#state-page .graph-card {
+  background: #fbfbfc;
+}
+
+.graph-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 48px;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+  padding: 7px 9px 7px 12px;
+}
+
+.graph-toolbar h2 {
+  font-size: 0.78rem;
+  letter-spacing: -0.01em;
+}
+
+#state-page .workspace-switcher {
+  width: auto;
+  margin: 0;
+  border: 0;
+  border-radius: 8px;
+  padding: 2px;
+}
+
+#state-page .workspace-switcher .tab {
+  padding: 5px 8px;
+  font-size: 0.66rem;
+}
+
+#state-page .workspace-views {
+  background: #fbfbfc;
+}
+
+#state-page .graph-visual,
+#state-page .graph-empty,
+#state-page .tools-panel,
+#state-page .files-panel,
+#state-page .token-usage-panel {
+  border: 0;
+  border-radius: 0;
+}
+
+#state-page .graph-empty {
+  min-height: 0;
+}
+
+#state-page .token-usage-panel {
+  padding: 12px;
+}
+
+#state-page .token-usage-header {
+  padding: 0 0 9px;
+}
+
+#state-page .token-usage-header h3 {
+  font-size: 0.8rem;
+}
+
+#state-page .token-usage-header p {
+  max-width: 520px;
+  margin-top: 2px;
+  font-size: 0.68rem;
+}
+
+#state-page .model-io-panel {
+  margin: 0;
+  border-top: 1px solid var(--border);
+  background: #fff;
+  padding: 0;
+}
+
+#state-page .model-io-panel > summary {
+  display: block;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 6px 10px;
+  font-size: 0.64rem;
+}
+
+#state-page .model-io-panel[open] {
+  max-height: 48%;
+  overflow: auto;
+  padding: 0 10px 10px;
+}
+
+#state-page .model-io-panel[open] > summary {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 -10px 6px;
+  background: #fff;
+}
+
+@media (max-width: 1100px) {
+  #state-page.shell {
+    height: auto;
+    min-height: 0;
+    border-radius: 14px;
+  }
+
+  #state-page .chat-card {
+    height: 640px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  #state-page .graph-workspace {
+    min-height: 700px;
+  }
+}
+
+@media (max-width: 760px) {
+  #app {
+    width: min(100% - 12px, 1560px);
+    padding: 6px 0;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .lab-brand h1 {
+    font-size: 0.9rem;
+  }
+
+  .lab-brand .topbar-copy {
+    max-width: 100%;
+    font-size: 0.62rem;
+    line-height: 1.28;
+  }
+
+  .topbar-actions {
+    align-items: flex-start;
+    flex-direction: row;
+  }
+
+  .topbar .badge {
+    display: none;
+  }
+
+  .topbar #reset {
+    align-self: auto;
+  }
+
+  .lab-nav-panel {
+    position: fixed;
+    top: 52px;
+    right: 6px;
+    width: min(300px, calc(100vw - 12px));
+  }
+
+  #state-page.shell {
+    display: flex;
+    height: calc(100dvh - 66px);
+    min-height: 580px;
+    flex-direction: column;
+  }
+
+  .mobile-pane-switch {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    flex: 0 0 auto;
+    gap: 2px;
+    border-bottom: 1px solid var(--border);
+    background: #f4f4f5;
+    padding: 3px;
+  }
+
+  .mobile-pane-switch button {
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    padding: 6px;
+    color: var(--muted-foreground);
+    font-size: 0.68rem;
+    font-weight: 800;
+  }
+
+  .mobile-pane-switch button.active {
+    background: #fff;
+    color: var(--foreground);
+    box-shadow: 0 1px 2px rgba(24, 24, 27, 0.08);
+  }
+
+  #state-page .chat-card,
+  #state-page .graph-workspace {
+    flex: 1;
+    min-height: 0;
+    height: auto;
+    border: 0;
+  }
+
+  #state-page:not(.memory-pane-active) .graph-workspace {
+    display: none;
+  }
+
+  #state-page.memory-pane-active .chat-card {
+    display: none;
+  }
+
+  #state-page .chat-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 6px;
+  }
+
+  #state-page .arm-switcher {
+    width: 100%;
+  }
+
+  #state-page .chat-actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .session-browser > summary {
+    grid-template-columns: minmax(70px, 1fr) auto;
+    width: min(43vw, 170px);
+  }
+
+  .long-horizon-controller > span:not([aria-hidden]) {
+    display: none;
+  }
+
+  .long-horizon-toggle,
+  .chat-more > summary {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .session-browser-panel,
+  .chat-more-panel {
+    right: auto;
+    left: 0;
+  }
+
+  .chat-more-panel {
+    left: auto;
+    right: 0;
+  }
+
+  #state-page .chat {
+    padding: 10px;
+  }
+
+  #state-page .message.user > div {
+    max-width: 92%;
+  }
+
+  #state-page .composer {
+    grid-template-columns: 1fr auto;
+    align-items: stretch;
+  }
+
+  #state-page .composer textarea {
+    min-height: 42px;
+  }
+
+  .graph-toolbar {
+    min-height: 44px;
+    padding: 5px 6px 5px 9px;
+  }
+
+  .graph-toolbar h2 {
+    display: none;
+  }
+
+  #state-page .workspace-switcher {
+    width: 100%;
+  }
+
+  #state-page .workspace-switcher .tab {
+    flex: 1 0 auto;
+    text-align: center;
+  }
+
+  #state-page .graph-summary.floating {
+    top: 40px;
+  }
+
+  #state-page .graph-molecule-strip {
+    top: 72px;
+  }
 }

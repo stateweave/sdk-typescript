@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { estimateStateWeaveTokens, type StateWeaveTokenEstimate } from "../llm/tokenizer.js";
 import { projectCausalSnapshot, type CausalProjection } from "./causalProjection.js";
+import { buildCausalHierarchy, type CausalHierarchy } from "./causalHierarchy.js";
 import type { CausalContextMode, CausalNodeKind, CausalWeaveNode, CausalWeaveSnapshot } from "./causalTypes.js";
 
 export type { CausalNodeKind, CausalWeaveNode, CausalWeaveSnapshot } from "./causalTypes.js";
@@ -13,6 +14,7 @@ export type CausalCompileResult = {
   tokenEstimate: StateWeaveTokenEstimate;
   contextMode: CausalContextMode;
   molecules: { id: string; label: string; nodeIds: string[]; expanded: boolean }[];
+  hierarchy: CausalHierarchy;
 };
 
 export type CausalAppend = {
@@ -105,61 +107,39 @@ export class CausalWeave {
     const contextMode = args.contextMode ?? "causal";
     const snapshot = this.snapshot();
     const overview = projectCausalSnapshot(snapshot);
-    const selected = new Set<string>();
+    const hierarchy = buildCausalHierarchy(snapshot, overview);
     const latestEquivalent = latestProjectionEquivalents(this.order, this.nodes);
-    const recent = this.order.slice(-10).filter((id) => {
-      const key = projectionEquivalenceKey(this.nodes.get(id)!);
-      return !key || latestEquivalent.get(key) === id;
-    });
     const reverseOrder = [...this.order].reverse();
     const latestSystem = reverseOrder.find((id) => this.nodes.get(id)?.kind === "system");
     const latestGoal = reverseOrder.find((id) => this.nodes.get(id)?.kind === "goal");
+    const latestAnswer = reverseOrder.find((id) => this.nodes.get(id)?.kind === "answer");
+    const recent = latestAnswer ? [latestAnswer] : [];
     const queryTerms = meaningfulQueryTerms([args.query ?? "", latestGoal ? payloadText(this.nodes.get(latestGoal)?.payload) : ""].join(" "));
-    const mandatory = [
-      ...(latestSystem ? [latestSystem] : []),
-      ...(latestGoal ? [latestGoal] : []),
-      ...this.frontier(),
-      ...this.resourceHeads.values(),
-      ...recent
-    ];
-    for (const id of mandatory) selected.add(id);
-    for (const id of overview.focusNodeIds.slice(0, maxNodes)) {
-      const node = this.nodes.get(id);
-      if (node && (node.kind !== "goal" || id === latestGoal)) selected.add(id);
-    }
-    const closureSeeds = new Set([...this.frontier(), ...recent]);
-    addOperationalParents(closureSeeds, this.nodes, 2);
-    for (const id of closureSeeds) selected.add(id);
-
     const eligible = this.order.filter((id) => {
       const key = projectionEquivalenceKey(this.nodes.get(id)!);
       return !key || latestEquivalent.get(key) === id;
     });
-    const protectedQueryIds = new Set(eligible
+    const ranked = eligible
       .map((id) => ({ id, score: relevanceScore(this.nodes.get(id)!, queryTerms, this.order.length), overlap: queryOverlap(this.nodes.get(id)!, queryTerms) }))
-      .filter((candidate) => candidate.overlap > 0)
-      .sort((a, b) => b.overlap - a.overlap || b.score - a.score || this.nodes.get(b.id)!.sequence - this.nodes.get(a.id)!.sequence)
-      .slice(0, 8)
-      .map((candidate) => candidate.id));
-    for (const id of protectedQueryIds) selected.add(id);
-    const candidates = eligible
-      .filter((id) => !selected.has(id))
-      .map((id) => ({ id, score: relevanceScore(this.nodes.get(id)!, queryTerms, this.order.length), overlap: queryOverlap(this.nodes.get(id)!, queryTerms) }))
+      .filter((candidate) => candidate.overlap > 0 && usefulQueryCandidate(this.nodes.get(candidate.id)!, args.query ?? "", queryTerms, candidate.overlap))
       .sort((a, b) => b.overlap - a.overlap || b.score - a.score || this.nodes.get(b.id)!.sequence - this.nodes.get(a.id)!.sequence);
-    for (const candidate of candidates) {
-      if (selected.size >= maxNodes) break;
-      const closure = new Set([candidate.id]);
-      addOperationalParents(closure, this.nodes, 2);
-      for (const id of closure) selected.add(id);
-    }
+    const protectedQueryIds = new Set(ranked.slice(0, 8).map((candidate) => candidate.id));
+    const relevantResourceIds = selectRelevantResourceHeads(this.resourceHeads.values(), this.nodes, args.query ?? "", queryTerms, latestAnswer, maxNodes);
+    const selected = selectBoundedNodeIds(maxNodes, this.nodes, [
+      [latestSystem, latestGoal, ...this.frontier()].filter((id): id is string => Boolean(id)),
+      relevantResourceIds,
+      [...protectedQueryIds],
+      [...recent].reverse(),
+      ranked.map((candidate) => candidate.id)
+    ]);
 
     let chosen = this.order.filter((id) => selected.has(id));
     const digest = renderGraphDigest(this.order.map((id) => this.nodes.get(id)!), this.resourceHeads);
     const render = (payloadLimit?: number): { prompt: string; estimate: StateWeaveTokenEstimate } => {
       const visibleNodes = chosen.map((id) => this.nodes.get(id)!);
       const prompt = contextMode === "molecular"
-        ? renderMolecularWeave(visibleNodes, this.order.map((id) => this.nodes.get(id)!), this.frontierIds, overview, payloadLimit)
-        : renderCompiledWeave(visibleNodes, this.frontierIds, digest, overview, payloadLimit);
+        ? renderMolecularWeave(visibleNodes, this.order.map((id) => this.nodes.get(id)!), this.frontierIds, overview, hierarchy, latestGoal ? payloadText(this.nodes.get(latestGoal)?.payload) : "", payloadLimit)
+        : renderCompiledWeave(visibleNodes, this.frontierIds, digest, overview, latestGoal ? payloadText(this.nodes.get(latestGoal)?.payload) : "", payloadLimit);
       return { prompt, estimate: estimateStateWeaveTokens(prompt) };
     };
     let rendered = render();
@@ -206,7 +186,7 @@ export class CausalWeave {
       nodeIds: cluster.nodeIds.filter((id) => visible.has(id)),
       expanded: cluster.nodeIds.some((id) => visible.has(id))
     }));
-    return { prompt: rendered.prompt, nodeIds: chosen, tokenEstimate: rendered.estimate, contextMode, molecules };
+    return { prompt: rendered.prompt, nodeIds: chosen, tokenEstimate: rendered.estimate, contextMode, molecules, hierarchy };
   }
 }
 
@@ -242,11 +222,87 @@ function causalNodeId(kind: CausalNodeKind, parents: string[], payload: unknown,
   return `cw_${digest.slice(0, 24)}`;
 }
 
+function usefulQueryCandidate(node: CausalWeaveNode, query: string, queryTerms: Set<string>, overlap: number): boolean {
+  const exactPath = query.toLowerCase().match(/\b(?:[a-z0-9_.-]+\/)*[a-z0-9_.-]+\.(?:css|csv|html|js|json|md|py|svg|ts|txt)\b/)?.[0];
+  if (node.kind === "tool_call") return Boolean(exactPath && payloadText(node.payload).toLowerCase().includes(exactPath));
+  if (overlap >= 2 || node.kind === "resource" || node.kind === "verification" || node.kind === "tool_result") return true;
+  if (node.kind === "semantic") {
+    const payload = node.payload && typeof node.payload === "object" ? node.payload as Record<string, unknown> : {};
+    const contentTerms = terms(payloadText(payload.content));
+    const contentOverlap = [...queryTerms].filter((term) => contentTerms.has(term)).length;
+    if (contentOverlap >= 2) return true;
+    if (contentOverlap === 1 && /\b(?:what|who|where|when|which|recall|remember)\b/i.test(query)) return true;
+  }
+  return Boolean(exactPath && payloadText(node.payload).toLowerCase().includes(exactPath));
+}
+
+function selectRelevantResourceHeads(
+  resourceIds: Iterable<string>,
+  nodes: Map<string, CausalWeaveNode>,
+  query: string,
+  queryTerms: Set<string>,
+  latestAnswer: string | undefined,
+  maxNodes: number
+): string[] {
+  const resources = [...resourceIds]
+    .map((id) => nodes.get(id))
+    .filter((node): node is CausalWeaveNode => Boolean(node));
+  const ranked = resources
+    .map((node) => ({ node, overlap: resourceQueryOverlap(node, queryTerms), score: relevanceScore(node, queryTerms, nodes.size), direct: Boolean(latestAnswer && node.parents.includes(latestAnswer)) }))
+    .sort((left, right) => Number(right.direct) - Number(left.direct) || right.overlap - left.overlap || right.score - left.score || right.node.sequence - left.node.sequence);
+  const limit = Math.max(2, Math.floor(maxNodes / 3));
+  const relevant = ranked
+    .filter((entry) => entry.direct || (entry.overlap > 0 && usefulQueryCandidate(entry.node, query, queryTerms, entry.overlap)))
+    .slice(0, limit)
+    .map((entry) => entry.node.id);
+  if (relevant.length) return relevant;
+  const latestFileResource = ranked.filter((entry) => entry.node.kind === "resource").sort((left, right) => right.node.sequence - left.node.sequence)[0];
+  return latestFileResource ? [latestFileResource.node.id] : [];
+}
+
+function resourceQueryOverlap(node: CausalWeaveNode, queryTerms: Set<string>): number {
+  const direct = queryOverlap(node, queryTerms);
+  if (node.kind !== "resource") return direct;
+  const payload = node.payload && typeof node.payload === "object" ? node.payload as Record<string, unknown> : {};
+  const path = typeof payload.path === "string" ? payload.path.toLowerCase() : "";
+  if (!path) return direct;
+  const pathTerms = new Set(path.split(/[^a-z0-9]+/).filter((term) => term.length >= 3));
+  return direct + ([...queryTerms].some((term) => pathTerms.has(term)) ? 1 : 0);
+}
+
+function selectBoundedNodeIds(maxNodes: number, nodes: Map<string, CausalWeaveNode>, groups: string[][]): Set<string> {
+  const selected = new Set<string>();
+  for (const group of groups) {
+    for (const id of group) {
+      if (!nodes.has(id) || selected.has(id)) continue;
+      const closure = operationalSelectionClosure(id, nodes);
+      for (const candidate of closure) {
+        if (!nodes.has(candidate) || selected.has(candidate)) continue;
+        if (selected.size >= maxNodes) return selected;
+        selected.add(candidate);
+      }
+    }
+  }
+  return selected;
+}
+
+function operationalSelectionClosure(id: string, nodes: Map<string, CausalWeaveNode>): string[] {
+  const node = nodes.get(id);
+  if (!node || !["resource", "tool_result", "verification", "protocol_error"].includes(node.kind)) return [id];
+  const parent = node.parents.find((parentId) => {
+    const parent = nodes.get(parentId);
+    return parent?.kind === "tool_result" || parent?.kind === "resource";
+  });
+  return parent ? [id, parent] : [id];
+}
+
 function renderMolecularWeave(
   nodes: CausalWeaveNode[],
   allNodes: CausalWeaveNode[],
   frontier: Set<string>,
   overview: CausalProjection,
+  hierarchy: CausalHierarchy,
+  currentGoal: string,
   payloadLimit?: number
 ): string {
   const visible = new Set(nodes.map((node) => node.id));
@@ -254,13 +310,36 @@ function renderMolecularWeave(
   for (const cluster of overview.bigBrainClusters) for (const nodeId of cluster.nodeIds) clusterByNode.set(nodeId, cluster);
   const expanded = new Set(nodes.map((node) => clusterByNode.get(node.id)?.id).filter((id): id is string => Boolean(id)));
   const expandedMolecules = overview.bigBrainClusters.filter((cluster) => expanded.has(cluster.id));
-  const collapsedMap = overview.bigBrainClusters.filter((cluster) => !expanded.has(cluster.id)).slice(-8);
+  const collapsedMap = overview.bigBrainClusters.filter((cluster) => !expanded.has(cluster.id)).slice(-2);
   const orderedMolecules = uniqueBy([...expandedMolecules, ...collapsedMap], (cluster) => cluster.id);
   const aliases = new Map(orderedMolecules.map((cluster, index) => [cluster.id, `M${index + 1}`]));
+  const visibleTopicIds = new Set(nodes.map((node) => hierarchy.topicByNodeId.get(node.id)).filter((id): id is string => Boolean(id)));
+  const topicOrder = [...hierarchy.topics]
+    .sort((left, right) => Number(visibleTopicIds.has(right.id)) - Number(visibleTopicIds.has(left.id)) || right.sequence - left.sequence || left.id.localeCompare(right.id));
+  const topicLimit = 4;
+  const shownTopics = topicOrder.slice(0, topicLimit);
   const lines = [
     "MOLECULAR_WEAVE/1",
-    "This is a deterministic zoomable view over one immutable causal graph. MOLECULE lines are outer-map nodes; EXPANDED blocks expose selected source atoms. PORT lines preserve causal connections across molecule boundaries. Molecules never own or duplicate source truth.",
+    "Deterministic hierarchical view over immutable causal truth. SESSION_MAP is derived; MOLECULE lines are outer nodes; EXPANDED blocks expose source atoms; PORT lines preserve cross-boundary causality.",
     `frontier: ${[...frontier].map(shortId).join(", ") || "(empty)"}`,
+    "",
+    "<CURRENT_TASK>",
+    truncate(currentGoal, 8_000),
+    "</CURRENT_TASK>",
+    "",
+    "<SESSION_MAP>",
+    `SESSION topics=${hierarchy.topics.length} leaves=${hierarchy.leaves.length}`,
+    ...shownTopics.flatMap((topic) => [
+      `TOPIC ${topic.id}${visibleTopicIds.has(topic.id) ? " FOCUSED" : ""} children=${topic.leafIds.length} nodes=${topic.nodeIds.length} label=${JSON.stringify(truncate(topic.label, 96))}`,
+      ...(visibleTopicIds.has(topic.id) ? topic.leafIds.slice(0, 2).map((leafId) => {
+        const leaf = hierarchy.leaves.find((candidate) => candidate.id === leafId)!;
+        const visibleCount = leaf.nodeIds.filter((id) => nodes.some((node) => node.id === id)).length;
+        return `CHILD ${leaf.id}${visibleCount ? " EXPANDED" : ""} nodes=${leaf.nodeIds.length} visible=${visibleCount} label=${JSON.stringify(truncate(leaf.label, 96))}`;
+      }) : []),
+      ...(visibleTopicIds.has(topic.id) && topic.leafIds.length > 2 ? [`... +${topic.leafIds.length - 2} children`] : [])
+    ]),
+    ...(hierarchy.topics.length > shownTopics.length ? [`... +${hierarchy.topics.length - shownTopics.length} topics`] : []),
+    "</SESSION_MAP>",
     "",
     "<MAP>"
   ];
@@ -317,6 +396,7 @@ function renderCompiledWeave(
   frontier: Set<string>,
   digest: string,
   overview: CausalProjection,
+  currentGoal: string,
   payloadLimit?: number
 ): string {
   const compact = payloadLimit !== undefined;
@@ -324,6 +404,10 @@ function renderCompiledWeave(
     "CAUSAL_WEAVE/1",
     "The following is a causally selected working state, not a conversation transcript. Node order is chronological; parents identify direct dependencies. Use the ordinary tool protocol contained in the system node. Current resource and evidence nodes are authoritative.",
     `frontier: ${[...frontier].map(shortId).join(", ") || "(empty)"}`,
+    "",
+    "<CURRENT_TASK>",
+    truncate(currentGoal, 8_000),
+    "</CURRENT_TASK>",
     "",
     truncate(digest, compact ? Math.min(payloadLimit, 3_500) : 12_000),
     "",
@@ -569,21 +653,6 @@ function relevanceScore(node: CausalWeaveNode, queryTerms: Set<string>, total: n
   return semantic * 0.55 + recency * 0.2 + authority + typeMatch;
 }
 
-function addOperationalParents(selected: Set<string>, nodes: Map<string, CausalWeaveNode>, depth: number): void {
-  const queue = [...selected].map((id) => ({ id, remaining: depth }));
-  while (queue.length) {
-    const current = queue.shift()!;
-    if (current.remaining <= 0) continue;
-    const node = nodes.get(current.id);
-    if (!node || !followsOperationalParents(node.kind)) continue;
-    for (const parent of node.parents) {
-      if (!isOperationalParent(node, nodes.get(parent))) continue;
-      if (!selected.has(parent)) selected.add(parent);
-      queue.push({ id: parent, remaining: current.remaining - 1 });
-    }
-  }
-}
-
 function followsOperationalParents(kind: CausalNodeKind): boolean {
   return kind === "tool_result" || kind === "resource" || kind === "verification" || kind === "protocol_error";
 }
@@ -638,7 +707,7 @@ function stableStringify(value: unknown): string {
 
 function meaningfulQueryTerms(value: string): Set<string> {
   const stopWords = new Set([
-    "the", "and", "are", "was", "were", "what", "when", "where", "which", "who", "why", "how", "recall", "remember", "mentioned", "earlier", "previously", "about", "this", "that", "with", "from", "into", "for", "my", "your", "our", "their", "find", "show", "tell", "give", "look", "up"
+    "the", "and", "are", "was", "were", "what", "when", "where", "which", "who", "why", "how", "recall", "remember", "mentioned", "earlier", "previously", "about", "this", "that", "with", "from", "into", "for", "my", "your", "our", "their", "find", "show", "tell", "give", "look", "up", "60+", "60.", "70+", "70.", "80+", "80.", "90+", "90.", "100", "200", "250", "300", "answer", "any", "average", "background", "below", "between", "called", "calculate", "calculates", "class", "comment", "cover", "covering", "curious", "decimal", "describe", "difference", "each", "example", "explain", "explanation", "finish", "file", "five", "format", "friendly", "grade", "has", "include", "including", "jargon", "keep", "least", "letter", "line", "lines", "list", "measure", "measured", "message", "missing", "missing.", "named", "names", "one", "out", "place", "print", "python", "read", "reads", "rounded", "sample", "scale", "script", "score", "scoring", "scientists", "should", "simple", "standard", "student", "student_name", "students", "take", "technical", "text", "three", "tips", "top", "two", "under", "using", "whole", "words", "write", "written", "works"
   ]);
   return new Set([...terms(value)].filter((term) => !stopWords.has(term)));
 }

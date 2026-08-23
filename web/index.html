@@ -9,115 +9,118 @@
   <body>
     <div id="app">
       <header class="topbar">
-        <div>
-          <p class="eyebrow">Development</p>
-          <h1>StateWeave Chat Lab</h1>
-          <p class="topbar-copy">Each chat input runs graph-native StateWeave and traditional <code>messages[]</code> in parallel.</p>
+        <div class="lab-brand">
+          <h1>StateWeave Lab</h1>
+          <p class="topbar-copy">Can graph memory outlast appended messages without context bloat?</p>
         </div>
         <div class="topbar-actions">
+          <nav class="tabs" aria-label="Lab pages">
+            <button id="state-tab" class="tab active" type="button" aria-controls="state-page" aria-selected="true">Lab</button>
+            <details id="lab-nav-menu" class="lab-nav-menu">
+              <summary>Experiments</summary>
+              <div class="lab-nav-panel">
+                <button id="quickstart-tab" class="tab" type="button" aria-controls="quickstart-page" aria-selected="false">Quick Start</button>
+                <button id="ab-tab" class="tab" type="button" aria-controls="ab-page" aria-selected="false">A/B testing</button>
+                <button id="protocol-tab" class="tab" type="button" aria-controls="protocol-page" aria-selected="false">Protocol lab</button>
+                <button id="subgraph-tab" class="tab" type="button" aria-controls="subgraph-page" aria-selected="false">Subgraph A/B</button>
+                <button id="multi-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt one</button>
+                <button id="multi-two-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt two</button>
+                <button id="multi-three-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt three</button>
+                <button id="multi-four-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt four</button>
+                <button id="multi-five-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt five</button>
+                <button id="multi-six-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt six</button>
+                <button id="sdk-build-tab" class="tab" type="button" aria-controls="sdk-build-page" aria-selected="false">SDK build</button>
+                <button id="infinite-tab" class="tab" type="button" aria-controls="infinite-page" aria-selected="false">Infinite</button>
+              </div>
+            </details>
+          </nav>
           <span id="provider" class="badge">Checking provider…</span>
           <button id="reset" class="button secondary" type="button">Reset</button>
         </div>
       </header>
 
-      <nav class="tabs" aria-label="Lab pages">
-        <button id="state-tab" class="tab active" type="button" aria-controls="state-page" aria-selected="true">Parallel chat</button>
-        <button id="quickstart-tab" class="tab" type="button" aria-controls="quickstart-page" aria-selected="false">Quick Start</button>
-        <button id="ab-tab" class="tab" type="button" aria-controls="ab-page" aria-selected="false">A/B testing</button>
-        <button id="protocol-tab" class="tab" type="button" aria-controls="protocol-page" aria-selected="false">Protocol lab</button>
-        <button id="subgraph-tab" class="tab" type="button" aria-controls="subgraph-page" aria-selected="false">Subgraph A/B</button>
-        <button id="multi-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt one</button>
-        <button id="multi-two-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt two</button>
-        <button id="multi-three-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt three</button>
-        <button id="multi-four-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt four</button>
-        <button id="multi-five-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt five</button>
-        <button id="multi-six-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt six</button>
-        <button id="sdk-build-tab" class="tab" type="button" aria-controls="sdk-build-page" aria-selected="false">SDK build</button>
-        <button id="infinite-tab" class="tab" type="button" aria-controls="infinite-page" aria-selected="false">Infinite</button>
-      </nav>
-
       <main id="state-page" class="page active shell">
+        <div class="mobile-pane-switch" role="group" aria-label="Lab workspace">
+          <button id="mobile-chat-pane" class="active" type="button" aria-pressed="true">Chat</button>
+          <button id="mobile-memory-pane" type="button" aria-pressed="false">Memory</button>
+        </div>
         <section class="card chat-card" aria-label="Parallel agent chat">
           <div class="chat-toolbar">
-            <div>
-              <span class="eyebrow">Parallel agent comparison</span>
-              <div class="arm-switcher" role="group" aria-label="Displayed memory primitive">
-                <button id="stateweave-arm" class="arm-switch active" type="button" aria-pressed="true">StateWeave</button>
-                <button id="traditional-arm" class="arm-switch" type="button" aria-pressed="false">Traditional</button>
-              </div>
+            <div class="arm-switcher" role="group" aria-label="Displayed memory primitive">
+              <button id="stateweave-arm" class="arm-switch active" type="button" aria-pressed="true"><span>StateWeave</span><small id="stateweave-context-label">graph context</small></button>
+              <button id="traditional-arm" class="arm-switch" type="button" aria-pressed="false"><span>Traditional</span><small id="traditional-context-label">message context</small></button>
             </div>
             <div class="chat-actions">
-              <button id="export-graph" class="button secondary small-button" type="button">Export</button>
-              <button id="import-graph" class="button secondary small-button" type="button">Import</button>
+              <details id="session-browser" class="session-browser">
+                <summary><span>Session</span><strong id="current-session-title">New comparison</strong><small id="current-session-meta">0 turns</small></summary>
+                <div class="session-browser-panel">
+                  <div class="session-browser-header">
+                    <strong>Sessions</strong>
+                    <button id="clear-messages" class="button secondary small-button" type="button">New</button>
+                  </div>
+                  <div id="dual-session-list" class="session-list" role="list" aria-live="polite">Loading sessions…</div>
+                </div>
+              </details>
+              <div class="long-horizon-controller">
+                <span id="long-horizon-status" hidden>Paused</span>
+                <button id="long-horizon-toggle" class="button secondary small-button long-horizon-toggle" type="button" aria-pressed="false"><span aria-hidden="true">▶</span> Run long</button>
+              </div>
+              <details class="chat-more">
+                <summary>More</summary>
+                <div class="chat-more-panel">
+                  <div class="chat-more-actions">
+                    <button id="export-graph" class="button secondary small-button" type="button">Export state</button>
+                    <button id="import-graph" class="button secondary small-button" type="button">Import state</button>
+                  </div>
+                  <details class="agent-settings">
+                    <summary>Agent settings</summary>
+                    <div class="agent-settings-grid">
+                      <label>
+                        <span>System prompt</span>
+                        <textarea id="agent-system-prompt" rows="4"></textarea>
+                      </label>
+                      <label>
+                        <span>Projection target</span>
+                        <input id="agent-projection-target" type="number" min="1000" max="64000" step="1000" />
+                      </label>
+                      <label>
+                        <span>Max iterations</span>
+                        <input id="agent-max-iterations" type="number" min="1" step="1" />
+                      </label>
+                      <button id="reset-agent-settings" class="button secondary small-button" type="button">Reset defaults</button>
+                    </div>
+                  </details>
+                </div>
+              </details>
             </div>
           </div>
-          <section class="session-browser" aria-label="Recent conversations">
-            <div class="session-browser-header">
-              <div>
-                <p class="eyebrow">Conversations</p>
-                <strong>Recent sessions</strong>
-              </div>
-              <button id="clear-messages" class="button secondary small-button" type="button">New chat</button>
-            </div>
-            <div id="dual-session-list" class="session-list" role="list" aria-live="polite">Loading conversations…</div>
-            <div class="long-horizon-controller">
-              <div>
-                <strong>Long horizon</strong>
-                <span id="long-horizon-status">Paused · manual messages always go next</span>
-              </div>
-              <button id="long-horizon-toggle" class="button secondary small-button long-horizon-toggle" type="button" aria-pressed="false"><span aria-hidden="true">▶</span> Play</button>
-            </div>
-            <div id="dual-session-context-menu" class="session-context-menu" role="menu" hidden>
-              <button id="delete-dual-session" class="session-context-action danger" type="button" role="menuitem">Delete conversation</button>
-            </div>
-          </section>
-          <details class="agent-settings">
-            <summary>Agent settings</summary>
-            <div class="agent-settings-grid">
-              <label>
-                <span>System prompt</span>
-                <textarea id="agent-system-prompt" rows="4"></textarea>
-              </label>
-              <label>
-                <span>StateWeave projection tokens</span>
-                <input id="agent-projection-target" type="number" min="1000" max="64000" step="1000" />
-              </label>
-              <label>
-                <span>Max iterations</span>
-                <input id="agent-max-iterations" type="number" min="1" step="1" />
-              </label>
-              <button id="reset-agent-settings" class="button secondary small-button" type="button">Reset defaults</button>
-            </div>
-            <p class="muted-copy">Settings persist in this browser. Both arms share the model, tools, and 64K ceiling; StateWeave uses this projection target while traditional messages preflight compact at 30K.</p>
-          </details>
+          <div id="dual-session-context-menu" class="session-context-menu" role="menu" hidden>
+            <button id="delete-dual-session" class="session-context-action danger" type="button" role="menuitem">Delete conversation</button>
+          </div>
           <div id="chat" class="chat">
             <div class="empty-state">
-              <h2>Ask anything.</h2>
-              <p>StateWeave keeps one immutable causal graph, then compiles a compact molecular view for every model call.</p>
+              <h2>One prompt. Two memories.</h2>
+              <p>Every turn runs both approaches. Keep going to see which context stays useful.</p>
             </div>
           </div>
 
           <form id="composer" class="composer">
-            <textarea id="input" rows="3" placeholder="Type a message…"></textarea>
+            <textarea id="input" rows="3" placeholder="Continue the same task, change direction, or start something new…"></textarea>
             <button id="send" class="button primary" type="submit">Send</button>
           </form>
-          <p id="status" class="status">Ready.</p>
+          <p id="status" class="status" aria-live="polite">Ready.</p>
         </section>
 
         <section class="card compare-card graph-workspace" aria-label="StateWeave graph workspace">
           <div class="graph-card">
-            <div class="graph-heading">
-              <div>
-                <p id="memory-view-eyebrow" class="eyebrow">Molecular view · immutable truth</p>
-                <h2 id="memory-view-title">StateWeave memory</h2>
-                <p id="memory-view-description"><strong>StateWeave primitive:</strong> ordinary model actions grow content-addressed causal nodes. Every action points to the exact state compiled for that inference; a deterministic bounded projection keeps the whole graph available without replaying a transcript.</p>
+            <div class="graph-toolbar">
+              <h2 id="memory-view-title">Graph memory</h2>
+              <div class="workspace-switcher" aria-label="Memory evidence view">
+                <button id="graph-view-tab" class="tab active" type="button" aria-controls="graph-view" aria-selected="true">Graph</button>
+                <button id="token-usage-view-tab" class="tab" type="button" aria-controls="token-usage-view" aria-selected="false">Context</button>
+                <button id="files-view-tab" class="tab" type="button" aria-controls="files-view" aria-selected="false">Files</button>
+                <button id="tools-view-tab" class="tab" type="button" aria-controls="tools-view" aria-selected="false">Tools</button>
               </div>
-            </div>
-            <div class="workspace-switcher" aria-label="Right panel view">
-              <button id="graph-view-tab" class="tab active" type="button" aria-controls="graph-view" aria-selected="true">Molecular graph</button>
-              <button id="tools-view-tab" class="tab" type="button" aria-controls="tools-view" aria-selected="false">Agent tools</button>
-              <button id="files-view-tab" class="tab" type="button" aria-controls="files-view" aria-selected="false">Workspace files</button>
-              <button id="token-usage-view-tab" class="tab" type="button" aria-controls="token-usage-view" aria-selected="false">Token usage</button>
             </div>
             <div class="workspace-views">
               <div id="graph-view" class="workspace-view active">
@@ -154,9 +157,8 @@
               <aside id="token-usage-view" class="workspace-view token-usage-panel" aria-label="LLM token usage" hidden>
                 <header class="token-usage-header">
                   <div>
-                    <p class="eyebrow">Provider telemetry</p>
-                    <h3>StateWeave vs traditional</h3>
-                    <p>Summed API traffic and peak single-request context on one paired-turn axis. Cumulative tokens are usage totals—not context carried forward.</p>
+                    <h3>Context over time</h3>
+                    <p>Final-call context for both arms. Drops show transcript compaction.</p>
                   </div>
                   <span id="token-usage-count" class="badge">No turns</span>
                 </header>
@@ -166,7 +168,7 @@
           </div>
 
           <details class="model-io-panel">
-            <summary id="model-io-summary">Latest StateWeave loop: causal graph → molecular context → action · click either log to copy</summary>
+            <summary id="model-io-summary">Inspect latest run</summary>
             <div class="comparison single">
               <article class="compare-column">
                 <label id="model-input-label">Exact model input / compiled causal context</label>

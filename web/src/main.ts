@@ -1,5 +1,5 @@
 import type { AgentProgress, AgentRunMetadata, AgentState, AgentStreamEvent, AgentTraceStep } from "../../src/agent/types.js";
-import { agentStateToGraph } from "../../src/core/causalGraph.js";
+import { projectCausalVisualGraphView, projectCausalVisualSnapshot, type CausalVisualGraphMode, type CausalVisualLeafState, type CausalVisualTopicState } from "../../src/core/causalVisualGraph.js";
 import type { GraphFrame, StateGraph, StateWeaveRunMetadata, TraceStep } from "../../src/core/types.js";
 import { renderMarkdown } from "./markdown.js";
 import { scoreEvalRecords, type EvalPrimitive as Primitive, type EvalVote as Vote, type ScoreBreakdown } from "./evalScores.js";
@@ -134,7 +134,17 @@ type EvalRun = {
 };
 
 type GraphPosition = { x: number; y: number; vx: number; vy: number; pinned: boolean };
-type GraphViewState = { selectedNodeId?: string; animationFrame?: number; positions: Map<string, GraphPosition>; collapsedMoleculeIds: Set<string> };
+type GraphViewState = {
+  selectedNodeId?: string;
+  animationFrame?: number;
+  positions: Map<string, GraphPosition>;
+  collapsedMoleculeIds: Set<string>;
+  visualMode: CausalVisualGraphMode;
+  topicStates: Map<string, CausalVisualTopicState>;
+  leafStates: Map<string, CausalVisualLeafState>;
+  archiveExpanded: boolean;
+  projectionAnchor?: string;
+};
 type ToolInfo = { name: string; description: string };
 type WorkspaceFile = { path: string; size: number; updatedAt: string; mime: string; renderable: boolean };
 type WorkspaceFileContent = WorkspaceFile & { content: string };
@@ -175,6 +185,7 @@ class StateWeaveRequestError extends Error {
 let activePage: PageName = pageFromHash();
 let sdkBuildState: SdkBuildPublicState | undefined;
 let sdkBuildPollTimer: number | undefined;
+let swLoopPollTimer: ReturnType<typeof setInterval> | undefined;
 let subgraphState: SubgraphExperimentState | undefined;
 let subgraphPollTimer: number | undefined;
 let sdkBuildPreviewRunId: string | undefined;
@@ -226,7 +237,7 @@ const dualSessionStorageKey = "stateweave.dualSession.v1";
 const activeArmStorageKey = "stateweave.activeArm.v1";
 const legacyStateChatStorageKey = "stateweave.chat.v2";
 let agentSettings = loadAgentSettings();
-const primaryGraphViewState: GraphViewState = { positions: new Map<string, GraphPosition>(), collapsedMoleculeIds: new Set<string>() };
+const primaryGraphViewState: GraphViewState = createGraphViewState();
 const copyPayloads = new Map<string, string>();
 const artifactPreviews = new Map<string, PreviewSource>();
 const categoryOrder: EvalCategory[] = ["memory", "logical", "holistic", ...promptFiveCategoryOrder, ...promptSixCategoryOrder];
@@ -576,7 +587,10 @@ const multiFiveTab = element<HTMLButtonElement>("multi-five-tab");
 const multiSixTab = element<HTMLButtonElement>("multi-six-tab");
 const sdkBuildTab = element<HTMLButtonElement>("sdk-build-tab");
 const infiniteTab = element<HTMLButtonElement>("infinite-tab");
+const labNavMenu = element<HTMLDetailsElement>("lab-nav-menu");
 const statePage = element<HTMLElement>("state-page");
+const mobileChatPane = element<HTMLButtonElement>("mobile-chat-pane");
+const mobileMemoryPane = element<HTMLButtonElement>("mobile-memory-pane");
 const quickstartPage = element<HTMLElement>("quickstart-page");
 const abPage = element<HTMLElement>("ab-page");
 const protocolPage = element<HTMLElement>("protocol-page");
@@ -636,6 +650,8 @@ const challengerScenarioContent = element<HTMLElement>("challenger-scenario-cont
 const chat = element<HTMLElement>("chat");
 const stateweaveArm = element<HTMLButtonElement>("stateweave-arm");
 const traditionalArm = element<HTMLButtonElement>("traditional-arm");
+const stateweaveContextLabel = element<HTMLElement>("stateweave-context-label");
+const traditionalContextLabel = element<HTMLElement>("traditional-context-label");
 const form = element<HTMLFormElement>("composer");
 const input = element<HTMLTextAreaElement>("input");
 const send = element<HTMLButtonElement>("send");
@@ -651,9 +667,7 @@ const stateOutput = element<HTMLElement>("state-output");
 const modelIoSummary = element<HTMLElement>("model-io-summary");
 const modelInputLabel = element<HTMLElement>("model-input-label");
 const modelOutputLabel = element<HTMLElement>("model-output-label");
-const memoryViewEyebrow = element<HTMLElement>("memory-view-eyebrow");
 const memoryViewTitle = element<HTMLElement>("memory-view-title");
-const memoryViewDescription = element<HTMLElement>("memory-view-description");
 const workspaceFilesEyebrow = element<HTMLElement>("workspace-files-eyebrow");
 const graphViewTab = element<HTMLButtonElement>("graph-view-tab");
 const toolsViewTab = element<HTMLButtonElement>("tools-view-tab");
@@ -676,6 +690,9 @@ const rebootFiles = element<HTMLButtonElement>("reboot-files");
 const exportGraph = element<HTMLButtonElement>("export-graph");
 const importGraph = element<HTMLButtonElement>("import-graph");
 const clearMessages = element<HTMLButtonElement>("clear-messages");
+const sessionBrowser = element<HTMLDetailsElement>("session-browser");
+const currentSessionTitle = element<HTMLElement>("current-session-title");
+const currentSessionMeta = element<HTMLElement>("current-session-meta");
 const dualSessionList = element<HTMLElement>("dual-session-list");
 const dualSessionContextMenu = element<HTMLElement>("dual-session-context-menu");
 const deleteDualSessionButton = element<HTMLButtonElement>("delete-dual-session");
@@ -725,6 +742,8 @@ dualSessionReady = initializeDualSession();
 stateTab.addEventListener("click", () => setActivePage("state"));
 stateweaveArm.addEventListener("click", () => setActiveArm("stateweave"));
 traditionalArm.addEventListener("click", () => setActiveArm("traditional"));
+mobileChatPane.addEventListener("click", () => setMobilePane("chat"));
+mobileMemoryPane.addEventListener("click", () => setMobilePane("memory"));
 quickstartTab.addEventListener("click", () => setActivePage("quickstart"));
 abTab.addEventListener("click", () => setActivePage("ab"));
 protocolTab.addEventListener("click", () => setActivePage("protocol-experiment"));
@@ -934,6 +953,15 @@ function loadActiveArm(): DualArm {
   return localStorage.getItem(activeArmStorageKey) === "traditional" ? "traditional" : "stateweave";
 }
 
+function setMobilePane(pane: "chat" | "memory"): void {
+  const memory = pane === "memory";
+  statePage.classList.toggle("memory-pane-active", memory);
+  mobileChatPane.classList.toggle("active", !memory);
+  mobileMemoryPane.classList.toggle("active", memory);
+  mobileChatPane.setAttribute("aria-pressed", String(!memory));
+  mobileMemoryPane.setAttribute("aria-pressed", String(memory));
+}
+
 function setActiveArm(arm: DualArm): void {
   if (activeArm === arm) return;
   activeArm = arm;
@@ -952,19 +980,16 @@ function applyActiveArm(): void {
   traditionalArm.setAttribute("aria-pressed", String(!stateSelected));
   for (const answer of chat.querySelectorAll<HTMLElement>("[data-arm-answer]")) answer.hidden = answer.dataset.armAnswer !== activeArm;
   workspaceFilesEyebrow.textContent = stateSelected ? "StateWeave workspace" : "Traditional workspace";
-  memoryViewEyebrow.textContent = stateSelected ? "Molecular view · immutable truth" : "Transcript view · summary compaction";
-  memoryViewTitle.textContent = stateSelected ? "StateWeave memory" : "Traditional messages";
-  memoryViewDescription.innerHTML = stateSelected
-    ? "<strong>StateWeave primitive:</strong> ordinary model actions grow content-addressed causal nodes. Every action points to the exact state compiled for that inference; a deterministic bounded projection keeps the whole graph available without replaying a transcript."
-    : "<strong>Traditional primitive:</strong> ordinary <code>messages[]</code> accumulate user, assistant, and tool entries. Before a turn would cross 30K estimated tokens, older history becomes one validated durable summary while the latest six messages remain verbatim.";
-  graphViewTab.textContent = stateSelected ? "Molecular graph" : "Active transcript";
-  modelIoSummary.textContent = stateSelected ? "Latest StateWeave loop: causal graph → molecular context → action · click either log to copy" : "Latest traditional loop: messages → summary compaction → action · click either log to copy";
-  modelInputLabel.textContent = stateSelected ? "Exact model input / compiled causal context" : "Exact model input / active messages transcript";
-  modelOutputLabel.textContent = stateSelected ? "Model actions, tools, retries, and trace metadata" : "Traditional actions, tools, compaction, and usage";
+  memoryViewTitle.textContent = stateSelected ? "Graph memory" : "Transcript memory";
+  graphViewTab.textContent = stateSelected ? "Graph" : "Transcript";
+  modelIoSummary.textContent = stateSelected ? "Inspect latest StateWeave run" : "Inspect latest traditional run";
+  modelInputLabel.textContent = stateSelected ? "Model context" : "Active transcript";
+  modelOutputLabel.textContent = stateSelected ? "Run trace" : "Run and compaction trace";
+  renderArmContextLabels();
   if (!dualSessionView) return;
   if (stateSelected) {
     const state = dualSessionView.stateweave.state;
-    if (state) renderGraph(agentStateToGraph(state));
+    if (state) renderGraph(visualAgentGraph(state));
     else resetRenderedGraph();
     stateInput.textContent = state ? compactAgentState(state) : "No StateWeave turn yet.";
     stateOutput.textContent = "StateWeave arm restored from the paired JSONL session.";
@@ -1155,6 +1180,9 @@ async function selectDualSession(sessionId: string): Promise<void> {
 function applyDualSession(session: DualSessionView, restored: boolean): void {
   dualSessionView = session;
   dualSessionId = session.sessionId;
+  currentSessionTitle.textContent = session.turns[0]?.input ? shorten(oneLine(session.turns[0].input), 28) : "New comparison";
+  currentSessionMeta.textContent = `${session.turnCount} turn${session.turnCount === 1 ? "" : "s"}`;
+  sessionBrowser.open = false;
   dualSessionTurnId = session.currentTurnId;
   agentState = session.stateweave.state;
   tokenUsageHistory = parseTokenUsageHistory(session.stateweave.usageHistory.map((usage) => ({ ...usage, projectionTargetTokens: usage.contextTargetTokens })));
@@ -1167,10 +1195,9 @@ function applyDualSession(session: DualSessionView, restored: boolean): void {
   renderDualSessionHistory(session.turns, session.historyTruncated);
   applyActiveArm();
   renderTokenUsage();
-  const graphValue = agentState ? agentStateToGraph(agentState) : undefined;
   status.textContent = session.turnCount
-    ? `${restored ? "Restored" : "Ready"} · ${session.turnCount} paired turn${session.turnCount === 1 ? "" : "s"}${graphValue ? ` · ${graphValue.nodes.length} StateWeave nodes` : ""}`
-    : "Ready · both arms run on every input";
+    ? `${restored ? "Restored" : "Ready"} / ${session.turnCount} paired turn${session.turnCount === 1 ? "" : "s"}`
+    : "Ready / every input runs both arms";
 }
 
 function renderDualSessionHistory(turns: DualTurnView[], truncated: boolean): void {
@@ -1180,7 +1207,7 @@ function renderDualSessionHistory(turns: DualTurnView[], truncated: boolean): vo
     chat.insertAdjacentHTML("beforeend", dualAnswerHtml("stateweave", turn.stateweave, turn.turn));
     chat.insertAdjacentHTML("beforeend", dualAnswerHtml("traditional", turn.traditional, turn.turn));
   }
-  if (!turns.length) chat.innerHTML = `<div class="empty-state"><h2>One input. Two memory primitives.</h2><p>Every message runs StateWeave and traditional messages in parallel with isolated workspaces.</p></div>`;
+  if (!turns.length) chat.innerHTML = `<div class="empty-state"><h2>One prompt. Two memories.</h2><p>Every turn runs both approaches. Keep going to see which context stays useful.</p></div>`;
   applyActiveArm();
   scrollChat(chat);
 }
@@ -1197,7 +1224,7 @@ function renderTraditionalMemoryPanel(session: DualSessionView): void {
   const latest = session.traditional.usageHistory.at(-1);
   graph.className = "traditional-memory-panel";
   const attempts = session.traditional.totalCompactionAttempts;
-  graph.innerHTML = `<article><span>Active transcript</span><strong>${session.traditional.activeMessageCount.toLocaleString()} messages</strong><p>System prompt, validated compacted summary when needed, and the latest six transcript messages.</p></article><article><span>Committed compactions</span><strong>${session.traditional.totalCompactions.toLocaleString()}</strong><p>${attempts.toLocaleString()} summary attempt${attempts === 1 ? "" : "s"}; failed validation is never reported as committed.</p></article><article><span>Context policy</span><strong>30K preflight</strong><p>Durable summary plus six messages under the shared 64K hard ceiling.</p></article>`;
+  graph.innerHTML = `<article><span>Active transcript</span><strong>${session.traditional.activeMessageCount.toLocaleString()} messages</strong><p>Summary plus the latest six messages.</p></article><article><span>Compactions</span><strong>${session.traditional.totalCompactions.toLocaleString()}</strong><p>${attempts.toLocaleString()} attempted.</p></article><article><span>Threshold</span><strong>30K</strong><p>Same 64K hard ceiling.</p></article>`;
 }
 
 async function initializeStateSession(): Promise<void> {
@@ -1289,7 +1316,7 @@ function applyStateSession(session: StateWeaveSessionView, restored: boolean): v
   persistSessionReference(session.sessionId);
   renderSessionHistory(session.history, session.historyTruncated);
   if (agentState) {
-    const graphValue = agentStateToGraph(agentState);
+    const graphValue = visualAgentGraph(agentState);
     renderGraph(graphValue);
     stateInput.textContent = compactAgentState(agentState);
     stateOutput.textContent = "Restored from the authoritative server JSONL session.";
@@ -1314,7 +1341,7 @@ function renderSessionHistory(history: SessionHistoryEntry[], truncated: boolean
       chat.insertAdjacentHTML("beforeend", `<div class="message error"><div>${escapeHtml(entry.content)}</div></div>`);
     }
   }
-  if (!history.length) chat.innerHTML = `<div class="empty-state"><h2>Ask anything.</h2><p>StateWeave keeps one immutable causal graph and compiles a compact molecular view for every model call.</p></div>`;
+  if (!history.length) chat.innerHTML = `<div class="empty-state"><h2>Start a long task.</h2><p>The graph keeps source truth while model context stays bounded.</p></div>`;
   scrollChat(chat);
 }
 
@@ -1322,6 +1349,11 @@ function resetRenderedGraph(): void {
   primaryGraphViewState.selectedNodeId = undefined;
   primaryGraphViewState.positions.clear();
   primaryGraphViewState.collapsedMoleculeIds.clear();
+  primaryGraphViewState.visualMode = "focus";
+  primaryGraphViewState.topicStates.clear();
+  primaryGraphViewState.leafStates.clear();
+  primaryGraphViewState.archiveExpanded = false;
+  primaryGraphViewState.projectionAnchor = undefined;
   stopGraphAnimation(primaryGraphViewState);
   graph.className = "graph-empty";
   graph.textContent = "No graph yet.";
@@ -1389,6 +1421,7 @@ function currentSuite(): PromptSuite {
 
 function setActivePage(page: PageName, updateHash = true): void {
   activePage = page;
+  labNavMenu.open = false;
   const isState = page === "state";
   const isQuickstart = page === "quickstart";
   const isAb = page === "ab";
@@ -1448,7 +1481,8 @@ function setActivePage(page: PageName, updateHash = true): void {
   infinitePage.classList.toggle("active", isInfinite);
   multiTitle.textContent = suite.title;
   multiDescription.textContent = suite.description;
-  reset.textContent = isState ? "Reset" : isQuickstart || isProtocolExperiment || isSubgraphExperiment || isSdkBuild ? "Back to chat" : isAb ? "Reset A/B" : isInfinite ? "Reset harness" : `Reset ${suite.title.toLowerCase()}`;
+  reset.hidden = isState;
+  reset.textContent = isQuickstart || isProtocolExperiment || isSubgraphExperiment || isSdkBuild ? "Back to chat" : isAb ? "Reset A/B" : isInfinite ? "Reset harness" : `Reset ${suite.title.toLowerCase()}`;
   syncMultiModeControls();
   if (updateHash) history.replaceState(null, "", isState ? location.pathname : isQuickstart ? "#quick-start" : isAb ? "#ab" : isProtocolExperiment ? "#protocol-experiment" : isSubgraphExperiment ? "#subgraph-experiment" : isSdkBuild ? "#sdk-build" : isInfinite ? "#infinite" : `#${suite.id}`);
   if (isMulti) void resumeStoredEvalRun();
@@ -1888,20 +1922,18 @@ function stopLongHorizon(): void {
 function renderLongHorizonController(detail?: string): void {
   longHorizonToggle.setAttribute("aria-pressed", String(longHorizonPlaying));
   send.textContent = stateRunning ? "Queue next" : "Send";
-  longHorizonToggle.innerHTML = longHorizonPlaying ? `<span aria-hidden="true">Ⅱ</span> Pause` : `<span aria-hidden="true">▶</span> Play`;
-  if (detail) {
-    longHorizonStatus.textContent = detail;
-    return;
-  }
-  if (queuedManualInputs.length) {
-    longHorizonStatus.textContent = `${longHorizonPlaying ? "Playing" : "Paused"} · ${queuedManualInputs.length} manual message${queuedManualInputs.length === 1 ? "" : "s"} queued next`;
-    return;
-  }
-  if (stateRunning) {
-    longHorizonStatus.textContent = `${longHorizonPlaying ? "Playing" : "Paused"} · paired turn running`;
-    return;
-  }
-  longHorizonStatus.textContent = longHorizonPlaying ? "Playing · preparing the next standalone prompt" : "Paused · manual messages always go next";
+  longHorizonToggle.innerHTML = longHorizonPlaying ? `<span aria-hidden="true">Ⅱ</span> Pause` : `<span aria-hidden="true">▶</span> Run long`;
+  const message = detail
+    ?? (queuedManualInputs.length
+      ? `${queuedManualInputs.length} manual message${queuedManualInputs.length === 1 ? "" : "s"} queued`
+      : stateRunning
+        ? "Paired turn running"
+        : longHorizonPlaying
+          ? "Preparing the next task"
+          : "");
+  longHorizonStatus.textContent = message;
+  longHorizonStatus.hidden = !message;
+  longHorizonToggle.title = longHorizonPlaying ? "Pause after the active paired turn" : "Generate standalone tasks continuously for both memory primitives";
 }
 
 async function generateDirectorInput(sessionId: string): Promise<string> {
@@ -2352,6 +2384,22 @@ function renderTokenUsage(): void {
   const view = renderDualTokenUsageView(tokenUsageHistory, traditionalTokenUsageHistory, activeTokenUsage, activeTraditionalTokenUsage);
   tokenUsageCount.textContent = view.countLabel;
   tokenUsageContent.innerHTML = view.html;
+  renderArmContextLabels();
+}
+
+function renderArmContextLabels(): void {
+  const statePoint = activeTokenUsage?.latestContextTokens ? activeTokenUsage : tokenUsageHistory.at(-1);
+  const traditionalPoint = activeTraditionalTokenUsage?.latestContextTokens ? activeTraditionalTokenUsage : traditionalTokenUsageHistory.at(-1);
+  stateweaveContextLabel.textContent = statePoint?.latestContextTokens ? `${compactTokenCount(statePoint.latestContextTokens)} context` : "graph context";
+  traditionalContextLabel.textContent = traditionalPoint?.latestContextTokens ? `${compactTokenCount(traditionalPoint.latestContextTokens)} context` : "message context";
+  stateweaveContextLabel.title = statePoint?.latestContextTokens ? `${statePoint.latestContextTokens.toLocaleString()} tokens in the latest StateWeave model call` : "Bounded graph projection";
+  traditionalContextLabel.title = traditionalPoint?.latestContextTokens ? `${traditionalPoint.latestContextTokens.toLocaleString()} tokens in the latest traditional model call` : "Active appended transcript";
+}
+
+function compactTokenCount(tokens: number): string {
+  if (tokens < 1_000) return `${tokens}`;
+  const value = tokens / 1_000;
+  return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)}k`;
 }
 
 function startTokenUsageTurn(): void {
@@ -2431,7 +2479,8 @@ function applyTokenUsageMetadata(point: TokenUsagePoint, metadata: Partial<Agent
 async function loadHealth(): Promise<void> {
   const response = await fetch(`${apiBase}/api/health`).catch(() => undefined);
   const health = response?.ok ? ((await response.json()) as { provider?: string; defaultContextMode?: string; sessionStorage?: string }) : undefined;
-  provider.textContent = health?.provider ? `Provider: ${health.provider}${health.defaultContextMode ? ` · ${health.defaultContextMode}` : ""}${health.sessionStorage ? ` · ${health.sessionStorage}` : ""}` : "Provider unavailable";
+  provider.textContent = health?.provider ?? "Offline";
+  provider.title = health?.provider ? [health.provider, health.defaultContextMode, health.sessionStorage].filter(Boolean).join(" / ") : "Provider unavailable";
 }
 
 async function loadTools(): Promise<void> {
@@ -3635,6 +3684,21 @@ function appendError(container: HTMLElement, message: string): void {
   scrollChat(container);
 }
 
+function createGraphViewState(): GraphViewState {
+  return {
+    positions: new Map<string, GraphPosition>(),
+    collapsedMoleculeIds: new Set<string>(),
+    visualMode: "focus",
+    topicStates: new Map<string, CausalVisualTopicState>(),
+    leafStates: new Map<string, CausalVisualLeafState>(),
+    archiveExpanded: false
+  };
+}
+
+function visualAgentGraph(state: AgentState): StateGraph {
+  return projectCausalVisualSnapshot(state, { maxVisibleNodes: 16 }).graph;
+}
+
 function renderGraph(value: StateGraph): void {
   renderGraphComponent(graph, value, primaryGraphViewState);
 }
@@ -3688,23 +3752,55 @@ function collapsedMoleculeGraph(value: StateGraph, molecules: GraphMolecule[], c
 
 function renderGraphComponent(container: HTMLElement, value: StateGraph, viewState: GraphViewState, focusChat = true): void {
   stopGraphAnimation(viewState);
-  const molecules = graphMolecules(value);
-  const displayValue = collapsedMoleculeGraph(value, molecules, viewState.collapsedMoleculeIds);
+  const nextAnchor = value.nodes.filter((node) => node.type === "user_input").at(-1)?.id;
+  if (nextAnchor && nextAnchor !== viewState.projectionAnchor) {
+    viewState.projectionAnchor = nextAnchor;
+    viewState.visualMode = "focus";
+    viewState.topicStates.clear();
+    viewState.leafStates.clear();
+    viewState.archiveExpanded = false;
+  }
+  const visualView = projectCausalVisualGraphView(value, {
+    mode: viewState.visualMode,
+    topicStates: viewState.topicStates,
+    leafStates: viewState.leafStates,
+    archiveExpanded: viewState.archiveExpanded
+  });
+  const sourceMolecules = graphMolecules(value);
+  const displayValue = visualView.hierarchical
+    ? visualView.graph
+    : collapsedMoleculeGraph(value, sourceMolecules, viewState.collapsedMoleculeIds);
+  const molecules = graphMolecules(displayValue);
   const layout = graphLayout(displayValue, viewState.positions, container.clientWidth < 640 ? 640 : 1080);
   const turnCount = value.nodes.filter((node) => node.type === "user_input").length;
   const latestNodeId = displayValue.nodes.at(-1)?.id;
   const selectedNode = layout.nodeMap.get(viewState.selectedNodeId ?? "") ?? layout.nodeMap.get(latestNodeId ?? "") ?? layout.nodeMap.get("system_root") ?? layout.nodes[0];
   viewState.selectedNodeId = selectedNode?.id;
+  const topicControls = visualView.topics.filter((topic) => !topic.archived || viewState.archiveExpanded);
+  const leafControls = visualView.leaves.filter((leaf) => {
+    const topic = visualView.topics.find((candidate) => candidate.id === leaf.topicId);
+    return !leaf.archived && topic?.state !== "collapsed" && (leaf.focusCount > 0 || topic?.state === "full");
+  });
+  const graphSummary = visualView.hierarchical && viewState.visualMode !== "full"
+    ? `${visualView.renderedSourceNodeCount}/${visualView.sourceNodeCount} atoms / ${visualView.summaryNodeCount} summaries`
+    : `${value.nodes.length} atoms / ${value.edges.length} edges`;
 
   container.className = "graph-visual cortex-graph";
   container.innerHTML = `
     <div class="graph-summary floating">
       <strong>Turn ${turnCount}</strong>
-      <span>${value.nodes.length} atoms · ${molecules.filter((molecule) => molecule.id !== "molecule_system").length} molecules · ${value.edges.length} edges</span>
+      <span>${graphSummary}</span>
     </div>
-    <div class="graph-help">Drag atoms · click a molecule to collapse or expand</div>
-    <div class="graph-molecule-strip" aria-label="Molecule controls">
-      ${molecules.filter((molecule) => molecule.id !== "molecule_system").map((molecule) => `<button type="button" class="graph-molecule-chip ${viewState.collapsedMoleculeIds.has(molecule.id) ? "collapsed" : "expanded"}" data-molecule-toggle="${escapeAttribute(molecule.id)}" title="${escapeAttribute(molecule.label)}"><span>${escapeHtml(shorten(molecule.label, 32))}</span><small>${molecule.nodeIds.length} atoms · ${viewState.collapsedMoleculeIds.has(molecule.id) ? "expand" : "collapse"}</small></button>`).join("")}
+    ${visualView.hierarchical ? `<div class="graph-view-switch" role="group" aria-label="Graph detail">
+      <button type="button" data-graph-mode="focus" class="${viewState.visualMode === "focus" ? "active" : ""}">Focused</button>
+      <button type="button" data-graph-mode="map" class="${viewState.visualMode === "map" ? "active" : ""}">All topics</button>
+    </div>` : `<div class="graph-help">Drag atoms / click a molecule to collapse or expand</div>`}
+    <div class="graph-molecule-strip ${visualView.hierarchical ? "hierarchy-controls" : ""}" aria-label="${visualView.hierarchical ? "Topic and subgraph controls" : "Molecule controls"}">
+      ${visualView.hierarchical && viewState.visualMode !== "full" ? `
+        ${viewState.visualMode === "focus" && visualView.archivedTopicCount ? `<button type="button" class="graph-molecule-chip archive ${viewState.archiveExpanded ? "expanded" : "collapsed"}" data-archive-toggle><span>Earlier topics</span><small>${visualView.archivedTopicCount} topics / ${visualView.archivedNodeCount} atoms</small></button>` : ""}
+        ${topicControls.map((topic) => `<button type="button" class="graph-molecule-chip topic ${topic.state}" data-topic-toggle="${escapeAttribute(topic.id)}" title="${escapeAttribute(topic.label)}"><span>${escapeHtml(shorten(topic.label, 32))}</span><small>${topic.nodeCount} atoms / ${topic.leafCount} subgraphs / ${topic.state}</small></button>`).join("")}
+        ${leafControls.map((leaf) => `<button type="button" class="graph-molecule-chip subgraph ${leaf.state}" data-leaf-toggle="${escapeAttribute(leaf.id)}" title="${escapeAttribute(leaf.label)}"><span>${escapeHtml(shorten(leaf.label, 32))}</span><small>${leaf.nodeCount} atoms / ${leaf.state}</small></button>`).join("")}
+      ` : !visualView.hierarchical ? sourceMolecules.filter((molecule) => molecule.id !== "molecule_system").map((molecule) => `<button type="button" class="graph-molecule-chip ${viewState.collapsedMoleculeIds.has(molecule.id) ? "collapsed" : "expanded"}" data-molecule-toggle="${escapeAttribute(molecule.id)}" title="${escapeAttribute(molecule.label)}"><span>${escapeHtml(shorten(molecule.label, 32))}</span><small>${molecule.nodeIds.length} atoms / ${viewState.collapsedMoleculeIds.has(molecule.id) ? "expand" : "collapse"}</small></button>`).join("") : ""}
     </div>
     <svg class="graph-svg cortex-map" viewBox="0 0 ${layout.width} ${layout.height}" role="img" aria-label="StateGraph knowledge map">
       <defs>
@@ -3716,21 +3812,21 @@ function renderGraphComponent(container: HTMLElement, value: StateGraph, viewSta
       </defs>
       <rect x="0" y="0" width="${layout.width}" height="${layout.height}" rx="18" fill="url(#graph-glow)"></rect>
       <g class="molecule-hulls">
-        ${layout.molecules.map((molecule) => `<g class="molecule-hull" data-molecule-hull="${escapeAttribute(molecule.id)}"><rect x="${molecule.x}" y="${molecule.y}" width="${molecule.width}" height="${molecule.height}" rx="34"></rect><text x="${molecule.x + 16}" y="${molecule.y + 20}">${escapeHtml(shorten(molecule.label, 46))} · ${molecule.nodes.length}</text></g>`).join("")}
+        ${layout.molecules.map((molecule) => `<g class="molecule-hull" data-molecule-hull="${escapeAttribute(molecule.id)}"><rect x="${molecule.x}" y="${molecule.y}" width="${molecule.width}" height="${molecule.height}" rx="34"></rect><text x="${molecule.x + 16}" y="${molecule.y + 20}">${escapeHtml(shorten(molecule.label, 46))} / ${molecule.nodes.length}</text></g>`).join("")}
       </g>
       <g class="edges">
         ${layout.edges.map((edge, index) => edge.fromNode && edge.toNode ? `
           <g class="cortex-edge ${escapeHtml(edge.type)} ${edge.from === viewState.selectedNodeId || edge.to === viewState.selectedNodeId ? "selected" : ""}">
             <line data-edge-index="${index}" x1="${edge.fromNode.x}" y1="${edge.fromNode.y}" x2="${edge.toNode.x}" y2="${edge.toNode.y}"></line>
-            <title>${escapeHtml(edge.from)} ${escapeHtml(edge.type)} ${escapeHtml(edge.to)}</title>
+            <title>${escapeHtml(edge.from)} ${escapeHtml(edge.type)} ${escapeHtml(edge.to)}${typeof edge.data?.visualSourceEdgeCount === "number" ? ` / ${edge.data.visualSourceEdgeCount} source edges` : ""}</title>
           </g>` : "").join("")}
       </g>
       <g class="nodes">
         ${layout.nodes.map((node) => {
           const labelOnLeft = node.x > layout.width * 0.7;
-          const showLabel = value.nodes.length <= 15 || node.id === latestNodeId || node.id === viewState.selectedNodeId;
+          const showLabel = displayValue.nodes.length <= 15 || node.data?.visualSynthetic === true || node.id === latestNodeId || node.id === viewState.selectedNodeId;
           return `
-          <g class="cortex-node ${escapeHtml(node.type)} ${node.id === "system_root" ? "root" : ""} ${node.id === latestNodeId ? "latest" : ""} ${node.id === viewState.selectedNodeId ? "selected" : ""} ${node.pinned ? "pinned" : ""}" data-node-id="${escapeAttribute(node.id)}" transform="translate(${node.x} ${node.y})">
+          <g class="cortex-node ${escapeHtml(node.type)} ${node.data?.visualSynthetic === true ? "summary" : ""} ${node.id === "system_root" ? "root" : ""} ${node.id === latestNodeId ? "latest" : ""} ${node.id === viewState.selectedNodeId ? "selected" : ""} ${node.pinned ? "pinned" : ""}" data-node-id="${escapeAttribute(node.id)}" transform="translate(${node.x} ${node.y})">
             <circle r="${node.radius}"></circle>
             <text class="node-label ${labelOnLeft ? "left" : "right"} ${showLabel ? "visible" : ""}" x="${labelOnLeft ? -(node.radius + 8) : node.radius + 8}" y="4">${escapeHtml(graphNodeLabel(node))}</text>
             <title>${escapeHtml(`${node.id} [${node.type}]\n${node.text}`)}</title>
@@ -3742,7 +3838,7 @@ function renderGraphComponent(container: HTMLElement, value: StateGraph, viewSta
       ${selectedNode ? graphInspectorHtml(displayValue, selectedNode) : ""}
     </div>
     <details class="graph-node-list">
-      <summary>Visible atoms (${displayValue.nodes.length}/${value.nodes.length})</summary>
+      <summary>${visualView.hierarchical ? `Rendered graph (${displayValue.nodes.length} nodes from ${value.nodes.length} immutable atoms)` : `Visible atoms (${displayValue.nodes.length}/${value.nodes.length})`}</summary>
       <ul>
         ${layout.nodes.map((node) => `
           <li class="${node.id === viewState.selectedNodeId ? "selected" : ""}" data-node-card-id="${escapeAttribute(node.id)}">
@@ -3753,6 +3849,35 @@ function renderGraphComponent(container: HTMLElement, value: StateGraph, viewSta
       </ul>
     </details>
   `;
+  for (const button of container.querySelectorAll<HTMLButtonElement>("[data-graph-mode]")) {
+    button.addEventListener("click", () => {
+      viewState.visualMode = button.dataset.graphMode === "map" ? "map" : "focus";
+      viewState.selectedNodeId = undefined;
+      renderGraphComponent(container, value, viewState, focusChat);
+    });
+  }
+  container.querySelector<HTMLButtonElement>("[data-archive-toggle]")?.addEventListener("click", () => {
+    viewState.archiveExpanded = !viewState.archiveExpanded;
+    renderGraphComponent(container, value, viewState, focusChat);
+  });
+  for (const button of container.querySelectorAll<HTMLButtonElement>("[data-topic-toggle]")) {
+    button.addEventListener("click", () => {
+      const topicId = button.dataset.topicToggle;
+      if (!topicId) return;
+      const current = visualView.topics.find((topic) => topic.id === topicId)?.state;
+      viewState.topicStates.set(topicId, current === "full" ? "collapsed" : "full");
+      renderGraphComponent(container, value, viewState, focusChat);
+    });
+  }
+  for (const button of container.querySelectorAll<HTMLButtonElement>("[data-leaf-toggle]")) {
+    button.addEventListener("click", () => {
+      const leafId = button.dataset.leafToggle;
+      if (!leafId) return;
+      const current = visualView.leaves.find((leaf) => leaf.id === leafId)?.state;
+      viewState.leafStates.set(leafId, current === "full" ? "collapsed" : "full");
+      renderGraphComponent(container, value, viewState, focusChat);
+    });
+  }
   for (const button of container.querySelectorAll<HTMLButtonElement>("[data-molecule-toggle]")) {
     button.addEventListener("click", () => {
       const moleculeId = button.dataset.moleculeToggle;
@@ -3763,7 +3888,21 @@ function renderGraphComponent(container: HTMLElement, value: StateGraph, viewSta
       renderGraphComponent(container, value, viewState, focusChat);
     });
   }
-  mountGraphInteractions(container, displayValue, layout, viewState, focusChat);
+  const activateSummary = (node: GraphLayoutNode): boolean => {
+    const kind = typeof node.data?.visualKind === "string" ? node.data.visualKind : "";
+    if (!kind) return false;
+    if (kind === "archive") viewState.archiveExpanded = true;
+    else if (kind === "topic" || kind === "topic_archive") {
+      const topicId = typeof node.data?.hierarchyTopicId === "string" ? node.data.hierarchyTopicId : "";
+      if (topicId) viewState.topicStates.set(topicId, "full");
+    } else if (kind === "leaf") {
+      const leafId = typeof node.data?.hierarchyLeafId === "string" ? node.data.hierarchyLeafId : "";
+      if (leafId) viewState.leafStates.set(leafId, "full");
+    }
+    renderGraphComponent(container, value, viewState, focusChat);
+    return true;
+  };
+  mountGraphInteractions(container, displayValue, layout, viewState, focusChat, activateSummary);
 }
 
 type GraphLayoutNode = StateGraph["nodes"][number] & { x: number; y: number; vx: number; vy: number; radius: number; degree: number; pinned: boolean };
@@ -3850,7 +3989,14 @@ function moleculeBounds(id: string, label: string, nodes: GraphLayoutNode[]): Gr
   return { id, label, nodes, x: left, y: top, width: right - left, height: bottom - top };
 }
 
-function mountGraphInteractions(container: HTMLElement, value: StateGraph, layout: ReturnType<typeof graphLayout>, viewState: GraphViewState, focusChat: boolean): void {
+function mountGraphInteractions(
+  container: HTMLElement,
+  value: StateGraph,
+  layout: ReturnType<typeof graphLayout>,
+  viewState: GraphViewState,
+  focusChat: boolean,
+  activateSummary?: (node: GraphLayoutNode) => boolean
+): void {
   const svg = container.querySelector<SVGSVGElement>("svg.cortex-map");
   if (!svg) return;
 
@@ -3876,7 +4022,10 @@ function mountGraphInteractions(container: HTMLElement, value: StateGraph, layou
   let dragging: { node: GraphLayoutNode; element: SVGGElement; pointerId: number; moved: boolean; start: GraphPointer } | undefined;
   const latestNodeId = layout.nodes.at(-1)?.id;
   const updateLabelVisibility = () => {
-    for (const [id, label] of labelElements) label.classList.toggle("visible", layout.nodes.length <= 15 || id === latestNodeId || id === viewState.selectedNodeId);
+    for (const [id, label] of labelElements) {
+      const node = layout.nodeMap.get(id);
+      label.classList.toggle("visible", layout.nodes.length <= 15 || node?.data?.visualSynthetic === true || id === latestNodeId || id === viewState.selectedNodeId);
+    }
   };
 
   const selectNode = (nodeId: string) => {
@@ -3917,7 +4066,7 @@ function mountGraphInteractions(container: HTMLElement, value: StateGraph, layou
     });
     nodeElement.addEventListener("pointerdown", (event) => {
       selectNode(node.id);
-      if (event.button !== 0) return;
+      if (node.data?.visualSynthetic === true || event.button !== 0) return;
       event.preventDefault();
       const point = svgPoint(svg, event);
       node.pinned = true;
@@ -3952,7 +4101,10 @@ function mountGraphInteractions(container: HTMLElement, value: StateGraph, layou
     };
     nodeElement.addEventListener("pointerup", releaseDrag);
     nodeElement.addEventListener("pointercancel", releaseDrag);
-    nodeElement.addEventListener("click", () => selectNode(node.id));
+    nodeElement.addEventListener("click", () => {
+      if (activateSummary?.(node)) return;
+      selectNode(node.id);
+    });
     nodeElement.addEventListener("dblclick", () => {
       node.pinned = false;
       nodeElement.classList.remove("pinned");
@@ -3963,7 +4115,9 @@ function mountGraphInteractions(container: HTMLElement, value: StateGraph, layou
 
   for (const card of cards) {
     card.addEventListener("click", () => {
-      if (card.dataset.nodeCardId) selectNode(card.dataset.nodeCardId);
+      const node = card.dataset.nodeCardId ? layout.nodeMap.get(card.dataset.nodeCardId) : undefined;
+      if (!node || activateSummary?.(node)) return;
+      selectNode(node.id);
     });
   }
 
@@ -4118,15 +4272,17 @@ function graphNodeLabel(node: GraphLayoutNode): string {
 
 function graphInspectorHtml(value: StateGraph, node: GraphLayoutNode): string {
   const adjacentCount = value.edges.filter((edge) => edge.from === node.id || edge.to === node.id).length;
-  const conversationHint = node.type === "user_input" || node.type === "assistant_output" ? " · chat bubble highlighted" : "";
-  const moleculeLabel = typeof node.data?.moleculeLabel === "string" ? ` · ${node.data.moleculeLabel}` : "";
+  const conversationHint = node.type === "user_input" || node.type === "assistant_output" ? " / chat bubble highlighted" : "";
+  const moleculeLabel = typeof node.data?.moleculeLabel === "string" ? ` / ${node.data.moleculeLabel}` : "";
+  const sourceCount = typeof node.data?.visualSourceCount === "number" ? node.data.visualSourceCount : 0;
+  const summaryHint = node.data?.visualSynthetic === true ? ` / ${sourceCount} immutable atoms / click to expand` : "";
 
   return `
     <span>Selected</span>
     <strong>${escapeHtml(node.id)}</strong>
     <em>${escapeHtml(node.type)}</em>
     <p title="${escapeAttribute(node.text)}">${escapeHtml(shorten(node.text, 180))}</p>
-    <small>${adjacentCount} edges${moleculeLabel}${conversationHint}</small>
+    <small>${adjacentCount} edges${moleculeLabel}${conversationHint}${summaryHint}</small>
   `;
 }
 
@@ -4162,7 +4318,8 @@ function stopGraphAnimation(viewState: GraphViewState): void {
 
 function nodeRadius(type: string, degree: number, root: boolean): number {
   if (root) return 34;
-  if (type === "molecule") return 30;
+  if (type === "topic") return 34;
+  if (type === "molecule") return 28;
   const base = type === "user_input" || type === "assistant_output" ? 20 : type === "artifact" ? 24 : 17;
   return Math.min(30, base + Math.sqrt(degree) * 2.6);
 }
@@ -4518,7 +4675,7 @@ async function openInfiniteGraph(): Promise<void> {
     </div>`;
     const canvas = modal.querySelector<HTMLElement>("#infinite-graph-canvas")!;
     const caption = modal.querySelector<HTMLElement>("#infinite-graph-caption")!;
-    const infiniteGraphViewState: GraphViewState = { positions: new Map<string, GraphPosition>(), collapsedMoleculeIds: new Set<string>() };
+    const infiniteGraphViewState = createGraphViewState();
     const close = () => {
       stopGraphAnimation(infiniteGraphViewState);
       modal.remove();
@@ -4872,7 +5029,6 @@ const infiniteCalibrateButton = element<HTMLButtonElement>("infinite-calibrate")
 const swLoopStartButton = element<HTMLButtonElement>("sw-loop-start");
 const swLoopStopButton = element<HTMLButtonElement>("sw-loop-stop");
 const swLoopStatus = element<HTMLElement>("sw-loop-status");
-let swLoopPollTimer: ReturnType<typeof setInterval> | undefined;
 
 async function openInfiniteTurn(turnNumber: number): Promise<void> {
   if (!Number.isInteger(turnNumber) || turnNumber < 1) {

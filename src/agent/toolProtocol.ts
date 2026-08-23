@@ -70,6 +70,16 @@ export function completionEvidenceGaps(task: string, evidence: CompletionEvidenc
   return gaps;
 }
 
+export function completionAnswerGaps(task: string, answer: string): string[] {
+  const lower = task.toLowerCase();
+  if (!/\b(?:create|write|save|edit|update|modify|implement|build|fix|add)\b/.test(lower)) return [];
+  const requestedPath = lower.match(/\b(?:[a-z0-9_.-]+\/)*[a-z0-9_.-]+\.(?:css|csv|html|js|json|md|py|svg|ts|txt)\b/)?.[0];
+  if (!requestedPath) return [];
+  const normalizedAnswer = answer.toLowerCase();
+  if (normalizedAnswer.includes(requestedPath) || /\b(?:created|saved|wrote|updated|implemented|built|fixed|completed|verified|done)\b/.test(normalizedAnswer)) return [];
+  return [`a final answer that confirms ${requestedPath}`];
+}
+
 export function providerSystem(common: string | undefined, instruction: string): string {
   return common ?? instruction;
 }
@@ -132,6 +142,13 @@ export function parseFinal(text: string): ParsedFinal | undefined {
   const remainder = text.slice(envelope[0].length).trimStart();
   const payload = remainder.replace(/^:\s*/, "");
   if (!payload.startsWith("{")) {
+    const trailingStructured = payload.match(/^(.*?)(?:\r?\n)\s*(\{"answer"\s*:[\s\S]*\})\s*$/);
+    if (trailingStructured) {
+      try {
+        const parsed = JSON.parse(trailingStructured[2]!) as { answer?: unknown; state?: unknown };
+        if (typeof parsed.answer === "string" && parsed.answer.trim()) return { answer: trailingStructured[1]!.trim() || parsed.answer.trim(), state: readSemanticNodeInputs(parsed.state) };
+      } catch {}
+    }
     const answer = payload.trim();
     return answer ? { answer, state: [] } : undefined;
   }

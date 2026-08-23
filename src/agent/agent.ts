@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { agentStateToGraph } from "../core/causalGraph.js";
+import { projectCausalVisualSnapshot } from "../core/causalVisualGraph.js";
 import { CausalWeave, type CausalCompileResult } from "../core/causalWeave.js";
 import { normalizeTaskInput, type TaskInput } from "../core/input.js";
 import type { StateGraph } from "../core/types.js";
@@ -12,6 +13,7 @@ import type { Tool } from "../tools/types.js";
 import { defaultSemanticNodeTypes, type AgentArgs, type AgentModelEvent, type AgentProgress, type AgentRunOptions, type AgentRunResult, type AgentState, type AgentStreamEvent, type AgentTraceStep, type SemanticNodeType, type TokenCountSource } from "./types.js";
 import {
   agentSystemPrompt,
+  completionAnswerGaps,
   completionEvidenceGaps,
   createCompletionEvidence,
   executeAgentTool,
@@ -19,6 +21,7 @@ import {
   parseToolCall,
   providerSystem,
   recordCompletionEvidence,
+  type ParsedFinal,
   type SemanticNodeInput
 } from "./toolProtocol.js";
 
@@ -151,7 +154,7 @@ export class Agent {
   }
 
   getGraph(): StateGraph {
-    return agentStateToGraph(this.state);
+    return this.state ? projectCausalVisualSnapshot(this.state, { maxVisibleNodes: this.args.projectionMaxNodes }).graph : agentStateToGraph();
   }
 
   reset(state?: AgentState): void {
@@ -197,7 +200,7 @@ export class Agent {
     const result: AgentRunResult = {
       finalAnswer: runtimeResult.finalAnswer,
       state: runtimeResult.state,
-      graph: agentStateToGraph(runtimeResult.state),
+      graph: runtimeResult.graph,
       trace: runtimeResult.trace,
       metadata: {
         runId,
@@ -302,6 +305,7 @@ type RuntimeRunOptions = AgentRunOptions & {
 type RuntimeResult = {
   finalAnswer: string;
   state: AgentState;
+  graph: StateGraph;
   trace: AgentTraceStep[];
   metrics: {
     modelCalls: number;
@@ -391,6 +395,7 @@ class AgentRuntime {
     let repeatedMissingEvidenceCount = 0;
     let consecutiveRetryCount = 0;
     let lastMutationIteration = 0;
+    let latestCompiled: CausalCompileResult | undefined;
     const metrics = (): RuntimeResult["metrics"] => ({
       modelCalls,
       toolCalls,
@@ -400,6 +405,10 @@ class AgentRuntime {
       outputTokens,
       tokenCountSource: resolveTokenCountSource(modelCalls, providerUsageCalls)
     });
+    const visualGraph = (state: AgentState): StateGraph => projectCausalVisualSnapshot(state, {
+      maxVisibleNodes: this.projectionMaxNodes,
+      ...(latestCompiled ? { preferredNodeIds: latestCompiled.nodeIds } : {})
+    }).graph;
     const progress = (iteration: number, phase: AgentProgress["phase"], detail: string, extra: Partial<AgentProgress> = {}): void => {
       const includeGraph = phase === "context" || phase === "final" || phase === "retrying";
       options.onProgress?.({
@@ -411,13 +420,13 @@ class AgentRuntime {
         outputTokens,
         ...(modelCalls ? { tokenCountSource: resolveTokenCountSource(modelCalls, providerUsageCalls), peakContextTokens } : {}),
         detail,
-        ...(includeGraph ? { graph: agentStateToGraph(this.weave.snapshot()) } : {}),
+        ...(includeGraph ? { graph: visualGraph(this.weave.snapshot()) } : {}),
         ...extra
       });
     };
     const fail = (message: string): never => {
       const state = this.weave.snapshot();
-      throw new AgentRunError(message, state, agentStateToGraph(state), trace, metrics());
+      throw new AgentRunError(message, state, visualGraph(state), trace, metrics());
     };
     const enforceNoProgress = (iteration: number): void => {
       if (this.maxNoProgressIterations && iteration - lastMutationIteration >= this.maxNoProgressIterations) {
@@ -428,6 +437,7 @@ class AgentRuntime {
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       options.signal?.throwIfAborted();
       const compiled = this.weave.compile({ query: task, maxTokens: this.maxContextTokens, targetTokens: this.projectionTargetTokens, maxNodes: this.projectionMaxNodes, contextMode: this.contextMode });
+      latestCompiled = compiled;
       progress(iteration, "context", this.contextMode === "molecular" ? "Compiled the molecular context view" : "Compiled the active causal frontier", { prompt: compiled.prompt, contextTokens: compiled.tokenEstimate.estimatedTokens });
       progress(iteration, "model", `Waiting for model iteration ${iteration}`, { contextTokens: compiled.tokenEstimate.estimatedTokens });
       const modelInput: ModelInput = {
@@ -447,7 +457,7 @@ class AgentRuntime {
       outputTokens += output.usage?.outputTokens ?? estimateStateWeaveTokens(output.text).estimatedTokens;
 
       const call = parseToolCall(output.text);
-      const final = call ? undefined : parseFinal(output.text);
+      const final = call ? undefined : parseFinal(output.text) ?? parsePlainInformationalFinal(task, output.text);
       if (!call && !final) {
         const invalid = output.text.trim();
         repeatedInvalidCount = invalid === repeatedInvalidOutput ? repeatedInvalidCount + 1 : 1;
@@ -467,7 +477,9 @@ class AgentRuntime {
       }
 
       if (final) {
-        const missingEvidence = this.enforceCompletionEvidence ? completionEvidenceGaps(task, evidence, final.answer) : [];
+        const missingEvidence = this.enforceCompletionEvidence
+          ? [...completionEvidenceGaps(task, evidence, final.answer), ...completionAnswerGaps(task, final.answer)]
+          : [];
         if (missingEvidence.length) {
           const missing = missingEvidence.join(", ");
           repeatedMissingEvidenceCount = missing === repeatedMissingEvidence ? repeatedMissingEvidenceCount + 1 : 1;
@@ -486,7 +498,8 @@ class AgentRuntime {
         this.appendSemanticNodes(final.state, answerNode.id);
         trace.push(traceStep(iteration, compiled, output.text, "final"));
         progress(iteration, "final", "Agent produced a final answer", { rawModelOutput: output.text, action: "final" });
-        return { finalAnswer: final.answer, state: this.weave.snapshot(), trace, metrics: metrics() };
+        const state = this.weave.snapshot();
+        return { finalAnswer: final.answer, state, graph: visualGraph(state), trace, metrics: metrics() };
       }
 
       if (!call) continue;
@@ -533,6 +546,14 @@ class AgentRuntime {
       });
     }
   }
+}
+
+function parsePlainInformationalFinal(task: string, output: string): ParsedFinal | undefined {
+  const answer = output.trim();
+  if (!answer || /^\s*(?:TOOL_CALL|FINAL)\b/i.test(answer)) return undefined;
+  if (/\b(?:create|write|save|edit|update|modify|implement|build|fix|add|inspect|read|review|check|test|run|execute)\b/i.test(task)) return undefined;
+  if (/^(?:not an action|invalid|planning prose|i(?:'| wi| a)?ll|let me|first,|sure,? i(?:'| wi)ll)\b/i.test(answer)) return undefined;
+  return { answer, state: [] };
 }
 
 function traceStep(step: number, compiled: CausalCompileResult, rawModelOutput: string, action: AgentTraceStep["action"], tool?: string, error?: string): AgentTraceStep {
