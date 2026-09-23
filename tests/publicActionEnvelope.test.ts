@@ -16,6 +16,15 @@ describe("public action envelope normalization",()=>{
   expect(reads).toBe(1);expect(result.metadata.toolCalls).toBe(1);expect(result.finalAnswer).toContain("PROBE-ONE");
   expect(parseToolCall('TOOL_CALL: {"name":"read_file","args":{}}')).toBeUndefined();
  });
+ it("does not require a file mutation to answer which rules apply",async()=>{
+  const agent=new Agent({model:model(['TOOL_CALL {"name":"read_file","args":{"file_path":"probe.txt"}}','FINAL: KEEP-ORDER-KEY and CHECK-204; PROBE-ONE.']),tools:[{name:"read_file",description:"Read file",schema:z.object({file_path:z.string()}),execute:async()=>({content:"PROBE-ONE"})}]});
+  const result=await agent.run("Read probe.txt. Why did duplicate charges return after the payment release, and which remedy and verification codes apply? Reply in plain text.");
+  expect(result.metadata.toolCalls).toBe(1);expect(result.finalAnswer).toContain("KEEP-ORDER-KEY");
+ });
+ it.each(["Apply the patch.","Can you apply the patch?","Which rules apply? Apply the patch afterward."])("preserves mutation evidence for an actual request: %s",async task=>{
+  const agent=new Agent({model:model(['FINAL: Done.']),tools:[],maxIterations:3});
+  await expect(agent.run(task)).rejects.toThrow("confirmed file mutation");
+ });
  it("does not turn quoted or embedded action-looking prose into execution",async()=>{
   const agent=new Agent({model:model(['Example TOOL_CALL: {"name":"read_file","args":{}}']),tools:[],maxIterations:3});
   await expect(agent.run("Read the file.")).rejects.toThrow("invalid action");

@@ -387,6 +387,7 @@ class AgentRuntime {
     const parents = [...new Set([...(system ? [system.id] : []), ...beforeGoal.frontier])];
     this.weave.append({ kind: "goal", payload: task, parents, advance: true });
     const evidence = createCompletionEvidence();
+    const evidenceTask = task.replace(/\b((?:which|what)\b[^?.!\n]{0,200})\bapply(?=\s*(?:(?:here|now)\s*)?\?)/gi, "$1are applicable");
     const trace: AgentTraceStep[] = [];
     let modelCalls = 0;
     let providerUsageCalls = 0;
@@ -519,7 +520,7 @@ class AgentRuntime {
 
       if (final) {
         const missingEvidence = this.enforceCompletionEvidence
-          ? [...completionEvidenceGaps(task, evidence, final.answer), ...completionAnswerGaps(task, final.answer)]
+          ? [...completionEvidenceGaps(evidenceTask, evidence, final.answer), ...completionAnswerGaps(evidenceTask, final.answer)]
           : [];
         if (missingEvidence.length) {
           const missing = missingEvidence.join(", ");
