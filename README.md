@@ -88,6 +88,10 @@ const agent = new Agent({
 - `contextMode: "molecular"` keeps the immutable causal graph unchanged but compiles deterministic outer-map molecules, expanded source atoms, and cross-molecule ports. The default remains `"causal"`; the development lab opts into molecular mode with a 16-node optional-detail target.
 - `enforceCompletionEvidence` rejects unsupported coding-task finals when required inspection, mutation, checks, restart, or smoke evidence is absent.
 
+### Experimental TypeSafe Jev focus (server-side only)
+
+Pass `focusReranker: createJevFocusReranker({ apiKey: process.env.TYPESAFE_API_KEY! })` to `Agent` to judge up to 24 deterministic causal candidates once per turn. The callback returns bounded Noul relevance probabilities; StateWeave selects at most six preferred source nodes under its existing graph, prompt, and token limits. The API key must remain on the server; the query and excerpts (up to 600 characters each) are sent to TypeSafe. This is **off by default** and does not change `AgentState`, node identity, read-set parents, model actions, or frozen evaluations. An unavailable, malformed, or timed-out response emits a `progress.focus.status = "fallback"` event and uses the original deterministic projection. `progress.focus.ranking` exposes candidate IDs, probabilities, TypeSafe token counts, and latency separately from the model usage ledger; it is an experimental diagnostic, not evidence that answer quality improved. The dev lab's Settings toggle applies only to the StateWeave arm and requires `TYPESAFE_API_KEY` in its server environment. Use non-sensitive sample states when testing the external judgment.
+
 ## Persistent state
 
 A single `Agent` owns one session graph. Stateful calls are serialized in invocation order. Successful runs commit; failed or aborted runs return diagnostic state on `AgentRunError` but do not overwrite the agent’s committed state.

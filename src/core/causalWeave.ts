@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { FocusCandidate } from "./focusTypes.js";
 import { estimateStateWeaveTokens, type StateWeaveTokenEstimate } from "../llm/tokenizer.js";
 import { projectCausalSnapshot, type CausalProjection } from "./causalProjection.js";
 import { buildCausalHierarchy, type CausalHierarchy } from "./causalHierarchy.js";
@@ -99,7 +100,24 @@ export class CausalWeave {
     };
   }
 
-  compile(args: { query?: string; maxTokens?: number; targetTokens?: number; maxNodes?: number; contextMode?: CausalContextMode } = {}): CausalCompileResult {
+  focusCandidates(query: string, limit = 24): FocusCandidate[] {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 24) throw new Error("Focus candidate limit must be 1–24.");
+    const queryTerms = meaningfulQueryTerms(query);
+    const latest = latestProjectionEquivalents(this.order, this.nodes);
+    const eligible = this.order.map((id) => this.nodes.get(id)!).filter((node) => {
+      const key = projectionEquivalenceKey(node);
+      return (!key || latest.get(key) === node.id) && ["semantic", "resource", "verification", "goal", "answer"].includes(node.kind);
+    });
+    const lexical = [...eligible].sort((a, b) => relevanceScore(b, queryTerms, this.order.length) - relevanceScore(a, queryTerms, this.order.length) || b.sequence - a.sequence);
+    const selected = new Map<string, CausalWeaveNode>();
+    for (const node of lexical.slice(0, Math.ceil(limit / 2))) selected.set(node.id, node);
+    for (const node of eligible.slice(-Math.ceil(limit / 3)).reverse()) selected.set(node.id, node);
+    const stride = Math.max(1, Math.floor(eligible.length / Math.max(1, limit - selected.size)));
+    for (let index = 0; index < eligible.length && selected.size < limit; index += stride) selected.set(eligible[index]!.id, eligible[index]!);
+    return [...selected.values()].slice(0, limit).map((node) => ({ id: node.id, kind: node.kind, text: payloadText(node.payload).slice(0, 600), sequence: node.sequence }));
+  }
+
+  compile(args: { query?: string; maxTokens?: number; targetTokens?: number; maxNodes?: number; contextMode?: CausalContextMode; preferredNodeIds?: string[] } = {}): CausalCompileResult {
     if (!this.order.length) throw new Error("Cannot compile an empty Causal Weave.");
     const maxTokens = boundedCompileBudget(args.maxTokens ?? 64_000, "maxTokens");
     const targetTokens = boundedCompileBudget(Math.min(args.targetTokens ?? maxTokens, maxTokens), "targetTokens");
@@ -123,11 +141,14 @@ export class CausalWeave {
       .map((id) => ({ id, score: relevanceScore(this.nodes.get(id)!, queryTerms, this.order.length), overlap: queryOverlap(this.nodes.get(id)!, queryTerms) }))
       .filter((candidate) => candidate.overlap > 0 && usefulQueryCandidate(this.nodes.get(candidate.id)!, args.query ?? "", queryTerms, candidate.overlap))
       .sort((a, b) => b.overlap - a.overlap || b.score - a.score || this.nodes.get(b.id)!.sequence - this.nodes.get(a.id)!.sequence);
-    const protectedQueryIds = new Set(ranked.slice(0, 8).map((candidate) => candidate.id));
+    const preferredIds = (args.preferredNodeIds ?? []).filter((id) => eligible.includes(id)).slice(0, 6);
+    const protectedQueryIds = new Set([...preferredIds, ...ranked.slice(0, 8).map((candidate) => candidate.id)]);
     const relevantResourceIds = selectRelevantResourceHeads(this.resourceHeads.values(), this.nodes, args.query ?? "", queryTerms, latestAnswer, maxNodes);
     const selected = selectBoundedNodeIds(maxNodes, this.nodes, [
-      [latestSystem, latestGoal, ...this.frontier()].filter((id): id is string => Boolean(id)),
+      [latestSystem, latestGoal, ...(preferredIds.length ? [] : this.frontier())].filter((id): id is string => Boolean(id)),
       relevantResourceIds,
+      preferredIds,
+      ...(preferredIds.length ? [this.frontier()] : []),
       [...protectedQueryIds],
       [...recent].reverse(),
       ranked.map((candidate) => candidate.id)

@@ -7,6 +7,8 @@ export * from "./core/projection.js";
 export * from "./core/validateOps.js";
 export * from "./core/visualize.js";
 export * from "./agent/agent.js";
+export type { FocusCandidate, FocusRanking, FocusReranker } from "./agent/focusReranker.js";
+export { createJevFocusReranker } from "./integrations/jevFocus.js";
 export * from "./llm/model.js";
 export * from "./llm/anthropicModel.js";
 export * from "./llm/factory.js";
