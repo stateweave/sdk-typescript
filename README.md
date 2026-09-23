@@ -109,7 +109,7 @@ StateWeave selects up to six preferences, preserving latest system/goal and curr
 
 The entire ranking has one deadline (5s flat, 10s hierarchical; configurable 100–30,000ms). Caller abort propagates; other failures visibly fall back to the unchanged deterministic projection. `progress.focus` and result `metadata.focus` distinguish requested `preferredNodeIds` from actually compiled `selectedNodeIds`, and report each scoring stage, resolved model, provider usage and latency separately from the answering model. Fallback preserves completed-stage usage and marks unknown usage incomplete. The paired Dev session ledger persists a compact separate-overhead record across reloads. An opt-in lab Settings selector applies only to the StateWeave arm. Frozen evaluation surfaces and Traditional are unchanged.
 
-Software tests prove the contract, **not better answers**. The independent 12-case, three-arm pilot is preregistered in `evaluations/jev-focus-v1/PROTOCOL.md`; assess full evidence/answer success together with total latency and external token overhead before any default change.
+Software tests prove the contract, **not better answers**. The real Dev [twelve-case diagnostic](evaluations/jev-focus-v2/REPORT.md) found **no answer-quality gain**: deterministic, flat and hierarchical modes each completed 11/12 cases correctly and scored 10/12 on the strict evidence endpoint. Hierarchy added a median 0.798s of selection and 78,046 external input tokens across the twelve attempts. An earlier invalid calibration is preserved and excluded; this reused-corpus diagnostic is not independent confirmation. Keep Jev off by default and require new independent evidence before promotion.
 
 ## Persistent state
 

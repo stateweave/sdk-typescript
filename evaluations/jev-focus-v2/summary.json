@@ -1,0 +1,524 @@
+{
+  "arms": {
+    "deterministic": {
+      "attempts": 12,
+      "completed": 11,
+      "correct": 11,
+      "fullPass": 10,
+      "meanRequiredRecall": 0.8333333333333334,
+      "medianLatencyMs": 18424,
+      "medianJevLatencyMs": 0,
+      "modelInputTokens": 54910,
+      "modelOutputTokens": 14666,
+      "jevInputTokens": 0,
+      "jevOutputTokens": 0,
+      "jevCompletedCalls": 0,
+      "fallbacks": 0,
+      "incompleteUsage": 0
+    },
+    "flat": {
+      "attempts": 12,
+      "completed": 11,
+      "correct": 11,
+      "fullPass": 10,
+      "meanRequiredRecall": 0.8333333333333334,
+      "medianLatencyMs": 18771,
+      "medianJevLatencyMs": 390,
+      "modelInputTokens": 56941,
+      "modelOutputTokens": 15489,
+      "jevInputTokens": 40000,
+      "jevOutputTokens": 5229,
+      "jevCompletedCalls": 12,
+      "fallbacks": 0,
+      "incompleteUsage": 0
+    },
+    "hierarchical": {
+      "attempts": 12,
+      "completed": 11,
+      "correct": 11,
+      "fullPass": 10,
+      "meanRequiredRecall": 0.8333333333333334,
+      "medianLatencyMs": 18066,
+      "medianJevLatencyMs": 798,
+      "modelInputTokens": 57013,
+      "modelOutputTokens": 13642,
+      "jevInputTokens": 78046,
+      "jevOutputTokens": 8033,
+      "jevCompletedCalls": 28,
+      "fallbacks": 0,
+      "incompleteUsage": 0
+    }
+  },
+  "comparisons": [
+    {
+      "hierarchicalVersus": "deterministic",
+      "wins": 1,
+      "losses": 1,
+      "ties": 10,
+      "incomplete": 0
+    },
+    {
+      "hierarchicalVersus": "flat",
+      "wins": 1,
+      "losses": 1,
+      "ties": 10,
+      "incomplete": 0
+    }
+  ],
+  "ledger": [
+    {
+      "id": "payment-retry",
+      "deterministic": {
+        "status": "error",
+        "fullPass": false,
+        "latencyMs": 101506,
+        "focus": "off",
+        "error": "Agent recursion limit reached after 5 iterations. Increase maxIterations to continue."
+      },
+      "flat": {
+        "status": "error",
+        "fullPass": false,
+        "latencyMs": 100483,
+        "focus": "off",
+        "error": "Agent recursion limit reached after 5 iterations. Increase maxIterations to continue."
+      },
+      "hierarchical": {
+        "status": "error",
+        "fullPass": false,
+        "latencyMs": 76027,
+        "focus": "off",
+        "error": "Agent recursion limit reached after 5 iterations. Increase maxIterations to continue."
+      }
+    },
+    {
+      "id": "launch-gate",
+      "deterministic": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 16896,
+        "focus": "off",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "flat": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 19987,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "hierarchical": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 19927,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      }
+    },
+    {
+      "id": "backup-retirement",
+      "deterministic": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 21717,
+        "focus": "off",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "flat": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 17218,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "hierarchical": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 16205,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      }
+    },
+    {
+      "id": "pilot-city",
+      "deterministic": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 33230,
+        "focus": "off",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "flat": {
+        "status": "done",
+        "correct": true,
+        "fullPass": false,
+        "recall": 0,
+        "latencyMs": 23729,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "hierarchical": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 15943,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      }
+    },
+    {
+      "id": "quiet-contact",
+      "deterministic": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 19952,
+        "focus": "off",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "flat": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 20460,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "hierarchical": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 27730,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      }
+    },
+    {
+      "id": "cold-package",
+      "deterministic": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 14705,
+        "focus": "off",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "flat": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 17555,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "hierarchical": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 12372,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      }
+    },
+    {
+      "id": "corrected-port",
+      "deterministic": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 11676,
+        "focus": "off",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "flat": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 24257,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "hierarchical": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 13602,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      }
+    },
+    {
+      "id": "revoked-approver",
+      "deterministic": {
+        "status": "done",
+        "correct": true,
+        "fullPass": false,
+        "recall": 0,
+        "latencyMs": 15833,
+        "focus": "off",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "flat": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 12615,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "hierarchical": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 11397,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      }
+    },
+    {
+      "id": "revised-launch",
+      "deterministic": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 27769,
+        "focus": "off",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "flat": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 25854,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "hierarchical": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 22752,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      }
+    },
+    {
+      "id": "exact-config",
+      "deterministic": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 25279,
+        "focus": "off",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "flat": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 15200,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "hierarchical": {
+        "status": "done",
+        "correct": true,
+        "fullPass": false,
+        "recall": 0,
+        "latencyMs": 20454,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      }
+    },
+    {
+      "id": "budget-balance",
+      "deterministic": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 11910,
+        "focus": "off",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "flat": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 9111,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "hierarchical": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 9307,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      }
+    },
+    {
+      "id": "missing-fact",
+      "deterministic": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 14653,
+        "focus": "off",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "flat": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 17471,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      },
+      "hierarchical": {
+        "status": "done",
+        "correct": true,
+        "fullPass": true,
+        "recall": 1,
+        "latencyMs": 28361,
+        "focus": "ranked",
+        "freshRead": true,
+        "budget": true,
+        "provenance": true,
+        "preserved": true
+      }
+    }
+  ],
+  "caveat": "Diagnostic replay on twelve reused designed cases, not independent confirmation. No statistical efficacy inference. Classify any external outages separately; protocol/tool failures remain zeros. Jev overhead must be added for total efficiency."
+}
