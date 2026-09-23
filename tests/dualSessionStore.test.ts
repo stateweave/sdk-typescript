@@ -73,6 +73,20 @@ it("atomically persists both arms on one paired turn", async () => {
   expect(records[1].stateweave).not.toHaveProperty("state");
 });
 
+it("persists separate Jev overhead across store restart without adding it to model usage", async () => {
+  const { root, value } = await store();
+  const created = await value.create();
+  const meta = metadata("sw-focus");
+  meta.focus = { status: "ranked", preferredNodeIds: [], selectedNodeIds: [], latencyMs: 456,
+    ranking: { model: "jev-1.13.0", mode: "hierarchical", scores: [], inputTokens: 700, outputTokens: 30, stages: [] } };
+  await value.commitPair({ sessionId: created.sessionId, input: "question", previousTraditionalMessages: [],
+    stateweave: { status: "done", state: nextState(undefined,"question","answer"), answer: "answer", metadata: meta },
+    traditional: { status: "done", messages: messages("question","answer"), answer: "answer", usage: usage("tr") } });
+  const restored = await new DualSessionStore(root).load(created.sessionId);
+  expect(restored.stateweave.usageHistory[0]).toMatchObject({ totalInputTokens: 100, focus: { mode: "hierarchical", inputTokens: 700, outputTokens: 30, latencyMs: 456 } });
+  expect(restored.traditional.usageHistory[0].focus).toBeUndefined();
+});
+
 it("lists saved sessions with bounded conversation previews", async () => {
   const { value } = await store();
   const empty = await value.create();

@@ -16,6 +16,7 @@ import { InfiniteAgentHarness } from "../evals/infiniteAgentHarness.js";
 import { SdkBuildBenchmarkApi } from "./sdkBuildBenchmark.js";
 import { SubgraphExperimentHarness } from "./subgraphExperiment.js";
 import { generateLongHorizonPrompt } from "./longHorizonDirector.js";
+import { createJevFocusReranker } from "../integrations/jevFocus.js";
 import { SessionConflictError, SessionCorruptError, SessionNotFoundError, StateWeaveSessionStore, type SessionUsageRecord, type StateWeaveSessionView } from "./stateweaveSessionStore.js";
 import { DualSessionConflictError, DualSessionCorruptError, DualSessionNotFoundError, DualSessionStore, type StateWeavePairOutcome, type TraditionalPairOutcome } from "./dualSessionStore.js";
 import type { DualSessionView, DualUsageRecord, LoadedDualSession } from "./dualSessionTypes.js";
@@ -26,6 +27,7 @@ type RunRequest = {
   frame?: unknown;
   maxIterations?: unknown;
   projectionTargetTokens?: unknown;
+  jevFocus?: unknown;
   systemPrompt?: unknown;
   nodeTypes?: unknown;
   messages?: unknown;
@@ -44,6 +46,7 @@ type DualRunRequest = {
   expectedTurnId?: unknown;
   maxIterations?: unknown;
   projectionTargetTokens?: unknown;
+  jevFocus?: unknown;
   systemPrompt?: unknown;
 };
 
@@ -186,7 +189,7 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   const url = requestUrl(request);
 
   if (request.method === "GET" && url.pathname === "/api/health") {
-    json(response, 200, { ok: true, provider: providerName(), agentEngine: "causal-weave-v3", sessionStorage: "jsonl-dual", comparison: { arms: ["stateweave", "traditional"], execution: "parallel", traditionalCompactionTokens: traditionalCompactionThreshold, traditionalRetainMessages }, defaultSystemPrompt: dualDefaultSystemPrompt, defaultProjectionTargetTokens: 16_000, defaultProjectionMaxNodes: 16, defaultContextMode: "molecular", defaultMaxIterations: 30 });
+    json(response, 200, { ok: true, provider: providerName(), agentEngine: "causal-weave-v3", sessionStorage: "jsonl-dual", comparison: { arms: ["stateweave", "traditional"], execution: "parallel", traditionalCompactionTokens: traditionalCompactionThreshold, traditionalRetainMessages }, defaultSystemPrompt: dualDefaultSystemPrompt, defaultProjectionTargetTokens: 16_000, defaultProjectionMaxNodes: 16, defaultContextMode: "molecular", defaultMaxIterations: 30, jevFocusAvailable: Boolean(process.env.TYPESAFE_API_KEY?.trim()) });
     return;
   }
 
@@ -522,6 +525,9 @@ async function streamDualRunLocked(request: IncomingMessage, response: ServerRes
   }
 
   const input = body.input.trim();
+  let focusReranker: ReturnType<typeof createJevFocusReranker> | undefined;
+  try { focusReranker = requestedJevFocus(body.jevFocus); }
+  catch (error) { privateJson(response, 503, { error: error instanceof Error ? error.message : String(error) }); return; }
   const systemPrompt = safeSystemPrompt(body.systemPrompt) ?? dualDefaultSystemPrompt;
   const maxIterations = safeMaxIterations(body.maxIterations);
   const projectionTargetTokens = safeProjectionTarget(body.projectionTargetTokens) ?? 16_000;
@@ -533,6 +539,7 @@ async function streamDualRunLocked(request: IncomingMessage, response: ServerRes
     projectionTargetTokens,
     projectionMaxNodes: 16,
     contextMode: "molecular",
+    focusReranker,
     systemPrompt,
     state: session.stateweave.state
   });
@@ -1547,9 +1554,18 @@ function createPublicAgent(body: RunRequest): Agent {
     projectionTargetTokens: safeProjectionTarget(body.projectionTargetTokens),
     projectionMaxNodes: 16,
     contextMode: "molecular",
+    focusReranker: requestedJevFocus(body.jevFocus),
     systemPrompt: safeSystemPrompt(body.systemPrompt),
     state: body.state
   });
+}
+
+function requestedJevFocus(value: unknown): ReturnType<typeof createJevFocusReranker> | undefined {
+  if (value === undefined || value === false || value === "off") return undefined;
+  if (value !== true && value !== "flat" && value !== "hierarchical") throw new Error("Unknown Jev focus mode.");
+  const apiKey = process.env.TYPESAFE_API_KEY?.trim();
+  if (!apiKey) throw new Error("Jev focus requires TYPESAFE_API_KEY on the dev server. No key belongs in the browser.");
+  return createJevFocusReranker({ apiKey, mode: value === "hierarchical" ? "hierarchical" : "flat" });
 }
 
 function isAgentState(value: unknown): value is AgentState {

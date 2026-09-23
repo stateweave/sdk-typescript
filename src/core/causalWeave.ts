@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { FocusCandidate, FocusHierarchy } from "./focusTypes.js";
 import { estimateStateWeaveTokens, type StateWeaveTokenEstimate } from "../llm/tokenizer.js";
 import { projectCausalSnapshot, type CausalProjection } from "./causalProjection.js";
 import { buildCausalHierarchy, type CausalHierarchy } from "./causalHierarchy.js";
@@ -99,7 +100,54 @@ export class CausalWeave {
     };
   }
 
-  compile(args: { query?: string; maxTokens?: number; targetTokens?: number; maxNodes?: number; contextMode?: CausalContextMode } = {}): CausalCompileResult {
+  focusCandidates(query: string, limit = 24, within?: ReadonlySet<string>): FocusCandidate[] {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 24) throw new Error("Focus candidate limit must be 1–24.");
+    const queryTerms = meaningfulQueryTerms(query);
+    const latest = latestProjectionEquivalents(this.order, this.nodes);
+    const eligible = this.order.map((id) => this.nodes.get(id)!).filter((node) => {
+      const key = projectionEquivalenceKey(node);
+      return (!within || within.has(node.id)) && (!key || latest.get(key) === node.id) && ["semantic", "resource", "verification", "goal", "answer", "tool_result"].includes(node.kind);
+    });
+    const lexical = [...eligible].sort((a, b) => relevanceScore(b, queryTerms, this.order.length) - relevanceScore(a, queryTerms, this.order.length) || b.sequence - a.sequence);
+    const selected = new Map<string, CausalWeaveNode>();
+    for (const node of lexical.slice(0, Math.ceil(limit / 2))) selected.set(node.id, node);
+    for (const node of eligible.slice(-Math.ceil(limit / 3)).reverse()) selected.set(node.id, node);
+    const stride = Math.max(1, Math.floor(eligible.length / Math.max(1, limit - selected.size)));
+    for (let index = 0; index < eligible.length && selected.size < limit; index += stride) selected.set(eligible[index]!.id, eligible[index]!);
+    return [...selected.values()].slice(0, limit).map((node) => ({ id: node.id, kind: node.kind, text: payloadText(node.payload).slice(0, 600), sequence: node.sequence }));
+  }
+
+  focusHierarchy(query: string): FocusHierarchy {
+    const snapshot = this.snapshot();
+    const hierarchy = buildCausalHierarchy(snapshot, projectCausalSnapshot(snapshot));
+    const terms = meaningfulQueryTerms(query);
+    const describe = (region: { id: string; label: string; nodeIds: string[]; sequence: number }, kind: string): FocusCandidate => ({
+      id: region.id, kind, sequence: region.sequence,
+      text: `${region.label.slice(0, 80)}\nSource excerpts (partial, current projection versions):\n${this.focusCandidates(query, 3, new Set(region.nodeIds)).map((node) => `[${node.kind}] ${node.text.slice(0, 150)}`).join("\n")}`.slice(0, 600)
+    });
+    const bounded = (regions: FocusCandidate[], limit: number): FocusCandidate[] => {
+      const overlap = (item: FocusCandidate): number => [...terms].filter((term) => item.text.toLowerCase().includes(term)).length;
+      const ranked = [...regions].sort((a, b) => overlap(b) - overlap(a) || b.sequence - a.sequence);
+      const picked = new Map(ranked.slice(0, Math.ceil(limit / 2)).map((item) => [item.id, item]));
+      const ordered = [...regions].sort((a, b) => a.sequence - b.sequence);
+      const stride = Math.max(1, Math.floor(ordered.length / Math.max(1, limit - picked.size)));
+      for (let i = 0; i < ordered.length && picked.size < limit; i += stride) picked.set(ordered[i]!.id, ordered[i]!);
+      for (const item of ranked) { if (picked.size >= limit) break; picked.set(item.id, item); }
+      return [...picked.values()];
+    };
+    return {
+      topics: bounded(hierarchy.topics.map((topic) => describe(topic, "topic")), 16),
+      children: (topicIds) => bounded(hierarchy.leaves.filter((leaf) => topicIds.slice(0, 3).includes(leaf.topicId)).map((leaf) => describe(leaf, "subgraph")), 12),
+      atoms: (leafIds) => {
+        const ids = new Set(hierarchy.leaves.filter((leaf) => leafIds.slice(0, 4).includes(leaf.id)).flatMap((leaf) => leaf.nodeIds));
+        const branch = this.focusCandidates(query, 16, ids);
+        const global = this.focusCandidates(query, 24);
+        return [...new Map([...global.slice(0, 8), ...branch, ...global].map((node) => [node.id, node])).values()].slice(0, 24);
+      }
+    };
+  }
+
+  compile(args: { query?: string; maxTokens?: number; targetTokens?: number; maxNodes?: number; contextMode?: CausalContextMode; preferredNodeIds?: string[] } = {}): CausalCompileResult {
     if (!this.order.length) throw new Error("Cannot compile an empty Causal Weave.");
     const maxTokens = boundedCompileBudget(args.maxTokens ?? 64_000, "maxTokens");
     const targetTokens = boundedCompileBudget(Math.min(args.targetTokens ?? maxTokens, maxTokens), "targetTokens");
@@ -123,11 +171,14 @@ export class CausalWeave {
       .map((id) => ({ id, score: relevanceScore(this.nodes.get(id)!, queryTerms, this.order.length), overlap: queryOverlap(this.nodes.get(id)!, queryTerms) }))
       .filter((candidate) => candidate.overlap > 0 && usefulQueryCandidate(this.nodes.get(candidate.id)!, args.query ?? "", queryTerms, candidate.overlap))
       .sort((a, b) => b.overlap - a.overlap || b.score - a.score || this.nodes.get(b.id)!.sequence - this.nodes.get(a.id)!.sequence);
-    const protectedQueryIds = new Set(ranked.slice(0, 8).map((candidate) => candidate.id));
+    const preferredIds = (args.preferredNodeIds ?? []).filter((id) => eligible.includes(id)).slice(0, 6);
+    const protectedQueryIds = new Set([...preferredIds, ...ranked.slice(0, 8).map((candidate) => candidate.id)]);
     const relevantResourceIds = selectRelevantResourceHeads(this.resourceHeads.values(), this.nodes, args.query ?? "", queryTerms, latestAnswer, maxNodes);
     const selected = selectBoundedNodeIds(maxNodes, this.nodes, [
-      [latestSystem, latestGoal, ...this.frontier()].filter((id): id is string => Boolean(id)),
+      [latestSystem, latestGoal, ...this.frontier().filter((id) => !preferredIds.length || this.nodes.get(id)!.sequence > (latestGoal ? this.nodes.get(latestGoal)!.sequence : 0))].filter((id): id is string => Boolean(id)),
+      preferredIds,
       relevantResourceIds,
+      ...(preferredIds.length ? [this.frontier()] : []),
       [...protectedQueryIds],
       [...recent].reverse(),
       ranked.map((candidate) => candidate.id)

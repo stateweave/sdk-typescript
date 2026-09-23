@@ -3,6 +3,8 @@ export type { CausalContextMode } from "../core/causalTypes.js";
 import type { StateGraph } from "../core/types.js";
 import type { Model } from "../llm/model.js";
 import type { Tool } from "../tools/types.js";
+import type { FocusReranker, FocusDiagnostics } from "./focusReranker.js";
+export type { FocusCandidate, FocusRanking, FocusReranker } from "./focusReranker.js";
 
 export type AgentState = CausalWeaveSnapshot;
 
@@ -27,6 +29,7 @@ export type AgentArgs = {
   projectionTargetTokens?: number;
   projectionMaxNodes?: number;
   contextMode?: CausalContextMode;
+  focusReranker?: FocusReranker;
   systemPrompt?: string;
   providerSystem?: string;
   enforceCompletionEvidence?: boolean;
@@ -66,6 +69,7 @@ export type AgentProgress = {
   action?: "tool" | "final" | "invalid";
   tool?: string;
   error?: string;
+  focus?: FocusDiagnostics;
 };
 
 export type AgentTraceStep = {
@@ -102,6 +106,7 @@ export type AgentRunMetadata = {
   outputTokens: number;
   tokenCountSource: TokenCountSource;
   status: "done";
+  focus?: FocusDiagnostics;
 };
 
 export type AgentRunResult = {

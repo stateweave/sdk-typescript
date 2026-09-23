@@ -1,3 +1,4 @@
+import { summarizeFocus } from "../../src/agent/focusReranker.js";
 import type { AgentProgress, AgentRunMetadata, AgentState, AgentStreamEvent, AgentTraceStep } from "../../src/agent/types.js";
 import { projectCausalVisualGraphView, projectCausalVisualSnapshot, type CausalVisualGraphMode, type CausalVisualLeafState, type CausalVisualTopicState } from "../../src/core/causalVisualGraph.js";
 import type { GraphFrame, StateGraph, StateWeaveRunMetadata, TraceStep } from "../../src/core/types.js";
@@ -151,7 +152,7 @@ type WorkspaceFileContent = WorkspaceFile & { content: string };
 type PreviewSource = { kind: "srcdoc" | "url"; value: string };
 type TransferMode = "export" | "import";
 type WorkspaceViewName = "graph" | "tools" | "files" | "usage";
-type AgentSettings = { systemPrompt: string; projectionTargetTokens: number; maxIterations: number };
+type AgentSettings = { systemPrompt: string; projectionTargetTokens: number; maxIterations: number; jevFocus: "off" | "flat" | "hierarchical" };
 type AgentUsageMetrics = Pick<AgentRunMetadata, "latestContextTokens" | "peakContextTokens" | "totalInputTokens" | "outputTokens" | "modelCalls" | "tokenCountSource">;
 type StreamErrorEvent = { type: "error"; message: string; metrics?: Partial<AgentUsageMetrics> };
 type LiveStreamStep = {
@@ -229,7 +230,8 @@ const legacyStateWeaveSystemPrompt = "You are a StateWeave agent. Complete the u
 const defaultAgentSettings: AgentSettings = {
   systemPrompt: "You are a careful agent. Complete the user's task accurately, use tools when needed, and preserve durable user facts, constraints, and corrections across turns.",
   projectionTargetTokens: 16_000,
-  maxIterations: 30
+  maxIterations: 30,
+  jevFocus: "off"
 };
 const agentSettingsStorageKey = "stateweave.agentSettings.v2";
 const stateSessionStorageKey = "stateweave.session.v1";
@@ -661,6 +663,8 @@ const provider = element<HTMLElement>("provider");
 const agentSystemPrompt = element<HTMLTextAreaElement>("agent-system-prompt");
 const agentProjectionTarget = element<HTMLInputElement>("agent-projection-target");
 const agentMaxIterations = element<HTMLInputElement>("agent-max-iterations");
+const agentJevFocus = element<HTMLSelectElement>("agent-jev-focus");
+const jevFocusAvailability = element<HTMLElement>("jev-focus-availability");
 const resetAgentSettings = element<HTMLButtonElement>("reset-agent-settings");
 const stateInput = element<HTMLElement>("state-input");
 const stateOutput = element<HTMLElement>("state-output");
@@ -789,6 +793,7 @@ input.addEventListener("keydown", (event) => {
 agentSystemPrompt.addEventListener("input", saveAgentSettingsFromForm);
 agentProjectionTarget.addEventListener("input", saveAgentSettingsFromForm);
 agentMaxIterations.addEventListener("input", saveAgentSettingsFromForm);
+agentJevFocus.addEventListener("change", saveAgentSettingsFromForm);
 resetAgentSettings.addEventListener("click", () => {
   agentSettings = structuredClone(defaultAgentSettings);
   saveAgentSettings();
@@ -938,7 +943,8 @@ function loadAgentSettings(): AgentSettings {
     return {
       systemPrompt: typeof parsed.systemPrompt === "string" && parsed.systemPrompt.trim() && parsed.systemPrompt !== legacyStateWeaveSystemPrompt ? parsed.systemPrompt : defaultAgentSettings.systemPrompt,
       projectionTargetTokens: normalizeProjectionTarget(parsed.projectionTargetTokens),
-      maxIterations: normalizeMaxIterations(parsed.maxIterations)
+      maxIterations: normalizeMaxIterations(parsed.maxIterations),
+      jevFocus: parsed.jevFocus === "hierarchical" ? "hierarchical" : parsed.jevFocus === "flat" || (parsed as { jevFocus?: unknown }).jevFocus === true ? "flat" : "off"
     };
   } catch {
     return structuredClone(defaultAgentSettings);
@@ -1363,13 +1369,15 @@ function renderAgentSettings(): void {
   agentSystemPrompt.value = agentSettings.systemPrompt;
   agentProjectionTarget.value = String(agentSettings.projectionTargetTokens);
   agentMaxIterations.value = String(agentSettings.maxIterations);
+  agentJevFocus.value = agentSettings.jevFocus;
 }
 
 function saveAgentSettingsFromForm(): void {
   agentSettings = {
     systemPrompt: agentSystemPrompt.value.trim() || defaultAgentSettings.systemPrompt,
     projectionTargetTokens: normalizeProjectionTarget(agentProjectionTarget.value),
-    maxIterations: normalizeMaxIterations(agentMaxIterations.value)
+    maxIterations: normalizeMaxIterations(agentMaxIterations.value),
+    jevFocus: agentJevFocus.value === "hierarchical" ? "hierarchical" : agentJevFocus.value === "flat" ? "flat" : "off"
   };
   saveAgentSettings();
   abStateFrame = applyAgentSettingsToFrame(abStateFrame);
@@ -2143,7 +2151,7 @@ async function streamDualRun(text: string, sessionId: string, expectedTurnId: st
   const response = await fetch(`${apiBase}/api/dual/run`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ input: text, sessionId, ...(expectedTurnId ? { expectedTurnId } : {}), systemPrompt: settings.systemPrompt, projectionTargetTokens: settings.projectionTargetTokens, maxIterations: settings.maxIterations })
+    body: JSON.stringify({ input: text, sessionId, ...(expectedTurnId ? { expectedTurnId } : {}), systemPrompt: settings.systemPrompt, projectionTargetTokens: settings.projectionTargetTokens, maxIterations: settings.maxIterations, jevFocus: settings.jevFocus })
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => undefined)) as { error?: string } | undefined;
@@ -2285,7 +2293,7 @@ async function streamStateWeave(text: string, sessionId: string, expectedTurnId:
   const response = await fetch(`${apiBase}/api/stateweave/run`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ input: text, sessionId, ...(expectedTurnId ? { expectedTurnId } : {}), systemPrompt: settings.systemPrompt, projectionTargetTokens: settings.projectionTargetTokens, maxIterations: settings.maxIterations })
+    body: JSON.stringify({ input: text, sessionId, ...(expectedTurnId ? { expectedTurnId } : {}), systemPrompt: settings.systemPrompt, projectionTargetTokens: settings.projectionTargetTokens, maxIterations: settings.maxIterations, jevFocus: settings.jevFocus })
   });
 
   if (!response.ok) {
@@ -2430,6 +2438,7 @@ function updateActiveTokenUsage(event: AgentStreamEvent): void {
   } else if (event.type === "progress") {
     const progress = event.progress;
     activeTokenUsage.modelCalls = progress.modelCalls;
+    if (progress.focus) activeTokenUsage.focus = summarizeFocus(progress.focus);
     activeTokenUsage.totalInputTokens = progress.totalInputTokens;
     activeTokenUsage.outputTokens = progress.outputTokens;
     activeTokenUsage.tokenCountSource = progress.tokenCountSource ?? activeTokenUsage.tokenCountSource;
@@ -2478,7 +2487,10 @@ function applyTokenUsageMetadata(point: TokenUsagePoint, metadata: Partial<Agent
 
 async function loadHealth(): Promise<void> {
   const response = await fetch(`${apiBase}/api/health`).catch(() => undefined);
-  const health = response?.ok ? ((await response.json()) as { provider?: string; defaultContextMode?: string; sessionStorage?: string }) : undefined;
+  const health = response?.ok ? ((await response.json()) as { provider?: string; defaultContextMode?: string; sessionStorage?: string; jevFocusAvailable?: boolean }) : undefined;
+  jevFocusAvailability.textContent = health?.jevFocusAvailable
+    ? "Opt-in · sends your query and bounded source excerpts to TypeSafe. Hierarchy judges up to 16 topics → 12 subgraphs → 24 atoms. Adds up to three calls per turn; Traditional is unchanged."
+    : "Not configured · set TYPESAFE_API_KEY on the dev server. No key belongs in this browser.";
   provider.textContent = health?.provider ?? "Offline";
   provider.title = health?.provider ? [health.provider, health.defaultContextMode, health.sessionStorage].filter(Boolean).join(" / ") : "Provider unavailable";
 }
@@ -3500,6 +3512,7 @@ function updateLiveStreamLog(live: LiveStreamLog, event: AgentStreamEvent): void
       step.edgeCount = progress.graph.edges.length;
     }
     live.events.push(`step ${progress.iteration} ${progress.phase} · ${progress.detail}`);
+    if (progress.focus) live.events.push(`focus ${JSON.stringify(progress.focus)}`);
     return;
   }
   if (event.type === "model_token") {

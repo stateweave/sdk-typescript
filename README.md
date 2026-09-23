@@ -88,6 +88,29 @@ const agent = new Agent({
 - `contextMode: "molecular"` keeps the immutable causal graph unchanged but compiles deterministic outer-map molecules, expanded source atoms, and cross-molecule ports. The default remains `"causal"`; the development lab opts into molecular mode with a 16-node optional-detail target.
 - `enforceCompletionEvidence` rejects unsupported coding-task finals when required inspection, mutation, checks, restart, or smoke evidence is absent.
 
+### Experimental TypeSafe Jev focus (server-side only)
+
+```ts
+import { Agent, createJevFocusReranker, createModelFromEnv } from "stateweave";
+const agent = new Agent({
+  model: createModelFromEnv(),
+  focusReranker: createJevFocusReranker({
+    apiKey: process.env.TYPESAFE_API_KEY!,
+    mode: "hierarchical", // omit for the simpler flat reranker
+  }),
+});
+```
+
+This is **off by default**, server-only, and experimental. Each opted-in turn sends its query (at most 4,000 characters) and bounded source excerpts (600 characters each) to TypeSafe. Use non-sensitive sample states. No credential belongs in browser settings or `AgentState`.
+
+Flat mode judges up to 24 deterministic candidates once per turn. Hierarchical mode judges at most 16 source-backed topics → three nominated branches → 12 child subgraphs → four nominated leaves → 24 source atoms. Eight global candidates bypass branch selection so a bad region judgment is not an absolute gate. Region descriptions are partial source excerpts, not authoritative summaries. Independent Noul judgments permit multiple relevant branches; 0.5 is an experimental threshold, not a truth guarantee. Jev cannot recover evidence omitted from these bounded candidates.
+
+StateWeave selects up to six preferences, preserving latest system/goal and current-turn frontier before older preferences, excluding superseded projection versions and enforcing existing node/token limits. Scores never alter immutable source nodes or their causal parents. Browser expansion remains display-only. Preferences are fixed for one turn, not refreshed after each tool call; the compiler still admits fresh operational evidence ahead of them.
+
+The entire ranking has one deadline (5s flat, 10s hierarchical; configurable 100–30,000ms). Caller abort propagates; other failures visibly fall back to the unchanged deterministic projection. `progress.focus` and result `metadata.focus` distinguish requested `preferredNodeIds` from actually compiled `selectedNodeIds`, and report each scoring stage, resolved model, provider usage and latency separately from the answering model. Fallback preserves completed-stage usage and marks unknown usage incomplete. The paired Dev session ledger persists a compact separate-overhead record across reloads. An opt-in lab Settings selector applies only to the StateWeave arm. Frozen evaluation surfaces and Traditional are unchanged.
+
+Software tests prove the contract, **not better answers**. The independent 12-case, three-arm pilot is preregistered in `evaluations/jev-focus-v1/PROTOCOL.md`; assess full evidence/answer success together with total latency and external token overhead before any default change.
+
 ## Persistent state
 
 A single `Agent` owns one session graph. Stateful calls are serialized in invocation order. Successful runs commit; failed or aborted runs return diagnostic state on `AgentRunError` but do not overwrite the agent’s committed state.
