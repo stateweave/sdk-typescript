@@ -1,3 +1,4 @@
+import type { FocusUsage } from "../agent/focusReranker.js";
 import type { AgentState, TokenCountSource } from "../agent/types.js";
 import type { AgenticMessage } from "../evals/agenticBaseline.js";
 
@@ -24,6 +25,7 @@ export type DualUsageRecord = {
   compactionInputTokens: number;
   compactionOutputTokens: number;
   compactionModelCalls: number;
+  focus?: FocusUsage;
 };
 
 export type DualArmTurnView = {

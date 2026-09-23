@@ -5,6 +5,7 @@ import type { AgentRunMetadata, AgentState } from "../agent/types.js";
 import type { CausalWeaveNode } from "../core/causalTypes.js";
 import { assertValidCausalWeaveSnapshot } from "../core/causalWeave.js";
 import { serializeAgenticMessages, type AgenticMessage } from "../evals/agenticBaseline.js";
+import { summarizeFocus } from "../agent/focusReranker.js";
 import type { DualArmHistoryEntry, DualSessionSummary, DualSessionView, DualTurnView, DualUsageRecord, LoadedDualSession } from "./dualSessionTypes.js";
 export type { DualSessionSummary, DualSessionView, DualUsageRecord } from "./dualSessionTypes.js";
 
@@ -419,6 +420,7 @@ function stateWeaveUsage(turn: number, metadata: AgentRunMetadata): DualUsageRec
     toolCalls: metadata.toolCalls,
     maxPromptTokens: metadata.maxPromptTokens,
     contextTargetTokens: metadata.projectionTargetTokens,
+    ...(metadata.focus ? { focus: summarizeFocus(metadata.focus) } : {}),
     tokenCountSource: metadata.tokenCountSource,
     status: "done",
     compactions: 0,

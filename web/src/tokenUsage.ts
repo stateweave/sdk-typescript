@@ -1,3 +1,4 @@
+import type { FocusUsage } from "../../src/agent/focusReranker.js";
 import type { TokenCountSource } from "../../src/agent/types.js";
 
 export const maxTokenUsageHistory = 500;
@@ -16,6 +17,7 @@ export type TokenUsagePoint = {
   outputTokens: number;
   modelCalls: number;
   toolCalls?: number;
+  focus?: FocusUsage;
   compactions?: number;
   compactionAttempts?: number;
   compactionInputTokens?: number;
@@ -26,6 +28,15 @@ export type TokenUsagePoint = {
   tokenCountSource?: TokenCountSource;
   status: TokenUsageStatus;
 };
+
+function parseFocusUsage(value: unknown): FocusUsage | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const f = value as Record<string, unknown>;
+  if (f.status !== "ranked" && f.status !== "fallback") return undefined;
+  if (f.mode !== "flat" && f.mode !== "hierarchical" && f.mode !== "custom") return undefined;
+  if (![f.calls, f.inputTokens, f.outputTokens, f.latencyMs].every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0)) return undefined;
+  return { status:f.status, mode:f.mode, calls:f.calls as number, inputTokens:f.inputTokens as number, outputTokens:f.outputTokens as number, latencyMs:f.latencyMs as number, usageIncomplete:f.usageIncomplete === true };
+}
 
 export function parseTokenUsageHistory(value: unknown): TokenUsagePoint[] {
   if (!Array.isArray(value)) return [];
@@ -59,6 +70,7 @@ export function parseTokenUsageHistory(value: unknown): TokenUsagePoint[] {
       ...(tokenNumber(record.compactionInputTokens) !== undefined ? { compactionInputTokens: tokenNumber(record.compactionInputTokens) } : {}),
       ...(tokenNumber(record.compactionOutputTokens) !== undefined ? { compactionOutputTokens: tokenNumber(record.compactionOutputTokens) } : {}),
       ...(tokenNumber(record.compactionModelCalls) !== undefined ? { compactionModelCalls: tokenNumber(record.compactionModelCalls) } : {}),
+      ...(parseFocusUsage(record.focus) ? { focus: parseFocusUsage(record.focus) } : {}),
       maxPromptTokens,
       projectionTargetTokens: Math.min(requestedProjection, maxPromptTokens),
       ...(isTokenCountSource(record.tokenCountSource) ? { tokenCountSource: record.tokenCountSource } : {}),
@@ -182,7 +194,8 @@ function dualLatestArmHtml(label: string, css: string, point: TokenUsagePoint | 
   const compaction = point.compactions || compactionAttempts
     ? ` · ${point.compactions ?? 0} committed compaction${point.compactions === 1 ? "" : "s"} · ${compactionAttempts} summary attempt${compactionAttempts === 1 ? "" : "s"} · ${(point.compactionInputTokens ?? 0).toLocaleString()} summary input`
     : "";
-  const callLabel = `<small>${point.modelCalls} model call${point.modelCalls === 1 ? "" : "s"} · ${memoryLabel}${compaction}</small>`;
+  const focus = point.focus ? `<small>Jev ${point.focus.status} · ${point.focus.calls} completed calls · +${point.focus.inputTokens.toLocaleString()} input / ${point.focus.outputTokens.toLocaleString()} output · ${(point.focus.latencyMs / 1000).toFixed(2)}s${point.focus.usageIncomplete ? " · partial usage" : ""} (separate overhead)</small>` : "";
+  const callLabel = `<small>${point.modelCalls} model call${point.modelCalls === 1 ? "" : "s"} · ${memoryLabel}${compaction}</small>${focus}`;
   return `<article class="dual-token-arm ${css}">
     <header><strong>${label}</strong><span>T${point.turn} ${escapeHtml(point.status)}</span></header>
     <div><span>Summed input<strong>${formatTokens(point.totalInputTokens)}</strong></span><span>Summed output<strong>${formatTokens(point.outputTokens)}</strong></span><span>Peak single request<strong>${formatTokens(peak)}</strong></span><span>Cumulative I/O<strong>${formatTokens(totalInput + totalOutput)}</strong></span></div>

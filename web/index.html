@@ -89,7 +89,7 @@
                       </label>
                       <label>
                         <span>Jev focus · experimental (StateWeave arm only)</span>
-                        <input id="agent-jev-focus" type="checkbox" />
+                        <select id="agent-jev-focus"><option value="off">Off · deterministic</option><option value="flat">Jev · flat candidates</option><option value="hierarchical">Jev · topics → subgraphs → atoms</option></select>
                         <small id="jev-focus-availability">Requires a server-side TypeSafe key. Sends bounded candidate text to TypeSafe; never the API key to this browser.</small>
                       </label>
                       <button id="reset-agent-settings" class="button secondary small-button" type="button">Reset defaults</button>

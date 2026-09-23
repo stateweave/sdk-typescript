@@ -90,7 +90,26 @@ const agent = new Agent({
 
 ### Experimental TypeSafe Jev focus (server-side only)
 
-Pass `focusReranker: createJevFocusReranker({ apiKey: process.env.TYPESAFE_API_KEY! })` to `Agent` to judge up to 24 deterministic causal candidates once per turn. The callback returns bounded Noul relevance probabilities; StateWeave selects at most six preferred source nodes under its existing graph, prompt, and token limits. The API key must remain on the server; the query and excerpts (up to 600 characters each) are sent to TypeSafe. This is **off by default** and does not change `AgentState`, node identity, read-set parents, model actions, or frozen evaluations. An unavailable, malformed, or timed-out response emits a `progress.focus.status = "fallback"` event and uses the original deterministic projection. `progress.focus.ranking` exposes candidate IDs, probabilities, TypeSafe token counts, and latency separately from the model usage ledger; it is an experimental diagnostic, not evidence that answer quality improved. The dev lab's Settings toggle applies only to the StateWeave arm and requires `TYPESAFE_API_KEY` in its server environment. Use non-sensitive sample states when testing the external judgment.
+```ts
+import { Agent, createJevFocusReranker, createModelFromEnv } from "stateweave";
+const agent = new Agent({
+  model: createModelFromEnv(),
+  focusReranker: createJevFocusReranker({
+    apiKey: process.env.TYPESAFE_API_KEY!,
+    mode: "hierarchical", // omit for the simpler flat reranker
+  }),
+});
+```
+
+This is **off by default**, server-only, and experimental. Each opted-in turn sends its query (at most 4,000 characters) and bounded source excerpts (600 characters each) to TypeSafe. Use non-sensitive sample states. No credential belongs in browser settings or `AgentState`.
+
+Flat mode judges up to 24 deterministic candidates once per turn. Hierarchical mode judges at most 16 source-backed topics → three nominated branches → 12 child subgraphs → four nominated leaves → 24 source atoms. Eight global candidates bypass branch selection so a bad region judgment is not an absolute gate. Region descriptions are partial source excerpts, not authoritative summaries. Independent Noul judgments permit multiple relevant branches; 0.5 is an experimental threshold, not a truth guarantee. Jev cannot recover evidence omitted from these bounded candidates.
+
+StateWeave selects up to six preferences, preserving latest system/goal and current-turn frontier before older preferences, excluding superseded projection versions and enforcing existing node/token limits. Scores never alter immutable source nodes or their causal parents. Browser expansion remains display-only. Preferences are fixed for one turn, not refreshed after each tool call; the compiler still admits fresh operational evidence ahead of them.
+
+The entire ranking has one deadline (5s flat, 10s hierarchical; configurable 100–30,000ms). Caller abort propagates; other failures visibly fall back to the unchanged deterministic projection. `progress.focus` and result `metadata.focus` distinguish requested `preferredNodeIds` from actually compiled `selectedNodeIds`, and report each scoring stage, resolved model, provider usage and latency separately from the answering model. Fallback preserves completed-stage usage and marks unknown usage incomplete. The paired Dev session ledger persists a compact separate-overhead record across reloads. An opt-in lab Settings selector applies only to the StateWeave arm. Frozen evaluation surfaces and Traditional are unchanged.
+
+Software tests prove the contract, **not better answers**. The independent 12-case, three-arm pilot is preregistered in `evaluations/jev-focus-v1/PROTOCOL.md`; assess full evidence/answer success together with total latency and external token overhead before any default change.
 
 ## Persistent state
 

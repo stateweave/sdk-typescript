@@ -1561,10 +1561,11 @@ function createPublicAgent(body: RunRequest): Agent {
 }
 
 function requestedJevFocus(value: unknown): ReturnType<typeof createJevFocusReranker> | undefined {
-  if (value !== true) return undefined;
+  if (value === undefined || value === false || value === "off") return undefined;
+  if (value !== true && value !== "flat" && value !== "hierarchical") throw new Error("Unknown Jev focus mode.");
   const apiKey = process.env.TYPESAFE_API_KEY?.trim();
   if (!apiKey) throw new Error("Jev focus requires TYPESAFE_API_KEY on the dev server. No key belongs in the browser.");
-  return createJevFocusReranker({ apiKey });
+  return createJevFocusReranker({ apiKey, mode: value === "hierarchical" ? "hierarchical" : "flat" });
 }
 
 function isAgentState(value: unknown): value is AgentState {
