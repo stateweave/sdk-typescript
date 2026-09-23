@@ -45,6 +45,7 @@ describe("hierarchical Jev focus", () => {
     const weave = seed(), before = weave.snapshot(), hierarchy = weave.focusHierarchy("account setting");
     expect(hierarchy.topics.length).toBeLessThanOrEqual(16);
     expect(hierarchy.topics.every((topic) => topic.text.includes("Source excerpts") && topic.text.length <= 600)).toBe(true);
+    expect(hierarchy.topics.every((topic) => !topic.text.includes("[goal]") && !topic.text.includes("[answer]"))).toBe(true);
     const leaves = hierarchy.children(hierarchy.topics.slice(0, 3).map((topic) => topic.id));
     expect(leaves.length).toBeLessThanOrEqual(12);
     const atoms = hierarchy.atoms(leaves.slice(0, 4).map((leaf) => leaf.id));

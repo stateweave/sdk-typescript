@@ -497,7 +497,7 @@ class AgentRuntime {
       totalInputTokens += latestContextTokens;
       outputTokens += output.usage?.outputTokens ?? estimateStateWeaveTokens(output.text).estimatedTokens;
 
-      const call = parseToolCall(output.text);
+      const call = parseToolCall(output.text.replace(/^(\s*TOOL_CALL)\s*:\s*/i, "$1 "));
       const final = call ? undefined : parseFinal(output.text) ?? parsePlainInformationalFinal(task, output.text);
       if (!call && !final) {
         const invalid = output.text.trim();

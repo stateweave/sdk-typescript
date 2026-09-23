@@ -121,10 +121,12 @@ export class CausalWeave {
     const snapshot = this.snapshot();
     const hierarchy = buildCausalHierarchy(snapshot, projectCausalSnapshot(snapshot));
     const terms = meaningfulQueryTerms(query);
-    const describe = (region: { id: string; label: string; nodeIds: string[]; sequence: number }, kind: string): FocusCandidate => ({
-      id: region.id, kind, sequence: region.sequence,
-      text: `${region.label.slice(0, 80)}\nSource excerpts (partial, current projection versions):\n${this.focusCandidates(query, 3, new Set(region.nodeIds)).map((node) => `[${node.kind}] ${node.text.slice(0, 150)}`).join("\n")}`.slice(0, 600)
-    });
+    const describe = (region: { id: string; label: string; nodeIds: string[]; sequence: number }, kind: string): FocusCandidate => {
+      const evidence = region.nodeIds.filter((id) => ["semantic", "resource", "verification", "tool_result"].includes(this.nodes.get(id)?.kind ?? ""));
+      const samples = this.focusCandidates(query, 3, new Set(evidence.length ? evidence : region.nodeIds));
+      return { id: region.id, kind, sequence: region.sequence,
+        text: `${region.label.slice(0, 80)}\nSource excerpts (partial, current projection versions):\n${samples.map((node) => `[${node.kind}] ${node.text.slice(0, 150)}`).join("\n")}`.slice(0, 600) };
+    };
     const bounded = (regions: FocusCandidate[], limit: number): FocusCandidate[] => {
       const overlap = (item: FocusCandidate): number => [...terms].filter((term) => item.text.toLowerCase().includes(term)).length;
       const ranked = [...regions].sort((a, b) => overlap(b) - overlap(a) || b.sequence - a.sequence);
