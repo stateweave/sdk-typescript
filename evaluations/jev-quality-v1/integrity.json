@@ -1,0 +1,12 @@
+{
+  "runRecordsAudited": 128,
+  "completedRunsAudited": 126,
+  "completedSourceGraphsPreserved": true,
+  "completedReadSetsAndBudgetsPreserved": true,
+  "producerAndGroundingSourcesOriginal": true,
+  "noOpRecoveryPromptsEqual": 27,
+  "noOpRecoveryPromptsCompared": 27,
+  "nominatingRuns": 9,
+  "nominatedNodesActuallyVisible": 15,
+  "judgeIsolationVerified": true
+}
