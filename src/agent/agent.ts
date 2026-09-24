@@ -9,6 +9,7 @@ import type { StateGraph } from "../core/types.js";
 import type { Model, ModelInput, ModelOutput, ModelUsage } from "../llm/model.js";
 import { estimateStateWeaveTokens } from "../llm/tokenizer.js";
 import { createDefaultTools } from "../tools/fileSystemTools.js";
+import type { ContextRecovery } from "./contextRecovery.js";
 import { FocusRankingError, type FocusDiagnostics, type FocusHierarchy, type FocusReranker } from "./focusReranker.js";
 import type { Tool } from "../tools/types.js";
 import { defaultSemanticNodeTypes, type AgentArgs, type AgentModelEvent, type AgentProgress, type AgentRunOptions, type AgentRunResult, type AgentState, type AgentStreamEvent, type AgentTraceStep, type SemanticNodeType, type TokenCountSource } from "./types.js";
@@ -190,6 +191,7 @@ export class Agent {
       projectionMaxNodes: this.args.projectionMaxNodes,
       contextMode: this.args.contextMode,
       focusReranker: this.args.focusReranker,
+      contextRecovery: this.args.contextRecovery,
       maxNoProgressIterations: this.args.maxNoProgressIterations,
       providerSystem: this.args.providerSystem,
       enforceCompletionEvidence: this.args.enforceCompletionEvidence ?? true,
@@ -335,6 +337,7 @@ class AgentRuntime {
   private readonly projectionMaxNodes: number;
   private readonly contextMode: "causal" | "molecular";
   private readonly focusReranker?: FocusReranker;
+  private readonly contextRecovery?: ContextRecovery;
   private readonly maxNoProgressIterations?: number;
   private readonly providerSystem?: string;
   private readonly enforceCompletionEvidence: boolean;
@@ -352,6 +355,7 @@ class AgentRuntime {
     projectionMaxNodes: number;
     contextMode: "causal" | "molecular";
     focusReranker?: FocusReranker;
+    contextRecovery?: ContextRecovery;
     maxNoProgressIterations?: number;
     providerSystem?: string;
     enforceCompletionEvidence: boolean;
@@ -367,6 +371,7 @@ class AgentRuntime {
     this.projectionMaxNodes = args.projectionMaxNodes;
     this.contextMode = args.contextMode;
     this.focusReranker = args.focusReranker;
+    this.contextRecovery = args.contextRecovery;
     this.maxNoProgressIterations = args.maxNoProgressIterations;
     this.providerSystem = args.providerSystem;
     this.enforceCompletionEvidence = args.enforceCompletionEvidence;
@@ -477,7 +482,22 @@ class AgentRuntime {
     }
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       options.signal?.throwIfAborted();
-      const compiled = this.weave.compile({ query: task, maxTokens: this.maxContextTokens, targetTokens: this.projectionTargetTokens, maxNodes: this.projectionMaxNodes, contextMode: this.contextMode, preferredNodeIds });
+      let compiled = this.weave.compile({ query: task, maxTokens: this.maxContextTokens, targetTokens: this.projectionTargetTokens, maxNodes: this.projectionMaxNodes, contextMode: this.contextMode, preferredNodeIds });
+      if (iteration === 1 && this.contextRecovery) {
+        const snapshot = this.weave.snapshot();
+        try {
+          const recovered = await this.contextRecovery(structuredClone({ query: task, state: snapshot, compiled: { prompt: compiled.prompt, nodeIds: compiled.nodeIds } }), options.signal);
+          options.signal?.throwIfAborted();
+          if (!Array.isArray(recovered) || recovered.length > 6 || new Set(recovered).size !== recovered.length || recovered.some((id) => typeof id !== "string" || !snapshot.nodes.some((node) => node.id === id && ["goal", "resource", "semantic", "tool_result", "verification"].includes(node.kind)))) throw new Error("Invalid context recovery selection.");
+          const nextPreferred = [...new Set([...recovered, ...preferredNodeIds])].slice(0, 6);
+          const recoveredContext = this.weave.compile({ query: task, maxTokens: this.maxContextTokens, targetTokens: this.projectionTargetTokens, maxNodes: this.projectionMaxNodes, contextMode: this.contextMode, preferredNodeIds: nextPreferred });
+          preferredNodeIds = nextPreferred;
+          compiled = recoveredContext;
+        } catch {
+          options.signal?.throwIfAborted();
+          progress(iteration, "context", "Optional context recovery unavailable; kept original projection.");
+        }
+      }
       latestCompiled = compiled;
       if (focus) focus.selectedNodeIds = compiled.nodeIds.filter((id) => preferredNodeIds.includes(id));
       progress(iteration, "context", focus?.status === "fallback" ? "Jev unavailable; using deterministic projection" : this.contextMode === "molecular" ? "Compiled the molecular context view" : "Compiled the active causal frontier", { prompt: compiled.prompt, contextTokens: compiled.tokenEstimate.estimatedTokens, ...(focus ? { focus: structuredClone(focus) } : {}) });

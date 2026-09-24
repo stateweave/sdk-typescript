@@ -1,0 +1,460 @@
+[
+  {
+    "id": "case-01",
+    "sourceId": "726462e0",
+    "group": "single-session-user",
+    "questionType": "single-session-user",
+    "answer": "10%",
+    "answerSessionIds": [
+      "answer_f38f679b"
+    ],
+    "sourceSessionMap": {
+      "source-c059ab8d449861db": "answer_f38f679b"
+    }
+  },
+  {
+    "id": "case-02",
+    "sourceId": "eace081b",
+    "group": "knowledge-update",
+    "questionType": "knowledge-update",
+    "answer": "Oahu",
+    "answerSessionIds": [
+      "answer_8a791264_1",
+      "answer_8a791264_2"
+    ],
+    "sourceSessionMap": {
+      "source-16a8916c36a9ad66": "answer_8a791264_1",
+      "source-664e3f6e9f015cac": "answer_8a791264_2"
+    }
+  },
+  {
+    "id": "case-03",
+    "sourceId": "ac031881",
+    "group": "single-session-assistant",
+    "questionType": "single-session-assistant",
+    "answer": "The designation on your jumpsuit was 'LIV'.",
+    "answerSessionIds": [
+      "answer_sharegpt_GYqnAhC_190"
+    ],
+    "sourceSessionMap": {
+      "source-49b7534b0669d831": "answer_sharegpt_GYqnAhC_190"
+    }
+  },
+  {
+    "id": "case-04",
+    "sourceId": "8979f9ec",
+    "group": "multi-session",
+    "questionType": "multi-session",
+    "answer": "8 meals",
+    "answerSessionIds": [
+      "answer_35e36341_1",
+      "answer_35e36341_2"
+    ],
+    "sourceSessionMap": {
+      "source-6f34f8a70ee67a32": "answer_35e36341_1",
+      "source-d45bd1f1d9c5d416": "answer_35e36341_2"
+    }
+  },
+  {
+    "id": "case-05",
+    "sourceId": "c8f1aeed",
+    "group": "single-session-assistant",
+    "questionType": "single-session-assistant",
+    "answer": "Pennsylvania",
+    "answerSessionIds": [
+      "answer_ultrachat_519486"
+    ],
+    "sourceSessionMap": {
+      "source-334b98375655f3e8": "answer_ultrachat_519486"
+    }
+  },
+  {
+    "id": "case-06",
+    "sourceId": "4fd1909e",
+    "group": "single-session-user",
+    "questionType": "single-session-user",
+    "answer": "Xfinity Center",
+    "answerSessionIds": [
+      "answer_2952aee4"
+    ],
+    "sourceSessionMap": {
+      "source-ad6eb1c34f49a1ab": "answer_2952aee4"
+    }
+  },
+  {
+    "id": "case-07",
+    "sourceId": "f523d9fe",
+    "group": "single-session-assistant",
+    "questionType": "single-session-assistant",
+    "answer": "Doc Martin",
+    "answerSessionIds": [
+      "answer_sharegpt_m2xJfjo_0"
+    ],
+    "sourceSessionMap": {
+      "source-636a729e21008352": "answer_sharegpt_m2xJfjo_0"
+    }
+  },
+  {
+    "id": "case-08",
+    "sourceId": "c19f7a0b",
+    "group": "single-session-user",
+    "questionType": "single-session-user",
+    "answer": "6:30 pm",
+    "answerSessionIds": [
+      "answer_f442ccbe"
+    ],
+    "sourceSessionMap": {
+      "source-305a4c4d52c0182b": "answer_f442ccbe"
+    }
+  },
+  {
+    "id": "case-09",
+    "sourceId": "c8090214_abs",
+    "group": "abstention",
+    "questionType": "temporal-reasoning",
+    "answer": "The information provided is not enough. You mentioned getting the iPhone 13 Pro and attending the market, but you did not mention buying an iPad.",
+    "answerSessionIds": [
+      "answer_70dc7d08_abs_2",
+      "answer_70dc7d08_abs_1"
+    ],
+    "sourceSessionMap": {
+      "source-c0e119c67ec5e40c": "answer_70dc7d08_abs_2",
+      "source-ef2d7a0b7e7ecf0a": "answer_70dc7d08_abs_1"
+    }
+  },
+  {
+    "id": "case-10",
+    "sourceId": "0862e8bf_abs",
+    "group": "abstention",
+    "questionType": "single-session-user",
+    "answer": "You did not mention this information. You mentioned your cat Luna but not your hamster.",
+    "answerSessionIds": [
+      "answer_c6fd8ebd_abs"
+    ],
+    "sourceSessionMap": {
+      "source-3774c5e15e0cbf29": "answer_c6fd8ebd_abs"
+    }
+  },
+  {
+    "id": "case-11",
+    "sourceId": "982b5123_abs",
+    "group": "abstention",
+    "questionType": "temporal-reasoning",
+    "answer": "The information provided is not enough. You only mentioned booking Airbnb in San Francisco.",
+    "answerSessionIds": [
+      "answer_ab603dd5_abs_1",
+      "answer_ab603dd5_abs_2"
+    ],
+    "sourceSessionMap": {
+      "source-9076029c73df4476": "answer_ab603dd5_abs_1",
+      "source-f5b9a3db6a379fe4": "answer_ab603dd5_abs_2"
+    }
+  },
+  {
+    "id": "case-12",
+    "sourceId": "75f70248",
+    "group": "single-session-preference",
+    "questionType": "single-session-preference",
+    "answer": "The user would prefer responses that consider the potential impact of their cat, Luna, and her shedding on their sneezing, as well as the recent deep clean of the living room and its possible effect on stirring up dust. They might not prefer responses that fail to take into account these specific details previously mentioned, such as generic suggestions or unrelated factors.",
+    "answerSessionIds": [
+      "answer_8ee04a2e"
+    ],
+    "sourceSessionMap": {
+      "source-c8af76468b5c515a": "answer_8ee04a2e"
+    }
+  },
+  {
+    "id": "case-13",
+    "sourceId": "a89d7624",
+    "group": "single-session-preference",
+    "questionType": "single-session-preference",
+    "answer": "The user would prefer responses that take into account their previous experience in Denver, specifically their interest in live music and memorable encounter with Brandon Flowers. They might appreciate suggestions that revisit or build upon this experience, such as revisiting the same bar or exploring similar music venues in the area. The user may not prefer general tourist recommendations or activities unrelated to their interest in live music.",
+    "answerSessionIds": [
+      "answer_8f15ac24"
+    ],
+    "sourceSessionMap": {
+      "source-670be675b479e9b7": "answer_8f15ac24"
+    }
+  },
+  {
+    "id": "case-14",
+    "sourceId": "b29f3365",
+    "group": "temporal-reasoning",
+    "questionType": "temporal-reasoning",
+    "answer": "Four weeks",
+    "answerSessionIds": [
+      "answer_436d4309_1",
+      "answer_436d4309_2"
+    ],
+    "sourceSessionMap": {
+      "source-0e0e289a7d81c079": "answer_436d4309_1",
+      "source-1225b06607f10837": "answer_436d4309_2"
+    }
+  },
+  {
+    "id": "case-15",
+    "sourceId": "gpt4_2f56ae70",
+    "group": "temporal-reasoning",
+    "questionType": "temporal-reasoning",
+    "answer": "Disney+",
+    "answerSessionIds": [
+      "answer_7a36e820_2",
+      "answer_7a36e820_1",
+      "answer_7a36e820_3"
+    ],
+    "sourceSessionMap": {
+      "source-aff583013e63e786": "answer_7a36e820_3",
+      "source-905c8e1c00126322": "answer_7a36e820_2",
+      "source-4d7c39d4b634af8c": "answer_7a36e820_1"
+    }
+  },
+  {
+    "id": "case-16",
+    "sourceId": "0a34ad58",
+    "group": "single-session-preference",
+    "questionType": "single-session-preference",
+    "answer": "The user would prefer responses that utilize their existing resources, such as their Suica card and TripIt app, to provide personalized tips for navigating Tokyo's public transportation. They might not prefer general tips or recommendations that do not take into account their prior preparations.",
+    "answerSessionIds": [
+      "answer_cebb7159"
+    ],
+    "sourceSessionMap": {
+      "source-11652f1ddef50947": "answer_cebb7159"
+    }
+  },
+  {
+    "id": "case-17",
+    "sourceId": "031748ae",
+    "group": "knowledge-update",
+    "questionType": "knowledge-update",
+    "answer": "When you just started your new role as Senior Software Engineer, you led 4 engineers. Now, you lead 5 engineers",
+    "answerSessionIds": [
+      "answer_8748f791_1",
+      "answer_8748f791_2"
+    ],
+    "sourceSessionMap": {
+      "source-914251a45e121705": "answer_8748f791_1",
+      "source-90e4a2fa5d2b3774": "answer_8748f791_2"
+    }
+  },
+  {
+    "id": "case-18",
+    "sourceId": "10e09553",
+    "group": "knowledge-update",
+    "questionType": "knowledge-update",
+    "answer": "7",
+    "answerSessionIds": [
+      "answer_67be2c38_1",
+      "answer_67be2c38_2"
+    ],
+    "sourceSessionMap": {
+      "source-0b9ab35dcb9d413a": "answer_67be2c38_1",
+      "source-b3a5204cea7c9365": "answer_67be2c38_2"
+    }
+  },
+  {
+    "id": "case-19",
+    "sourceId": "gpt4_372c3eed_abs",
+    "group": "abstention",
+    "questionType": "multi-session",
+    "answer": "The information provided is not enough. You mentioned 4 years in high school (2010-2014), 2 years at PCC (2014-2016), and 4 years at UCLA (2016-2020). But you didn't mention the number of years you spend getting the Master's degree",
+    "answerSessionIds": [
+      "answer_35c5419d_abs_3",
+      "answer_35c5419d_abs_1",
+      "answer_35c5419d_abs_2"
+    ],
+    "sourceSessionMap": {
+      "source-173ef52e23595731": "answer_35c5419d_abs_3",
+      "source-74ddd2aa8e3378e7": "answer_35c5419d_abs_1",
+      "source-1964845f0498883a": "answer_35c5419d_abs_2"
+    }
+  },
+  {
+    "id": "case-20",
+    "sourceId": "2318644b",
+    "group": "multi-session",
+    "questionType": "multi-session",
+    "answer": "$270",
+    "answerSessionIds": [
+      "answer_eaa8e3ef_1",
+      "answer_eaa8e3ef_2"
+    ],
+    "sourceSessionMap": {
+      "source-8ed7e93f2499a0bd": "answer_eaa8e3ef_1",
+      "source-e35ab5b275001621": "answer_eaa8e3ef_2"
+    }
+  },
+  {
+    "id": "case-21",
+    "sourceId": "gpt4_ec93e27f",
+    "group": "temporal-reasoning",
+    "questionType": "temporal-reasoning",
+    "answer": "train",
+    "answerSessionIds": [
+      "answer_e3aa84c4_2",
+      "answer_e3aa84c4_1"
+    ],
+    "sourceSessionMap": {
+      "source-0ffe355ee0e60780": "answer_e3aa84c4_2",
+      "source-16c5095097e3d097": "answer_e3aa84c4_1"
+    }
+  },
+  {
+    "id": "case-22",
+    "sourceId": "07741c45",
+    "group": "knowledge-update",
+    "questionType": "knowledge-update",
+    "answer": "in a shoe rack in my closet",
+    "answerSessionIds": [
+      "answer_7e9ad7b4_1",
+      "answer_7e9ad7b4_2"
+    ],
+    "sourceSessionMap": {
+      "source-4408c60ee565f5dd": "answer_7e9ad7b4_1",
+      "source-498c8ff0ba05cc48": "answer_7e9ad7b4_2"
+    }
+  },
+  {
+    "id": "case-23",
+    "sourceId": "eac54adc",
+    "group": "temporal-reasoning",
+    "questionType": "temporal-reasoning",
+    "answer": "19 days ago. 20 days (including the last day) is also acceptable.",
+    "answerSessionIds": [
+      "answer_0d4d0347_1",
+      "answer_0d4d0347_2"
+    ],
+    "sourceSessionMap": {
+      "source-3ae952d961506b9d": "answer_0d4d0347_1",
+      "source-0d9808d59dca5d0e": "answer_0d4d0347_2"
+    }
+  },
+  {
+    "id": "case-24",
+    "sourceId": "edced276_abs",
+    "group": "abstention",
+    "questionType": "multi-session",
+    "answer": "The information provided is not enough. You mentioned traveling for 10 days in Hawaii but did not mention abything about the trip to Seattle.",
+    "answerSessionIds": [
+      "answer_60e8941a_abs_1",
+      "answer_60e8941a_abs_2"
+    ],
+    "sourceSessionMap": {
+      "source-f8edf2526daf44fe": "answer_60e8941a_abs_1",
+      "source-9e3f6de003390e59": "answer_60e8941a_abs_2"
+    }
+  },
+  {
+    "id": "case-25",
+    "sourceId": "c18a7dc8",
+    "group": "multi-session",
+    "questionType": "multi-session",
+    "answer": "7",
+    "answerSessionIds": [
+      "answer_2e2085fa_1",
+      "answer_2e2085fa_2"
+    ],
+    "sourceSessionMap": {
+      "source-3bdf751dbd30d4fb": "answer_2e2085fa_1",
+      "source-d62a727320cfb8bf": "answer_2e2085fa_2"
+    }
+  },
+  {
+    "id": "case-26",
+    "sourceId": "gpt4_93159ced_abs",
+    "group": "abstention",
+    "questionType": "temporal-reasoning",
+    "answer": "The information provided is not enough. From the information provided, You haven't started working at Google yet.",
+    "answerSessionIds": [
+      "answer_e5131a1b_abs_2",
+      "answer_e5131a1b_abs_1"
+    ],
+    "sourceSessionMap": {
+      "source-dbea35a8bfbe1531": "answer_e5131a1b_abs_2",
+      "source-cab12349cc77cb8b": "answer_e5131a1b_abs_1"
+    }
+  },
+  {
+    "id": "case-27",
+    "sourceId": "cc06de0d",
+    "group": "multi-session",
+    "questionType": "multi-session",
+    "answer": "$6",
+    "answerSessionIds": [
+      "answer_4fb01417_1",
+      "answer_4fb01417_2"
+    ],
+    "sourceSessionMap": {
+      "source-1175e7468c58626f": "answer_4fb01417_1",
+      "source-af370d4e51da4825": "answer_4fb01417_2"
+    }
+  },
+  {
+    "id": "case-28",
+    "sourceId": "caf03d32",
+    "group": "single-session-preference",
+    "questionType": "single-session-preference",
+    "answer": "The user would prefer responses that provide tips and advice specifically tailored to their slow cooker experiences, utilizing their recent success with beef stew and interest in making yogurt in the slow cooker. They might not prefer general slow cooker recipes or advice unrelated to their specific experiences and interests.",
+    "answerSessionIds": [
+      "answer_2fc6aabb"
+    ],
+    "sourceSessionMap": {
+      "source-5cfed8c4a75a7612": "answer_2fc6aabb"
+    }
+  },
+  {
+    "id": "case-29",
+    "sourceId": "6aeb4375_abs",
+    "group": "abstention",
+    "questionType": "knowledge-update",
+    "answer": "The information provided is not enough. You mentioned trying Korean restaurants but not Italian restaurants.",
+    "answerSessionIds": [
+      "answer_3f9693b7_abs_1",
+      "answer_3f9693b7_abs_2"
+    ],
+    "sourceSessionMap": {
+      "source-4939efbac1f02276": "answer_3f9693b7_abs_1",
+      "source-236c45a71298c3bd": "answer_3f9693b7_abs_2"
+    }
+  },
+  {
+    "id": "case-30",
+    "sourceId": "0862e8bf",
+    "group": "single-session-user",
+    "questionType": "single-session-user",
+    "answer": "Luna",
+    "answerSessionIds": [
+      "answer_c6fd8ebd"
+    ],
+    "sourceSessionMap": {
+      "source-1d3ccfda0660b6c5": "answer_c6fd8ebd"
+    }
+  },
+  {
+    "id": "case-31",
+    "sourceId": "e5ba910e_abs",
+    "group": "abstention",
+    "questionType": "multi-session",
+    "answer": "The information provided is not enough. You mentioned purchasing a headphone, but you did not mention the iPad.",
+    "answerSessionIds": [
+      "answer_e49ed9d3_abs_2",
+      "answer_e49ed9d3_abs_1"
+    ],
+    "sourceSessionMap": {
+      "source-bf35208e6e3b9dac": "answer_e49ed9d3_abs_2",
+      "source-1ac0d17846a252eb": "answer_e49ed9d3_abs_1"
+    }
+  },
+  {
+    "id": "case-32",
+    "sourceId": "3e321797",
+    "group": "single-session-assistant",
+    "questionType": "single-session-assistant",
+    "answer": "10 minutes",
+    "answerSessionIds": [
+      "answer_ultrachat_94624"
+    ],
+    "sourceSessionMap": {
+      "source-21263a215ca9a2be": "answer_ultrachat_94624"
+    }
+  }
+]
