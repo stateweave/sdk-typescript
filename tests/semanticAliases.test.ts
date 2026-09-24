@@ -44,6 +44,22 @@ describe("experimental semantic projection aliases",()=>{
   expect(weave.compile({semanticAliases:[null] as never})).toEqual(weave.compile());
   expect(()=>weave.compile({semanticAliases:Array.from({length:257},()=>({from:a.id,to:b.id}))})).toThrow("256");
  });
+ it("bypasses aliases for source-sensitive questions and explicit preferences",()=>{
+  const {weave,a,b}=fixture();const semanticAliases=[{from:a.id,to:b.id}];
+  for(const query of ["Quote the original wording", "What did earlier records say?", "Audit provenance", "Give exact text"]){
+   expect(weave.compile({query,semanticAliases})).toEqual(weave.compile({query}));
+  }
+  expect(weave.compile({preferredNodeIds:[a.id],semanticAliases})).toEqual(weave.compile({preferredNodeIds:[a.id]}));
+ });
+ it("keeps lexical access through either equivalent wording",()=>{
+  const weave=new CausalWeave();
+  const root=weave.append({kind:"system",payload:"Records",parents:[],advance:false});
+  const a=weave.append({kind:"semantic",payload:{type:"memory",content:"Her occupation is nursing."},parents:[root.id],resourceKey:"semantic:memory:a",advance:false});
+  const b=weave.append({kind:"semantic",payload:{type:"memory",content:"She works as a nurse."},parents:[root.id],resourceKey:"semantic:memory:b",advance:false});
+  weave.append({kind:"goal",payload:"What is her occupation?",parents:[root.id]});
+  const compiled=weave.compile({query:"What is her occupation?",semanticAliases:[{from:a.id,to:b.id}]});
+  expect(compiled.nodeIds).toContain(b.id);expect(compiled.nodeIds).not.toContain(a.id);
+ });
  it("preserves Agent success-only state and actual answer parents",async()=>{
   const {beforeGoal,a,b}=fixture();
   const model={async complete(){return {text:"FINAL: Nadia owns Vega."};},async *stream(){yield {type:"token" as const,token:"FINAL: Nadia owns Vega."};}};

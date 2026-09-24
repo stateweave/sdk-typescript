@@ -171,22 +171,28 @@ export class CausalWeave {
       const key = projectionEquivalenceKey(this.nodes.get(id)!);
       return !key || latestEquivalent.get(key) === id;
     });
-    const semanticAliases = optionalSemanticAliases(args.semanticAliases, this.nodes, new Set(current), this.frontierIds, latestGoal ? this.nodes.get(latestGoal)!.sequence : 0);
+    const evidenceQuery = [args.query ?? "", latestGoal ? payloadText(this.nodes.get(latestGoal)?.payload) : ""].join(" ");
+    const sourceSensitive = /\b(?:verbatim|quot(?:e[ds]?|ations?)|provenance|audit|history|historical|original|previous|earlier|exact (?:text|wording|phrase))\b/i.test(evidenceQuery);
+    const semanticAliases = optionalSemanticAliases(sourceSensitive ? undefined : args.semanticAliases, this.nodes, new Set(current), new Set([...this.frontierIds, ...(args.preferredNodeIds ?? [])]), latestGoal ? this.nodes.get(latestGoal)!.sequence : 0);
     const aliasTargets = new Map(semanticAliases.map(({ from, to }) => [from, to]));
     const eligible = current.filter((id) => !aliasTargets.has(id));
-    const queryRanks = new Map(current.map((id) => [id, { id, score: relevanceScore(this.nodes.get(id)!, queryTerms, this.order.length), overlap: queryOverlap(this.nodes.get(id)!, queryTerms) }]));
+    const queryRanks = new Map(current.map((id) => {
+      const node = this.nodes.get(id)!, overlap = queryOverlap(node, queryTerms);
+      return [id, { id, score: relevanceScore(node, queryTerms, this.order.length), overlap, useful: usefulQueryCandidate(node, args.query ?? "", queryTerms, overlap) }];
+    }));
     for (const { from, to } of semanticAliases) {
       const source = queryRanks.get(from)!, target = queryRanks.get(to)!;
       target.score = Math.max(source.score, target.score);
       target.overlap = Math.max(source.overlap, target.overlap);
+      target.useful ||= source.useful;
     }
     const ranked = eligible
       .map((id) => queryRanks.get(id)!)
-      .filter((candidate) => candidate.overlap > 0 && usefulQueryCandidate(this.nodes.get(candidate.id)!, args.query ?? "", queryTerms, candidate.overlap))
+      .filter((candidate) => candidate.overlap > 0 && candidate.useful)
       .sort((a, b) => b.overlap - a.overlap || b.score - a.score || this.nodes.get(b.id)!.sequence - this.nodes.get(a.id)!.sequence);
     const preferredIds = (args.preferredNodeIds ?? []).filter((id) => eligible.includes(id)).slice(0, 6);
     const protectedQueryIds = new Set([...preferredIds, ...ranked.slice(0, 8).map((candidate) => candidate.id)]);
-    const relevantResourceIds = selectRelevantResourceHeads([...this.resourceHeads.values()].filter((id) => !aliasTargets.has(id)),  this.nodes, args.query ?? "", queryTerms, latestAnswer, maxNodes);
+    const relevantResourceIds = selectRelevantResourceHeads([...this.resourceHeads.values()].filter((id) => !aliasTargets.has(id)), this.nodes, args.query ?? "", queryTerms, latestAnswer, maxNodes);
     const selected = selectBoundedNodeIds(maxNodes, this.nodes, [
       [latestSystem, latestGoal, ...this.frontier().filter((id) => !preferredIds.length || this.nodes.get(id)!.sequence > (latestGoal ? this.nodes.get(latestGoal)!.sequence : 0))].filter((id): id is string => Boolean(id)),
       preferredIds,

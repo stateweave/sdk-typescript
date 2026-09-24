@@ -1,0 +1,396 @@
+{
+  "links": {
+    "metrics": {
+      "equivalent": {
+        "tp": 15,
+        "fp": 0,
+        "fn": 1,
+        "precision": 1,
+        "recall": 0.9375
+      },
+      "conflicting": {
+        "tp": 2,
+        "fp": 0,
+        "fn": 1,
+        "precision": 1,
+        "recall": 0.6666666666666666
+      }
+    },
+    "ledger": [
+      {
+        "id": "h01",
+        "expected": "equivalent",
+        "relation": "equivalent",
+        "equivalent": 0.96,
+        "conflicting": 0.02
+      },
+      {
+        "id": "h02",
+        "expected": "equivalent",
+        "relation": "equivalent",
+        "equivalent": 0.92,
+        "conflicting": 0.04
+      },
+      {
+        "id": "h03",
+        "expected": "equivalent",
+        "relation": "equivalent",
+        "equivalent": 0.96,
+        "conflicting": 0.02
+      },
+      {
+        "id": "h04",
+        "expected": "equivalent",
+        "relation": "equivalent",
+        "equivalent": 0.92,
+        "conflicting": 0.03
+      },
+      {
+        "id": "h05",
+        "expected": "equivalent",
+        "relation": "equivalent",
+        "equivalent": 0.97,
+        "conflicting": 0.02
+      },
+      {
+        "id": "h06",
+        "expected": "equivalent",
+        "relation": "equivalent",
+        "equivalent": 0.95,
+        "conflicting": 0.02
+      },
+      {
+        "id": "h07",
+        "expected": "equivalent",
+        "relation": "equivalent",
+        "equivalent": 0.99,
+        "conflicting": 0.02
+      },
+      {
+        "id": "h08",
+        "expected": "equivalent",
+        "relation": "equivalent",
+        "equivalent": 0.92,
+        "conflicting": 0.04
+      },
+      {
+        "id": "h09",
+        "expected": "equivalent",
+        "relation": "none",
+        "equivalent": 0.88,
+        "conflicting": 0.03
+      },
+      {
+        "id": "h10",
+        "expected": "equivalent",
+        "relation": "equivalent",
+        "equivalent": 0.94,
+        "conflicting": 0.03
+      },
+      {
+        "id": "h11",
+        "expected": "equivalent",
+        "relation": "equivalent",
+        "equivalent": 0.94,
+        "conflicting": 0.03
+      },
+      {
+        "id": "h12",
+        "expected": "equivalent",
+        "relation": "equivalent",
+        "equivalent": 0.97,
+        "conflicting": 0.02
+      },
+      {
+        "id": "h13",
+        "expected": "equivalent",
+        "relation": "equivalent",
+        "equivalent": 0.95,
+        "conflicting": 0.02
+      },
+      {
+        "id": "h14",
+        "expected": "equivalent",
+        "relation": "equivalent",
+        "equivalent": 0.93,
+        "conflicting": 0.03
+      },
+      {
+        "id": "h15",
+        "expected": "equivalent",
+        "relation": "equivalent",
+        "equivalent": 0.9,
+        "conflicting": 0.03
+      },
+      {
+        "id": "h16",
+        "expected": "equivalent",
+        "relation": "equivalent",
+        "equivalent": 0.91,
+        "conflicting": 0.03
+      },
+      {
+        "id": "h17",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.06,
+        "conflicting": 0.5
+      },
+      {
+        "id": "h18",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.14,
+        "conflicting": 0.14
+      },
+      {
+        "id": "h19",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.04,
+        "conflicting": 0.17
+      },
+      {
+        "id": "h20",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.05,
+        "conflicting": 0.27
+      },
+      {
+        "id": "h21",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.04,
+        "conflicting": 0.05
+      },
+      {
+        "id": "h22",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.16,
+        "conflicting": 0.3
+      },
+      {
+        "id": "h23",
+        "expected": "conflicting",
+        "relation": "none",
+        "equivalent": 0.01,
+        "conflicting": 0.94
+      },
+      {
+        "id": "h24",
+        "expected": "conflicting",
+        "relation": "conflicting",
+        "equivalent": 0.02,
+        "conflicting": 0.97
+      },
+      {
+        "id": "h25",
+        "expected": "conflicting",
+        "relation": "conflicting",
+        "equivalent": 0.02,
+        "conflicting": 0.97
+      },
+      {
+        "id": "h26",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.02,
+        "conflicting": 0.07
+      },
+      {
+        "id": "h27",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.03,
+        "conflicting": 0.78
+      },
+      {
+        "id": "h28",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.27,
+        "conflicting": 0.16
+      },
+      {
+        "id": "h29",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.07,
+        "conflicting": 0.26
+      },
+      {
+        "id": "h30",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.04,
+        "conflicting": 0.15
+      },
+      {
+        "id": "h31",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.21,
+        "conflicting": 0.22
+      },
+      {
+        "id": "h32",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.03,
+        "conflicting": 0.44
+      }
+    ],
+    "latencyMs": 1408,
+    "inputTokens": 10414,
+    "outputTokens": 1112,
+    "calls": 6
+  },
+  "rows": [
+    {
+      "file": "graph-0-deterministic.json",
+      "arm": "deterministic",
+      "status": "done",
+      "initialHash": "6148f45b4b18026eb9babb4f489468ea56e0b8ec56e53c8099df0dcb4429ea7d",
+      "facts": 8,
+      "cap": 10,
+      "covered": 5,
+      "aliases": 0,
+      "modelCalls": 1,
+      "inputTokens": 1082,
+      "outputTokens": 866,
+      "latencyMs": 23400,
+      "preserved": true,
+      "final": "Based on the recorded facts, the Lumen release constraints are:\n\n1. **Data residency:** Lumen release traffic must remain in Canada (recorded twice, with the duplicate phrased as \"traffic ... required to stay in Canada\").\n2. **Privacy/logging:** The Lumen release must not log customer email addresses.\n3. **Schema:** The Lumen release uses schema version 8 (recorded twice).\n4. **Testing:** The Lumen release test timeout is 240 seconds (recorded twice, once in all caps).\n\nAdditionally, one recorded release fact is a schedule rather than a constraint: the Lumen release deployment is scheduled for 2031-06-12.\n\nNote: The duplicate records above (Canada traffic, schema version, and test timeout each appear twice) have been consolidated into single constraints; no other release constraints are recorded."
+    },
+    {
+      "file": "graph-0-exact.json",
+      "arm": "exact",
+      "status": "done",
+      "initialHash": "6148f45b4b18026eb9babb4f489468ea56e0b8ec56e53c8099df0dcb4429ea7d",
+      "facts": 8,
+      "cap": 10,
+      "covered": 6,
+      "aliases": 2,
+      "modelCalls": 1,
+      "inputTokens": 1084,
+      "outputTokens": 793,
+      "latencyMs": 19146,
+      "preserved": true,
+      "final": "The recorded Lumen release constraints are:\n\n1. **Log retention** — release logs are kept for 45 days (recorded twice, in equivalent wording).\n2. **Data residency** — release traffic must remain in Canada (recorded twice, in equivalent wording).\n3. **Privacy** — the release must not log customer email addresses.\n4. **Testing** — test timeout is 240 seconds.\n5. **Schema** — the release uses schema version 8.\n\nNote: the deployment being scheduled for 2031-06-12 is also recorded, but it is a schedule rather than a constraint. Duplicate statements have been merged, and no other constraints are recorded in the supplied facts."
+    },
+    {
+      "file": "graph-0-jev.json",
+      "arm": "jev",
+      "status": "done",
+      "initialHash": "6148f45b4b18026eb9babb4f489468ea56e0b8ec56e53c8099df0dcb4429ea7d",
+      "facts": 8,
+      "cap": 10,
+      "covered": 8,
+      "aliases": 8,
+      "modelCalls": 1,
+      "inputTokens": 1087,
+      "outputTokens": 876,
+      "latencyMs": 17745,
+      "preserved": true,
+      "final": "Based on the recorded facts available in the current view, the Lumen release constraints are:\n\n1. **Approval**: Priya must approve the Lumen release.\n2. **Maintenance window**: The release maintenance duration is 120 minutes.\n3. **Log retention**: Lumen release logs are kept for 45 days.\n4. **Data residency**: Traffic for the Lumen release must stay in Canada.\n5. **Privacy**: Logging customer email addresses is forbidden for the Lumen release.\n6. **Testing**: The Lumen release test timeout is 240 seconds.\n7. **Schema**: The Lumen release uses schema version 8.\n8. **Schedule**: June 12, 2031 is the scheduled deployment date.\n\nNote: The underlying memory record contains 17 nodes, but only these 8 are exposed in the current view. Any additional recorded constraints beyond these are unknown from the available information."
+    },
+    {
+      "file": "graph-1-deterministic.json",
+      "arm": "deterministic",
+      "status": "done",
+      "initialHash": "72b1aec64cbfb24cbe31c2150e64e741a52e4006693c9dc4364a101f7549cfee",
+      "facts": 8,
+      "cap": 10,
+      "covered": 5,
+      "aliases": 0,
+      "modelCalls": 1,
+      "inputTokens": 1090,
+      "outputTokens": 714,
+      "latencyMs": 17174,
+      "preserved": true,
+      "final": "The recorded Harbor release constraints are:\n\n1. **Review requirement** — A Harbor release requires at least three reviewers.\n2. **Latency rollback** — The release must roll back if response latency exceeds 700 milliseconds (0.7 seconds). (Recorded twice with equivalent wording.)\n3. **Invoice payment deadline** — Harbor release invoices must be paid within 21 days (three weeks after invoicing). (Recorded twice with equivalent wording.)\n4. **Backup schedule** — Harbor release backups run every Monday at 04:30 UTC. (Recorded twice with equivalent wording.)\n\nAdditionally, the record notes that Harbor release audit artifacts are stored in Zurich — a recorded fact about artifact location rather than a release condition. No other release constraints are recorded in the available information."
+    },
+    {
+      "file": "graph-1-exact.json",
+      "arm": "exact",
+      "status": "done",
+      "initialHash": "72b1aec64cbfb24cbe31c2150e64e741a52e4006693c9dc4364a101f7549cfee",
+      "facts": 8,
+      "cap": 10,
+      "covered": 5,
+      "aliases": 0,
+      "modelCalls": 1,
+      "inputTokens": 1090,
+      "outputTokens": 1002,
+      "latencyMs": 20159,
+      "preserved": true,
+      "final": "Based on the recorded facts, the Harbor release constraints are:\n\n1. **Reviewer requirement** — the Harbor release requires at least three reviewers.\n2. **Latency rollback** — if response latency exceeds 700 milliseconds (0.7 seconds), the Harbor release must roll back. (Recorded twice with equivalent phrasing.)\n3. **Invoice payment deadline** — Harbor release invoices must be paid within 21 days (i.e., three weeks after invoicing). (Recorded twice with equivalent phrasing.)\n\nAdditional recorded Harbor release facts that are stated as operations rather than constraints: audit artifacts are stored in Zurich, and backups run every Monday at 04:30 UTC (also recorded twice with equivalent phrasing). No other release constraints are recorded."
+    },
+    {
+      "file": "graph-1-jev.json",
+      "arm": "jev",
+      "status": "done",
+      "initialHash": "72b1aec64cbfb24cbe31c2150e64e741a52e4006693c9dc4364a101f7549cfee",
+      "facts": 8,
+      "cap": 10,
+      "covered": 8,
+      "aliases": 7,
+      "modelCalls": 1,
+      "inputTokens": 1088,
+      "outputTokens": 986,
+      "latencyMs": 21525,
+      "preserved": true,
+      "final": "Based on the recorded facts, the Harbor release constraints are:\n\n1. Support is provided on weekdays only.\n2. The maximum permitted budget is 3,200 euros.\n3. No fewer than 3 reviewers are required.\n4. The release must roll back when response latency exceeds 0.7 seconds.\n5. Invoices must be paid within three weeks of invoicing.\n\nAdditional recorded facts about the release (context rather than constraints): Sofia owns the Harbor release, audit artifacts are stored in Zurich, and backups run every Monday at 04:30 UTC. No other constraints are recorded in the supplied facts."
+    },
+    {
+      "file": "graph-2-deterministic.json",
+      "arm": "deterministic",
+      "status": "done",
+      "initialHash": "115336c90919f6c1ae82deb7066bd48614d3c247da64ac8a62e29e1115138b94",
+      "facts": 16,
+      "cap": 16,
+      "covered": 9,
+      "aliases": 0,
+      "modelCalls": 1,
+      "inputTokens": 1391,
+      "outputTokens": 886,
+      "latencyMs": 18097,
+      "preserved": true,
+      "final": "Based on the recorded release facts, the following constraints are on file:\n\nLumen release constraints:\n1. Test timeout is 240 seconds.\n\nHarbor release constraints:\n1. Support is provided on weekdays only.\n2. Release owner is Sofia.\n3. Budget cannot exceed EUR 3200.\n4. Audit artifacts must be stored in Zurich.\n5. At least three reviewers are required.\n6. The release must roll back if response latency exceeds 700 milliseconds (0.7 seconds).\n7. Invoices must be paid within 21 days (three weeks) of invoicing.\n8. Backups run every Monday at 04:30 UTC.\n\nNote: Several recorded facts were duplicated with equivalent wording (budget limit, Zurich storage, latency rollback, invoice deadline, backup schedule); these have been consolidated above. No Lumen constraints beyond the 240-second test timeout are recorded in the supplied facts."
+    },
+    {
+      "file": "graph-2-exact.json",
+      "arm": "exact",
+      "status": "done",
+      "initialHash": "115336c90919f6c1ae82deb7066bd48614d3c247da64ac8a62e29e1115138b94",
+      "facts": 16,
+      "cap": 16,
+      "covered": 9,
+      "aliases": 2,
+      "modelCalls": 1,
+      "inputTokens": 1391,
+      "outputTokens": 961,
+      "latencyMs": 17622,
+      "preserved": true,
+      "final": "Using only the recorded facts (duplicate phrasings consolidated):\n\n**Lumen release constraints**\n- Release test timeout is 240 seconds.\n\n**Harbor release constraints**\n- Support is provided on weekdays only.\n- Release owner is Sofia (recorded fact).\n- Budget cannot exceed EUR 3,200.\n- Audit artifacts are stored in Zurich.\n- At least three reviewers are required.\n- The release rolls back if response latency exceeds 700 milliseconds (0.7 seconds).\n- Invoices must be paid within 21 days (three weeks after invoicing).\n- Backups run every Monday at 04:30 UTC.\n\nNo other Lumen or Harbor release constraints are recorded in the available facts."
+    },
+    {
+      "file": "graph-2-jev.json",
+      "arm": "jev",
+      "status": "done",
+      "initialHash": "115336c90919f6c1ae82deb7066bd48614d3c247da64ac8a62e29e1115138b94",
+      "facts": 16,
+      "cap": 16,
+      "covered": 13,
+      "aliases": 15,
+      "modelCalls": 1,
+      "inputTokens": 1398,
+      "outputTokens": 1181,
+      "latencyMs": 23739,
+      "preserved": true,
+      "final": "Based on the recorded facts, here are all the Lumen and Harbor release constraints:\n\n**Lumen release:**\n- Traffic for the release is required to stay in Canada.\n- The scheduled deployment date is June 12, 2031.\n- Logging customer email addresses is forbidden.\n- The release uses schema version 8.\n- The test timeout is 240 seconds.\n\n**Harbor release:**\n- Support is provided on weekdays only (Monday through Friday).\n- Sofia owns the release.\n- The maximum permitted budget is 3200 euros.\n- Audit artifacts are stored in Zurich.\n- No fewer than 3 reviewers are required.\n- The release must roll back when response latency exceeds 0.7 seconds.\n- The payment deadline for invoices is three weeks after invoicing.\n- Backups run every Monday at 04:30 UTC.\n\nThese are all the recorded Lumen and Harbor release facts in the current context; no additional constraints are recorded."
+    }
+  ]
+}

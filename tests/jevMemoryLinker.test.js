@@ -1,5 +1,6 @@
 import { expect,it } from 'vitest';
 import { judgePairs,pairKey,classify,model,exactEquivalent } from '../evaluations/jev-memory-links-v1/linker.mjs';
+import {judgePairs as calibratedJudge} from '../evaluations/jev-memory-links-v2/linker.mjs';
 const pair={id:'private-id',left:'Vega is approved.',right:'Vega has approval.',expected:'equivalent'};
 const raw={model,answers:{e0:{type:'noul',noul:0.99},c0:{type:'noul',noul:0.01}},usage:{input_tokens:100,output_tokens:20}};
 it('binds judgments to exact text and excludes private evaluation fields',async()=>{
@@ -21,6 +22,14 @@ it('rejects malformed responses, missing usage, excessive input and HTTP failure
  for(const value of [{...raw,model:'jev-latest'},{...raw,usage:{}},{...raw,answers:{e0:{type:'noul',noul:2},c0:{type:'noul',noul:0}}}])await expect(judgePairs([pair],{apiKey:'test',transport:async()=>new Response(JSON.stringify(value))})).rejects.toThrow();
  await expect(judgePairs(Array(7).fill(pair),{apiKey:'test'})).rejects.toThrow('bounded');
  await expect(judgePairs([pair],{apiKey:'test',transport:async()=>new Response('',{status:503})})).rejects.toThrow('503');
+});
+it('keeps the calibrated policy separate from the frozen strict policy',async()=>{
+ for(const [e,c,expected]of [[0.9,0.1,'equivalent'],[0.89,0.1,'none'],[0.9,0.11,'none']]){
+  const value={...raw,answers:{e0:{type:'noul',noul:e},c0:{type:'noul',noul:c}}};
+  const result=await calibratedJudge([pair],{apiKey:'test',transport:async()=>new Response(JSON.stringify(value))});
+  expect(result.judgments[0].originalRelation).toBe('none');
+  expect(result.judgments[0].relation).toBe(expected);
+ }
 });
 it('propagates caller cancellation before inference',async()=>{
  await expect(judgePairs([pair],{apiKey:'test',signal:AbortSignal.abort(),transport:async()=>{throw Error('should not call');}})).rejects.toThrow();
