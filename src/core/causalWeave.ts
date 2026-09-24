@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { optionalSemanticAliases, type SemanticAlias } from "./semanticAliases.js";
 import type { FocusCandidate, FocusHierarchy } from "./focusTypes.js";
 import { estimateStateWeaveTokens, type StateWeaveTokenEstimate } from "../llm/tokenizer.js";
 import { projectCausalSnapshot, type CausalProjection } from "./causalProjection.js";
@@ -16,6 +17,7 @@ export type CausalCompileResult = {
   contextMode: CausalContextMode;
   molecules: { id: string; label: string; nodeIds: string[]; expanded: boolean }[];
   hierarchy: CausalHierarchy;
+  semanticAliases?: SemanticAlias[];
 };
 
 export type CausalAppend = {
@@ -149,7 +151,7 @@ export class CausalWeave {
     };
   }
 
-  compile(args: { query?: string; maxTokens?: number; targetTokens?: number; maxNodes?: number; contextMode?: CausalContextMode; preferredNodeIds?: string[] } = {}): CausalCompileResult {
+  compile(args: { query?: string; maxTokens?: number; targetTokens?: number; maxNodes?: number; contextMode?: CausalContextMode; preferredNodeIds?: string[]; semanticAliases?: SemanticAlias[] } = {}): CausalCompileResult {
     if (!this.order.length) throw new Error("Cannot compile an empty Causal Weave.");
     const maxTokens = boundedCompileBudget(args.maxTokens ?? 64_000, "maxTokens");
     const targetTokens = boundedCompileBudget(Math.min(args.targetTokens ?? maxTokens, maxTokens), "targetTokens");
@@ -165,17 +167,26 @@ export class CausalWeave {
     const latestAnswer = reverseOrder.find((id) => this.nodes.get(id)?.kind === "answer");
     const recent = latestAnswer ? [latestAnswer] : [];
     const queryTerms = meaningfulQueryTerms([args.query ?? "", latestGoal ? payloadText(this.nodes.get(latestGoal)?.payload) : ""].join(" "));
-    const eligible = this.order.filter((id) => {
+    const current = this.order.filter((id) => {
       const key = projectionEquivalenceKey(this.nodes.get(id)!);
       return !key || latestEquivalent.get(key) === id;
     });
+    const semanticAliases = optionalSemanticAliases(args.semanticAliases, this.nodes, new Set(current), this.frontierIds, latestGoal ? this.nodes.get(latestGoal)!.sequence : 0);
+    const aliasTargets = new Map(semanticAliases.map(({ from, to }) => [from, to]));
+    const eligible = current.filter((id) => !aliasTargets.has(id));
+    const queryRanks = new Map(current.map((id) => [id, { id, score: relevanceScore(this.nodes.get(id)!, queryTerms, this.order.length), overlap: queryOverlap(this.nodes.get(id)!, queryTerms) }]));
+    for (const { from, to } of semanticAliases) {
+      const source = queryRanks.get(from)!, target = queryRanks.get(to)!;
+      target.score = Math.max(source.score, target.score);
+      target.overlap = Math.max(source.overlap, target.overlap);
+    }
     const ranked = eligible
-      .map((id) => ({ id, score: relevanceScore(this.nodes.get(id)!, queryTerms, this.order.length), overlap: queryOverlap(this.nodes.get(id)!, queryTerms) }))
+      .map((id) => queryRanks.get(id)!)
       .filter((candidate) => candidate.overlap > 0 && usefulQueryCandidate(this.nodes.get(candidate.id)!, args.query ?? "", queryTerms, candidate.overlap))
       .sort((a, b) => b.overlap - a.overlap || b.score - a.score || this.nodes.get(b.id)!.sequence - this.nodes.get(a.id)!.sequence);
     const preferredIds = (args.preferredNodeIds ?? []).filter((id) => eligible.includes(id)).slice(0, 6);
     const protectedQueryIds = new Set([...preferredIds, ...ranked.slice(0, 8).map((candidate) => candidate.id)]);
-    const relevantResourceIds = selectRelevantResourceHeads(this.resourceHeads.values(), this.nodes, args.query ?? "", queryTerms, latestAnswer, maxNodes);
+    const relevantResourceIds = selectRelevantResourceHeads([...this.resourceHeads.values()].filter((id) => !aliasTargets.has(id)),  this.nodes, args.query ?? "", queryTerms, latestAnswer, maxNodes);
     const selected = selectBoundedNodeIds(maxNodes, this.nodes, [
       [latestSystem, latestGoal, ...this.frontier().filter((id) => !preferredIds.length || this.nodes.get(id)!.sequence > (latestGoal ? this.nodes.get(latestGoal)!.sequence : 0))].filter((id): id is string => Boolean(id)),
       preferredIds,
@@ -239,7 +250,7 @@ export class CausalWeave {
       nodeIds: cluster.nodeIds.filter((id) => visible.has(id)),
       expanded: cluster.nodeIds.some((id) => visible.has(id))
     }));
-    return { prompt: rendered.prompt, nodeIds: chosen, tokenEstimate: rendered.estimate, contextMode, molecules, hierarchy };
+    return { prompt: rendered.prompt, nodeIds: chosen, tokenEstimate: rendered.estimate, contextMode, molecules, hierarchy, ...(semanticAliases.length ? { semanticAliases } : {}) };
   }
 }
 
