@@ -9,6 +9,7 @@ import type { StateGraph } from "../core/types.js";
 import type { Model, ModelInput, ModelOutput, ModelUsage } from "../llm/model.js";
 import { estimateStateWeaveTokens } from "../llm/tokenizer.js";
 import { createDefaultTools } from "../tools/fileSystemTools.js";
+import type { SemanticAlias } from "../core/semanticAliases.js";
 import { FocusRankingError, type FocusDiagnostics, type FocusHierarchy, type FocusReranker } from "./focusReranker.js";
 import type { Tool } from "../tools/types.js";
 import { defaultSemanticNodeTypes, type AgentArgs, type AgentModelEvent, type AgentProgress, type AgentRunOptions, type AgentRunResult, type AgentState, type AgentStreamEvent, type AgentTraceStep, type SemanticNodeType, type TokenCountSource } from "./types.js";
@@ -190,6 +191,7 @@ export class Agent {
       projectionMaxNodes: this.args.projectionMaxNodes,
       contextMode: this.args.contextMode,
       focusReranker: this.args.focusReranker,
+      semanticAliases: this.args.semanticAliases ? structuredClone(this.args.semanticAliases) : undefined,
       maxNoProgressIterations: this.args.maxNoProgressIterations,
       providerSystem: this.args.providerSystem,
       enforceCompletionEvidence: this.args.enforceCompletionEvidence ?? true,
@@ -335,6 +337,7 @@ class AgentRuntime {
   private readonly projectionMaxNodes: number;
   private readonly contextMode: "causal" | "molecular";
   private readonly focusReranker?: FocusReranker;
+  private readonly semanticAliases?: SemanticAlias[];
   private readonly maxNoProgressIterations?: number;
   private readonly providerSystem?: string;
   private readonly enforceCompletionEvidence: boolean;
@@ -352,6 +355,7 @@ class AgentRuntime {
     projectionMaxNodes: number;
     contextMode: "causal" | "molecular";
     focusReranker?: FocusReranker;
+    semanticAliases?: SemanticAlias[];
     maxNoProgressIterations?: number;
     providerSystem?: string;
     enforceCompletionEvidence: boolean;
@@ -367,6 +371,7 @@ class AgentRuntime {
     this.projectionMaxNodes = args.projectionMaxNodes;
     this.contextMode = args.contextMode;
     this.focusReranker = args.focusReranker;
+    this.semanticAliases = args.semanticAliases;
     this.maxNoProgressIterations = args.maxNoProgressIterations;
     this.providerSystem = args.providerSystem;
     this.enforceCompletionEvidence = args.enforceCompletionEvidence;
@@ -477,7 +482,7 @@ class AgentRuntime {
     }
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       options.signal?.throwIfAborted();
-      const compiled = this.weave.compile({ query: task, maxTokens: this.maxContextTokens, targetTokens: this.projectionTargetTokens, maxNodes: this.projectionMaxNodes, contextMode: this.contextMode, preferredNodeIds });
+      const compiled = this.weave.compile({ query: task, maxTokens: this.maxContextTokens, targetTokens: this.projectionTargetTokens, maxNodes: this.projectionMaxNodes, contextMode: this.contextMode, preferredNodeIds, semanticAliases: this.semanticAliases });
       latestCompiled = compiled;
       if (focus) focus.selectedNodeIds = compiled.nodeIds.filter((id) => preferredNodeIds.includes(id));
       progress(iteration, "context", focus?.status === "fallback" ? "Jev unavailable; using deterministic projection" : this.contextMode === "molecular" ? "Compiled the molecular context view" : "Compiled the active causal frontier", { prompt: compiled.prompt, contextTokens: compiled.tokenEstimate.estimatedTokens, ...(focus ? { focus: structuredClone(focus) } : {}) });

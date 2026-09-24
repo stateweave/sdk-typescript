@@ -3,6 +3,7 @@ export type { CausalContextMode } from "../core/causalTypes.js";
 import type { StateGraph } from "../core/types.js";
 import type { Model } from "../llm/model.js";
 import type { Tool } from "../tools/types.js";
+import type { SemanticAlias } from "../core/semanticAliases.js";
 import type { FocusReranker, FocusDiagnostics } from "./focusReranker.js";
 export type { FocusCandidate, FocusRanking, FocusReranker } from "./focusReranker.js";
 
@@ -30,6 +31,7 @@ export type AgentArgs = {
   projectionMaxNodes?: number;
   contextMode?: CausalContextMode;
   focusReranker?: FocusReranker;
+  semanticAliases?: SemanticAlias[];
   systemPrompt?: string;
   providerSystem?: string;
   enforceCompletionEvidence?: boolean;

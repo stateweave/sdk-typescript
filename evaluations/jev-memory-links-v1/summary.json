@@ -1,0 +1,424 @@
+{
+  "links": {
+    "metrics": {
+      "equivalent": {
+        "tp": 1,
+        "fp": 0,
+        "fn": 11,
+        "precision": 1,
+        "recall": 0.08333333333333333
+      },
+      "conflicting": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 8,
+        "precision": 1,
+        "recall": 0.38461538461538464
+      }
+    },
+    "ledger": [
+      {
+        "id": "p01",
+        "expected": "equivalent",
+        "relation": "none",
+        "equivalent": 0.95,
+        "conflicting": 0.03
+      },
+      {
+        "id": "p02",
+        "expected": "equivalent",
+        "relation": "none",
+        "equivalent": 0.91,
+        "conflicting": 0.03
+      },
+      {
+        "id": "p03",
+        "expected": "equivalent",
+        "relation": "none",
+        "equivalent": 0.94,
+        "conflicting": 0.02
+      },
+      {
+        "id": "p04",
+        "expected": "equivalent",
+        "relation": "none",
+        "equivalent": 0.94,
+        "conflicting": 0.02
+      },
+      {
+        "id": "p05",
+        "expected": "equivalent",
+        "relation": "none",
+        "equivalent": 0.95,
+        "conflicting": 0.02
+      },
+      {
+        "id": "p06",
+        "expected": "equivalent",
+        "relation": "none",
+        "equivalent": 0.89,
+        "conflicting": 0.07
+      },
+      {
+        "id": "p07",
+        "expected": "equivalent",
+        "relation": "none",
+        "equivalent": 0.96,
+        "conflicting": 0.04
+      },
+      {
+        "id": "p08",
+        "expected": "equivalent",
+        "relation": "none",
+        "equivalent": 0.94,
+        "conflicting": 0.03
+      },
+      {
+        "id": "p09",
+        "expected": "equivalent",
+        "relation": "equivalent",
+        "equivalent": 0.99,
+        "conflicting": 0.02
+      },
+      {
+        "id": "p10",
+        "expected": "equivalent",
+        "relation": "none",
+        "equivalent": 0.95,
+        "conflicting": 0.03
+      },
+      {
+        "id": "p11",
+        "expected": "equivalent",
+        "relation": "none",
+        "equivalent": 0.93,
+        "conflicting": 0.02
+      },
+      {
+        "id": "p12",
+        "expected": "equivalent",
+        "relation": "none",
+        "equivalent": 0.84,
+        "conflicting": 0.07
+      },
+      {
+        "id": "p13",
+        "expected": "conflicting",
+        "relation": "none",
+        "equivalent": 0.02,
+        "conflicting": 0.95
+      },
+      {
+        "id": "p14",
+        "expected": "conflicting",
+        "relation": "conflicting",
+        "equivalent": 0.02,
+        "conflicting": 0.97
+      },
+      {
+        "id": "p15",
+        "expected": "conflicting",
+        "relation": "conflicting",
+        "equivalent": 0.01,
+        "conflicting": 0.97
+      },
+      {
+        "id": "p16",
+        "expected": "conflicting",
+        "relation": "none",
+        "equivalent": 0.02,
+        "conflicting": 0.96
+      },
+      {
+        "id": "p17",
+        "expected": "conflicting",
+        "relation": "none",
+        "equivalent": 0.02,
+        "conflicting": 0.96
+      },
+      {
+        "id": "p18",
+        "expected": "conflicting",
+        "relation": "none",
+        "equivalent": 0.02,
+        "conflicting": 0.95
+      },
+      {
+        "id": "p19",
+        "expected": "conflicting",
+        "relation": "conflicting",
+        "equivalent": 0.01,
+        "conflicting": 0.97
+      },
+      {
+        "id": "p20",
+        "expected": "conflicting",
+        "relation": "none",
+        "equivalent": 0.02,
+        "conflicting": 0.95
+      },
+      {
+        "id": "p21",
+        "expected": "conflicting",
+        "relation": "conflicting",
+        "equivalent": 0.02,
+        "conflicting": 0.97
+      },
+      {
+        "id": "p22",
+        "expected": "conflicting",
+        "relation": "none",
+        "equivalent": 0.01,
+        "conflicting": 0.88
+      },
+      {
+        "id": "p23",
+        "expected": "conflicting",
+        "relation": "conflicting",
+        "equivalent": 0.01,
+        "conflicting": 0.97
+      },
+      {
+        "id": "p24",
+        "expected": "conflicting",
+        "relation": "none",
+        "equivalent": 0.03,
+        "conflicting": 0.94
+      },
+      {
+        "id": "p25",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.02,
+        "conflicting": 0.09
+      },
+      {
+        "id": "p26",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.02,
+        "conflicting": 0.12
+      },
+      {
+        "id": "p27",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.01,
+        "conflicting": 0.12
+      },
+      {
+        "id": "p28",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.04,
+        "conflicting": 0.07
+      },
+      {
+        "id": "p29",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.09,
+        "conflicting": 0.06
+      },
+      {
+        "id": "p30",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.02,
+        "conflicting": 0.59
+      },
+      {
+        "id": "p31",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.07,
+        "conflicting": 0.05
+      },
+      {
+        "id": "p32",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.02,
+        "conflicting": 0.85
+      },
+      {
+        "id": "p33",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.03,
+        "conflicting": 0.11
+      },
+      {
+        "id": "p34",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.04,
+        "conflicting": 0.08
+      },
+      {
+        "id": "p35",
+        "expected": "none",
+        "relation": "none",
+        "equivalent": 0.43,
+        "conflicting": 0.12
+      },
+      {
+        "id": "p36",
+        "expected": "conflicting",
+        "relation": "none",
+        "equivalent": 0.02,
+        "conflicting": 0.82
+      }
+    ],
+    "latencyMs": 1370,
+    "inputTokens": 11522,
+    "outputTokens": 1248,
+    "calls": 6
+  },
+  "rows": [
+    {
+      "file": "graph-0-deterministic.json",
+      "arm": "deterministic",
+      "status": "done",
+      "initialHash": "510d070ae4e3aac34bf7dd25930af5e9fa12f7852ce7440a5b11ef35db80b286",
+      "facts": 6,
+      "cap": 8,
+      "covered": 4,
+      "aliases": 0,
+      "modelCalls": 1,
+      "inputTokens": 1000,
+      "outputTokens": 610,
+      "latencyMs": 12772,
+      "preserved": true,
+      "final": "The recorded Vega release constraints are:\n\n1. **Region** — All traffic for the Vega release must remain within the EU region.\n2. **Approval** — Release approval requires both Nadia and Owen.\n3. **Rollback** — Rollback begins if the error rate exceeds 2%.\n4. **Canary** — Canary traffic is limited to 5%.\n\n(The rollback and canary constraints each appear twice in the records as duplicate phrasings; no other Vega release constraints are recorded in the visible state.)"
+    },
+    {
+      "file": "graph-0-exact.json",
+      "arm": "exact",
+      "status": "done",
+      "initialHash": "510d070ae4e3aac34bf7dd25930af5e9fa12f7852ce7440a5b11ef35db80b286",
+      "facts": 6,
+      "cap": 8,
+      "covered": 4,
+      "aliases": 0,
+      "modelCalls": 1,
+      "inputTokens": 1000,
+      "outputTokens": 448,
+      "latencyMs": 9419,
+      "preserved": true,
+      "final": "Based on the recorded facts, there are four distinct Vega release constraints:\n\n1. **Region**: All traffic for the Vega release must remain within the EU region.\n2. **Approval**: Release approval requires both Nadia and Owen.\n3. **Rollback trigger**: Rollback begins if the error rate exceeds 2%.\n4. **Canary limit**: Canary traffic is limited to no more than 5%.\n\n(Note: the record contains paraphrased duplicates for the rollback and canary constraints, which have been collapsed here.)"
+    },
+    {
+      "file": "graph-0-jev.json",
+      "arm": "jev",
+      "status": "done",
+      "initialHash": "510d070ae4e3aac34bf7dd25930af5e9fa12f7852ce7440a5b11ef35db80b286",
+      "facts": 6,
+      "cap": 8,
+      "covered": 4,
+      "aliases": 0,
+      "modelCalls": 1,
+      "inputTokens": 1000,
+      "outputTokens": 561,
+      "latencyMs": 10997,
+      "preserved": true,
+      "final": "Based on the recorded facts, the Vega release constraints are:\n\n1. **Region restriction** – All traffic for the Vega release must remain within the EU region.\n2. **Approval requirement** – Release approval requires both Nadia and Owen.\n3. **Rollback threshold** – Rollback begins if the error rate exceeds 2%.\n4. **Canary traffic limit** – Canary traffic is limited to 5%.\n\n(These are the four distinct constraints; the remaining records are paraphrased duplicates of the rollback and canary limits.)"
+    },
+    {
+      "file": "graph-1-deterministic.json",
+      "arm": "deterministic",
+      "status": "done",
+      "initialHash": "e16c3b1359c575f375f041a8fd8905b483faaa2eb9bae58afee2114b02e2fe19",
+      "facts": 6,
+      "cap": 8,
+      "covered": 4,
+      "aliases": 0,
+      "modelCalls": 1,
+      "inputTokens": 983,
+      "outputTokens": 370,
+      "latencyMs": 7022,
+      "preserved": true,
+      "final": "The recorded Orion release constraints are:\n\n1. **Encryption** — Connections must use TLS 1.3.\n2. **Port** — The release port is 7443.\n3. **Staging capacity** — Staging is limited to four replicas.\n4. **Support channel** — Support is handled by email, not telephone."
+    },
+    {
+      "file": "graph-1-exact.json",
+      "arm": "exact",
+      "status": "done",
+      "initialHash": "e16c3b1359c575f375f041a8fd8905b483faaa2eb9bae58afee2114b02e2fe19",
+      "facts": 6,
+      "cap": 8,
+      "covered": 5,
+      "aliases": 2,
+      "modelCalls": 1,
+      "inputTokens": 980,
+      "outputTokens": 574,
+      "latencyMs": 10423,
+      "preserved": true,
+      "final": "Based on the recorded facts, the Orion release constraints are:\n\n1. **Connections must use TLS 1.3** — all Orion release connections require TLS 1.3.\n2. **Port 7443** — the Orion release port is 7443.\n3. **Staging capacity of four replicas** — staging is limited to four replicas.\n4. **Email-only support** — Orion release support uses email rather than telephone.\n\nNote: The recorded facts also state that Mei is the Orion release owner, but that is an ownership fact rather than a constraint. No other constraints are recorded."
+    },
+    {
+      "file": "graph-1-jev.json",
+      "arm": "jev",
+      "status": "done",
+      "initialHash": "e16c3b1359c575f375f041a8fd8905b483faaa2eb9bae58afee2114b02e2fe19",
+      "facts": 6,
+      "cap": 8,
+      "covered": 4,
+      "aliases": 1,
+      "modelCalls": 1,
+      "inputTokens": 983,
+      "outputTokens": 382,
+      "latencyMs": 10328,
+      "preserved": true,
+      "final": "The recorded Orion release constraints are:\n\n1. **TLS**: Connections must use TLS 1.3.\n2. **Port**: The release port is 7443 (recorded twice, both records agree).\n3. **Staging capacity**: Staging runs at four replicas.\n4. **Support channel**: Support is handled via email rather than telephone (recorded twice, both records agree).\n\nThat covers all recorded facts; no additional constraints exist in the recorded state."
+    },
+    {
+      "file": "graph-2-deterministic.json",
+      "arm": "deterministic",
+      "status": "done",
+      "initialHash": "bf2773c377fc8ef2d844fe0d75e46e4a965a4b36ba86194a27e5e3ad832c991e",
+      "facts": 12,
+      "cap": 16,
+      "covered": 9,
+      "aliases": 0,
+      "modelCalls": 1,
+      "inputTokens": 1360,
+      "outputTokens": 827,
+      "latencyMs": 18423,
+      "preserved": true,
+      "final": "Based on the recorded facts, here are all the release constraints:\n\n**Vega release constraints:**\n1. All traffic must remain within the EU region.\n2. Rollback begins if the error rate exceeds 2%.\n3. Canary traffic is limited to 5% (recorded twice, consistently).\n\n**Orion release constraints:**\n4. Cache entries expire after 900 seconds (recorded equivalently as fifteen minutes).\n5. Connections require TLS 1.3 (recorded twice, consistently).\n6. The port is 7443 (recorded twice, consistently).\n7. Staging capacity is four replicas.\n8. Support uses email rather than telephone (recorded twice, consistently).\n\nAdditionally, one recorded non-constraint fact: the Orion release owner is Mei. No other release constraints were recorded for either release."
+    },
+    {
+      "file": "graph-2-exact.json",
+      "arm": "exact",
+      "status": "done",
+      "initialHash": "bf2773c377fc8ef2d844fe0d75e46e4a965a4b36ba86194a27e5e3ad832c991e",
+      "facts": 12,
+      "cap": 16,
+      "covered": 10,
+      "aliases": 2,
+      "modelCalls": 1,
+      "inputTokens": 1368,
+      "outputTokens": 407,
+      "latencyMs": 8328,
+      "preserved": true,
+      "final": "Based on the recorded facts, the constraints are:\n\n**Vega release:**\n1. All traffic must remain within the EU region.\n2. Release approval requires both Nadia and Owen.\n3. Rollback begins if the error rate exceeds 2%.\n4. Canary traffic is limited to 5%.\n\n**Orion release:**\n1. Cache entries expire after 900 seconds (fifteen minutes).\n2. Release owner is Mei.\n3. Connections require TLS 1.3.\n4. Port is 7443.\n5. Staging capacity is four replicas.\n6. Support is handled via email, not telephone.\n\nThese are all the release constraints currently recorded; no additional constraints are available."
+    },
+    {
+      "file": "graph-2-jev.json",
+      "arm": "jev",
+      "status": "done",
+      "initialHash": "bf2773c377fc8ef2d844fe0d75e46e4a965a4b36ba86194a27e5e3ad832c991e",
+      "facts": 12,
+      "cap": 16,
+      "covered": 9,
+      "aliases": 1,
+      "modelCalls": 1,
+      "inputTokens": 1365,
+      "outputTokens": 657,
+      "latencyMs": 13487,
+      "preserved": true,
+      "final": "Recorded release constraints:\n\n**Vega release**\n1. All traffic must remain within the EU region.\n2. Rollback begins if the error rate exceeds 2%.\n3. Canary traffic is limited to 5%.\n\n**Orion release**\n1. Cache entries expire after 900 seconds (15 minutes).\n2. Connections require TLS 1.3.\n3. The port is 7443.\n4. Staging capacity is four replicas.\n5. The release owner is Mei.\n6. Support is handled via email, not phone.\n\nNote: several recorded facts were duplicates/rephrasings (e.g., error-rate rollback, 5% canary, 900-second/15-minute expiry, port 7443, email support) and have been consolidated above. Beyond these, no other constraints are recorded."
+    }
+  ]
+}
