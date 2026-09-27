@@ -11,14 +11,14 @@ const phase = process.env.PROBE_PHASE;
 const output = process.env.PROBE_OUTPUT;
 const cohort = process.env.PROBE_COHORT;
 const commit = process.env.PROBE_COMMIT;
-if (!['calibration', 'ranking'].includes(phase) || !output || !/^[a-f0-9]{40}$/.test(commit ?? '')) throw new Error('Explicit development phase, output and frozen commit required.');
+if (!['calibration', 'ranking', 'answers'].includes(phase) || !output || !/^[a-f0-9]{40}$/.test(commit ?? '')) throw new Error('Explicit development phase, output and frozen commit required.');
 if (!process.env.ANTHROPIC_API_KEY || !process.env.TYPESAFE_API_KEY) throw new Error('Configured provider credentials required.');
 if (fs.existsSync(output)) throw new Error('Existing attempt: no automatic replay or overwrite.');
 fs.mkdirSync(output, { recursive: true, mode: 0o700 });
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const save = (name, value) => { const file = path.join(output, name); const fd = fs.openSync(file, 'wx', 0o600); try { fs.writeFileSync(fd, JSON.stringify(value, null, 2)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); } };
 const runtime = Object.fromEntries(['agent/agent.js', 'core/causalWeave.js', 'core/recallProjection.js', 'core/recallTypes.js', 'integrations/jevRecall.js', 'llm/anthropicModel.js'].map(file => [file, hash(fs.readFileSync(new URL('../../dist/' + file, import.meta.url)))]));
-const limits = phase === 'calibration' ? { main: 6, jev: 10 } : { main: 0, jev: 84 };
+const limits = phase === 'calibration' ? { main: 6, jev: 10 } : phase === 'ranking' ? { main: 0, jev: 84 } : { main: 168, jev: 28 };
 const counts = { main: 0, jev: 0 };
 const transport = globalThis.fetch;
 let owner = 'calibration';
@@ -108,6 +108,28 @@ if (phase === 'calibration') {
     const query = `As of ${row.date}, ${row.question}`;
     const index = prepareRecall(state, query);
     save(row.id + '.input.json', { participantSha256: hash(bytes), query, mapping, candidateIndex: index, lexicalSelection: selectRecall(index) });
+    if (phase === 'answers') {
+      const baselineRoot = process.env.BASELINE_DIST;
+      if (!baselineRoot) throw new Error('The parser-matched baseline runtime is required.');
+      const { Agent: BaselineAgent } = await import(path.join(baselineRoot, 'agent/agent.js'));
+      if (caseIndex === 0) save('baseline.json', { baseCommit: '762c773185e6f7c33358d2c7195f53c39e20aed5', sharedChange: 'Identical terminal-FINAL no-tool parser repair in every arm.', runtime: Object.fromEntries(['agent/agent.js', 'core/causalWeave.js', 'llm/anthropicModel.js'].map(file => [file, hash(fs.readFileSync(path.join(baselineRoot, file)))])) });
+      const arms = ['standard', 'lexical', 'native'];
+      for (let offset = 0; offset < arms.length; offset++) {
+        const arm = arms[(caseIndex + offset) % arms.length];
+        owner = row.id + '.' + arm;
+        save(owner + '.start.json', { arm, startedAt: new Date().toISOString() });
+        const started = Date.now();
+        try {
+          const Constructor = arm === 'standard' ? BaselineAgent : Agent;
+          const agent = new Constructor({ state, model: model(), tools: [], maxIterations: 2, systemPrompt, enforceCompletionEvidence: false, projectionMaxNodes: 48, projectionTargetTokens: 16_000, maxPromptTokens: 64_000, contextMode: 'causal' });
+          if (arm === 'lexical') Object.defineProperty(agent, 'jev', { value: { rank: async (_query, candidates) => ({ model: 'lexical-ablation', scores: candidates.map((candidate, index) => ({ id: candidate.id, relevance: 1 - index / candidates.length })), inputTokens: 0, outputTokens: 0 }) } });
+          const result = await agent.run(query, { signal: AbortSignal.timeout(400_000) });
+          save(owner + '.result.json', { status: 'done', arm, elapsedMs: Date.now() - started, evaluationOnlyScorerOverride: arm === 'lexical', result });
+        } catch (error) { save(owner + '.result.json', { status: 'failed', arm, elapsedMs: Date.now() - started, errorClass: error?.name ?? 'Error', usageMayBeIncomplete: true }); }
+        console.log(JSON.stringify({ case: row.id, arm, completedCaseIndex: caseIndex + 1, totalCases: files.length }));
+      }
+      continue;
+    }
     const designs = ['indexed', 'direct', 'graded'];
     for (let offset = 0; offset < designs.length; offset++) {
       const design = designs[(caseIndex + offset) % designs.length];

@@ -1,0 +1,926 @@
+{
+  "scope": "Development-only source-session retrieval; not span completeness, answer quality or independent confirmation.",
+  "commit": "40738b82adcbf3f462ae7e4e69934aa057624915",
+  "privateDevelopmentGoldSha256": "c45811f2985d942d5431cbe7c34c32c276967d48009077f0fb172183eefad82b",
+  "cases": 28,
+  "answerableCases": 24,
+  "meanCandidateSourceRecall": 0.9791666666666666,
+  "arms": {
+    "lexical": {
+      "meanSourceRecall": 0.8444444444444444,
+      "allSupportingSources": 18,
+      "failedCases": 0
+    },
+    "indexed": {
+      "meanSourceRecall": 0.8902777777777777,
+      "allSupportingSources": 20,
+      "failedCases": 0
+    },
+    "direct": {
+      "meanSourceRecall": 0.9791666666666666,
+      "allSupportingSources": 23,
+      "failedCases": 0
+    },
+    "graded": {
+      "meanSourceRecall": 0.9791666666666666,
+      "allSupportingSources": 23,
+      "failedCases": 0
+    }
+  },
+  "cost": {
+    "indexed": {
+      "requests": 28,
+      "responses": 28,
+      "knownInputTokens": 999047,
+      "knownOutputTokens": 32088,
+      "requestsWithoutCompleteUsage": 0,
+      "medianHttpMs": 388.0
+    },
+    "direct": {
+      "requests": 28,
+      "responses": 28,
+      "knownInputTokens": 1017051,
+      "knownOutputTokens": 32088,
+      "requestsWithoutCompleteUsage": 0,
+      "medianHttpMs": 321.0
+    },
+    "graded": {
+      "requests": 28,
+      "responses": 28,
+      "knownInputTokens": 1026011,
+      "knownOutputTokens": 26712,
+      "requestsWithoutCompleteUsage": 0,
+      "medianHttpMs": 393.0
+    }
+  },
+  "casesDetail": [
+    {
+      "id": "c_01a4490028db7439",
+      "group": "temporal-reasoning",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_0fd0d551690c14bc",
+      "group": "single-session-user",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_16ba53ecb5ac6988",
+      "group": "multi-session",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_18dd216378b82f4a",
+      "group": "temporal-reasoning",
+      "candidateSourceRecall": 0.5,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 0.5,
+          "completeSources": false,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 0.5,
+          "completeSources": false,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 0.5,
+          "completeSources": false,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 0.5,
+          "completeSources": false,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_1b657d5574235de1",
+      "group": "abstention",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 0.0,
+          "completeSources": false,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_1d092cbfbefde097",
+      "group": "single-session-user",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_29da39a7d5141d27",
+      "group": "multi-session",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_3cf6c796d6f3ffec",
+      "group": "single-session-assistant",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_3df3dce92ed7843a",
+      "group": "single-session-preference",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_45dd88e6b9d1f2d8",
+      "group": "single-session-assistant",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_588833c2dc10f463",
+      "group": "single-session-assistant",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_5b79813aeb5cac2e",
+      "group": "knowledge-update",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 0.5,
+          "completeSources": false,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_691f84cdd5b6bcbc",
+      "group": "knowledge-update",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_7ea41d7967a07e5c",
+      "group": "single-session-preference",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_99dc0c148fa46efa",
+      "group": "knowledge-update",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_9dc2dd8d9edcdafd",
+      "group": "knowledge-update",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_a4412dd3b9d9b6c9",
+      "group": "temporal-reasoning",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 0.6666666666666666,
+          "completeSources": false,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 0.6666666666666666,
+          "completeSources": false,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_a4a2db3ddd0aa2df",
+      "group": "temporal-reasoning",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 0.6,
+          "completeSources": false,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 0.2,
+          "completeSources": false,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_a7b44eaefe1a2c03",
+      "group": "abstention",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 0.5,
+          "completeSources": false,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 0.5,
+          "completeSources": false,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_ac39c224172a4d97",
+      "group": "single-session-preference",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 0.0,
+          "completeSources": false,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 0.0,
+          "completeSources": false,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_b1b3e9cb14679d34",
+      "group": "multi-session",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_c0ba4caecf439c2d",
+      "group": "single-session-assistant",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_d4c1a1db8209e671",
+      "group": "single-session-user",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_e2ac65a6574d7dcf",
+      "group": "multi-session",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_e56c8235beed1aa0",
+      "group": "abstention",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_f7feb9b74e77cfec",
+      "group": "single-session-user",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_f9095957ea219882",
+      "group": "abstention",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 0.5,
+          "completeSources": false,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    },
+    {
+      "id": "c_fd533aba036ab1ec",
+      "group": "single-session-preference",
+      "candidateSourceRecall": 1.0,
+      "arms": {
+        "lexical": {
+          "status": "done",
+          "sourceRecall": 0.0,
+          "completeSources": false,
+          "selectedWindows": 12
+        },
+        "indexed": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "direct": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        },
+        "graded": {
+          "status": "done",
+          "sourceRecall": 1.0,
+          "completeSources": true,
+          "selectedWindows": 12
+        }
+      }
+    }
+  ]
+}

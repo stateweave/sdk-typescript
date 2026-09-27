@@ -16,8 +16,8 @@ def norm(text):
 
 def prepare(source, old_gold, output):
     old = json.loads(old_gold.read_text())
-    excluded_questions = {row['sourceId'].replace('_abs', '') for row in old}
-    excluded_sessions = {norm(value) for row in old for value in row['sourceSessionMap'].values()}
+    excluded_questions = set(old['excludedQuestionFamilies']) if isinstance(old, dict) else {row['sourceId'].replace('_abs', '') for row in old}
+    excluded_sessions = set(old['excludedSourceFamilies']) if isinstance(old, dict) else {norm(value) for row in old for value in row['sourceSessionMap'].values()}
     meta = []
     with source.open('rb') as stream:
         for row in ijson.items(stream, 'item'):
