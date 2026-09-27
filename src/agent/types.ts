@@ -3,6 +3,7 @@ export type { CausalContextMode } from "../core/causalTypes.js";
 import type { StateGraph } from "../core/types.js";
 import type { Model } from "../llm/model.js";
 import type { Tool } from "../tools/types.js";
+import type { ChangeReviewer, ChangeReviewDiagnostics, ReviewDependency } from "./changeReview.js";
 import type { FocusReranker, FocusDiagnostics } from "./focusReranker.js";
 export type { FocusCandidate, FocusRanking, FocusReranker } from "./focusReranker.js";
 
@@ -30,6 +31,7 @@ export type AgentArgs = {
   projectionMaxNodes?: number;
   contextMode?: CausalContextMode;
   focusReranker?: FocusReranker;
+  changeReviewer?: ChangeReviewer;
   systemPrompt?: string;
   providerSystem?: string;
   enforceCompletionEvidence?: boolean;
@@ -42,6 +44,9 @@ export type AgentArgs = {
 export type AgentRunOptions = {
   signal?: AbortSignal;
   state?: AgentState;
+  changedNodeIds?: string[];
+  reviewDependencies?: ReviewDependency[];
+  preferredNodeIds?: string[];
   onProgress?: (progress: AgentProgress) => void;
 };
 
@@ -70,6 +75,7 @@ export type AgentProgress = {
   tool?: string;
   error?: string;
   focus?: FocusDiagnostics;
+  changeReview?: ChangeReviewDiagnostics;
 };
 
 export type AgentTraceStep = {
@@ -107,6 +113,7 @@ export type AgentRunMetadata = {
   tokenCountSource: TokenCountSource;
   status: "done";
   focus?: FocusDiagnostics;
+  changeReview?: ChangeReviewDiagnostics;
 };
 
 export type AgentRunResult = {

@@ -11,6 +11,7 @@ import { estimateStateWeaveTokens } from "../llm/tokenizer.js";
 import { createDefaultTools } from "../tools/fileSystemTools.js";
 import { FocusRankingError, type FocusDiagnostics, type FocusHierarchy, type FocusReranker } from "./focusReranker.js";
 import type { Tool } from "../tools/types.js";
+import { prepareChangeReview, propagateReview, validateChangeReview, type ChangeReviewer, type ChangeReviewDiagnostics } from "./changeReview.js";
 import { defaultSemanticNodeTypes, type AgentArgs, type AgentModelEvent, type AgentProgress, type AgentRunOptions, type AgentRunResult, type AgentState, type AgentStreamEvent, type AgentTraceStep, type SemanticNodeType, type TokenCountSource } from "./types.js";
 import {
   agentSystemPrompt,
@@ -190,6 +191,7 @@ export class Agent {
       projectionMaxNodes: this.args.projectionMaxNodes,
       contextMode: this.args.contextMode,
       focusReranker: this.args.focusReranker,
+      changeReviewer: this.args.changeReviewer,
       maxNoProgressIterations: this.args.maxNoProgressIterations,
       providerSystem: this.args.providerSystem,
       enforceCompletionEvidence: this.args.enforceCompletionEvidence ?? true,
@@ -318,6 +320,7 @@ type RuntimeResult = {
     outputTokens: number;
     tokenCountSource: TokenCountSource;
     focus?: FocusDiagnostics;
+    changeReview?: ChangeReviewDiagnostics;
   };
 };
 
@@ -335,6 +338,7 @@ class AgentRuntime {
   private readonly projectionMaxNodes: number;
   private readonly contextMode: "causal" | "molecular";
   private readonly focusReranker?: FocusReranker;
+  private readonly changeReviewer?: ChangeReviewer;
   private readonly maxNoProgressIterations?: number;
   private readonly providerSystem?: string;
   private readonly enforceCompletionEvidence: boolean;
@@ -352,6 +356,7 @@ class AgentRuntime {
     projectionMaxNodes: number;
     contextMode: "causal" | "molecular";
     focusReranker?: FocusReranker;
+    changeReviewer?: ChangeReviewer;
     maxNoProgressIterations?: number;
     providerSystem?: string;
     enforceCompletionEvidence: boolean;
@@ -367,6 +372,7 @@ class AgentRuntime {
     this.projectionMaxNodes = args.projectionMaxNodes;
     this.contextMode = args.contextMode;
     this.focusReranker = args.focusReranker;
+    this.changeReviewer = args.changeReviewer;
     this.maxNoProgressIterations = args.maxNoProgressIterations;
     this.providerSystem = args.providerSystem;
     this.enforceCompletionEvidence = args.enforceCompletionEvidence;
@@ -404,6 +410,7 @@ class AgentRuntime {
     let lastMutationIteration = 0;
     let latestCompiled: CausalCompileResult | undefined;
     let focus: FocusDiagnostics | undefined;
+    let changeReview: ChangeReviewDiagnostics | undefined;
     const metrics = (): RuntimeResult["metrics"] => ({
       modelCalls,
       toolCalls,
@@ -412,7 +419,8 @@ class AgentRuntime {
       totalInputTokens,
       outputTokens,
       tokenCountSource: resolveTokenCountSource(modelCalls, providerUsageCalls),
-      ...(focus ? { focus: structuredClone(focus) } : {})
+      ...(focus ? { focus: structuredClone(focus) } : {}),
+      ...(changeReview ? { changeReview: structuredClone(changeReview) } : {})
     });
     const visualGraph = (state: AgentState): StateGraph => projectCausalVisualSnapshot(state, {
       maxVisibleNodes: this.projectionMaxNodes,
@@ -443,7 +451,8 @@ class AgentRuntime {
       }
     };
 
-    let preferredNodeIds: string[] = [];
+    let preferredNodeIds: string[] = [...(options.preferredNodeIds ?? [])];
+    if (preferredNodeIds.length > 6 || new Set(preferredNodeIds).size !== preferredNodeIds.length || preferredNodeIds.some(id => !this.weave.get(id))) throw new Error("Invalid preferred source IDs.");
     if (this.focusReranker) {
       const candidates = this.weave.focusCandidates(task, 24);
       if (candidates.length > 1) {
@@ -475,12 +484,55 @@ class AgentRuntime {
         }
       }
     }
+    if (this.changeReviewer && options.changedNodeIds?.length) {
+      const started = Date.now();
+      changeReview = { status: "fallback", sourceNodeIds: [...options.changedNodeIds], candidateNodeIds: [], flaggedNodeIds: [], dependentNodeIds: [], selectedNodeIds: [], latencyMs: 0 };
+      try {
+        const snapshot = this.weave.snapshot();
+        const input = prepareChangeReview(snapshot, options.changedNodeIds);
+        const dependencies = structuredClone(options.reviewDependencies ?? []);
+        propagateReview(snapshot, [], dependencies);
+        const reviewKey = `change-review:${JSON.stringify(input.sources.map(source => this.weave.get(source.id)!.resourceKey ?? source.id).sort())}`;
+        const previousReview = snapshot.nodes.filter(node => node.resourceKey === reviewKey).at(-1);
+        const previousSources = (previousReview?.payload as { sourceNodeIds?: string[] } | undefined)?.sourceNodeIds ?? [];
+        if (previousReview && JSON.stringify([...previousSources].sort()) !== JSON.stringify(input.sources.map(source => source.id).sort())) {
+          this.weave.append({ kind: "verification", resourceKey: reviewKey, parents: [previousReview.id, ...input.sources.map(source => source.id)], advance: false,
+            payload: { operation: "change_impact_review", status: "expired_source", sourceNodeIds: input.sources.map(source => source.id), notice: "Earlier advice used an older source version. No current review conclusion is available." } });
+        }
+        changeReview.candidateNodeIds = input.candidates.map(candidate => candidate.id);
+        if (!input.candidates.length) changeReview.status = "empty";
+        else {
+          const result = await this.changeReviewer(structuredClone(input), options.signal);
+          options.signal?.throwIfAborted();
+          validateChangeReview(input, result);
+          const flagged = result.scores.filter(score => score.contradiction >= 0.8).sort((a, b) => b.contradiction - a.contradiction || a.id.localeCompare(b.id)).slice(0, 5);
+          const dependentNodeIds = propagateReview(snapshot, flagged.map(score => score.id), dependencies);
+          changeReview = { ...changeReview, status: "reviewed", result: structuredClone(result), flaggedNodeIds: flagged.map(score => score.id), dependentNodeIds };
+          if (flagged.length || previousReview) {
+            const annotation = this.weave.append({ kind: "verification", resourceKey: reviewKey, payload: {
+              operation: "change_impact_review", status: "advisory_only", model: result.model,
+              notice: flagged.length ? "Probabilistic review suggestions, not established falsehoods. Independently inspect the new evidence and original statements. Dependent outputs need review, not automatic reversal." : "No contradiction nominated among the bounded candidates for this source version. This is not a complete graph clearance.",
+              sourceNodeIds: input.sources.map(source => source.id), candidates: flagged,
+              dependentNodeIds: dependentNodeIds.slice(0, 64), dependenciesTruncated: dependentNodeIds.length > 64
+            }, parents: [...input.sources.map(source => source.id), ...input.candidates.map(candidate => candidate.id)], advance: false });
+            changeReview.annotationNodeId = annotation.id;
+            preferredNodeIds = [annotation.id, ...flagged.map(score => score.id)];
+          }
+        }
+      } catch {
+        options.signal?.throwIfAborted();
+        changeReview.status = "fallback";
+        changeReview.usageIncomplete = true;
+      }
+      changeReview.latencyMs = Date.now() - started;
+    }
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       options.signal?.throwIfAborted();
       const compiled = this.weave.compile({ query: task, maxTokens: this.maxContextTokens, targetTokens: this.projectionTargetTokens, maxNodes: this.projectionMaxNodes, contextMode: this.contextMode, preferredNodeIds });
       latestCompiled = compiled;
       if (focus) focus.selectedNodeIds = compiled.nodeIds.filter((id) => preferredNodeIds.includes(id));
-      progress(iteration, "context", focus?.status === "fallback" ? "Jev unavailable; using deterministic projection" : this.contextMode === "molecular" ? "Compiled the molecular context view" : "Compiled the active causal frontier", { prompt: compiled.prompt, contextTokens: compiled.tokenEstimate.estimatedTokens, ...(focus ? { focus: structuredClone(focus) } : {}) });
+      if (changeReview) changeReview.selectedNodeIds = compiled.nodeIds.filter(id => changeReview!.flaggedNodeIds.includes(id));
+      progress(iteration, "context", focus?.status === "fallback" ? "Jev unavailable; using deterministic projection" : this.contextMode === "molecular" ? "Compiled the molecular context view" : "Compiled the active causal frontier", { prompt: compiled.prompt, contextTokens: compiled.tokenEstimate.estimatedTokens, ...(focus ? { focus: structuredClone(focus) } : {}), ...(changeReview ? { changeReview: structuredClone(changeReview) } : {}) });
       progress(iteration, "model", `Waiting for model iteration ${iteration}`, { contextTokens: compiled.tokenEstimate.estimatedTokens });
       const modelInput: ModelInput = {
         prompt: compiled.prompt,
