@@ -3,6 +3,7 @@
   "sourceCommit": "OFFLINE",
   "replayed": 128,
   "skipped": [],
+  "recordedTracesReproduced": true,
   "allTracesStatesAndAnswersIdentical": true,
   "networkCalls": 0,
   "scope": "Differential offline replay of fresh single-version evaluation graphs. Not a new efficacy run or proof for untested histories.",

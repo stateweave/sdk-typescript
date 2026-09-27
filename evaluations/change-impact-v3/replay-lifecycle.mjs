@@ -43,10 +43,11 @@ for (const name of (await readdir(records)).filter(name=>/^c_.*\.jev\.json$/.tes
     return agent.run(task,{changedNodeIds:[base.sourceId],reviewDependencies:base.dependencies});
   };
   const before = await execute(Frozen), after = await execute(Candidate);
+  assert.deepEqual(before.trace,record.result.trace,name+': recorded trace not reproduced');
   assert.deepEqual(after.trace,before.trace,name+': model-facing trace changed');
   assert.deepEqual(after.state,before.state,name+': causal state changed');
   assert.equal(after.finalAnswer,before.finalAnswer,name+': answer changed');
   assert.deepEqual(after.metadata.changeReview,before.metadata.changeReview,name+': review changed');
   rows.push({caseId:name.split('.')[0],modelCalls:after.trace.length,traceSha256:createHash('sha256').update(JSON.stringify(after.trace)).digest('hex')});
 }
-console.log(JSON.stringify({sourceEvidenceOffline:manifest.offline,sourceCommit:manifest.commit,replayed:rows.length,skipped,allTracesStatesAndAnswersIdentical:true,networkCalls:0,scope:'Differential offline replay of fresh single-version evaluation graphs. Not a new efficacy run or proof for untested histories.',rows},null,2));
+console.log(JSON.stringify({sourceEvidenceOffline:manifest.offline,sourceCommit:manifest.commit,replayed:rows.length,skipped,recordedTracesReproduced:true,allTracesStatesAndAnswersIdentical:true,networkCalls:0,scope:'Differential offline replay of fresh single-version evaluation graphs. Not a new efficacy run or proof for untested histories.',rows},null,2));

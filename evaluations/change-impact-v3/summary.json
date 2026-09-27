@@ -1,0 +1,4209 @@
+{
+  "manifest": {
+    "commit": "f9ac05b5d4873fcffef5c81a3e29f3e3ac9b728b",
+    "offline": false,
+    "createdAt": "2026-09-27T04:50:30.240Z",
+    "arms": [
+      "standard",
+      "lexical",
+      "jev",
+      "full"
+    ],
+    "nodeVersion": "v22.23.2",
+    "privateGoldSha256": "2bba8503b2d82aac0de1f220faa717fabacc1a4f264b8149489dd2776a0c925d",
+    "model": "glm-5.3-flash",
+    "judgeModel": "jev-1.13.0",
+    "maxIterations": 2,
+    "projectionMaxNodes": 48,
+    "projectionTargetTokens": 16000,
+    "maxPromptTokens": 64000,
+    "files": {
+      "run.mjs": "57ff840e7fec83fbf0b36fdb68802faf4405f539b9c9354e92e3f64a09f2340c",
+      "cases.json": "8a6b4f6fe65050fc56f640cba576ae45dc8b6e4a3ca342c7c78b4f8ab87df53c",
+      "PROTOCOL.md": "00b679f37a8d2e0a3bd360512d713feba702e14e5c6426a77660a8c086991cab",
+      "summarize.py": "1e87d19d9ad441984b887bb54ef94eef08d5600fe6d110f544602ea8dd0b432e",
+      "gold.sha256": "3b70be56c7f3bef5283b2285146f9a8513db97b6491cc4c582710d06f4820c5b",
+      "prepare.py": "90bdf168a49bb4a8be87b8c5725ad3ff5a87d92c8604242f0f079e3ef38b545c"
+    },
+    "runtime": {
+      "agent/agent.js": "3baed7c96ec390a9688d6065f34c0832e54c33a0c473009ec8848ac1d774465b",
+      "agent/changeReview.js": "4e917237ff686fdf26bd6b62081d9525554f0a6d1587834f1d5ec4fbcf26bd4a",
+      "core/causalWeave.js": "9376bc0f1d4db1fb37675ae7936d1cfb07b6cd02473d449094967cddd7768381",
+      "integrations/jevChangeReview.js": "859e83304e904ae21e54d17f531ee056827d170dc5c1eb021a059fbd933455a1",
+      "llm/anthropicModel.js": "2117635cd1e3406fedf93ca859ad0aa5ae1fc95ae4eadfe4af10b137feb3371e"
+    },
+    "execArgv": [
+      "--max-old-space-size=384"
+    ],
+    "cases": 128,
+    "memories": 300
+  },
+  "scoring": "Mean of positive-case F1 and no-refutation-case exact specificity, equally weighted; operational failures score zero.",
+  "arms": {
+    "standard": {
+      "completed": 121,
+      "planned": 128,
+      "balancedScore": 0.8368559545030133,
+      "positiveMeanF1": 0.7516339869281046,
+      "negativeSuccess": 71,
+      "negativeCases": 77,
+      "exactCorrect": 108,
+      "tp": 42,
+      "fp": 5,
+      "fn": 13,
+      "medianSuccessfulMs": 26086,
+      "medianAllAttemptMs": 26151.0,
+      "completedMainInputTokens": 1086865,
+      "completedMainOutputTokens": 252496,
+      "failures": [
+        {
+          "id": "c_0f90e9f51232",
+          "phase": "agent",
+          "errorName": "Error",
+          "errorCode": null
+        },
+        {
+          "id": "c_e42707777ea5",
+          "phase": "agent",
+          "errorName": "Error",
+          "errorCode": null
+        },
+        {
+          "id": "c_ca02a7dfaef6",
+          "phase": "agent",
+          "errorName": "AgentRunError",
+          "errorCode": null
+        },
+        {
+          "id": "c_bfc76cc6efe2",
+          "phase": "agent",
+          "errorName": "AgentRunError",
+          "errorCode": null
+        },
+        {
+          "id": "c_6ab8b0fd58b7",
+          "phase": "agent",
+          "errorName": "AgentRunError",
+          "errorCode": null
+        },
+        {
+          "id": "c_f337965b8439",
+          "phase": "agent",
+          "errorName": "Error",
+          "errorCode": null
+        },
+        {
+          "id": "c_1e1ae0d03f6c",
+          "phase": "agent",
+          "errorName": "AgentRunError",
+          "errorCode": null
+        }
+      ]
+    },
+    "lexical": {
+      "completed": 120,
+      "planned": 128,
+      "balancedScore": 0.8630846277905102,
+      "positiveMeanF1": 0.8300653594771242,
+      "negativeSuccess": 69,
+      "negativeCases": 77,
+      "exactCorrect": 110,
+      "tp": 46,
+      "fp": 5,
+      "fn": 9,
+      "medianSuccessfulMs": 27982.5,
+      "medianAllAttemptMs": 27982.5,
+      "completedMainInputTokens": 1075121,
+      "completedMainOutputTokens": 255579,
+      "failures": [
+        {
+          "id": "c_640b69e014d6",
+          "phase": "agent",
+          "errorName": "Error",
+          "errorCode": null
+        },
+        {
+          "id": "c_e42707777ea5",
+          "phase": "agent",
+          "errorName": "Error",
+          "errorCode": null
+        },
+        {
+          "id": "c_ca02a7dfaef6",
+          "phase": "agent",
+          "errorName": "AgentRunError",
+          "errorCode": null
+        },
+        {
+          "id": "c_bfc76cc6efe2",
+          "phase": "agent",
+          "errorName": "AgentRunError",
+          "errorCode": null
+        },
+        {
+          "id": "c_e40f63729506",
+          "phase": "agent",
+          "errorName": "Error",
+          "errorCode": null
+        },
+        {
+          "id": "c_abf3f634ab6f",
+          "phase": "agent",
+          "errorName": "AgentRunError",
+          "errorCode": null
+        },
+        {
+          "id": "c_ddcfeca723a2",
+          "phase": "agent",
+          "errorName": "Error",
+          "errorCode": null
+        },
+        {
+          "id": "c_e712d44c9860",
+          "phase": "agent",
+          "errorName": "Error",
+          "errorCode": null
+        }
+      ]
+    },
+    "jev": {
+      "completed": 125,
+      "planned": 128,
+      "balancedScore": 0.924963924963925,
+      "positiveMeanF1": 0.8888888888888888,
+      "negativeSuccess": 74,
+      "negativeCases": 77,
+      "exactCorrect": 118,
+      "tp": 49,
+      "fp": 3,
+      "fn": 6,
+      "medianSuccessfulMs": 26465,
+      "medianAllAttemptMs": 26693.5,
+      "completedMainInputTokens": 1185476,
+      "completedMainOutputTokens": 276719,
+      "failures": [
+        {
+          "id": "c_bfc76cc6efe2",
+          "phase": "agent",
+          "errorName": "AgentRunError",
+          "errorCode": null
+        },
+        {
+          "id": "c_abf3f634ab6f",
+          "phase": "agent",
+          "errorName": "TimeoutError",
+          "errorCode": null
+        },
+        {
+          "id": "c_6bf5393a4baf",
+          "phase": "agent",
+          "errorName": "AgentRunError",
+          "errorCode": null
+        }
+      ]
+    },
+    "full": {
+      "completed": 122,
+      "planned": 128,
+      "balancedScore": 0.8956370426958663,
+      "positiveMeanF1": 0.8562091503267973,
+      "negativeSuccess": 72,
+      "negativeCases": 77,
+      "exactCorrect": 115,
+      "tp": 48,
+      "fp": 5,
+      "fn": 7,
+      "medianSuccessfulMs": 32573.5,
+      "medianAllAttemptMs": 33474.0,
+      "completedMainInputTokens": 3257336,
+      "completedMainOutputTokens": 339586,
+      "failures": [
+        {
+          "id": "c_640b69e014d6",
+          "phase": "agent",
+          "errorName": "AgentRunError",
+          "errorCode": null
+        },
+        {
+          "id": "c_0f90e9f51232",
+          "phase": "agent",
+          "errorName": "Error",
+          "errorCode": null
+        },
+        {
+          "id": "c_ca02a7dfaef6",
+          "phase": "agent",
+          "errorName": "AgentRunError",
+          "errorCode": null
+        },
+        {
+          "id": "c_bfc76cc6efe2",
+          "phase": "agent",
+          "errorName": "AgentRunError",
+          "errorCode": null
+        },
+        {
+          "id": "c_85a2a65558e3",
+          "phase": "agent",
+          "errorName": "AgentRunError",
+          "errorCode": null
+        },
+        {
+          "id": "c_77e9daafdd77",
+          "phase": "agent",
+          "errorName": "AgentRunError",
+          "errorCode": null
+        }
+      ]
+    }
+  },
+  "comparisons": {
+    "standard": {
+      "n": 128,
+      "difference": 0.08810797046091164,
+      "ci95": [
+        0.0392156862745098,
+        0.1436210847975554
+      ],
+      "pairedT": 3.2291474663552036,
+      "tDf": 127,
+      "tTwoSidedP": 0.0015805379449351804,
+      "primaryOneSidedP": 0.0009765625,
+      "primaryMethod": "exact one-sided paired sign-flip",
+      "wins": 10,
+      "losses": 0,
+      "ties": 118
+    },
+    "lexical": {
+      "n": 128,
+      "difference": 0.061879297173414824,
+      "ci95": [
+        0.012987012987012988,
+        0.11408199643493762
+      ],
+      "pairedT": 2.396502853949159,
+      "tDf": 127,
+      "tTwoSidedP": 0.018010140673125213,
+      "primaryOneSidedP": 0.0107421875,
+      "primaryMethod": "exact one-sided paired sign-flip",
+      "wins": 9,
+      "losses": 1,
+      "ties": 118
+    },
+    "full": {
+      "n": 128,
+      "difference": 0.02932688226805874,
+      "ci95": [
+        -0.016339869281045753,
+        0.07817672523554876
+      ],
+      "pairedT": 1.2376559433062722,
+      "tDf": 127,
+      "tTwoSidedP": 0.21812694961277834,
+      "primaryOneSidedP": 0.12890625,
+      "primaryMethod": "exact one-sided paired sign-flip",
+      "wins": 6,
+      "losses": 3,
+      "ties": 119
+    }
+  },
+  "completeCaseSensitivity": {
+    "standard": {
+      "n": 113,
+      "difference": 0.045454545454545456,
+      "ci95": [
+        0.011363636363636364,
+        0.09090909090909091
+      ],
+      "pairedT": 2.0273361199167903,
+      "tDf": 112,
+      "tTwoSidedP": 0.04500245690831066,
+      "primaryOneSidedP": 0.0625,
+      "primaryMethod": "exact one-sided paired sign-flip",
+      "wins": 4,
+      "losses": 0,
+      "ties": 109
+    },
+    "lexical": {
+      "n": 113,
+      "difference": 0.018610013175230568,
+      "ci95": [
+        -0.022727272727272728,
+        0.059947299077733864
+      ],
+      "pairedT": 0.8864502885073615,
+      "tDf": 112,
+      "tTwoSidedP": 0.37727437020446797,
+      "primaryOneSidedP": 0.3125,
+      "primaryMethod": "exact one-sided paired sign-flip",
+      "wins": 3,
+      "losses": 1,
+      "ties": 109
+    }
+  },
+  "jevUsage": {
+    "responses": 126,
+    "input": 1603131,
+    "output": 144396,
+    "missingUsage": 0
+  },
+  "mainUsage": {
+    "responses": 568,
+    "input": 6984074,
+    "output": 1243164,
+    "missingUsage": 0
+  },
+  "physicalMainUsageByArm": {
+    "standard": {
+      "responses": 135,
+      "input": 1154768,
+      "output": 285264,
+      "missingUsage": 0
+    },
+    "lexical": {
+      "responses": 133,
+      "input": 1135915,
+      "output": 284251,
+      "missingUsage": 0
+    },
+    "jev": {
+      "responses": 140,
+      "input": 1219776,
+      "output": 293103,
+      "missingUsage": 0
+    },
+    "full": {
+      "responses": 160,
+      "input": 3473615,
+      "output": 380546,
+      "missingUsage": 0
+    }
+  },
+  "jevFallbacks": 2,
+  "leapGatePassed": false,
+  "ledger": [
+    {
+      "id": "c_b3fab763273e",
+      "expected": [
+        "m_769740f4384b",
+        "m_f7a2c0ce4d50"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_769740f4384b",
+            "m_f7a2c0ce4d50"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_769740f4384b",
+            "m_f7a2c0ce4d50"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_769740f4384b",
+            "m_f7a2c0ce4d50"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_769740f4384b",
+            "m_f7a2c0ce4d50"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_c8045275b48c",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_640b69e014d6",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        }
+      }
+    },
+    {
+      "id": "c_d3ea1b411ce1",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_109799372a29",
+      "expected": [
+        "m_1bb83f816927",
+        "m_ff9210187f7b"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_1bb83f816927",
+            "m_ff9210187f7b"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_1bb83f816927",
+            "m_ff9210187f7b"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_1bb83f816927",
+            "m_ff9210187f7b"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_1bb83f816927",
+            "m_ff9210187f7b"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_76e6eda3475d",
+      "expected": [
+        "m_a6b65e994715"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_a6b65e994715"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_a6b65e994715"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_a6b65e994715"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_a6b65e994715"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_fddafb2befb5",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_eec12c53ebca"
+          ],
+          "score": 0.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_bce13a31009f",
+      "expected": [
+        "m_4711062930ac"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 0.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_4711062930ac"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 0.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_4711062930ac"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_a2376b8932db",
+      "expected": [
+        "m_68432efdf184"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_68432efdf184"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_68432efdf184"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_68432efdf184"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_68432efdf184"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_c3645856cb03",
+      "expected": [
+        "m_6a153ef046d3"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_6a153ef046d3"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_6a153ef046d3"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_6a153ef046d3"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_6a153ef046d3"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_85370c16a35f",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_4e373c789668",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_7c67cd8ccf6c",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_0f90e9f51232",
+      "expected": [
+        "m_21f40db3136d"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_21f40db3136d"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_21f40db3136d"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        }
+      }
+    },
+    {
+      "id": "c_99d9ef148591",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_e42707777ea5",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        },
+        "lexical": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_de189d3b7552",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_abb36bc84651",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_596cac207746",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_ca02a7dfaef6",
+      "expected": [
+        "m_5e8df93ec6a1"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        },
+        "lexical": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_5e8df93ec6a1"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        }
+      }
+    },
+    {
+      "id": "c_f059d7e91755",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_0e1ab68d4409",
+      "expected": [
+        "m_d04ad76843e0"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_d04ad76843e0"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_d04ad76843e0"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_d04ad76843e0"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_d04ad76843e0"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_8a6460557ba9",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_c7d64262f163",
+      "expected": [
+        "m_c3a21d7ff730"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_c3a21d7ff730"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_c3a21d7ff730"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_c3a21d7ff730"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_c3a21d7ff730"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_0e78e85639cf",
+      "expected": [
+        "m_3abb41af2a2c"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_3abb41af2a2c"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_3abb41af2a2c"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_3abb41af2a2c"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_3abb41af2a2c"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_292e08beb0b5",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_66ddf93ec94f",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_d8746a56e0eb",
+      "expected": [
+        "m_8dbf1465740e"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_8dbf1465740e"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_8dbf1465740e"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_8dbf1465740e"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_8dbf1465740e"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_15d47a127805",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_0b143f2e156c",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_772f5543fa2d",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_08de732d3633",
+      "expected": [
+        "m_5a7d1dd02ef9"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 0.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 0.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_5a7d1dd02ef9"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_5a7d1dd02ef9"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_1ad427125f04",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_492877bcdb64",
+      "expected": [
+        "m_f5e8e0c88390"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_f5e8e0c88390"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_f5e8e0c88390"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_f5e8e0c88390"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_f5e8e0c88390"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_ebc8b981290b",
+      "expected": [
+        "m_f4f51fde3bef"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_f4f51fde3bef"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_f4f51fde3bef"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_f4f51fde3bef"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_f4f51fde3bef"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_c836731d1b23",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_e6266cf6be8d",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_bfc76cc6efe2",
+      "expected": [
+        "m_f84512c9dea0"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        },
+        "lexical": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        },
+        "jev": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        },
+        "full": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        }
+      }
+    },
+    {
+      "id": "c_633cc69e60c6",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_7afb2190d0ca",
+      "expected": [
+        "m_2ef918dee4dc",
+        "m_bb45ba1924fe"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_2ef918dee4dc",
+            "m_bb45ba1924fe"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_2ef918dee4dc",
+            "m_bb45ba1924fe"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_2ef918dee4dc",
+            "m_bb45ba1924fe"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_2ef918dee4dc",
+            "m_bb45ba1924fe"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_c98a36042070",
+      "expected": [
+        "m_a243a1e47489"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_a243a1e47489"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_a243a1e47489"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_a243a1e47489"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_a243a1e47489"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_e40f63729506",
+      "expected": [
+        "m_2f254ba8939a"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_2f254ba8939a"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_2f254ba8939a"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_2f254ba8939a"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_b13996ddcb67",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_4414418c739d",
+      "expected": [
+        "m_142c61a83851"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_142c61a83851"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_142c61a83851"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_142c61a83851"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_142c61a83851"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_530edae1540a",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_fbcf4498e07c",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_b22f97c9330d",
+      "expected": [
+        "m_ccd94fd913b2"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_ccd94fd913b2"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_ccd94fd913b2"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_ccd94fd913b2"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_ccd94fd913b2"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_3f9cc3102d39",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_ed4fb5ba4ffa",
+      "expected": [
+        "m_194f6645ee25"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_194f6645ee25"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_194f6645ee25"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_194f6645ee25"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_194f6645ee25"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_83e897c77468",
+      "expected": [
+        "m_805c30c392ef"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 0.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_805c30c392ef"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_805c30c392ef"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_805c30c392ef"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_dd4bb65077fd",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_bd5d6458964e",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_a4518b2864b2",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_cf3f7d48ccbb"
+          ],
+          "score": 0.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_cf3f7d48ccbb"
+          ],
+          "score": 0.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_cf3f7d48ccbb"
+          ],
+          "score": 0.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_cf3f7d48ccbb"
+          ],
+          "score": 0.0
+        }
+      }
+    },
+    {
+      "id": "c_64bca12f0f42",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_a087bef7ddfa",
+      "expected": [
+        "m_8ed407cf1adf"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_8ed407cf1adf"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_8ed407cf1adf"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_8ed407cf1adf"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_8ed407cf1adf"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_f052ecc5c4de",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_010778dabd86",
+      "expected": [
+        "m_c765121405d8"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_c765121405d8"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_c765121405d8"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_c765121405d8"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_c765121405d8"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_4abc92a9bf72",
+      "expected": [
+        "m_9dc08a52292c"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_5306770a3340",
+            "m_9dc08a52292c"
+          ],
+          "score": 0.6666666666666666
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_5306770a3340",
+            "m_9dc08a52292c"
+          ],
+          "score": 0.6666666666666666
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_5306770a3340",
+            "m_9dc08a52292c"
+          ],
+          "score": 0.6666666666666666
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_5306770a3340",
+            "m_9dc08a52292c"
+          ],
+          "score": 0.6666666666666666
+        }
+      }
+    },
+    {
+      "id": "c_abf3f634ab6f",
+      "expected": [
+        "m_9ff978a84963"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_12faa146c345"
+          ],
+          "score": 0.0
+        },
+        "lexical": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        },
+        "jev": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_12faa146c345"
+          ],
+          "score": 0.0
+        }
+      }
+    },
+    {
+      "id": "c_8f11de238e4d",
+      "expected": [
+        "m_b040a1438bbb"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_b040a1438bbb"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_b040a1438bbb"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_b040a1438bbb"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_b040a1438bbb"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_fd4b3f7e3df8",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_662036cddc5b",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_539fba06423e",
+      "expected": [
+        "m_c7c56ad151d1"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_c7c56ad151d1"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_c7c56ad151d1"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_c7c56ad151d1"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_c7c56ad151d1"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_26de5cb11f0c",
+      "expected": [
+        "m_837dacb295ad"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_837dacb295ad"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_837dacb295ad"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_837dacb295ad"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_837dacb295ad"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_991e73b0a41a",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_5316422d5204",
+      "expected": [
+        "m_9dc1d1ff171a"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_9dc1d1ff171a"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_9dc1d1ff171a"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_9dc1d1ff171a"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_9dc1d1ff171a"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_6ab8b0fd58b7",
+      "expected": [
+        "m_09f585eeb4a0"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_09f585eeb4a0"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_09f585eeb4a0"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_09f585eeb4a0"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_17f57686ed00",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_6bf5393a4baf",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_f6d64049f6a1"
+          ],
+          "score": 0.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_f6d64049f6a1"
+          ],
+          "score": 0.0
+        },
+        "jev": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_ddcfeca723a2",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_664360c388a1",
+      "expected": [
+        "m_7e246c60b515"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_7e246c60b515"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_7e246c60b515"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_7e246c60b515"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_7e246c60b515"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_8835270edd8f",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_249a0fe081e3",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_e712d44c9860",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_aac7ae4f2ed7",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_bf1794db67cb",
+      "expected": [
+        "m_899a2a911a55"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_899a2a911a55"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_899a2a911a55"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_899a2a911a55"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_899a2a911a55"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_477fa1ab4acf",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_6bff5a4f501c",
+      "expected": [
+        "m_65a040c9211b"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_65a040c9211b"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_65a040c9211b"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_65a040c9211b"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_65a040c9211b"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_dfa3fa640bcf",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_7ffa6aecf70e",
+      "expected": [
+        "m_eab5f66993a6"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_eab5f66993a6"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_eab5f66993a6"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_eab5f66993a6"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_eab5f66993a6"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_cfaf9877a7da",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_402dfc781175",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_8b312fb55946",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_12e8548fde7e",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_6edc42e2ed71",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_85a2a65558e3",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        }
+      }
+    },
+    {
+      "id": "c_cdc64b007b1e",
+      "expected": [
+        "m_b5fb303fe9e3"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_b5fb303fe9e3"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_b5fb303fe9e3"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_b5fb303fe9e3"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_b5fb303fe9e3"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_cb7557f0bbc2",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_79a762a8d155",
+      "expected": [
+        "m_96d5b16f4350"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 0.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_96d5b16f4350"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_96d5b16f4350"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_96d5b16f4350"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_04350e39c04f",
+      "expected": [
+        "m_1b20d8fb89d1"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_1b20d8fb89d1"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_1b20d8fb89d1"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_1b20d8fb89d1"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_1b20d8fb89d1"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_81ae091d40f9",
+      "expected": [
+        "m_14ef9b70a29e"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_14ef9b70a29e"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_14ef9b70a29e"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_14ef9b70a29e"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_14ef9b70a29e"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_a0e63ea016e4",
+      "expected": [
+        "m_38cb3a4f7979"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 0.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 0.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 0.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 0.0
+        }
+      }
+    },
+    {
+      "id": "c_1ca22f9069bf",
+      "expected": [
+        "m_12faa146c345"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_12faa146c345"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_12faa146c345"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_12faa146c345"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_12faa146c345"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_b8dacdca96b2",
+      "expected": [
+        "m_755c7c67a942"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 0.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 0.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 0.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 0.0
+        }
+      }
+    },
+    {
+      "id": "c_88fc5bf6bc90",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_8fe6b145eb4c",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_afff6a67b281",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_44a32e78e75b",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_d887a2f80119",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_e5b067c8191e",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_163d8a3c1366",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_a65b2955fd91",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_5923474fbd32",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_f337965b8439",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_49ed719ccf91",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_3e8bbe32f1b0",
+      "expected": [
+        "m_fb20c612ec31"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_fb20c612ec31"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_fb20c612ec31"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_fb20c612ec31"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_fb20c612ec31"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_77e9daafdd77",
+      "expected": [
+        "m_5c112f59c408"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_5c112f59c408"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_5c112f59c408"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_5c112f59c408"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        }
+      }
+    },
+    {
+      "id": "c_be375ddad452",
+      "expected": [
+        "m_5306770a3340"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_5306770a3340"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_5306770a3340"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_5306770a3340"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_5306770a3340"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_d535b3db38c8",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_07e39844895d",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_8f056a8629d5"
+          ],
+          "score": 0.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_8f056a8629d5"
+          ],
+          "score": 0.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_8f056a8629d5"
+          ],
+          "score": 0.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_8f056a8629d5"
+          ],
+          "score": 0.0
+        }
+      }
+    },
+    {
+      "id": "c_a5b9cb0a8b5d",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_df12a397442b",
+      "expected": [
+        "m_3ca9d91999ec"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_3ca9d91999ec"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_3ca9d91999ec"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_3ca9d91999ec"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_3ca9d91999ec"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_30f79e221fee",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_94d5fcbc160a",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_860309758cbf",
+      "expected": [
+        "m_093072a5aaca",
+        "m_3f06079e0b8a"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_3f06079e0b8a"
+          ],
+          "score": 0.6666666666666666
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_3f06079e0b8a"
+          ],
+          "score": 0.6666666666666666
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_3f06079e0b8a"
+          ],
+          "score": 0.6666666666666666
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_093072a5aaca",
+            "m_3f06079e0b8a"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_2981d0165b43",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_7eb9c63329d5",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_c104d3e5dcf1",
+      "expected": [
+        "m_5e9f413126a8"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_5e9f413126a8"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_5e9f413126a8"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_5e9f413126a8"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_5e9f413126a8"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_1e1ae0d03f6c",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "failed",
+          "predicted": null,
+          "score": 0.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_594dd70a3f97",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_4a05948b4b7a",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_e14a800972bc",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_06f681f23d47",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_4dd6114a9260",
+      "expected": [
+        "m_0195ec93fcfa"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [
+            "m_0195ec93fcfa"
+          ],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [
+            "m_0195ec93fcfa"
+          ],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_0195ec93fcfa"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_0195ec93fcfa"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_d2339832ac34",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_8a8c9b9a51d4",
+      "expected": [
+        "m_26a989863d59"
+      ],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 0.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 0.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [
+            "m_26a989863d59"
+          ],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_26a989863d59"
+          ],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_58a50aef2334",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        }
+      }
+    },
+    {
+      "id": "c_64be1b8dab47",
+      "expected": [],
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "lexical": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "jev": {
+          "status": "done",
+          "predicted": [],
+          "score": 1.0
+        },
+        "full": {
+          "status": "done",
+          "predicted": [
+            "m_2f254ba8939a"
+          ],
+          "score": 0.0
+        }
+      }
+    }
+  ]
+}

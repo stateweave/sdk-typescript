@@ -1,0 +1,212 @@
+{
+  "counts": {
+    "goldRefutations": 55,
+    "goldRefutationsInCandidates": 55,
+    "plannedRecords": 512,
+    "completedSourcePrefixesAndReadSetsAudited": 488,
+    "jevStatus:reviewed": 123,
+    "nominees": 42,
+    "visibleNominees": 42,
+    "sidecarTP": 37,
+    "sidecarFP": 5,
+    "sidecarFN": 16,
+    "fullLedgersAudited": 122,
+    "noOpComparisons": 79,
+    "noOpIdenticalPrompts": 79,
+    "failedRecords": 24,
+    "jevStatus:fallback": 2
+  },
+  "transport": {
+    "requests": 706,
+    "responses": 703,
+    "HTTP:200": 694,
+    "HTTP:429": 9,
+    "withoutResponse": 3
+  },
+  "candidateMisses": [],
+  "mainModelOverrides": [
+    {
+      "id": "c_b3fab763273e",
+      "suggested": [
+        "m_769740f4384b"
+      ],
+      "predicted": [
+        "m_769740f4384b",
+        "m_f7a2c0ce4d50"
+      ],
+      "expected": [
+        "m_769740f4384b",
+        "m_f7a2c0ce4d50"
+      ]
+    },
+    {
+      "id": "c_0f90e9f51232",
+      "suggested": [],
+      "predicted": [
+        "m_21f40db3136d"
+      ],
+      "expected": [
+        "m_21f40db3136d"
+      ]
+    },
+    {
+      "id": "c_ca02a7dfaef6",
+      "suggested": [],
+      "predicted": [
+        "m_5e8df93ec6a1"
+      ],
+      "expected": [
+        "m_5e8df93ec6a1"
+      ]
+    },
+    {
+      "id": "c_7afb2190d0ca",
+      "suggested": [
+        "m_2ef918dee4dc"
+      ],
+      "predicted": [
+        "m_2ef918dee4dc",
+        "m_bb45ba1924fe"
+      ],
+      "expected": [
+        "m_2ef918dee4dc",
+        "m_bb45ba1924fe"
+      ]
+    },
+    {
+      "id": "c_e40f63729506",
+      "suggested": [],
+      "predicted": [
+        "m_2f254ba8939a"
+      ],
+      "expected": [
+        "m_2f254ba8939a"
+      ]
+    },
+    {
+      "id": "c_83e897c77468",
+      "suggested": [],
+      "predicted": [
+        "m_805c30c392ef"
+      ],
+      "expected": [
+        "m_805c30c392ef"
+      ]
+    },
+    {
+      "id": "c_010778dabd86",
+      "suggested": [],
+      "predicted": [
+        "m_c765121405d8"
+      ],
+      "expected": [
+        "m_c765121405d8"
+      ]
+    },
+    {
+      "id": "c_4abc92a9bf72",
+      "suggested": [
+        "m_9dc08a52292c"
+      ],
+      "predicted": [
+        "m_5306770a3340",
+        "m_9dc08a52292c"
+      ],
+      "expected": [
+        "m_9dc08a52292c"
+      ]
+    },
+    {
+      "id": "c_539fba06423e",
+      "suggested": [],
+      "predicted": [
+        "m_c7c56ad151d1"
+      ],
+      "expected": [
+        "m_c7c56ad151d1"
+      ]
+    },
+    {
+      "id": "c_5316422d5204",
+      "suggested": [
+        "m_9dc1d1ff171a",
+        "m_d9cee78db62f"
+      ],
+      "predicted": [
+        "m_9dc1d1ff171a"
+      ],
+      "expected": [
+        "m_9dc1d1ff171a"
+      ]
+    },
+    {
+      "id": "c_6ab8b0fd58b7",
+      "suggested": [],
+      "predicted": [
+        "m_09f585eeb4a0"
+      ],
+      "expected": [
+        "m_09f585eeb4a0"
+      ]
+    },
+    {
+      "id": "c_6bff5a4f501c",
+      "suggested": [],
+      "predicted": [
+        "m_65a040c9211b"
+      ],
+      "expected": [
+        "m_65a040c9211b"
+      ]
+    },
+    {
+      "id": "c_04350e39c04f",
+      "suggested": [],
+      "predicted": [
+        "m_1b20d8fb89d1"
+      ],
+      "expected": [
+        "m_1b20d8fb89d1"
+      ]
+    },
+    {
+      "id": "c_77e9daafdd77",
+      "suggested": [],
+      "predicted": [
+        "m_5c112f59c408"
+      ],
+      "expected": [
+        "m_5c112f59c408"
+      ]
+    },
+    {
+      "id": "c_860309758cbf",
+      "suggested": [
+        "m_3f06079e0b8a",
+        "m_4bcd94a5fba1"
+      ],
+      "predicted": [
+        "m_3f06079e0b8a"
+      ],
+      "expected": [
+        "m_093072a5aaca",
+        "m_3f06079e0b8a"
+      ]
+    },
+    {
+      "id": "c_8a8c9b9a51d4",
+      "suggested": [
+        "m_26a989863d59",
+        "m_7ce856cb69e8"
+      ],
+      "predicted": [
+        "m_26a989863d59"
+      ],
+      "expected": [
+        "m_26a989863d59"
+      ]
+    }
+  ],
+  "frozenCommit": "f9ac05b5d4873fcffef5c81a3e29f3e3ac9b728b",
+  "scope": "Integrity assertions apply to returned completed states. No change to frozen scores."
+}

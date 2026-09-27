@@ -115,7 +115,7 @@ Software tests prove the contract, **not better answers**. The real Dev [twelve-
 
 This branch also exposes optional `createJevChangeReviewer` with caller-supplied `changedNodeIds` and explicit `reviewDependencies`. It nominates potentially contradicted memories and marks declared downstream outputs for review—never deletion or automatic correction. Source truth, causal parents, context budgets and successful-run-only commits remain authoritative. It is server-side, off by default, and sends bounded evidence/claim excerpts only when explicitly configured.
 
-See [the API and lifecycle contract](docs/CHANGE_REVIEW_EXPERIMENT.md) and [the frozen, failure-preserving evaluation protocol](evaluations/change-impact-v3/PROTOCOL.md). This is not a deployed feature or a claim of demonstrated quality improvement.
+See [the API and lifecycle contract](docs/CHANGE_REVIEW_EXPERIMENT.md) and [the complete 128-case report](evaluations/change-impact-v3/REPORT.md). The failure-zero balanced score improved to 92.50% versus 86.31% for the cheap lexical control, but **the frozen adoption gate failed**. Across all-arm-complete cases, the gain over lexical was only 1.86 percentage points (primary paired p=0.3125); 24 failed arms and two sidecar fallbacks remain in the record. This is an undeployed research prototype, not a validated substantial SDK leap.
 
 ## Persistent state
 

@@ -1,0 +1,394 @@
+{
+  "v1_engineering_abort": {
+    "frozenCommit": "62d510e9a7d247d58f1d97d3801100f0671a857b",
+    "plannedArms": 656,
+    "startedArms": 13,
+    "terminalRecords": 11,
+    "terminalStatuses": {
+      "done": 8,
+      "failed": 3
+    },
+    "unreturnedArms": 2,
+    "unstartedArms": 643,
+    "returnedAgentResults": 8,
+    "failurePhases": {
+      "agent": 3
+    },
+    "completeMarker": false,
+    "exit": "143",
+    "providers": {
+      "main": {
+        "requestStarts": 24,
+        "responses": 22,
+        "http200": 22,
+        "knownInputTokens": 283340,
+        "maxReportedInputTokens": 22619,
+        "knownOutputTokens": 42052,
+        "maxReportedOutputTokens": 3414,
+        "responsesWithCompleteUsage": 22,
+        "requestsWithoutCompleteUsage": 2
+      },
+      "jev": {
+        "requestStarts": 3,
+        "responses": 3,
+        "http200": 3,
+        "knownInputTokens": 38125,
+        "maxReportedInputTokens": 12825,
+        "knownOutputTokens": 3438,
+        "maxReportedOutputTokens": 1146,
+        "responsesWithCompleteUsage": 3
+      }
+    },
+    "byArm": {
+      "main:full": {
+        "requestStarts": 8,
+        "responses": 7,
+        "http200": 7,
+        "knownInputTokens": 153199,
+        "maxReportedInputTokens": 22619,
+        "knownOutputTokens": 12755,
+        "maxReportedOutputTokens": 3394,
+        "responsesWithCompleteUsage": 7,
+        "requestsWithoutCompleteUsage": 1
+      },
+      "jev:jev": {
+        "requestStarts": 3,
+        "responses": 3,
+        "http200": 3,
+        "knownInputTokens": 38125,
+        "maxReportedInputTokens": 12825,
+        "knownOutputTokens": 3438,
+        "maxReportedOutputTokens": 1146,
+        "responsesWithCompleteUsage": 3
+      },
+      "main:jev": {
+        "requestStarts": 6,
+        "responses": 6,
+        "http200": 6,
+        "knownInputTokens": 52178,
+        "maxReportedInputTokens": 9701,
+        "knownOutputTokens": 13224,
+        "maxReportedOutputTokens": 3358,
+        "responsesWithCompleteUsage": 6
+      },
+      "main:lexical": {
+        "requestStarts": 5,
+        "responses": 4,
+        "http200": 4,
+        "knownInputTokens": 35092,
+        "maxReportedInputTokens": 9291,
+        "knownOutputTokens": 8368,
+        "maxReportedOutputTokens": 3414,
+        "responsesWithCompleteUsage": 4,
+        "requestsWithoutCompleteUsage": 1
+      },
+      "main:standard": {
+        "requestStarts": 5,
+        "responses": 5,
+        "http200": 5,
+        "knownInputTokens": 42871,
+        "maxReportedInputTokens": 9390,
+        "knownOutputTokens": 7705,
+        "maxReportedOutputTokens": 2260,
+        "responsesWithCompleteUsage": 5
+      }
+    },
+    "httpStatuses": {
+      "main": {
+        "200": 22
+      },
+      "jev": {
+        "200": 3
+      }
+    },
+    "transportErrors": {},
+    "medianSuccessfulTransportMs": {
+      "main": 25415.0,
+      "jev": 239
+    },
+    "requestsWithoutCompleteUsage": [
+      "c_cab756703af0.lexical.http-1.request.json",
+      "c_faa3334b25ed.full.http-2.request.json"
+    ],
+    "notes": "Request starts are recorded attempts, not proof an unanswered call reached the provider. Unknown usage is not zero. Input totals include reported Anthropic-compatible cache tokens. This ledger does not change efficacy scores."
+  },
+  "v2_rate_limited_abort": {
+    "frozenCommit": "076c36f1e9ff81f2c81cb1e08b18717d185b9bbc",
+    "plannedArms": 512,
+    "startedArms": 145,
+    "terminalRecords": 141,
+    "terminalStatuses": {
+      "done": 114,
+      "failed": 27
+    },
+    "unreturnedArms": 4,
+    "unstartedArms": 367,
+    "returnedAgentResults": 114,
+    "failurePhases": {
+      "agent": 27
+    },
+    "completeMarker": false,
+    "exit": "143",
+    "providers": {
+      "main": {
+        "requestStarts": 155,
+        "responses": 151,
+        "http200": 129,
+        "knownInputTokens": 1500300,
+        "maxReportedInputTokens": 23145,
+        "knownOutputTokens": 261982,
+        "maxReportedOutputTokens": 4096,
+        "responsesWithCompleteUsage": 129,
+        "requestsWithoutCompleteUsage": 26
+      },
+      "jev": {
+        "requestStarts": 36,
+        "responses": 36,
+        "http200": 35,
+        "knownInputTokens": 444927,
+        "maxReportedInputTokens": 13329,
+        "knownOutputTokens": 40110,
+        "maxReportedOutputTokens": 1146,
+        "responsesWithCompleteUsage": 35,
+        "requestsWithoutCompleteUsage": 1
+      }
+    },
+    "byArm": {
+      "main:full": {
+        "requestStarts": 38,
+        "responses": 37,
+        "http200": 30,
+        "knownInputTokens": 648574,
+        "maxReportedInputTokens": 23145,
+        "knownOutputTokens": 63768,
+        "maxReportedOutputTokens": 4096,
+        "responsesWithCompleteUsage": 30,
+        "requestsWithoutCompleteUsage": 8
+      },
+      "jev:jev": {
+        "requestStarts": 36,
+        "responses": 36,
+        "http200": 35,
+        "knownInputTokens": 444927,
+        "maxReportedInputTokens": 13329,
+        "knownOutputTokens": 40110,
+        "maxReportedOutputTokens": 1146,
+        "responsesWithCompleteUsage": 35,
+        "requestsWithoutCompleteUsage": 1
+      },
+      "main:jev": {
+        "requestStarts": 38,
+        "responses": 36,
+        "http200": 31,
+        "knownInputTokens": 271664,
+        "maxReportedInputTokens": 10396,
+        "knownOutputTokens": 58348,
+        "maxReportedOutputTokens": 4096,
+        "responsesWithCompleteUsage": 31,
+        "requestsWithoutCompleteUsage": 7
+      },
+      "main:lexical": {
+        "requestStarts": 40,
+        "responses": 39,
+        "http200": 33,
+        "knownInputTokens": 281569,
+        "maxReportedInputTokens": 10099,
+        "knownOutputTokens": 73238,
+        "maxReportedOutputTokens": 4096,
+        "responsesWithCompleteUsage": 33,
+        "requestsWithoutCompleteUsage": 7
+      },
+      "main:standard": {
+        "requestStarts": 39,
+        "responses": 39,
+        "http200": 35,
+        "knownInputTokens": 298493,
+        "maxReportedInputTokens": 10158,
+        "knownOutputTokens": 66628,
+        "maxReportedOutputTokens": 4096,
+        "responsesWithCompleteUsage": 35,
+        "requestsWithoutCompleteUsage": 4
+      }
+    },
+    "httpStatuses": {
+      "main": {
+        "200": 129,
+        "429": 22
+      },
+      "jev": {
+        "200": 35,
+        "520": 1
+      }
+    },
+    "transportErrors": {},
+    "medianSuccessfulTransportMs": {
+      "main": 26355,
+      "jev": 229
+    },
+    "requestsWithoutCompleteUsage": [
+      "c_0f90e9f51232.full.http-1.request.json",
+      "c_0f90e9f51232.jev.http-2.request.json",
+      "c_0f90e9f51232.lexical.http-1.request.json",
+      "c_0f90e9f51232.standard.http-1.request.json",
+      "c_15d47a127805.jev.http-2.request.json",
+      "c_1ad427125f04.full.http-1.request.json",
+      "c_492877bcdb64.full.http-1.request.json",
+      "c_492877bcdb64.jev.http-1.request.json",
+      "c_596cac207746.lexical.http-1.request.json",
+      "c_640b69e014d6.full.http-1.request.json",
+      "c_640b69e014d6.jev.http-2.request.json",
+      "c_76e6eda3475d.full.http-1.request.json",
+      "c_772f5543fa2d.full.http-1.request.json",
+      "c_772f5543fa2d.lexical.http-1.request.json",
+      "c_772f5543fa2d.standard.http-1.request.json",
+      "c_7c67cd8ccf6c.jev.http-2.request.json",
+      "c_99d9ef148591.jev.http-2.request.json",
+      "c_99d9ef148591.lexical.http-1.request.json",
+      "c_c7d64262f163.full.http-1.request.json",
+      "c_c836731d1b23.jev.http-2.request.json",
+      "c_ca02a7dfaef6.jev.http-2.request.json",
+      "c_ca02a7dfaef6.lexical.http-1.request.json",
+      "c_d8746a56e0eb.full.http-1.request.json",
+      "c_e42707777ea5.lexical.http-1.request.json",
+      "c_e42707777ea5.standard.http-1.request.json",
+      "c_e6266cf6be8d.lexical.http-1.request.json",
+      "c_e6266cf6be8d.standard.http-1.request.json"
+    ],
+    "notes": "Request starts are recorded attempts, not proof an unanswered call reached the provider. Unknown usage is not zero. Input totals include reported Anthropic-compatible cache tokens. This ledger does not change efficacy scores."
+  },
+  "v3_complete": {
+    "frozenCommit": "f9ac05b5d4873fcffef5c81a3e29f3e3ac9b728b",
+    "plannedArms": 512,
+    "startedArms": 512,
+    "terminalRecords": 512,
+    "terminalStatuses": {
+      "done": 488,
+      "failed": 24
+    },
+    "unreturnedArms": 0,
+    "unstartedArms": 0,
+    "returnedAgentResults": 488,
+    "failurePhases": {
+      "agent": 24
+    },
+    "completeMarker": true,
+    "exit": "0",
+    "providers": {
+      "main": {
+        "requestStarts": 578,
+        "responses": 577,
+        "http200": 568,
+        "knownInputTokens": 6984074,
+        "maxReportedInputTokens": 23344,
+        "knownOutputTokens": 1243164,
+        "maxReportedOutputTokens": 4096,
+        "responsesWithCompleteUsage": 568,
+        "requestsWithoutCompleteUsage": 10
+      },
+      "jev": {
+        "requestStarts": 128,
+        "responses": 126,
+        "http200": 126,
+        "knownInputTokens": 1603131,
+        "maxReportedInputTokens": 13329,
+        "knownOutputTokens": 144396,
+        "maxReportedOutputTokens": 1146,
+        "responsesWithCompleteUsage": 126,
+        "requestsWithoutCompleteUsage": 2
+      }
+    },
+    "byArm": {
+      "main:full": {
+        "requestStarts": 161,
+        "responses": 161,
+        "http200": 160,
+        "knownInputTokens": 3473615,
+        "maxReportedInputTokens": 23344,
+        "knownOutputTokens": 380546,
+        "maxReportedOutputTokens": 4096,
+        "responsesWithCompleteUsage": 160,
+        "requestsWithoutCompleteUsage": 1
+      },
+      "jev:jev": {
+        "requestStarts": 128,
+        "responses": 126,
+        "http200": 126,
+        "knownInputTokens": 1603131,
+        "maxReportedInputTokens": 13329,
+        "knownOutputTokens": 144396,
+        "maxReportedOutputTokens": 1146,
+        "responsesWithCompleteUsage": 126,
+        "requestsWithoutCompleteUsage": 2
+      },
+      "main:jev": {
+        "requestStarts": 141,
+        "responses": 140,
+        "http200": 140,
+        "knownInputTokens": 1219776,
+        "maxReportedInputTokens": 10671,
+        "knownOutputTokens": 293103,
+        "maxReportedOutputTokens": 4096,
+        "responsesWithCompleteUsage": 140,
+        "requestsWithoutCompleteUsage": 1
+      },
+      "main:lexical": {
+        "requestStarts": 138,
+        "responses": 138,
+        "http200": 133,
+        "knownInputTokens": 1135915,
+        "maxReportedInputTokens": 10099,
+        "knownOutputTokens": 284251,
+        "maxReportedOutputTokens": 4096,
+        "responsesWithCompleteUsage": 133,
+        "requestsWithoutCompleteUsage": 5
+      },
+      "main:standard": {
+        "requestStarts": 138,
+        "responses": 138,
+        "http200": 135,
+        "knownInputTokens": 1154768,
+        "maxReportedInputTokens": 10158,
+        "knownOutputTokens": 285264,
+        "maxReportedOutputTokens": 4096,
+        "responsesWithCompleteUsage": 135,
+        "requestsWithoutCompleteUsage": 3
+      }
+    },
+    "httpStatuses": {
+      "main": {
+        "200": 568,
+        "429": 9
+      },
+      "jev": {
+        "200": 126
+      }
+    },
+    "transportErrors": {
+      "jev": {
+        "TimeoutError": 2
+      },
+      "main": {
+        "TimeoutError": 1
+      }
+    },
+    "medianSuccessfulTransportMs": {
+      "main": 29264.0,
+      "jev": 240.0
+    },
+    "requestsWithoutCompleteUsage": [
+      "c_0f90e9f51232.full.http-1.request.json",
+      "c_0f90e9f51232.standard.http-1.request.json",
+      "c_12e8548fde7e.jev.http-1.request.json",
+      "c_640b69e014d6.lexical.http-2.request.json",
+      "c_6edc42e2ed71.jev.http-1.request.json",
+      "c_abf3f634ab6f.jev.http-2.request.json",
+      "c_ddcfeca723a2.lexical.http-1.request.json",
+      "c_e40f63729506.lexical.http-1.request.json",
+      "c_e42707777ea5.lexical.http-1.request.json",
+      "c_e42707777ea5.standard.http-1.request.json",
+      "c_e712d44c9860.lexical.http-1.request.json",
+      "c_f337965b8439.standard.http-1.request.json"
+    ],
+    "notes": "Request starts are recorded attempts, not proof an unanswered call reached the provider. Unknown usage is not zero. Input totals include reported Anthropic-compatible cache tokens. This ledger does not change efficacy scores."
+  }
+}
