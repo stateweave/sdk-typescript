@@ -1,0 +1,2156 @@
+{
+  "source": "SciFact train; all development evidence/cited documents and duplicate texts excluded",
+  "excludedDevelopmentDocuments": [
+    "10071552",
+    "10165258",
+    "10300888",
+    "1049501",
+    "10536636",
+    "10582939",
+    "10648422",
+    "10697096",
+    "1084345",
+    "10874408",
+    "10984005",
+    "10991183",
+    "11041152",
+    "11172205",
+    "1122279",
+    "11254556",
+    "11335781",
+    "11369420",
+    "11419230",
+    "1148122",
+    "11603066",
+    "11614737",
+    "11705328",
+    "11718220",
+    "1180972",
+    "11886686",
+    "11899391",
+    "12009265",
+    "1215116",
+    "123859",
+    "12428814",
+    "12471115",
+    "12486491",
+    "12580014",
+    "12631697",
+    "12640810",
+    "12670680",
+    "12779444",
+    "12789595",
+    "12804937",
+    "12827098",
+    "12885341",
+    "12956194",
+    "12991445",
+    "13071728",
+    "13230773",
+    "13282296",
+    "13519661",
+    "13619127",
+    "13625993",
+    "13639330",
+    "13734012",
+    "13768432",
+    "13770184",
+    "13777138",
+    "13843341",
+    "13900610",
+    "13905670",
+    "13906581",
+    "13923140",
+    "13940200",
+    "13980338",
+    "14079881",
+    "14241418",
+    "14376683",
+    "14407673",
+    "14437255",
+    "14637235",
+    "1469751",
+    "1471041",
+    "14717500",
+    "14767844",
+    "14803797",
+    "14819804",
+    "14924526",
+    "15305881",
+    "15319019",
+    "15476777",
+    "15482274",
+    "15663829",
+    "1568684",
+    "15928989",
+    "16056514",
+    "1606628",
+    "16256507",
+    "16280642",
+    "16284655",
+    "16322674",
+    "1642727",
+    "16472469",
+    "16495649",
+    "16626264",
+    "16737210",
+    "16760369",
+    "16787954",
+    "16927286",
+    "16966326",
+    "16999023",
+    "17000834",
+    "17077004",
+    "17081238",
+    "17450673",
+    "17587795",
+    "17628888",
+    "17717391",
+    "17741440",
+    "17755060",
+    "17930286",
+    "17934082",
+    "17997584",
+    "1805641",
+    "18174210",
+    "18340282",
+    "1834762",
+    "18399038",
+    "18421962",
+    "18678095",
+    "18750453",
+    "18810195",
+    "18855191",
+    "18872233",
+    "18909530",
+    "1897324",
+    "19005293",
+    "19307912",
+    "195689316",
+    "19675911",
+    "19736671",
+    "19799455",
+    "1982286",
+    "2014909",
+    "20231138",
+    "20310709",
+    "20381484",
+    "20532591",
+    "20888849",
+    "2095573",
+    "2119889",
+    "21366394",
+    "21598000",
+    "2177022",
+    "22038539",
+    "22180793",
+    "2251426",
+    "22543403",
+    "23349986",
+    "23460562",
+    "23557241",
+    "2356950",
+    "23649163",
+    "23895668",
+    "24088502",
+    "24142891",
+    "24221369",
+    "2425364",
+    "24294572",
+    "24338780",
+    "24341590",
+    "24512064",
+    "25007443",
+    "25254425",
+    "25649714",
+    "2565138",
+    "25742130",
+    "26016929",
+    "26851674",
+    "27123743",
+    "27393799",
+    "27731651",
+    "27768226",
+    "27873158",
+    "27910499",
+    "2831620",
+    "28617573",
+    "28937856",
+    "29025270",
+    "29564505",
+    "2988714",
+    "30303335",
+    "306006",
+    "30655442",
+    "3067015",
+    "30774694",
+    "31141365",
+    "31272411",
+    "31554917",
+    "31715818",
+    "3203590",
+    "32159283",
+    "32275758",
+    "3315558",
+    "33370",
+    "33387953",
+    "33499189",
+    "33872649",
+    "3441524",
+    "3475317",
+    "34873974",
+    "3553087",
+    "36355784",
+    "36444198",
+    "36606083",
+    "37480103",
+    "37549932",
+    "38485364",
+    "38587347",
+    "3863543",
+    "3898784",
+    "39281140",
+    "39368721",
+    "39381118",
+    "40096222",
+    "40632104",
+    "4347374",
+    "4350400",
+    "4381486",
+    "4387784",
+    "4388470",
+    "4406819",
+    "4414547",
+    "44172171",
+    "4423559",
+    "4427392",
+    "4456756",
+    "45638119",
+    "464511",
+    "46695481",
+    "4687948",
+    "4709641",
+    "4883040",
+    "4942718",
+    "49556906",
+    "4961038",
+    "5152028",
+    "52873726",
+    "5289038",
+    "5304891",
+    "5373138",
+    "5476778",
+    "5483793",
+    "5531479",
+    "56893404",
+    "5884524",
+    "5912283",
+    "5953485",
+    "5956380",
+    "6076903",
+    "6157837",
+    "6173523",
+    "6277638",
+    "6309659",
+    "6372244",
+    "6421792",
+    "6828370",
+    "6923961",
+    "6955746",
+    "6969753",
+    "7370282",
+    "7521113",
+    "7662206",
+    "7662395",
+    "7873737",
+    "791050",
+    "7975937",
+    "8290953",
+    "8426046",
+    "8460275",
+    "8551160",
+    "8646760",
+    "8764879",
+    "8774475",
+    "8780599",
+    "8997410",
+    "9283422",
+    "9433958",
+    "9559146",
+    "9638032",
+    "9650982",
+    "970012",
+    "9745001",
+    "9764256",
+    "9767444",
+    "9955779"
+  ],
+  "eligibleClaims": 537,
+  "eligibleComponents": 138,
+  "cases": [
+    {
+      "id": "c_b3fab763273e",
+      "documentId": "9315213",
+      "clusterDocuments": [
+        "9315213"
+      ],
+      "review": [
+        "m_769740f4384b",
+        "m_f7a2c0ce4d50"
+      ],
+      "annotatedLabels": {
+        "m_769740f4384b": "CONTRADICT",
+        "m_f7a2c0ce4d50": "CONTRADICT",
+        "m_3365c027afef": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_c8045275b48c",
+      "documentId": "25001628",
+      "clusterDocuments": [
+        "25001628"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_fdef43ae31f0": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_640b69e014d6",
+      "documentId": "14260013",
+      "clusterDocuments": [
+        "14260013"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_4226cff527a8": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_d3ea1b411ce1",
+      "documentId": "25148216",
+      "clusterDocuments": [
+        "25148216"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_6cd036a7535a": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_109799372a29",
+      "documentId": "4824840",
+      "clusterDocuments": [
+        "4824840"
+      ],
+      "review": [
+        "m_1bb83f816927",
+        "m_ff9210187f7b"
+      ],
+      "annotatedLabels": {
+        "m_1bb83f816927": "CONTRADICT",
+        "m_ff9210187f7b": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_76e6eda3475d",
+      "documentId": "20333864",
+      "clusterDocuments": [
+        "20333864"
+      ],
+      "review": [
+        "m_a6b65e994715"
+      ],
+      "annotatedLabels": {
+        "m_c1f679ee28be": "SUPPORT",
+        "m_a6b65e994715": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_fddafb2befb5",
+      "documentId": "19912367",
+      "clusterDocuments": [
+        "19912367"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_8107b88a1c14": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_bce13a31009f",
+      "documentId": "30507607",
+      "clusterDocuments": [
+        "2078658",
+        "30507607"
+      ],
+      "review": [
+        "m_4711062930ac"
+      ],
+      "annotatedLabels": {
+        "m_4711062930ac": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_a2376b8932db",
+      "documentId": "29023309",
+      "clusterDocuments": [
+        "29023309"
+      ],
+      "review": [
+        "m_68432efdf184"
+      ],
+      "annotatedLabels": {
+        "m_8dbee31ca096": "SUPPORT",
+        "m_68432efdf184": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_c3645856cb03",
+      "documentId": "6325527",
+      "clusterDocuments": [
+        "6325527"
+      ],
+      "review": [
+        "m_6a153ef046d3"
+      ],
+      "annotatedLabels": {
+        "m_6a153ef046d3": "CONTRADICT",
+        "m_bf04f46dfbd0": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_85370c16a35f",
+      "documentId": "13481880",
+      "clusterDocuments": [
+        "13481880"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_bd30dee5b563": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_4e373c789668",
+      "documentId": "14541844",
+      "clusterDocuments": [
+        "14541844"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_056e767ce8ac": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_7c67cd8ccf6c",
+      "documentId": "27466734",
+      "clusterDocuments": [
+        "27466734"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_81cb882bffa4": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_0f90e9f51232",
+      "documentId": "21009874",
+      "clusterDocuments": [
+        "21009874"
+      ],
+      "review": [
+        "m_21f40db3136d"
+      ],
+      "annotatedLabels": {
+        "m_2f70f3b55bea": "SUPPORT",
+        "m_21f40db3136d": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_99d9ef148591",
+      "documentId": "13794374",
+      "clusterDocuments": [
+        "13794374"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_3d6c2824e9d2": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_e42707777ea5",
+      "documentId": "12685434",
+      "clusterDocuments": [
+        "12685434"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_d7e95b5cdd25": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_de189d3b7552",
+      "documentId": "9394119",
+      "clusterDocuments": [
+        "9394119"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_ec54931132aa": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_abb36bc84651",
+      "documentId": "20033112",
+      "clusterDocuments": [
+        "20033112"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_4886c59b88b0": "SUPPORT",
+        "m_081c793535c4": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_596cac207746",
+      "documentId": "19313533",
+      "clusterDocuments": [
+        "19313533"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_24fd34433566": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_ca02a7dfaef6",
+      "documentId": "11291348",
+      "clusterDocuments": [
+        "11291348"
+      ],
+      "review": [
+        "m_5e8df93ec6a1"
+      ],
+      "annotatedLabels": {
+        "m_0d0d563eafa1": "SUPPORT",
+        "m_5e8df93ec6a1": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_f059d7e91755",
+      "documentId": "44048701",
+      "clusterDocuments": [
+        "44048701"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_cb7154549546": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_0e1ab68d4409",
+      "documentId": "2867345",
+      "clusterDocuments": [
+        "2867345"
+      ],
+      "review": [
+        "m_d04ad76843e0"
+      ],
+      "annotatedLabels": {
+        "m_0e3bfb13672d": "SUPPORT",
+        "m_d04ad76843e0": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_8a6460557ba9",
+      "documentId": "6826100",
+      "clusterDocuments": [
+        "6826100"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_eff0f0485703": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_c7d64262f163",
+      "documentId": "24922825",
+      "clusterDocuments": [
+        "24922825"
+      ],
+      "review": [
+        "m_c3a21d7ff730"
+      ],
+      "annotatedLabels": {
+        "m_6fcf4a5e371d": "SUPPORT",
+        "m_c3a21d7ff730": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_0e78e85639cf",
+      "documentId": "18956141",
+      "clusterDocuments": [
+        "18956141"
+      ],
+      "review": [
+        "m_3abb41af2a2c"
+      ],
+      "annotatedLabels": {
+        "m_3abb41af2a2c": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_292e08beb0b5",
+      "documentId": "6490571",
+      "clusterDocuments": [
+        "6490571"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_eeac4d6247c0": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_66ddf93ec94f",
+      "documentId": "33912020",
+      "clusterDocuments": [
+        "16562534",
+        "33912020",
+        "6609935"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_56fd42b672d0": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_d8746a56e0eb",
+      "documentId": "14682243",
+      "clusterDocuments": [
+        "14682243"
+      ],
+      "review": [
+        "m_8dbf1465740e"
+      ],
+      "annotatedLabels": {
+        "m_96a664c5f3f5": "SUPPORT",
+        "m_8dbf1465740e": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_15d47a127805",
+      "documentId": "8246922",
+      "clusterDocuments": [
+        "8246922"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_abebb4bcc52f": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_0b143f2e156c",
+      "documentId": "16728949",
+      "clusterDocuments": [
+        "16728949"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_6aff24d0b802": "SUPPORT",
+        "m_a7deb8ae4e38": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_772f5543fa2d",
+      "documentId": "11527199",
+      "clusterDocuments": [
+        "11527199"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_12eb1f6827e3": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_08de732d3633",
+      "documentId": "9505448",
+      "clusterDocuments": [
+        "9505448"
+      ],
+      "review": [
+        "m_5a7d1dd02ef9"
+      ],
+      "annotatedLabels": {
+        "m_5a7d1dd02ef9": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_1ad427125f04",
+      "documentId": "12440953",
+      "clusterDocuments": [
+        "12440953"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_a55a475e381a": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_492877bcdb64",
+      "documentId": "6540064",
+      "clusterDocuments": [
+        "6540064"
+      ],
+      "review": [
+        "m_f5e8e0c88390"
+      ],
+      "annotatedLabels": {
+        "m_f5e8e0c88390": "CONTRADICT",
+        "m_eeddb6676d79": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_ebc8b981290b",
+      "documentId": "3578380",
+      "clusterDocuments": [
+        "3578380"
+      ],
+      "review": [
+        "m_f4f51fde3bef"
+      ],
+      "annotatedLabels": {
+        "m_f4f51fde3bef": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_c836731d1b23",
+      "documentId": "380526",
+      "clusterDocuments": [
+        "380526"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_a0d00b824776": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_e6266cf6be8d",
+      "documentId": "3355397",
+      "clusterDocuments": [
+        "3355397"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_47e068d557a7": "SUPPORT",
+        "m_6f387957bb9d": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_bfc76cc6efe2",
+      "documentId": "11902109",
+      "clusterDocuments": [
+        "11902109"
+      ],
+      "review": [
+        "m_f84512c9dea0"
+      ],
+      "annotatedLabels": {
+        "m_1a383541b4db": "SUPPORT",
+        "m_f84512c9dea0": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_633cc69e60c6",
+      "documentId": "6710713",
+      "clusterDocuments": [
+        "6710713"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_2179f4aa4b95": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_7afb2190d0ca",
+      "documentId": "5172048",
+      "clusterDocuments": [
+        "5172048"
+      ],
+      "review": [
+        "m_2ef918dee4dc",
+        "m_bb45ba1924fe"
+      ],
+      "annotatedLabels": {
+        "m_bb45ba1924fe": "CONTRADICT",
+        "m_2ef918dee4dc": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_c98a36042070",
+      "documentId": "19688024",
+      "clusterDocuments": [
+        "19688024"
+      ],
+      "review": [
+        "m_a243a1e47489"
+      ],
+      "annotatedLabels": {
+        "m_a243a1e47489": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_e40f63729506",
+      "documentId": "17421851",
+      "clusterDocuments": [
+        "17421851"
+      ],
+      "review": [
+        "m_2f254ba8939a"
+      ],
+      "annotatedLabels": {
+        "m_2f254ba8939a": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_b13996ddcb67",
+      "documentId": "6477536",
+      "clusterDocuments": [
+        "6477536"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_e26f80a831bc": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_4414418c739d",
+      "documentId": "12584053",
+      "clusterDocuments": [
+        "12584053"
+      ],
+      "review": [
+        "m_142c61a83851"
+      ],
+      "annotatedLabels": {
+        "m_142c61a83851": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_530edae1540a",
+      "documentId": "22500262",
+      "clusterDocuments": [
+        "22500262"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_6b5a82d902c6": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_fbcf4498e07c",
+      "documentId": "13513790",
+      "clusterDocuments": [
+        "13513790"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_a51e28731e97": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_b22f97c9330d",
+      "documentId": "2488880",
+      "clusterDocuments": [
+        "2488880"
+      ],
+      "review": [
+        "m_ccd94fd913b2"
+      ],
+      "annotatedLabels": {
+        "m_ccd94fd913b2": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_3f9cc3102d39",
+      "documentId": "5573975",
+      "clusterDocuments": [
+        "5573975"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_e8a2fa97c5ae": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_ed4fb5ba4ffa",
+      "documentId": "3430789",
+      "clusterDocuments": [
+        "3430789"
+      ],
+      "review": [
+        "m_194f6645ee25"
+      ],
+      "annotatedLabels": {
+        "m_194f6645ee25": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_83e897c77468",
+      "documentId": "43334921",
+      "clusterDocuments": [
+        "43334921"
+      ],
+      "review": [
+        "m_805c30c392ef"
+      ],
+      "annotatedLabels": {
+        "m_805c30c392ef": "CONTRADICT",
+        "m_ff7e94763c70": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_dd4bb65077fd",
+      "documentId": "15488881",
+      "clusterDocuments": [
+        "15058155",
+        "15488881"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_6c7808a515da": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_bd5d6458964e",
+      "documentId": "20101846",
+      "clusterDocuments": [
+        "20101846"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_03858e133483": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_a4518b2864b2",
+      "documentId": "5850219",
+      "clusterDocuments": [
+        "5850219"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_b2e5a6810ba9": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_64bca12f0f42",
+      "documentId": "40817021",
+      "clusterDocuments": [
+        "40817021"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_d149ab0f26b6": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_a087bef7ddfa",
+      "documentId": "25641414",
+      "clusterDocuments": [
+        "25641414"
+      ],
+      "review": [
+        "m_8ed407cf1adf"
+      ],
+      "annotatedLabels": {
+        "m_8ed407cf1adf": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_f052ecc5c4de",
+      "documentId": "3610080",
+      "clusterDocuments": [
+        "3610080"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_7d167ed7cac8": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_010778dabd86",
+      "documentId": "5691302",
+      "clusterDocuments": [
+        "5691302"
+      ],
+      "review": [
+        "m_c765121405d8"
+      ],
+      "annotatedLabels": {
+        "m_c765121405d8": "CONTRADICT",
+        "m_dccbc707f5a7": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_4abc92a9bf72",
+      "documentId": "3874000",
+      "clusterDocuments": [
+        "3874000"
+      ],
+      "review": [
+        "m_9dc08a52292c"
+      ],
+      "annotatedLabels": {
+        "m_9dc08a52292c": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_abf3f634ab6f",
+      "documentId": "5824985",
+      "clusterDocuments": [
+        "5824985"
+      ],
+      "review": [
+        "m_9ff978a84963"
+      ],
+      "annotatedLabels": {
+        "m_9ff978a84963": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_8f11de238e4d",
+      "documentId": "4162857",
+      "clusterDocuments": [
+        "4162857"
+      ],
+      "review": [
+        "m_b040a1438bbb"
+      ],
+      "annotatedLabels": {
+        "m_d824cd5e34dd": "SUPPORT",
+        "m_b040a1438bbb": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_fd4b3f7e3df8",
+      "documentId": "6766459",
+      "clusterDocuments": [
+        "6766459"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_fe8070b70c72": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_662036cddc5b",
+      "documentId": "4928057",
+      "clusterDocuments": [
+        "4928057"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_8ebc193debdd": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_539fba06423e",
+      "documentId": "4506414",
+      "clusterDocuments": [
+        "4506414"
+      ],
+      "review": [
+        "m_c7c56ad151d1"
+      ],
+      "annotatedLabels": {
+        "m_c7c56ad151d1": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_26de5cb11f0c",
+      "documentId": "5256564",
+      "clusterDocuments": [
+        "5256564"
+      ],
+      "review": [
+        "m_837dacb295ad"
+      ],
+      "annotatedLabels": {
+        "m_837dacb295ad": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_991e73b0a41a",
+      "documentId": "26996935",
+      "clusterDocuments": [
+        "26996935"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_cac02a99cf7c": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_5316422d5204",
+      "documentId": "14606752",
+      "clusterDocuments": [
+        "14606752"
+      ],
+      "review": [
+        "m_9dc1d1ff171a"
+      ],
+      "annotatedLabels": {
+        "m_9dc1d1ff171a": "CONTRADICT",
+        "m_109929b58fd2": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_6ab8b0fd58b7",
+      "documentId": "28369117",
+      "clusterDocuments": [
+        "28369117"
+      ],
+      "review": [
+        "m_09f585eeb4a0"
+      ],
+      "annotatedLabels": {
+        "m_09f585eeb4a0": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_17f57686ed00",
+      "documentId": "6493422",
+      "clusterDocuments": [
+        "6493422"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_70a7d784c384": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_6bf5393a4baf",
+      "documentId": "11328820",
+      "clusterDocuments": [
+        "11328820"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_f6d64049f6a1": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_ddcfeca723a2",
+      "documentId": "2033917",
+      "clusterDocuments": [
+        "2033917"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_07695a97c47a": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_664360c388a1",
+      "documentId": "4200695",
+      "clusterDocuments": [
+        "4200695"
+      ],
+      "review": [
+        "m_7e246c60b515"
+      ],
+      "annotatedLabels": {
+        "m_d709a83d1ffe": "SUPPORT",
+        "m_cb5bfac18249": "SUPPORT",
+        "m_7e246c60b515": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_8835270edd8f",
+      "documentId": "22442133",
+      "clusterDocuments": [
+        "22442133"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_82b7ea393748": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_249a0fe081e3",
+      "documentId": "13910150",
+      "clusterDocuments": [
+        "13910150"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_7abfebc07eab": "SUPPORT",
+        "m_0f0d88af6bd0": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_e712d44c9860",
+      "documentId": "13509809",
+      "clusterDocuments": [
+        "13509809"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_0a45b6d1216c": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_aac7ae4f2ed7",
+      "documentId": "23078022",
+      "clusterDocuments": [
+        "23078022"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_4b27d81a8198": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_bf1794db67cb",
+      "documentId": "3944632",
+      "clusterDocuments": [
+        "3944632"
+      ],
+      "review": [
+        "m_899a2a911a55"
+      ],
+      "annotatedLabels": {
+        "m_899a2a911a55": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_477fa1ab4acf",
+      "documentId": "12206390",
+      "clusterDocuments": [
+        "12206390"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_c87463ddfb46": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_6bff5a4f501c",
+      "documentId": "34139429",
+      "clusterDocuments": [
+        "34139429"
+      ],
+      "review": [
+        "m_65a040c9211b"
+      ],
+      "annotatedLabels": {
+        "m_65a040c9211b": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_dfa3fa640bcf",
+      "documentId": "2734421",
+      "clusterDocuments": [
+        "2734421",
+        "301838",
+        "39128592",
+        "3952288"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_6b8a119fc878": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_7ffa6aecf70e",
+      "documentId": "13497630",
+      "clusterDocuments": [
+        "13497630"
+      ],
+      "review": [
+        "m_eab5f66993a6"
+      ],
+      "annotatedLabels": {
+        "m_7b3e1ffbe1bc": "SUPPORT",
+        "m_eab5f66993a6": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_cfaf9877a7da",
+      "documentId": "1071991",
+      "clusterDocuments": [
+        "1071991"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_eadbf092f594": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_402dfc781175",
+      "documentId": "15493354",
+      "clusterDocuments": [
+        "15493354"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_359d9c00debc": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_8b312fb55946",
+      "documentId": "31460499",
+      "clusterDocuments": [
+        "31460499"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_d068b8c026d7": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_12e8548fde7e",
+      "documentId": "10072941",
+      "clusterDocuments": [
+        "10072941"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_170131c02c9a": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_6edc42e2ed71",
+      "documentId": "13763195",
+      "clusterDocuments": [
+        "13763195"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_de585feb99a2": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_85a2a65558e3",
+      "documentId": "9167230",
+      "clusterDocuments": [
+        "9167230"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_25d107b0ab04": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_cdc64b007b1e",
+      "documentId": "8148304",
+      "clusterDocuments": [
+        "8148304"
+      ],
+      "review": [
+        "m_b5fb303fe9e3"
+      ],
+      "annotatedLabels": {
+        "m_b5fb303fe9e3": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_cb7557f0bbc2",
+      "documentId": "5468807",
+      "clusterDocuments": [
+        "5468807"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_f5f2d7cac7ce": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_79a762a8d155",
+      "documentId": "13899137",
+      "clusterDocuments": [
+        "13899137"
+      ],
+      "review": [
+        "m_96d5b16f4350"
+      ],
+      "annotatedLabels": {
+        "m_96d5b16f4350": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_04350e39c04f",
+      "documentId": "24241932",
+      "clusterDocuments": [
+        "22194407",
+        "24241932"
+      ],
+      "review": [
+        "m_1b20d8fb89d1"
+      ],
+      "annotatedLabels": {
+        "m_1b20d8fb89d1": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_81ae091d40f9",
+      "documentId": "37204802",
+      "clusterDocuments": [
+        "37204802"
+      ],
+      "review": [
+        "m_14ef9b70a29e"
+      ],
+      "annotatedLabels": {
+        "m_481bc5600d3b": "SUPPORT",
+        "m_14ef9b70a29e": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_a0e63ea016e4",
+      "documentId": "8190282",
+      "clusterDocuments": [
+        "8190282"
+      ],
+      "review": [
+        "m_38cb3a4f7979"
+      ],
+      "annotatedLabels": {
+        "m_38cb3a4f7979": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_1ca22f9069bf",
+      "documentId": "7098463",
+      "clusterDocuments": [
+        "7098463"
+      ],
+      "review": [
+        "m_12faa146c345"
+      ],
+      "annotatedLabels": {
+        "m_12faa146c345": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_b8dacdca96b2",
+      "documentId": "40164383",
+      "clusterDocuments": [
+        "40164383"
+      ],
+      "review": [
+        "m_755c7c67a942"
+      ],
+      "annotatedLabels": {
+        "m_755c7c67a942": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_88fc5bf6bc90",
+      "documentId": "4928282",
+      "clusterDocuments": [
+        "4928282"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_5b24e99e6fbf": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_8fe6b145eb4c",
+      "documentId": "11659421",
+      "clusterDocuments": [
+        "11659421"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_737cc0bc4aef": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_afff6a67b281",
+      "documentId": "2890952",
+      "clusterDocuments": [
+        "2890952"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_fba986b0db6f": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_44a32e78e75b",
+      "documentId": "52072815",
+      "clusterDocuments": [
+        "52072815"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_d3c0945049d8": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_d887a2f80119",
+      "documentId": "9669099",
+      "clusterDocuments": [
+        "9669099"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_52a59c03eb0b": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_e5b067c8191e",
+      "documentId": "25079962",
+      "clusterDocuments": [
+        "25079962"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_69cf2b2135ca": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_163d8a3c1366",
+      "documentId": "8002887",
+      "clusterDocuments": [
+        "8002887"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_505c96107a08": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_a65b2955fd91",
+      "documentId": "19800147",
+      "clusterDocuments": [
+        "19800147"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_1714addbbba6": "SUPPORT",
+        "m_54cbec8e458b": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_5923474fbd32",
+      "documentId": "15048300",
+      "clusterDocuments": [
+        "15048300"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_6ca315a05397": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_f337965b8439",
+      "documentId": "11360768",
+      "clusterDocuments": [
+        "11360768"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_6a35d4b5c422": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_49ed719ccf91",
+      "documentId": "4319174",
+      "clusterDocuments": [
+        "4319174"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_d43d6b798247": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_3e8bbe32f1b0",
+      "documentId": "1974176",
+      "clusterDocuments": [
+        "1974176"
+      ],
+      "review": [
+        "m_fb20c612ec31"
+      ],
+      "annotatedLabels": {
+        "m_fb20c612ec31": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_77e9daafdd77",
+      "documentId": "1686997",
+      "clusterDocuments": [
+        "1686997"
+      ],
+      "review": [
+        "m_5c112f59c408"
+      ],
+      "annotatedLabels": {
+        "m_5c112f59c408": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_be375ddad452",
+      "documentId": "25413327",
+      "clusterDocuments": [
+        "10546779",
+        "25413327",
+        "36651210"
+      ],
+      "review": [
+        "m_5306770a3340"
+      ],
+      "annotatedLabels": {
+        "m_5306770a3340": "CONTRADICT",
+        "m_b186c1d062a5": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_d535b3db38c8",
+      "documentId": "15984735",
+      "clusterDocuments": [
+        "15984735"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_4d32021a3561": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_07e39844895d",
+      "documentId": "14711483",
+      "clusterDocuments": [
+        "14711483"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_8f056a8629d5": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_a5b9cb0a8b5d",
+      "documentId": "7433668",
+      "clusterDocuments": [
+        "7433668"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_4d18bf0b9cb2": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_df12a397442b",
+      "documentId": "12258338",
+      "clusterDocuments": [
+        "12258338"
+      ],
+      "review": [
+        "m_3ca9d91999ec"
+      ],
+      "annotatedLabels": {
+        "m_3ca9d91999ec": "CONTRADICT",
+        "m_8b7b5ff95942": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_30f79e221fee",
+      "documentId": "1780819",
+      "clusterDocuments": [
+        "1780819"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_bacccf2daa32": "SUPPORT",
+        "m_bce74d62f8df": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_94d5fcbc160a",
+      "documentId": "22405338",
+      "clusterDocuments": [
+        "22405338"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_f459fa4df8e9": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_860309758cbf",
+      "documentId": "7552215",
+      "clusterDocuments": [
+        "7552215"
+      ],
+      "review": [
+        "m_093072a5aaca",
+        "m_3f06079e0b8a"
+      ],
+      "annotatedLabels": {
+        "m_4bcd94a5fba1": "SUPPORT",
+        "m_3f06079e0b8a": "CONTRADICT",
+        "m_093072a5aaca": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_2981d0165b43",
+      "documentId": "23418635",
+      "clusterDocuments": [
+        "23418635"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_07e1425bda08": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_7eb9c63329d5",
+      "documentId": "13931771",
+      "clusterDocuments": [
+        "13931771",
+        "4306711",
+        "935538"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_fbfb944c2731": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_c104d3e5dcf1",
+      "documentId": "7209559",
+      "clusterDocuments": [
+        "7209559"
+      ],
+      "review": [
+        "m_5e9f413126a8"
+      ],
+      "annotatedLabels": {
+        "m_5e9f413126a8": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_1e1ae0d03f6c",
+      "documentId": "4828631",
+      "clusterDocuments": [
+        "4828631"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_d2474327f1c5": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_594dd70a3f97",
+      "documentId": "21295300",
+      "clusterDocuments": [
+        "21295300"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_be557883955d": "SUPPORT",
+        "m_4e068c4bb502": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_4a05948b4b7a",
+      "documentId": "21003930",
+      "clusterDocuments": [
+        "21003930"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_e44634a4e144": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_e14a800972bc",
+      "documentId": "1550937",
+      "clusterDocuments": [
+        "1550937"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_00b9c21eaee7": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_06f681f23d47",
+      "documentId": "16939583",
+      "clusterDocuments": [
+        "16939583"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_eec12c53ebca": "SUPPORT",
+        "m_50a64329f075": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_4dd6114a9260",
+      "documentId": "2052720",
+      "clusterDocuments": [
+        "2052720"
+      ],
+      "review": [
+        "m_0195ec93fcfa"
+      ],
+      "annotatedLabels": {
+        "m_0195ec93fcfa": "CONTRADICT",
+        "m_e028d882273d": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_d2339832ac34",
+      "documentId": "14797520",
+      "clusterDocuments": [
+        "14797520"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_944b15d2511f": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_8a8c9b9a51d4",
+      "documentId": "7821634",
+      "clusterDocuments": [
+        "7821634"
+      ],
+      "review": [
+        "m_26a989863d59"
+      ],
+      "annotatedLabels": {
+        "m_7586ffe464f4": "SUPPORT",
+        "m_26a989863d59": "CONTRADICT"
+      }
+    },
+    {
+      "id": "c_58a50aef2334",
+      "documentId": "22696649",
+      "clusterDocuments": [
+        "22696649"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_6756aaef2a13": "SUPPORT"
+      }
+    },
+    {
+      "id": "c_64be1b8dab47",
+      "documentId": "24384587",
+      "clusterDocuments": [
+        "24384587"
+      ],
+      "review": [],
+      "annotatedLabels": {
+        "m_307773d27ee9": "SUPPORT"
+      }
+    }
+  ],
+  "claimIdMap": {
+    "964": "m_d824cd5e34dd",
+    "469": "m_a412a1720124",
+    "1115": "m_cb7154549546",
+    "564": "m_0e3bfb13672d",
+    "1307": "m_22e14bc0b97d",
+    "1105": "m_2179f4aa4b95",
+    "632": "m_bb45ba1924fe",
+    "1181": "m_6b8a119fc878",
+    "689": "m_371275f72089",
+    "173": "m_c9477ccfea5d",
+    "953": "m_47e068d557a7",
+    "210": "m_3d6c2824e9d2",
+    "1101": "m_9dc08a52292c",
+    "1391": "m_fe8070b70c72",
+    "256": "m_b2e5a6810ba9",
+    "1401": "m_85cdfec9a8cc",
+    "47": "m_cac02a99cf7c",
+    "280": "m_fdef43ae31f0",
+    "751": "m_1714addbbba6",
+    "363": "m_c8faf370d431",
+    "139": "m_da70ee5f4be0",
+    "159": "m_ec54931132aa",
+    "244": "m_2d789df0a139",
+    "1006": "m_861917aebf7f",
+    "753": "m_b061046e3951",
+    "25": "m_7f3ab18fbb7d",
+    "292": "m_6ca315a05397",
+    "196": "m_24fd34433566",
+    "1026": "m_d9f4de9b3bdc",
+    "1046": "m_7ce856cb69e8",
+    "1148": "m_d2474327f1c5",
+    "316": "m_3eaf284a757d",
+    "816": "m_b5fb303fe9e3",
+    "978": "m_70c23c029eaa",
+    "1236": "m_cb359aa735ed",
+    "98": "m_f5e8e0c88390",
+    "1400": "m_02ec6201f15e",
+    "683": "m_769740f4384b",
+    "259": "m_d45393eac79e",
+    "1069": "m_d709a83d1ffe",
+    "616": "m_f3ecb9b21035",
+    "791": "m_4d32021a3561",
+    "1289": "m_d4f9d98ecc6c",
+    "394": "m_6a35d4b5c422",
+    "474": "m_7d22660c0b38",
+    "1255": "m_eec12c53ebca",
+    "670": "m_e8a2fa97c5ae",
+    "447": "m_0195ec93fcfa",
+    "896": "m_be2720a1c684",
+    "530": "m_5306770a3340",
+    "893": "m_0a45b6d1216c",
+    "209": "m_69d7639700b7",
+    "1182": "m_056e767ce8ac",
+    "789": "m_359d9c00debc",
+    "1342": "m_bf30740b4130",
+    "1081": "m_c765121405d8",
+    "60": "m_96d5b16f4350",
+    "407": "m_f656c840f341",
+    "962": "m_fbfb944c2731",
+    "1118": "m_78188e4b3f11",
+    "161": "m_1949b68a0ace",
+    "654": "m_c66f12d78f12",
+    "617": "m_a5fb7a65700e",
+    "565": "m_d12db1eae866",
+    "705": "m_129f2a7fea5d",
+    "766": "m_4bcd94a5fba1",
+    "799": "m_1aefb49fe09d",
+    "938": "m_e984d72a3c22",
+    "333": "m_8dbee31ca096",
+    "205": "m_b22fd5a1f406",
+    "254": "m_6c05ebace57b",
+    "448": "m_e028d882273d",
+    "1164": "m_045568b155aa",
+    "247": "m_c4ec476712fb",
+    "738": "m_56fd42b672d0",
+    "1353": "m_6d8a6809223d",
+    "591": "m_96a664c5f3f5",
+    "894": "m_00fcb195e535",
+    "563": "m_d04ad76843e0",
+    "600": "m_3ca9d91999ec",
+    "81": "m_2c6e45505802",
+    "585": "m_50c5b5fb8f4b",
+    "174": "m_89389bebb045",
+    "1330": "m_fe0a422cf24b",
+    "245": "m_194f6645ee25",
+    "1125": "m_2f70f3b55bea",
+    "1056": "m_cb5bfac18249",
+    "898": "m_24e4c55459c8",
+    "334": "m_69cf2b2135ca",
+    "603": "m_eeddb6676d79",
+    "423": "m_f3547b3c830b",
+    "1208": "m_fc7030a2f52a",
+    "685": "m_f0bf98bdec04",
+    "618": "m_9e13faa28bbb",
+    "104": "m_755c7c67a942",
+    "341": "m_12faa146c345",
+    "39": "m_7b3e1ffbe1bc",
+    "369": "m_eff0f0485703",
+    "1308": "m_7232c6941687",
+    "336": "m_00af55b87ced",
+    "228": "m_8ebc193debdd",
+    "456": "m_558f8bfff813",
+    "330": "m_5a7d1dd02ef9",
+    "153": "m_9484e738f1cb",
+    "602": "m_12b9d02f182a",
+    "1127": "m_81cb882bffa4",
+    "1228": "m_8ed407cf1adf",
+    "710": "m_d3d144acb0fb",
+    "826": "m_d9cee78db62f",
+    "40": "m_eab5f66993a6",
+    "506": "m_4d18bf0b9cb2",
+    "1268": "m_d3c0945049d8",
+    "1067": "m_0dda0d0ed590",
+    "1212": "m_7e8f316f40f4",
+    "1188": "m_ddf8190969a2",
+    "470": "m_d7e95b5cdd25",
+    "4": "m_81789dbb9294",
+    "1111": "m_93cc6e38e97a",
+    "121": "m_d068b8c026d7",
+    "1170": "m_3abb41af2a2c",
+    "426": "m_6aff24d0b802",
+    "370": "m_00b9c21eaee7",
+    "1325": "m_9844c31f9e0a",
+    "352": "m_0e5ede80a117",
+    "357": "m_e145cd6bb778",
+    "792": "m_7d167ed7cac8",
+    "1247": "m_83e49cce3f70",
+    "897": "m_c474adc9d343",
+    "954": "m_6f387957bb9d",
+    "949": "m_faa7f9f12518",
+    "942": "m_12eb1f6827e3",
+    "488": "m_bacccf2daa32",
+    "255": "m_cf3f7d48ccbb",
+    "177": "m_52a59c03eb0b",
+    "19": "m_d2ac2a8979f1",
+    "989": "m_f4324b87c9c2",
+    "733": "m_b9ace6727d8c",
+    "1045": "m_6b5a82d902c6",
+    "969": "m_737030f286d7",
+    "570": "m_c1f679ee28be",
+    "453": "m_7e246c60b515",
+    "1393": "m_a55a475e381a",
+    "1257": "m_dbb13112e014",
+    "1244": "m_4f56bf8d74ab",
+    "1372": "m_e44634a4e144",
+    "309": "m_7586ffe464f4",
+    "653": "m_307773d27ee9",
+    "68": "m_be557883955d",
+    "1169": "m_d43d6b798247",
+    "479": "m_6a153ef046d3",
+    "434": "m_c143706a7374",
+    "1156": "m_142c61a83851",
+    "899": "m_2d800206ac7f",
+    "860": "m_234c49feebe1",
+    "680": "m_f7a2c0ce4d50",
+    "1351": "m_09f585eeb4a0",
+    "1053": "m_54910c334f50",
+    "668": "m_6cd036a7535a",
+    "1315": "m_ee9c4f1ec0b5",
+    "372": "m_6fcf4a5e371d",
+    "1381": "m_bd30dee5b563",
+    "1297": "m_25d107b0ab04",
+    "571": "m_a6b65e994715",
+    "220": "m_20eb2e9947bd",
+    "1085": "m_a271daf1411c",
+    "79": "m_fcacd79a76a9",
+    "568": "m_07e1425bda08",
+    "1119": "m_0b1335d70922",
+    "970": "m_dd437ee1480a",
+    "347": "m_1a383541b4db",
+    "169": "m_9ff978a84963",
+    "767": "m_ccd94fd913b2",
+    "941": "m_8b7b5ff95942",
+    "46": "m_a0d00b824776",
+    "306": "m_26a989863d59",
+    "916": "m_e99b5e019680",
+    "1073": "m_1bb83f816927",
+    "285": "m_7ba334d3f5d8",
+    "1042": "m_2f254ba8939a",
+    "111": "m_a51e28731e97",
+    "1052": "m_332feb501e28",
+    "1254": "m_50a64329f075",
+    "449": "m_3dfbd9926c4e",
+    "631": "m_f5f2d7cac7ce",
+    "358": "m_fa52be5546bc",
+    "562": "m_03858e133483",
+    "1324": "m_8107b88a1c14",
+    "1096": "m_91bc3a8fa911",
+    "633": "m_2ef918dee4dc",
+    "18": "m_499acc2c8665",
+    "846": "m_6756aaef2a13",
+    "694": "m_eadbf092f594",
+    "6": "m_ab58423569f1",
+    "1177": "m_7abfebc07eab",
+    "283": "m_fb20c612ec31",
+    "1349": "m_efce1768c464",
+    "1311": "m_de585feb99a2",
+    "1218": "m_58c59278d976",
+    "854": "m_c87463ddfb46",
+    "119": "m_9dc1d1ff171a",
+    "264": "m_f6d64049f6a1",
+    "739": "m_1b22d294fa60",
+    "1084": "m_dccbc707f5a7",
+    "1294": "m_4711062930ac",
+    "696": "m_edecd2748939",
+    "855": "m_38cb3a4f7979",
+    "1387": "m_96050f666014",
+    "667": "m_70a7d784c384",
+    "1120": "m_2a15b6a17908",
+    "885": "m_e26f80a831bc",
+    "382": "m_737cc0bc4aef",
+    "988": "m_a0de7565e8a7",
+    "1038": "m_9d4451b5e948",
+    "758": "m_73fc3130499f",
+    "1210": "m_5b24e99e6fbf",
+    "1054": "m_170131c02c9a",
+    "592": "m_8dbf1465740e",
+    "740": "m_4b27d81a8198",
+    "933": "m_8f056a8629d5",
+    "1195": "m_cd5e0ecb27be",
+    "332": "m_68432efdf184",
+    "686": "m_4490f09d8fa7",
+    "737": "m_01b4d33d1f94",
+    "934": "m_a670ea905227",
+    "1001": "m_9129412a36ce",
+    "480": "m_bf04f46dfbd0",
+    "1126": "m_21f40db3136d",
+    "856": "m_805c30c392ef",
+    "305": "m_944b15d2511f",
+    "418": "m_7a070c6b4f06",
+    "1165": "m_1aabac02bdb0",
+    "304": "m_fc18bf2a7215",
+    "1355": "m_837dacb295ad",
+    "1033": "m_ad4fb73e833a",
+    "428": "m_a7deb8ae4e38",
+    "67": "m_4e068c4bb502",
+    "1249": "m_5e9f413126a8",
+    "755": "m_2754399215f3",
+    "584": "m_4226cff527a8",
+    "661": "m_481bc5600d3b",
+    "1350": "m_fcc033ab0e6f",
+    "579": "m_65a040c9211b",
+    "709": "m_82b7ea393748",
+    "676": "m_9843cc8d81f5",
+    "404": "m_fbb4f0c7ed0c",
+    "625": "m_4886c59b88b0",
+    "14": "m_7eb095b28b25",
+    "891": "m_f51ca009d1fb",
+    "1176": "m_0f0d88af6bd0",
+    "746": "m_0d0d563eafa1",
+    "82": "m_0783afbe6c47",
+    "1361": "m_6c7808a515da",
+    "365": "m_345ba22ebccb",
+    "1284": "m_f4f51fde3bef",
+    "22": "m_eeac4d6247c0",
+    "595": "m_ff9210187f7b",
+    "765": "m_3f06079e0b8a",
+    "346": "m_f84512c9dea0",
+    "120": "m_109929b58fd2",
+    "1390": "m_fba986b0db6f",
+    "63": "m_fb9df0fcb41a",
+    "186": "m_0036dacee07d",
+    "965": "m_d149ab0f26b6",
+    "1074": "m_56a36e17b305",
+    "662": "m_14ef9b70a29e",
+    "1025": "m_d2faeee6bf38",
+    "677": "m_bc90b5ff0136",
+    "201": "m_1af6f7038c71",
+    "1027": "m_0c0d34fb14cf",
+    "315": "m_b3f4ebde9614",
+    "688": "m_4b4458b8293d",
+    "857": "m_ff7e94763c70",
+    "624": "m_081c793535c4",
+    "80": "m_8db4e72735ec",
+    "335": "m_bce74d62f8df",
+    "529": "m_b186c1d062a5",
+    "635": "m_5c112f59c408",
+    "265": "m_07695a97c47a",
+    "1327": "m_1b20d8fb89d1",
+    "1035": "m_b3c826045c16",
+    "782": "m_abebb4bcc52f",
+    "681": "m_3365c027afef",
+    "1376": "m_899a2a911a55",
+    "606": "m_2258d2cf175f",
+    "432": "m_505c96107a08",
+    "747": "m_5e8df93ec6a1",
+    "764": "m_093072a5aaca",
+    "963": "m_b040a1438bbb",
+    "655": "m_4d16f0e856ea",
+    "853": "m_c3a21d7ff730",
+    "687": "m_cf2f40f409a2",
+    "752": "m_54cbec8e458b",
+    "337": "m_f680a4d38b62",
+    "1309": "m_a14d85b82e95",
+    "542": "m_a243a1e47489",
+    "1112": "m_0a63c0e01745",
+    "317": "m_c7c56ad151d1",
+    "266": "m_f459fa4df8e9",
+    "861": "m_26d1fd28f91e",
+    "1402": "m_5efd7051c253"
+  }
+}

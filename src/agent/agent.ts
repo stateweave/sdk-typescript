@@ -260,6 +260,13 @@ async function collectStreamedModelOutput(
   return { text: tokens.join(""), ...(usage ? { usage } : {}) };
 }
 
+function parseTerminalNoToolFinal(text: string): ParsedFinal | undefined {
+  if (/```|~~~|\bTOOL_CALL\b/i.test(text)) return undefined;
+  const markers = [...text.matchAll(/^FINAL(?=\s|:|\{)/gim)];
+  if (markers.length !== 1 || markers[0]!.index === 0) return undefined;
+  return parseFinal(text.slice(markers[0]!.index));
+}
+
 function usageFromStreamMetadata(events: Record<string, unknown>[]): ModelUsage | undefined {
   let provider: string | undefined;
   let normalizedInputTokens: number | undefined;
@@ -551,7 +558,7 @@ class AgentRuntime {
       outputTokens += output.usage?.outputTokens ?? estimateStateWeaveTokens(output.text).estimatedTokens;
 
       const call = parseToolCall(output.text.replace(/^(\s*TOOL_CALL)\s*:\s*/i, "$1 "));
-      const final = call ? undefined : parseFinal(output.text) ?? parsePlainInformationalFinal(task, output.text);
+      const final = call ? undefined : parseFinal(output.text) ?? (this.tools.size === 0 ? parseTerminalNoToolFinal(output.text) : undefined) ?? parsePlainInformationalFinal(task, output.text);
       if (!call && !final) {
         const invalid = output.text.trim();
         repeatedInvalidCount = invalid === repeatedInvalidOutput ? repeatedInvalidCount + 1 : 1;
