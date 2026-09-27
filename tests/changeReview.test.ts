@@ -115,6 +115,38 @@ describe("optional change-impact review", () => {
     expect(result.trace[0]!.nodeIds).not.toContain(first.metadata.changeReview!.annotationNodeId);
     expect(result.state.nodes.slice(0, first.state.nodes.length)).toEqual(first.state.nodes);
   });
+  it("traverses approved historical intermediates without flagging superseded outputs", () => {
+    const f = fixture();
+    const old = f.weave.append({ kind: "semantic", payload: { type: "artifact", content: "Old derived note" }, resourceKey: "note:versioned", parents: [f.claim.id], advance: false });
+    const latest = f.weave.append({ kind: "semantic", payload: { type: "artifact", content: "Independent replacement" }, resourceKey: "note:versioned", parents: [old.id], advance: false });
+    const currentReport = f.weave.append({ kind: "semantic", payload: { type: "artifact", content: "Still based on old note" }, resourceKey: "report:current", parents: [old.id], advance: false });
+    const result = propagateReview(f.weave.snapshot(), [f.claim.id], [{ premiseId: f.claim.id, dependentId: old.id }, { premiseId: old.id, dependentId: currentReport.id }]);
+    expect(result).toEqual([currentReport.id]);
+    expect(result).not.toContain(old.id); expect(result).not.toContain(latest.id);
+  });
+  it("expires previous advice on candidate changes or revoked dependencies even if sources stay identical", async () => {
+    for (const change of ["candidate", "dependencies", "reviewer"]) {
+      const f = fixture();
+      const first = await new Agent({ model, tools: [], state: f.weave.snapshot(), changeReviewer: reviewer }).run("Assess changes.", { changedNodeIds: [f.update.id], reviewDependencies: f.dependencies });
+      const revised = new CausalWeave(first.state);
+      if (change === "candidate") revised.append({ kind: "semantic", payload: { type: "memory", key: "delivery", content: "Carrier now refuses refrigerated parcels." }, resourceKey: "semantic:memory:delivery", parents: [f.claim.id], advance: false });
+      const result = await new Agent({ model, tools: [], state: revised.snapshot(), changeReviewer: async () => { throw new Error("Unavailable"); } }).run("Assess changes.", { changedNodeIds: [f.update.id], reviewDependencies: change === "dependencies" ? [] : f.dependencies });
+      const last = result.state.nodes.find(node => node.id === result.metadata.changeReview!.annotationNodeId)!;
+      expect(last.payload).toMatchObject({ status: "expired_review" });
+      expect(result.trace[0]!.nodeIds).not.toContain(first.metadata.changeReview!.annotationNodeId);
+      expect(result.state.nodes.slice(0, first.state.nodes.length)).toEqual(first.state.nodes);
+    }
+  });
+  it("keeps refreshed zero-nomination advice bounded and never declares the entire graph cleared", async () => {
+    const f = fixture();
+    const first = await new Agent({ model, tools: [], state: f.weave.snapshot(), changeReviewer: reviewer }).run("Assess changes.", { changedNodeIds: [f.update.id] });
+    const zero: ChangeReviewer = async input => ({ model: "test", inputTokens: 1, outputTokens: 1, scores: input.candidates.map(x => ({ id: x.id, contradiction: 0 })) });
+    const result = await new Agent({ model, tools: [], state: first.state, changeReviewer: zero }).run("Assess changes.", { changedNodeIds: [f.update.id] });
+    expect(result.metadata.changeReview!.flaggedNodeIds).toEqual([]);
+    const annotation = result.state.nodes.find(node => node.id === result.metadata.changeReview!.annotationNodeId)!;
+    expect(JSON.stringify(annotation.payload)).toContain("not a complete graph clearance");
+    expect(result.trace[0]!.nodeIds).not.toContain(first.metadata.changeReview!.annotationNodeId);
+  });
   it("bounds projections, nominations and candidate scans in large histories", async () => {
     const f = fixture();
     for (let i = 0; i < 2500; i++) f.weave.append({ kind: "semantic", payload: { type: "memory", key: `m${i}`, content: `Carrier refrigerated logistics note ${i}.` }, parents: [f.root.id], advance: false });

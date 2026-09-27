@@ -502,9 +502,12 @@ class AgentRuntime {
         const reviewKey = `change-review:${JSON.stringify(input.sources.map(source => this.weave.get(source.id)!.resourceKey ?? source.id).sort())}`;
         const previousReview = snapshot.nodes.filter(node => node.resourceKey === reviewKey).at(-1);
         const previousSources = (previousReview?.payload as { sourceNodeIds?: string[] } | undefined)?.sourceNodeIds ?? [];
-        if (previousReview && JSON.stringify([...previousSources].sort()) !== JSON.stringify(input.sources.map(source => source.id).sort())) {
-          this.weave.append({ kind: "verification", resourceKey: reviewKey, parents: [previousReview.id, ...input.sources.map(source => source.id)], advance: false,
-            payload: { operation: "change_impact_review", status: "expired_source", sourceNodeIds: input.sources.map(source => source.id), notice: "Earlier advice used an older source version. No current review conclusion is available." } });
+        const sourceChanged = JSON.stringify([...previousSources].sort()) !== JSON.stringify(input.sources.map(source => source.id).sort());
+        const previousStatus = (previousReview?.payload as { status?: string } | undefined)?.status;
+        if (previousReview && (sourceChanged || !["expired_source", "expired_review"].includes(previousStatus ?? ""))) {
+          const expired = this.weave.append({ kind: "verification", resourceKey: reviewKey, parents: [previousReview.id, ...input.sources.map(source => source.id)], advance: false,
+            payload: { operation: "change_impact_review", status: sourceChanged ? "expired_source" : "expired_review", sourceNodeIds: input.sources.map(source => source.id), notice: "Earlier advice is historical. This explicit review must reassess current evidence, candidate versions and declared dependencies; no current review conclusion is available yet." } });
+          changeReview.annotationNodeId = expired.id;
         }
         changeReview.candidateNodeIds = input.candidates.map(candidate => candidate.id);
         if (!input.candidates.length) changeReview.status = "empty";

@@ -78,14 +78,17 @@ export function propagateReview(state: CausalWeaveSnapshot, seeds: string[], dep
   for (const { premiseId, dependentId } of dependencies) {
     const premise = nodes.get(premiseId), dependent = nodes.get(dependentId);
     if (!premise || !dependent || !dependent.parents.includes(premiseId)) throw new Error("Review dependencies must be caller-declared direct causal edges.");
-    if (dependent.resourceKey && heads.get(dependent.resourceKey) !== dependent.id) continue;
-    edges.set(premiseId, [...(edges.get(premiseId) ?? []), dependentId]);
+    const targets = edges.get(premiseId) ?? [];
+    targets.push(dependentId);
+    edges.set(premiseId, targets);
   }
   if (seeds.some(id => !nodes.has(id))) throw new Error("Unknown review seed.");
   const visited = new Set(seeds), queue = [...seeds], affected: string[] = [];
   for (let index = 0; index < queue.length; index++) for (const id of edges.get(queue[index]!) ?? []) {
     if (visited.has(id)) continue;
-    visited.add(id); queue.push(id); affected.push(id);
+    visited.add(id); queue.push(id);
+    const dependent = nodes.get(id)!;
+    if (!dependent.resourceKey || heads.get(dependent.resourceKey) === id) affected.push(id);
   }
   return affected;
 }
