@@ -161,7 +161,6 @@ export class CausalWeave {
     const sourceViews = args.recall ? validateRecallProjection(snapshot, args.recall) : new Map<string, string>();
     const historicalSources = new Set(args.recall?.sourceNodeIds ?? []);
     const explicitPreferences = new Set(args.preferredNodeIds ?? []);
-    const permitted = (id: string): boolean => !historicalSources.has(id) || sourceViews.has(id) || explicitPreferences.has(id);
     const overview = projectCausalSnapshot(snapshot);
     const hierarchy = buildCausalHierarchy(snapshot, overview);
     const latestEquivalent = latestProjectionEquivalents(this.order, this.nodes);
@@ -169,6 +168,14 @@ export class CausalWeave {
     const latestSystem = reverseOrder.find((id) => this.nodes.get(id)?.kind === "system");
     const latestGoal = reverseOrder.find((id) => this.nodes.get(id)?.kind === "goal");
     const latestAnswer = reverseOrder.find((id) => this.nodes.get(id)?.kind === "answer");
+    const previousGoal = reverseOrder.find((id) => id !== latestGoal && this.nodes.get(id)?.kind === "goal");
+    const continuityIds = args.recall ? unique([
+      ...(latestGoal ? [...this.nodes.get(latestGoal)!.parents].sort((a, b) => this.nodes.get(b)!.sequence - this.nodes.get(a)!.sequence).slice(0, 4) : []),
+      ...[previousGoal, latestAnswer].filter((id): id is string => Boolean(id))
+    ]) : [];
+    const continuity = new Set(continuityIds);
+    for (const id of continuity) sourceViews.delete(id);
+    const permitted = (id: string): boolean => !historicalSources.has(id) || sourceViews.has(id) || explicitPreferences.has(id) || continuity.has(id);
     const recent = latestAnswer ? [latestAnswer] : [];
     const queryTerms = meaningfulQueryTerms([args.query ?? "", latestGoal ? payloadText(this.nodes.get(latestGoal)?.payload) : ""].join(" "));
     const eligible = this.order.filter((id) => {
@@ -182,10 +189,11 @@ export class CausalWeave {
       .filter((candidate) => candidate.overlap > 0 && usefulQueryCandidate(this.nodes.get(candidate.id)!, args.query ?? "", queryTerms, candidate.overlap))
       .sort((a, b) => b.overlap - a.overlap || b.score - a.score || this.nodes.get(b.id)!.sequence - this.nodes.get(a.id)!.sequence);
     const preferredIds = (args.preferredNodeIds ?? []).filter((id) => eligible.includes(id)).slice(0, 6);
-    const protectedQueryIds = new Set([...recallIds, ...preferredIds, ...ranked.slice(0, 8).map((candidate) => candidate.id)]);
+    const protectedQueryIds = new Set([...continuityIds, ...recallIds, ...preferredIds, ...ranked.slice(0, 8).map((candidate) => candidate.id)]);
     const relevantResourceIds = selectRelevantResourceHeads(this.resourceHeads.values(), this.nodes, args.query ?? "", queryTerms, latestAnswer, maxNodes);
     const selected = selectBoundedNodeIds(maxNodes, this.nodes, [
       [latestSystem, latestGoal, ...this.frontier().filter((id) => !preferredIds.length || this.nodes.get(id)!.sequence > (latestGoal ? this.nodes.get(latestGoal)!.sequence : 0))].filter((id): id is string => Boolean(id)),
+      continuityIds,
       preferredIds,
       recallIds,
       relevantResourceIds,

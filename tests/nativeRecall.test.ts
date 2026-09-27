@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import { Agent } from '../src/agent/agent.js';
 import { CausalWeave } from '../src/core/causalWeave.js';
 import { prepareRecall, selectRecall, validateRecallProjection } from '../src/core/recallProjection.js';
-import { createJevRecallClient } from '../src/integrations/jevRecall.js';
+import { createJevRecallClient, JevSetupError } from '../src/integrations/jevRecall.js';
 import type { Model, ModelInput } from '../src/llm/model.js';
 
 function fixture() {
@@ -108,6 +109,40 @@ describe('native source recall', () => {
     expect(agent.getState()).toBeUndefined();
   });
 
+  it('does not let retrieval suppress or excerpt away the immediately preceding correction', () => {
+    const weave = new CausalWeave();
+    weave.append({ kind: 'system', payload: 'Keep source provenance.' });
+    const correction = weave.append({ kind: 'goal', payload: 'Actually, Friday—not Monday.' });
+    const acknowledgment = weave.append({ kind: 'answer', payload: 'Noted.' });
+    for (let i = 0; i < 70; i++) weave.append({ kind: 'resource', resourceKey: `older-plan:${i}`, payload: `Project launch was proposed for Monday. Archived proposal ${i}.`, advance: false });
+    const index = prepareRecall(weave.snapshot(), 'When is the project launch?');
+    expect(index.candidates.some(window => window.nodeId === correction.id)).toBe(false);
+    const windows = selectRecall(index).windows;
+    weave.append({ kind: 'goal', payload: 'When is the project launch?' });
+    const clipped = { id: 'rw_' + createHash('sha256').update(`${correction.id}:0:9`).digest('hex').slice(0, 20), nodeId: correction.id, kind: correction.kind, start: 0, end: 9, text: 'Actually,', sourcePrefix: correction.payload as string, lexicalScore: 0 };
+    for (const contextMode of ['causal', 'molecular'] as const) {
+      for (const selected of [windows, [...windows.slice(0, 11), clipped]]) {
+        const compiled = weave.compile({ query: 'When is the project launch?', maxNodes: 16, contextMode, recall: { sourceNodeIds: index.sourceNodeIds, windows: selected } });
+        expect(compiled.nodeIds).toContain(correction.id);
+        expect(compiled.nodeIds).toContain(acknowledgment.id);
+        expect(compiled.prompt).toContain('Actually, Friday—not Monday.');
+        expect(compiled.nodeIds.length).toBeLessThanOrEqual(16);
+      }
+    }
+  });
+
+  it('rejects fabricated span ends and duplicate windows while labeling short prefixes exactly', () => {
+    const weave = new CausalWeave();
+    const node = weave.append({ kind: 'resource', payload: 'The exact source text.', advance: false });
+    const source = node.payload as string;
+    const span = (start: number, end: number) => ({ id: 'rw_' + createHash('sha256').update(`${node.id}:${start}:${end}`).digest('hex').slice(0, 20), nodeId: node.id, kind: node.kind, start, end, text: source.slice(start, end), sourcePrefix: source, lexicalScore: 1 });
+    const valid = span(4, source.length);
+    expect(validateRecallProjection(weave.snapshot(), { sourceNodeIds: [node.id], windows: [valid] }).get(node.id)).toContain(`[Original source prefix, 0:${source.length}]`);
+    expect(() => validateRecallProjection(weave.snapshot(), { sourceNodeIds: [node.id], windows: [span(4, source.length + 1)] })).toThrow('exact source spans');
+    expect(() => validateRecallProjection(weave.snapshot(), { sourceNodeIds: [node.id], windows: [valid, valid] })).toThrow('identities');
+    expect(() => validateRecallProjection(weave.snapshot(), { sourceNodeIds: [node.id], windows: [span(0, 10), span(5, 15)] })).toThrow('packing');
+  });
+
   it('accepts the mathematically bounded rounding in real four-level Score responses', async () => {
     const { weave } = fixture();
     const index = prepareRecall(weave.snapshot(), 'launch city', 1);
@@ -122,6 +157,37 @@ describe('native source recall', () => {
     const agent = new Agent({ state: original, tools: [], model: model(() => 'FINAL: no'), jev: { fetch: async () => new Response('{}', { status: 401 }) } });
     await expect(agent.run('approved launch city')).rejects.toThrow('credential setup was rejected');
     expect(agent.getState()).toEqual(original);
+  });
+
+  it('rejects malformed Score distributions despite the rounding allowance', async () => {
+    const { weave } = fixture();
+    const index = prepareRecall(weave.snapshot(), 'launch city', 1);
+    for (const answer of [
+      { score: 2.83, probabilities: { '0': .1, '1': .1, '2': .1, '3': .9 } },
+      { score: 2.1, probabilities: { '0': .05, '1': .01, '2': .02, '3': .92 } },
+      { score: 2.83, probabilities: { '0': .05, '1': .01, '2': .02, '3': .92, '4': 0 } },
+      { score: 2.83, probabilities: { '0': .05, '1': '0.01', '2': .02, '3': .92 } }
+    ]) {
+      const client = createJevRecallClient({ fetch: async () => new Response(JSON.stringify({ model: 'jev-1.13.0', answers: { q0: { type: 'score', ...answer } }, usage: { input_tokens: 100, output_tokens: 5 } })) }, 'graded');
+      await expect(client.rank('launch city', index.candidates)).rejects.toThrow('score distribution');
+    }
+  });
+
+  it('cancels a stalled body reader and does not wait forever for stream cleanup', async () => {
+    const { weave } = fixture();
+    const index = prepareRecall(weave.snapshot(), 'launch city', 1);
+    let cancelled = false;
+    const client = createJevRecallClient({ timeoutMs: 100, fetch: async () => new Response(new ReadableStream({ cancel() { cancelled = true; return new Promise<void>(() => undefined); } })) });
+    await expect(client.rank('launch city', index.candidates)).rejects.toMatchObject({ name: 'TimeoutError' });
+    await Promise.resolve();
+    expect(cancelled).toBe(true);
+  });
+
+  it('does not let stalled error-body cleanup disguise a credential rejection as an outage', async () => {
+    const { weave } = fixture();
+    const index = prepareRecall(weave.snapshot(), 'launch city', 1);
+    const client = createJevRecallClient({ timeoutMs: 100, fetch: async () => new Response(new ReadableStream({ cancel: () => new Promise<void>(() => undefined) }), { status: 403 }) });
+    await expect(client.rank('launch city', index.candidates)).rejects.toBeInstanceOf(JevSetupError);
   });
 
   it('bounds a nonresponsive custom transport', async () => {

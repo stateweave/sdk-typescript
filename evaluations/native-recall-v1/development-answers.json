@@ -1,0 +1,1280 @@
+{
+  "scope": "Development-only exploratory answer quality; not held-out confirmation.",
+  "commit": "4073d2b6593138c806900cfda4c2e250b63311cf",
+  "cases": 28,
+  "criterion": "Failure-zero binary correctness; both order-reversed blind judgments must pass.",
+  "arms": {
+    "standard": {
+      "correct": 18,
+      "completed": 28,
+      "judgeDisagreements": 0,
+      "abstentionCorrect": 3,
+      "medianSuccessfulMs": 22061.5,
+      "successfulMainInputTokens": 319813,
+      "successfulMainOutputTokens": 25323,
+      "recallFallbacks": 0,
+      "byGroup": {
+        "abstention": {
+          "correct": 3,
+          "cases": 4
+        },
+        "knowledge-update": {
+          "correct": 3,
+          "cases": 4
+        },
+        "multi-session": {
+          "correct": 2,
+          "cases": 4
+        },
+        "single-session-assistant": {
+          "correct": 4,
+          "cases": 4
+        },
+        "single-session-preference": {
+          "correct": 2,
+          "cases": 4
+        },
+        "single-session-user": {
+          "correct": 1,
+          "cases": 4
+        },
+        "temporal-reasoning": {
+          "correct": 3,
+          "cases": 4
+        }
+      }
+    },
+    "lexical": {
+      "correct": 21,
+      "completed": 28,
+      "judgeDisagreements": 0,
+      "abstentionCorrect": 4,
+      "medianSuccessfulMs": 15594.5,
+      "successfulMainInputTokens": 227751,
+      "successfulMainOutputTokens": 21641,
+      "recallFallbacks": 0,
+      "byGroup": {
+        "abstention": {
+          "correct": 4,
+          "cases": 4
+        },
+        "knowledge-update": {
+          "correct": 4,
+          "cases": 4
+        },
+        "multi-session": {
+          "correct": 4,
+          "cases": 4
+        },
+        "single-session-assistant": {
+          "correct": 2,
+          "cases": 4
+        },
+        "single-session-preference": {
+          "correct": 2,
+          "cases": 4
+        },
+        "single-session-user": {
+          "correct": 2,
+          "cases": 4
+        },
+        "temporal-reasoning": {
+          "correct": 3,
+          "cases": 4
+        }
+      }
+    },
+    "native": {
+      "correct": 27,
+      "completed": 28,
+      "judgeDisagreements": 0,
+      "abstentionCorrect": 4,
+      "medianSuccessfulMs": 17838.0,
+      "successfulMainInputTokens": 225523,
+      "successfulMainOutputTokens": 23589,
+      "recallFallbacks": 1,
+      "byGroup": {
+        "abstention": {
+          "correct": 4,
+          "cases": 4
+        },
+        "knowledge-update": {
+          "correct": 4,
+          "cases": 4
+        },
+        "multi-session": {
+          "correct": 4,
+          "cases": 4
+        },
+        "single-session-assistant": {
+          "correct": 4,
+          "cases": 4
+        },
+        "single-session-preference": {
+          "correct": 4,
+          "cases": 4
+        },
+        "single-session-user": {
+          "correct": 4,
+          "cases": 4
+        },
+        "temporal-reasoning": {
+          "correct": 3,
+          "cases": 4
+        }
+      }
+    }
+  },
+  "comparisons": {
+    "standard": {
+      "n": 28,
+      "difference": 0.32142857142857145,
+      "wins": 9,
+      "losses": 0,
+      "ties": 19,
+      "pairedT": 3.576237364075619,
+      "tDf": 27,
+      "tTwoSidedP": 0.0013419874166546596,
+      "exactMcNemarTwoSidedP": 0.00390625,
+      "ci95": [
+        0.17857142857142858,
+        0.4642857142857143
+      ],
+      "zeroObservedVariance": false,
+      "holmAdjustedP": 0.0078125,
+      "identicalPromptCases": 0,
+      "identicalPromptWins": 0,
+      "identicalPromptLosses": 0
+    },
+    "lexical": {
+      "n": 28,
+      "difference": 0.21428571428571427,
+      "wins": 6,
+      "losses": 0,
+      "ties": 22,
+      "pairedT": 2.7136021011998728,
+      "tDf": 27,
+      "tTwoSidedP": 0.0114484109134796,
+      "exactMcNemarTwoSidedP": 0.03125,
+      "ci95": [
+        0.10714285714285714,
+        0.32142857142857145
+      ],
+      "zeroObservedVariance": false,
+      "holmAdjustedP": 0.03125,
+      "identicalPromptCases": 0,
+      "identicalPromptWins": 0,
+      "identicalPromptLosses": 0
+    }
+  },
+  "ledger": [
+    {
+      "id": "c_01a4490028db7439",
+      "group": "temporal-reasoning",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "a1712619085c5dc22e335ca73f77a4c861da9580e6fd28638878499670d3c894",
+        "lexical": "99eeaf0e9c091a32ec70815a3c5ace93a6f6b521d6af0e9456175ee9efde772b",
+        "native": "41cb7af8e37fa40ccffed5b1a226aa43287af6e086892ec4ddb9f20f0cf8dd3d"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_0fd0d551690c14bc",
+      "group": "single-session-user",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            false,
+            false
+          ],
+          "correct": false,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "68453e7e62ca28203a329b99571e69802746e291d02d3784ee945a4e47be3caa",
+        "lexical": "8883e545d8a6e2b773efc9d047ffb25cc58fab59e6570790c1e80ed6e3395d81",
+        "native": "ae63ccbf75c795d59ca3fb332086e57893a5335dabb206570659aeb7bb546865"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_16ba53ecb5ac6988",
+      "group": "multi-session",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "99fd3e38f0618e5618e14977e20b66e8aa09c505e96c64a1194d25edee38200e",
+        "lexical": "1010c2b2bdadd7be75b3c5c3db89b123693c1aebc990929ccad006b0f03c682a",
+        "native": "031a32abac3c8ef6c99ec878f7f3e6493b4cc71283770619298d66ad76c0beee"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_18dd216378b82f4a",
+      "group": "temporal-reasoning",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "f41c229370713167bc868918e4226a7909e2ae48a26b107adbf264f7e8ce3810",
+        "lexical": "53d3792c294e1dac0bc63104f4f0737b22dacfb46e75fa313efd3e1ce834d7f2",
+        "native": "15adac60fed619e4f9a1e08d801176d34415b435c981656a860f5c226e3b108f"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_1b657d5574235de1",
+      "group": "abstention",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "c182dd3ef9a416d93bf80f8b810274302e0b6dbe1eb7055674873eed8088f43c",
+        "lexical": "99ad46b2817b2b8b9d9c084c30fdaf402b6290bf034a0ca61287a6499c5fbc0a",
+        "native": "b840066b5d8e9cb20f019e1704d6e3a59f12f5e09ce0f0ad5d15bd3747fc03f0"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_1d092cbfbefde097",
+      "group": "single-session-user",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            false,
+            false
+          ],
+          "correct": false,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "70e3717de1902549a17c391aa3c908738168e291804c735470d1a2845d3a0d7f",
+        "lexical": "d14067ba921193cdc95a6e7c5033db9cc50e46962fe240f672f9e1340ae44b60",
+        "native": "d24dd85c465b5843efdd7cd4234c269de67adefc662c3ea0421ed06811c1c50e"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_29da39a7d5141d27",
+      "group": "multi-session",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            false,
+            false
+          ],
+          "correct": false,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "71e9abff385ba2c97b8d35e5bab9ee8eda4fb7512846a27e733d62d93cba8495",
+        "lexical": "eedb046f3e8da952e273326d6cc3a9e09445da633289974a597e37c064d5f375",
+        "native": "a300018b1659e0698b5ef30c4578584e6f77e39aa53cf117109089bfc2c5b324"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_3cf6c796d6f3ffec",
+      "group": "single-session-assistant",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            false,
+            false
+          ],
+          "correct": false,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "3886ee5a6930a7ff76fc72b3eefa14f19ad9eb45cbdd575c4553d639856eb310",
+        "lexical": "e0a8b6d0e200aa420a00eaed91f2dbcfff6cf246348a373e6f90d4dd91067710",
+        "native": "abb926ef3d7478a22d0f0b85cf9f488661facbc54525bb16b501638c7cf40698"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_3df3dce92ed7843a",
+      "group": "single-session-preference",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "370080f46b3c0013ad2cb438c98f924fe2bd927a3216610b19287bf6bcb7c10a",
+        "lexical": "73ea650852b99b1e9fa29115126aff25a8cb9c0f64a54f057f38258e562c282c",
+        "native": "bbde43205532dbda18120f0a65ca6d02f1b0ca9ee83566753930653900c1465c"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_45dd88e6b9d1f2d8",
+      "group": "single-session-assistant",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            false,
+            false
+          ],
+          "correct": false,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "f3aad7b5eb4786b2f2fb99d25e62af0d2b705beedf999dad8cddfcbd5aa85e4b",
+        "lexical": "af130bf8876807b0140b4348e2bd8d34884cd07b2c7632abfca4910775b5ce1e",
+        "native": "f0f2f6e924f7824273d364dc6e752d97cb558836920b1152052972b86da246bd"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_588833c2dc10f463",
+      "group": "single-session-assistant",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "4d77ffbb032f5195a08cd5f829d36066a17eda5c850a6fdaa0b1f925fd33972b",
+        "lexical": "8b743090a88a19f119afbfe3ced772b4ad4e7ea7c9b6b7756086aa14be63f375",
+        "native": "911bcb1767e4f9685b4c4be61a9f7c29d0cede6c8187252fe75f8721019e364a"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_5b79813aeb5cac2e",
+      "group": "knowledge-update",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "07ecaa4c6afc391b8bf3d0cca013baaf2f671fb348b985ae10086d882078c768",
+        "lexical": "1aab7ecbf1722fc860bf9086a897cf03b121390e0e6e529f52bb95b919eb5d68",
+        "native": "225dfae90bbf034ee6b8078a696a7a1aa467f9dd2788dd42b13be87b44d3e0c2"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_691f84cdd5b6bcbc",
+      "group": "knowledge-update",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "a71a0dd292862e5379261bc5933aadc516f005834a56d18a3b29c23b78752657",
+        "lexical": "8c598f1e0ed1b7eb33e8bad6219286c15f5aa156390e54d7b21ca715f56ddacf",
+        "native": "869dfb7a7fcda57a9f47fea120ce8479a0ced3c98b283a1f9eb1af5529cde4a5"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_7ea41d7967a07e5c",
+      "group": "single-session-preference",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "625275d74b01ef3d5153b9873b3e6d22e9ed046bfe7f1f947a00f268396227f2",
+        "lexical": "d68a880b676955884000f8c73d41675504bf64c45e0767d2ac52ca67522db799",
+        "native": "fe6ef4c08d775a622dd87ed3b35b710c0172d0fd46871c92e07330a38f11f10a"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_99dc0c148fa46efa",
+      "group": "knowledge-update",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "aed9f129e2102d9aa5f1af82a4027352455353a2eb6196605201c81dd37d5c82",
+        "lexical": "9f4a399d67e01f0ed6f5a6f93afae7a65fdf66e8d06fdcee9fb725e6ac876202",
+        "native": "d68f5d9d646ba7fdc7b9404d3004850073c9bcf951e99447dd70c71d7d4bd7be"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_9dc2dd8d9edcdafd",
+      "group": "knowledge-update",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            false,
+            false
+          ],
+          "correct": false,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "a99452274a111ba8682895d479bb9df546edf9c44fb8bd7f782995bec2303a8c",
+        "lexical": "b0db6ec81716a7d6466648a3b20b9bdbde70c895b003d2f94e6a7885418aeb20",
+        "native": "3efe0e3df2ba7c1ac982f9378b884f1694791c4c50171ba9306817e9a601e7fc"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_a4412dd3b9d9b6c9",
+      "group": "temporal-reasoning",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            false,
+            false
+          ],
+          "correct": false,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            false,
+            false
+          ],
+          "correct": false,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            false,
+            false
+          ],
+          "correct": false,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "18874c90497ed88cd6d2a0b9b1fe2f99cf855ea98800703e5ca494c36fe291b1",
+        "lexical": "cfddfb7bfdb251a7097d53609c31d2b23ab87947b5a30f8a2a509d1e32350ede",
+        "native": "6aed387f12afa50fcd4d5b3c4d4ef115448c89aeb44aed4f1f7b42a112edd87b"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_a4a2db3ddd0aa2df",
+      "group": "temporal-reasoning",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "58e120d3222f27f67d2227d4b70cd74a9ab23af291ff221b3724a07f2253674e",
+        "lexical": "7d36f6b4a9b280a2b2c8a33041e7fd2516782831235e32cac1b3e055f98c5dd7",
+        "native": "bfbf5c03a7d5771270c714094d46c6887986b606abbd8dc7999179c8ec9abe10"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_a7b44eaefe1a2c03",
+      "group": "abstention",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "e5ab222aed81b04fa1cd02a10178ef1c758e5664d453f096feaf4c68b03b9ab6",
+        "lexical": "f0b61261cec971328df9328e1c3c20d34636c11daa682c1d0738a9dcf9424940",
+        "native": "89f8d0527e0cbd94d7ca3e2be265dedd39bc9318d61c42ccd47f0f9c012b50bc"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_ac39c224172a4d97",
+      "group": "single-session-preference",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            false,
+            false
+          ],
+          "correct": false,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            false,
+            false
+          ],
+          "correct": false,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "7120de828d0ef094292f7a41e375d9b6c5c95c928ca44cff4fff619b6803c3b7",
+        "lexical": "357fcfc52c19fe663b2a3da905a8bdbacd147e98b4b2f124c9edb7efc033b50d",
+        "native": "f83deb5a1c169db6982dc5ca918076020fbb8dbd83128a013808134c64b0d780"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_b1b3e9cb14679d34",
+      "group": "multi-session",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "6c72b2211641070b5d382d8b03f80eb5f40839d5adccda82f779aebb2421b372",
+        "lexical": "9ee042e1952e704bcd25696297acc864160d9adf9cf656e2c75c5ec98c3eed8f",
+        "native": "3460db3e4320f6220984108c655a53e0deb9b881c1861aafcd7068431f7621d4"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_c0ba4caecf439c2d",
+      "group": "single-session-assistant",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "573ec62a7116158c0b7dff287eaa9c63b4cd2b78d4fa26a7b8394a8fab13d3fb",
+        "lexical": "491d4c68351d956597de0bd8ec275f6fe46e2b0a069e4461e29a9a75ca369e52",
+        "native": "f339b9a4e45f3968e3d1945e9b3c07b9d02be18cd2577377ea96e903cead76ac"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_d4c1a1db8209e671",
+      "group": "single-session-user",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            false,
+            false
+          ],
+          "correct": false,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            false,
+            false
+          ],
+          "correct": false,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "7459c4b40be9aa651c3dcdef5d09163aa20c143162426e992488ca8e52d23c63",
+        "lexical": "0a52cf4c2dee0cb836811a6b4542a1f78f8b97c082bac2d3aff75dfe69c2f700",
+        "native": "ec933d9227903b7d3d33c606ad1ea0f2fef881c3134630b88fbbaede45b7518a"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_e2ac65a6574d7dcf",
+      "group": "multi-session",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            false,
+            false
+          ],
+          "correct": false,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "76bdd41dbb7e800f6c132b255f2ce71be4ce589e752cc195f6b0781539b62ee4",
+        "lexical": "d38e44cbba23efe0cd1098954a35d401936d425f1d90d24fa42cba5496e15cde",
+        "native": "96ec4a5600ae2da3c6575b3d66cadcac53b0b3330170fd73f517318aa5b6a9bf"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_e56c8235beed1aa0",
+      "group": "abstention",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "f29843613eb36db718e0084083aa5ee3fd771268bf916b89a3db080153af91c0",
+        "lexical": "61c3d62c34d739085b9d267a77111721f373b141c10ea3be8e2357de104e0fc9",
+        "native": "2a889276ee51573c78c9bc74357f44bb571c6a6430c86a82e0ea70312b9878a3"
+      },
+      "sameVisibleRecallSpans": true
+    },
+    {
+      "id": "c_f7feb9b74e77cfec",
+      "group": "single-session-user",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            false,
+            false
+          ],
+          "correct": false,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "42505ac4d5fb8ed6438bb16cdcdf815ccd84e5be4acf4dc3630af0caa0181f18",
+        "lexical": "632efbb43442973d2072f653304baf0f02d3a0b1a8e78afb97f98b67897ec5af",
+        "native": "a2f03dd5ea3788752ed3da392b7536541d7177c6ef315147e5a697a12ffab771"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_f9095957ea219882",
+      "group": "abstention",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            false,
+            false
+          ],
+          "correct": false,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "e36a45b34be44fd5a3b6d586b3db9e3082b854e14012ac10f80ff0e074ab2bca",
+        "lexical": "5125b2912d97f2a1da1f81376fd57c3c78f56c60d7afd81e3f1c44f66bb82727",
+        "native": "b7e2d16849fde81d71ffb6615ec118fc765718bdc3d9e27d8a4076e5083e0437"
+      },
+      "sameVisibleRecallSpans": false
+    },
+    {
+      "id": "c_fd533aba036ab1ec",
+      "group": "single-session-preference",
+      "outcomes": {
+        "standard": {
+          "status": "done",
+          "votes": [
+            false,
+            false
+          ],
+          "correct": false,
+          "judgeDisagreement": false
+        },
+        "lexical": {
+          "status": "done",
+          "votes": [
+            false,
+            false
+          ],
+          "correct": false,
+          "judgeDisagreement": false
+        },
+        "native": {
+          "status": "done",
+          "votes": [
+            true,
+            true
+          ],
+          "correct": true,
+          "judgeDisagreement": false
+        }
+      },
+      "firstPromptHashes": {
+        "standard": "5629e20540147778fde1d42545b126ec47367d0c13a9945272af8154d8e15f8c",
+        "lexical": "e950bcdfa072c40923183a1f2c6fdcba88a8273d7ae6b1289615594b1bd6f820",
+        "native": "24c1da1c6403858f51722a8f23cc0796be5eeb0365950cd8bef0bfd5bd32a239"
+      },
+      "sameVisibleRecallSpans": false
+    }
+  ],
+  "allArmsCompleteSensitivity": {
+    "cases": 28,
+    "scope": "Selected subset; not a replacement primary endpoint.",
+    "differences": {
+      "standard": 0.32142857142857145,
+      "lexical": 0.21428571428571427
+    }
+  },
+  "nonPreferenceSensitivity": {
+    "cases": 24,
+    "scope": "Post-hoc exploratory non-preference sensitivity; not a prespecified development endpoint.",
+    "differences": {
+      "standard": 0.2916666666666667,
+      "lexical": 0.16666666666666666
+    }
+  }
+}

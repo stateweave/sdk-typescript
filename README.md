@@ -12,7 +12,7 @@ immutable causal graph → bounded working context → ordinary model action →
 
 There is one public agent class: `Agent`.
 
-**Experimental native-recall branch:** ordinary Agents now require server-side Jev setup and use it automatically when historical state needs bounded source retrieval. This candidate has not been merged, deployed, or shown to improve answer quality. See the [development plan](evaluations/native-recall-v1/DEVELOPMENT_PLAN.md).
+**Experimental native-recall branch:** ordinary Agents now require server-side Jev setup and use it automatically when historical state needs bounded source retrieval. This candidate has not been merged or deployed. A 28-case development comparison is promising, but independent held-out confirmation is still required. See the [development results](evaluations/native-recall-v1/DEVELOPMENT_RESULTS.md).
 
 The runtime automatically records goals, model inferences, tool calls, tool results, resource versions, verification evidence, protocol errors, and answers as content-addressed causal nodes. Every model action points to the exact graph nodes compiled for that inference. The complete graph remains append-only while a deterministic multi-resolution projection keeps each model call bounded.
 
@@ -96,7 +96,7 @@ const agent = new Agent({
 
 Native recall searches current source versions, ranks up to 64 exact interior excerpts with pinned `jev-1.13.0`, and compiles up to 12 non-overlapping source windows under the existing node and token ceilings. Both text and original node identities remain intact. Jev judges evidence usefulness, not truth; it cannot authorize actions, rewrite memories, or establish that omitted information is absent. Small bounded states retain ordinary projection without an unnecessary provider call.
 
-This sends the task query (up to 8,000 characters) and bounded excerpts to TypeSafe. Consumers must authorize that processing and supply only state they may disclose. `metadata.recall` and streamed `progress.recall` separate ranking, lexical fallback, source limits, provider usage, latency, and actually visible windows. Main-model usage remains separate. Selection is prepared once per turn; newly observed tool evidence keeps its normal priority, and superseded source windows cannot reappear as current evidence. No graph watcher or world-truth validator is implied.
+This sends the task query (up to 8,000 characters) and bounded excerpts to TypeSafe. Consumers must authorize that processing and supply only state they may disclose. `metadata.recall` and streamed `progress.recall` separate ranking, lexical fallback, source limits, provider usage, latency, and actually visible windows. Main-model usage remains separate. Selection is prepared once per turn; newly observed tool evidence keeps its normal priority, and superseded source windows cannot reappear as current evidence. Under the same budgets, the immediately preceding request/answer and up to four direct current-goal parents retain ordinary views ahead of recalled history: a weak shortlist must not suppress a fresh correction or excerpt it away. No graph watcher or world-truth validator is implied.
 
 ### Legacy experimental Jev focus comparator
 

@@ -5,20 +5,20 @@ export class JevSetupError extends Error {
   constructor(message: string) { super(message); this.name = 'JevSetupError'; }
 }
 
-async function boundedText(response: Response): Promise<string> {
+async function boundedText(response: Response, signal: AbortSignal): Promise<string> {
   if (!response.body) throw new Error('Jev recall response has no body.');
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let text = '', bytes = 0;
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value } = await withinDeadline(() => reader.read(), signal);
       if (done) return text + decoder.decode();
       bytes += value.byteLength;
       if (bytes > 100_000) throw new Error('Jev recall response exceeds bounds.');
       text += decoder.decode(value, { stream: true });
     }
-  } finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
+  } finally { void reader.cancel().catch(() => undefined); reader.releaseLock(); }
 }
 
 async function withinDeadline<T>(operation: () => Promise<T>, signal: AbortSignal): Promise<T> {
@@ -56,11 +56,11 @@ export function createJevRecallClient(options: JevConfiguration = {}, design: Re
     const raw = await withinDeadline(async () => {
       const response = await transport('https://api.typesafe.ai/v1/systemone', { method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body, signal: effectiveSignal, redirect: 'error' });
       if (!response.ok) {
-        await response.body?.cancel().catch(() => undefined);
+        void response.body?.cancel().catch(() => undefined);
         if ([401, 403].includes(response.status)) throw new JevSetupError(`Jev credential setup was rejected (HTTP ${response.status}). Check the server-side TypeSafe key and access.`);
         throw new Error(`Jev recall unavailable (HTTP ${response.status}).`);
       }
-      return boundedText(response);
+      return boundedText(response, effectiveSignal);
     }, effectiveSignal);
     const payload = JSON.parse(raw) as { model?: string; answers?: Record<string, { type?: string; noul?: number; score?: number; probabilities?: Record<string, number> }>; usage?: { input_tokens?: number; output_tokens?: number } };
     if (payload.model !== model || !payload.answers || Object.keys(payload.answers).length !== candidates.length) throw new Error('Invalid Jev recall identity or answer coverage.');

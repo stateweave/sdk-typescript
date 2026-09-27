@@ -1,0 +1,50 @@
+{
+  "cases": 196,
+  "simulations": 100000,
+  "seed": 20260927,
+  "scope": "Illustrative planning over paired binary differences, not observed efficacy. Uses conservative p<.025 for each comparison instead of the less conservative Holm rule. CI, abstention, complete-arm/non-preference sensitivities, integrity and reliability gates are not simulated; overall promotion power is lower. No independence between the two comparisons is assumed for the union-bound joint lower bound. The fixed cohort is not resized.",
+  "rows": [
+    {
+      "trueDifference": 0.1,
+      "discordance": 0.3,
+      "perComparisonStatisticalGatePower": 0.49711,
+      "monteCarloStandardError": 0.0015811124182043476,
+      "jointTwoComparisonLowerBoundIfBothMeetAssumption": 0
+    },
+    {
+      "trueDifference": 0.15,
+      "discordance": 0.3,
+      "perComparisonStatisticalGatePower": 0.91026,
+      "monteCarloStandardError": 0.0009038071276550104,
+      "jointTwoComparisonLowerBoundIfBothMeetAssumption": 0.8205199999999999
+    },
+    {
+      "trueDifference": 0.2,
+      "discordance": 0.3,
+      "perComparisonStatisticalGatePower": 0.99758,
+      "monteCarloStandardError": 0.00015537514601762979,
+      "jointTwoComparisonLowerBoundIfBothMeetAssumption": 0.99516
+    },
+    {
+      "trueDifference": 0.1,
+      "discordance": 0.5,
+      "perComparisonStatisticalGatePower": 0.30837,
+      "monteCarloStandardError": 0.0014604038588691827,
+      "jointTwoComparisonLowerBoundIfBothMeetAssumption": 0
+    },
+    {
+      "trueDifference": 0.15,
+      "discordance": 0.5,
+      "perComparisonStatisticalGatePower": 0.69949,
+      "monteCarloStandardError": 0.0014498404736383932,
+      "jointTwoComparisonLowerBoundIfBothMeetAssumption": 0.3989799999999999
+    },
+    {
+      "trueDifference": 0.2,
+      "discordance": 0.5,
+      "perComparisonStatisticalGatePower": 0.94248,
+      "monteCarloStandardError": 0.0007362842494580473,
+      "jointTwoComparisonLowerBoundIfBothMeetAssumption": 0.88496
+    }
+  ]
+}

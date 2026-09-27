@@ -77,16 +77,18 @@ export function selectRecall(index: RecallIndex, scores?: RecallRanking['scores'
 
 export function validateRecallProjection(snapshot: CausalWeaveSnapshot, projection: RecallProjection): Map<string, string> {
   const nodes = new Map(snapshot.nodes.map(node => [node.id, node]));
-  if (new Set(projection.sourceNodeIds).size !== projection.sourceNodeIds.length || projection.sourceNodeIds.some(id => !nodes.has(id)) || projection.windows.length > 12) throw new Error('Invalid recall projection identities.');
+  if (new Set(projection.sourceNodeIds).size !== projection.sourceNodeIds.length || projection.sourceNodeIds.some(id => !nodes.has(id)) || projection.windows.length > 12 || new Set(projection.windows.map(window => window.id)).size !== projection.windows.length) throw new Error('Invalid recall projection identities.');
   const grouped = new Map<string, RecallWindow[]>();
   for (const window of projection.windows) {
     const node = nodes.get(window.nodeId);
-    if (!node || !projection.sourceNodeIds.includes(node.id) || !Number.isInteger(window.start) || !Number.isInteger(window.end) || window.start < 0 || window.end <= window.start || window.end - window.start > 1_600 || recallSourceText(node).slice(window.start, window.end) !== window.text || recallSourceText(node).slice(0, 240) !== window.sourcePrefix) throw new Error('Recall projection must copy exact source spans.');
+    const text = node ? recallSourceText(node) : '';
+    if (!node || !projection.sourceNodeIds.includes(node.id) || window.kind !== node.kind || !Number.isInteger(window.start) || !Number.isInteger(window.end) || window.start < 0 || window.end <= window.start || window.end > text.length || window.end - window.start > 1_600 || text.slice(window.start, window.end) !== window.text || text.slice(0, 240) !== window.sourcePrefix) throw new Error('Recall projection must copy exact source spans.');
     const expectedId = 'rw_' + createHash('sha256').update(`${node.id}:${window.start}:${window.end}`).digest('hex').slice(0, 20);
     if (window.id !== expectedId) throw new Error('Invalid recall window identity.');
     const rows = grouped.get(node.id) ?? [];
+    if (rows.length >= 2 || rows.some(other => Math.max(other.start, window.start) < Math.min(other.end, window.end))) throw new Error('Invalid recall source packing.');
     rows.push(window);
     grouped.set(node.id, rows);
   }
-  return new Map([...grouped].map(([id, windows]) => [id, '[Exact source excerpts; omitted text is not evidence of absence. Offsets are UTF-16 code units.]\n' + (windows.every(window => window.start > 0) ? '[Original source prefix, 0:240]\n' + windows[0]!.sourcePrefix + '\n' : '') + windows.sort((a, b) => a.start - b.start).map(window => `[${window.id} ${window.start}:${window.end}]\n${window.text}`).join('\n')]));
+  return new Map([...grouped].map(([id, windows]) => [id, '[Exact source excerpts; omitted text is not evidence of absence. Offsets are UTF-16 code units.]\n' + (windows.every(window => window.start > 0) ? `[Original source prefix, 0:${windows[0]!.sourcePrefix.length}]\n` + windows[0]!.sourcePrefix + '\n' : '') + windows.sort((a, b) => a.start - b.start).map(window => `[${window.id} ${window.start}:${window.end}]\n${window.text}`).join('\n')]));
 }
