@@ -108,6 +108,29 @@ describe('native source recall', () => {
     expect(agent.getState()).toBeUndefined();
   });
 
+  it('accepts the mathematically bounded rounding in real four-level Score responses', async () => {
+    const { weave } = fixture();
+    const index = prepareRecall(weave.snapshot(), 'launch city', 1);
+    const client = createJevRecallClient({ fetch: async () => new Response(JSON.stringify({ model: 'jev-1.13.0', answers: { q0: { type: 'score', score: 2.83, probabilities: { '0': .05, '1': .01, '2': .02, '3': .92 } } }, usage: { input_tokens: 100, output_tokens: 5 } })) }, 'graded');
+    const result = await client.rank('launch city', index.candidates);
+    expect(result.scores[0]!.relevance).toBe(2.83 / 3);
+  });
+
+  it('fails clearly on rejected credentials instead of silently treating them as an outage', async () => {
+    const { weave } = fixture();
+    const original = weave.snapshot();
+    const agent = new Agent({ state: original, tools: [], model: model(() => 'FINAL: no'), jev: { fetch: async () => new Response('{}', { status: 401 }) } });
+    await expect(agent.run('approved launch city')).rejects.toThrow('credential setup was rejected');
+    expect(agent.getState()).toEqual(original);
+  });
+
+  it('bounds a nonresponsive custom transport', async () => {
+    const { weave } = fixture();
+    const index = prepareRecall(weave.snapshot(), 'launch city', 1);
+    const client = createJevRecallClient({ timeoutMs: 100, fetch: () => new Promise<Response>(() => undefined) });
+    await expect(client.rank('launch city', index.candidates)).rejects.toMatchObject({ name: 'TimeoutError' });
+  });
+
   it('rejects missing scores, invalid probabilities and mismatched provider identities', async () => {
     const { weave } = fixture();
     const index = prepareRecall(weave.snapshot(), 'launch city');
