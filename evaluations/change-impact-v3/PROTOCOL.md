@@ -1,0 +1,56 @@
+# Frozen change-impact experiment v3: one operational repetition
+
+## Why a new protocol
+The v1 live attempt at SDK commit 62d510e9a7d247d58f1d97d3801100f0671a857b was stopped and preserved after a shared parser defect appeared across control and treatment arms: GLM often supplied explanatory prose before its single terminal FINAL, which the public runtime rejected. No v1 efficacy conclusion is made, and its responses are not repaired/rescored into a favorable result. The bounded parser repair now applies to EVERY arm: only no-tool runs may recognize a single terminal FINAL after a prose preamble, with no code fences, competing FINAL markers, or embedded TOOL_CALL. Original raw output and exact causal read-set parents remain recorded; tool-enabled action boundaries and historical runners are unchanged.
+
+V2 at commit 076c36f1e9ff81f2c81cb1e08b18717d185b9bbc then exposed a capacity defect in the evaluation runner: four workers exceeded Z.ai's provider concurrency limit (HTTP 429/code 1302). Its complete partial attempt is archived, including 145 started arms, 114 completed answers, 27 terminal failures and four unreturned arms; 22 capacity rejections and one HTTP 520 are preserved. No v2 efficacy score or significance table was inspected before this revision. V3 permits exactly ONE complete-cohort operational repetition using TWO workers, the successful concurrency used in v1. It is not a selective retry of failed cases. All 128 cases and all four arms run anew in the same order; original attempts remain separately reportable.
+
+The v2 and v3 participant/gold files, SDK engine bytes, Jev questions, threshold, candidate ranking, projection budgets, task instructions, semantic implementation, arm definitions, scoring and primary effect requirements are identical. Only concurrency, version/path bookkeeping and this disclosed operational protocol change. The dataset remains source-disjoint from v1, but v3 is NOT an untouched independent replication of v2. No new quality claim may hide that reuse. No further operational repetition is authorized by this protocol; further failures stay in the complete planned denominator and prevent the strict gate from passing. The four-hour ceiling remains unchanged.
+
+## Hypothesis and authority
+Does source-bound Jev contradiction review materially improve StateWeave's identification of stale working assertions, beyond both ordinary projection and cheap lexical selection? Optional semantic judgments suggest review, never delete facts, prove falsehood, authorize actions, or silently rewrite causal parents. Caller-declared premise→note→report edges demonstrate deterministic propagation; automatic discovery of implicit dependencies is not tested or claimed.
+
+## External corpus and fixed sample
+Source: SciFact (Wadden et al., *Fact or Fiction: Verifying Scientific Claims*, EMNLP 2020), official release archive SHA-256 11c621288d41ac144d29b13b0f8503b3820b7d6e8b1f6ff24dff335c196d76be. Claims/annotations are CC BY 4.0; S2ORC abstracts are ODC-By 1.0. Original license retained.
+
+Start with the 809 original training claims. Exclude any claim touching any of the 283 evidence/cited document IDs in the COMPLETE original development split, and any normalized exact duplicate development claim. Of 537 eligible claims, select 300 by the predeclared SHA-256 order `change-impact-v2-memory:<claim id>`. This claim pool is not subsequently adjusted for judgments or result quality. Connect source documents sharing an annotated selected claim: 138 components. Within each component, choose the lowest seeded hash document whose title+abstract is ≤7,000 characters. Select the first 128 component representatives by the new seeded case order. Seed `stateweave-change-impact-20260927-v2`.
+
+Fixed final cohort: 128 cases, 51 containing annotated refutations and 77 without, 55 refuted claim/document pairs, at most two per case. Every case has 300 original claim nodes, 300 dependent note nodes, 300 downstream report nodes, a system node and incoming evidence. The dependency scaffolding and arrival ordering are programmatic; claims, paper text and gold relation labels are external. These are not organic user histories or a scientific truth oracle. Unannotated cross-document contradictions may exist, and public data may overlap model training. Do not advertise a universal or perfect agent leap.
+
+Participant cases contain only original claim text, paper text, neutral IDs, and arm rotation. Original identifiers, evidence annotations and labels stay in private-gold.json, not the model-facing runtime bundle. Its SHA-256 is bound into the manifest without exposing labels. Independent initialization and disjoint annotated source components reduce repeated-case dependence; residual shared-topic, shared-memory-pool and shared-model correlations remain limitations. The statistical N is 128 components, not nodes, questions or calls.
+
+## Four fixed arms
+Actual public Agent and AnthropicModel, glm-5.3-flash, temperature 0, 4,096 output tokens, maxIterations 2, no tools, causal mode, common neutral system/task and 64K hard prompt ceiling. The informational task includes the complete incoming paper for ALL arms so ordinary projection receives its subject matter. `enforceCompletionEvidence:false` is equal across arms: the existing broad workspace keyword guard is inappropriate to this no-tool assessment. New terminal-FINAL compatibility is equal across arms.
+
+- **standard:** SDK default 48 selected nodes and 16K working target; no Jev.
+- **lexical:** same budgets; top six BM25-like evidence matches preferred. The exact same deterministic candidate ranking supplies Jev's shortlist.
+- **jev:** same budgets; one pinned jev-1.13.0 Noul per top-64 candidate, contradiction threshold 0.80, maximum five nominees. Prefer those five original sources plus one explicitly advisory, source-parented verification node. Main model must independently assess original evidence. No threshold/prompt search or tuning.
+- **full:** same main model and Agent, 48-node bound, but a 64K target/hard budget and up to five ≤10,000-character source-parented ledger chunks containing all 300 original claims. These chunks and the incoming paper are preferred. Assert every claim is visible. This is a deliberately larger-context reference, not an equal-cost superiority control.
+
+Every final answer must be `REVIEW: m_..., m_...` or `REVIEW: NONE` after the native FINAL parser. Reject unknown/duplicate IDs and extra prose in the final answer. Do not use model judging or infer a score from the advice probability. Propagation follows only explicit direct causal dependencies, two outputs per selected claim. Exposure to a source is not automatically a semantic premise.
+
+## Operations, isolation and accounting
+Two independent case workers, sequential Latin-rotated arms within each case. Frozen Git commit, input/gold/code/compiled-module hashes and Node/execArgv identities recorded before calls. Main model 120s request timeout, Jev 15s, Agent 260s; job wall limit 14,400s. No transport retries, replacement cases, automatic replay or optional extension. The ordinary Agent may use at most two iterations; retain both if it does. A crash, timeout or ambiguous request remains visible, and an incomplete study cannot pass.
+
+Atomic no-overwrite started/request/response/result records; no credentials or headers in evidence. Actual returned model identities must match. Omit hidden thinking blocks. Separate physical main and Jev tokens/calls/latency, including known usage on failed attempts. Unknown failed-request usage is unknown, not zero. Report successful-only and all-attempt time; recorded arm time includes setup and integrity checking, while Agent metadata also retains its narrower runtime time. The two completed v2 offline plumbing passes and the v3 two-worker plumbing pass are clearly marked as mocks and never count as efficacy data.
+
+## Frozen endpoints and statistics
+For a gold-positive case, score F1 of predicted versus annotated contradicted claim sets. For a gold-negative case, score 1 only for an empty predicted set. Any failed/malformed/unreturned/integrity-violating arm scores zero. Primary aggregate is the equally weighted mean of the positive and negative strata. Returning no claims everywhere therefore scores 0.5.
+
+Compare Jev with BOTH standard and lexical, paired by source component. Weight case differences by N/(2 × stratum size), so the mean equals the balanced-score difference. Primary one-sided paired sign-flip test: exact at ≤18 discordances, otherwise 100,000 seeded draws with a plus-one correction. Bonferroni for the two superiority comparisons: p≤0.025 EACH. Also report paired t/df/two-sided t p, wins/losses/ties, 10,000-draw component-and-stratum bootstrap 95% CI, exact set accuracy, positive F1, negative successes, TP/FP/FN, raw answers, failures and all-arm-complete sensitivity. RNG seed 20260927. Bounded outcomes do not satisfy exact normality; a large t alone is not proof.
+
+Meaningful-leap bar for this fixture, all conditions required:
+1. Balanced-score gain ≥10 percentage points over BOTH standard and lexical.
+2. One-sided primary p≤0.025 AND paired t≥3 over BOTH.
+3. Jev-minus-full bootstrap lower bound ≥−5 percentage points.
+4. At most three extra false-alert cases relative to either equal-budget baseline.
+5. All 512 planned arm results complete without operational/integrity failure or Jev fallback; source prefixes, exact action parents, complete incoming evidence and budgets preserved.
+
+Planning sensitivity: with paired weighted-difference SD 0.45 and N=128, the t≥3 gate implies approximately 80% power for a 15.3-point gain and 90% for a 17-point gain (normal approximation). A 10-point gain may be underpowered; larger variance or a near-ceiling control reduces power/headroom further. Do not resize or retune after outcomes.
+
+Sidecar-only precision/recall, candidate recall, actual nominee visibility, main-model overrides, no-op prompt equality, and costs are descriptive diagnostics—not replacement primary endpoints. A disagreement audit cannot change frozen gold. A passing study would still require independent operational replication before default promotion; a null result stays a null.
+
+## Runtime safeguards and scope
+Original immutable nodes survive byte-for-byte; annotations explicitly say advisory, not proven false. Source revisions expire old annotations even if the new reviewer is unavailable. Dependencies are caller-declared direct edges, never inferred from arbitrary full read-set reachability. Superseded dependent versions are excluded. Source/candidate bounds, exact identities, failure fallback, abort/rollback, disabled/no-op behavior under controlled clocks, thousands of memories, and the no-tool-only parser boundary have deterministic tests.
+
+Review is opt-in and occurs on explicitly supplied changedNodeIds at turn entry. No background scheduler, per-tool automatic watch, complete historical version analysis, semantic link approval, or production lifecycle is claimed. No production, default, or commercial deployment is part of this experiment. Previous null findings and both aborted v1 and capacity-failed v2 attempts remain preserved. No post-hoc subset, successful retry or sidecar-only endpoint can replace the frozen primary comparison.
