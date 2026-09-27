@@ -69,6 +69,8 @@ describe('preserved change-review evidence', () => {
     const replay = json('lifecycle-live-record-replay.json');
     expect(replay.sourceEvidenceOffline).toBe(false);
     expect(replay.networkCalls).toBe(0);
+    expect(replay.candidateRuntime).not.toEqual(replay.frozenRuntime);
+    expect(replay.frozenRuntime).toEqual(json('summary.json').manifest.runtime);
     expect(replay.replayed).toBe(125);
     expect(replay.skipped).toHaveLength(3);
     expect(replay.recordedTracesReproduced).toBe(true);

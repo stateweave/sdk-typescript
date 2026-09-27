@@ -1,6 +1,20 @@
 {
   "sourceEvidenceOffline": false,
   "sourceCommit": "f9ac05b5d4873fcffef5c81a3e29f3e3ac9b728b",
+  "frozenRuntime": {
+    "agent/agent.js": "3baed7c96ec390a9688d6065f34c0832e54c33a0c473009ec8848ac1d774465b",
+    "agent/changeReview.js": "4e917237ff686fdf26bd6b62081d9525554f0a6d1587834f1d5ec4fbcf26bd4a",
+    "core/causalWeave.js": "9376bc0f1d4db1fb37675ae7936d1cfb07b6cd02473d449094967cddd7768381",
+    "integrations/jevChangeReview.js": "859e83304e904ae21e54d17f531ee056827d170dc5c1eb021a059fbd933455a1",
+    "llm/anthropicModel.js": "2117635cd1e3406fedf93ca859ad0aa5ae1fc95ae4eadfe4af10b137feb3371e"
+  },
+  "candidateRuntime": {
+    "agent/agent.js": "30217059bf1c686c11576e99262d34e5352a4438cff73667178578dfe0c27571",
+    "agent/changeReview.js": "f250fbe9637211a722f5fa32881b66351be3b77555ad23a41e672d56592c974d",
+    "core/causalWeave.js": "9376bc0f1d4db1fb37675ae7936d1cfb07b6cd02473d449094967cddd7768381",
+    "integrations/jevChangeReview.js": "859e83304e904ae21e54d17f531ee056827d170dc5c1eb021a059fbd933455a1",
+    "llm/anthropicModel.js": "2117635cd1e3406fedf93ca859ad0aa5ae1fc95ae4eadfe4af10b137feb3371e"
+  },
   "replayed": 125,
   "skipped": [
     "c_6bf5393a4baf.jev.json",
