@@ -111,6 +111,12 @@ The entire ranking has one deadline (5s flat, 10s hierarchical; configurable 100
 
 Software tests prove the contract, **not better answers**. The real Dev [twelve-case diagnostic](evaluations/jev-focus-v2/REPORT.md) found **no answer-quality gain**: deterministic, flat and hierarchical modes each completed 11/12 cases correctly and scored 10/12 on the strict evidence endpoint. Hierarchy added a median 0.798s of selection and 78,046 external input tokens across the twelve attempts. An earlier invalid calibration is preserved and excluded; this reused-corpus diagnostic is not independent confirmation. Keep Jev off by default and require new independent evidence before promotion.
 
+### Experimental change-impact review
+
+This branch also exposes optional `createJevChangeReviewer` with caller-supplied `changedNodeIds` and explicit `reviewDependencies`. It nominates potentially contradicted memories and marks declared downstream outputs for review—never deletion or automatic correction. Source truth, causal parents, context budgets and successful-run-only commits remain authoritative. It is server-side, off by default, and sends bounded evidence/claim excerpts only when explicitly configured.
+
+See [the API and lifecycle contract](docs/CHANGE_REVIEW_EXPERIMENT.md) and [the complete 128-case report](evaluations/change-impact-v3/REPORT.md). The failure-zero balanced score improved to 92.50% versus 86.31% for the cheap lexical control, but **the frozen adoption gate failed**. Across all-arm-complete cases, the gain over lexical was only 1.86 percentage points (primary paired p=0.3125); 24 failed arms and two sidecar fallbacks remain in the record. This is an undeployed research prototype, not a validated substantial SDK leap.
+
 ## Persistent state
 
 A single `Agent` owns one session graph. Stateful calls are serialized in invocation order. Successful runs commit; failed or aborted runs return diagnostic state on `AgentRunError` but do not overwrite the agent’s committed state.

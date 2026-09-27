@@ -1,0 +1,27 @@
+{
+  "archiveBytes": 95119164,
+  "archiveSha256": "b340b175a1646db03be0b6847468d5f4702a97581a32cf5f21fed9ac7447f810",
+  "parts": [
+    {
+      "file": "frozen-provider-run.tar.gz.part-00",
+      "bytes": 33554432,
+      "sha256": "4adc8483d4b72171f4cc035509b0141875901eeb569aa3518c7bbf2e26b14c40"
+    },
+    {
+      "file": "frozen-provider-run.tar.gz.part-01",
+      "bytes": 33554432,
+      "sha256": "c883e5927cc9c80d1357cbea2ab3748932cdab6943e86cc773f87aa11921805a"
+    },
+    {
+      "file": "frozen-provider-run.tar.gz.part-02",
+      "bytes": 28010300,
+      "sha256": "6e89e959bbe7d1da1ee1a70f35657528b00fafe3b4dc44272b90e0e23e1c0d19"
+    }
+  ],
+  "runtimeSha256": "7def6de9c0fca0f0521da4be46e7bf8a310b5deadadb613d412917e33c07136b",
+  "frozenCommit": "f9ac05b5d4873fcffef5c81a3e29f3e3ac9b728b",
+  "sourceFilesScanned": 2698,
+  "sourceBytesScanned": 733780877,
+  "credentialByteMatches": 0,
+  "hiddenThinkingOmitted": true
+}

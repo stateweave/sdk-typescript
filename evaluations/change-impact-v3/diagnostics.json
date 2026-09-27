@@ -1,0 +1,1208 @@
+{
+  "counts": {
+    "goldClaims": 55,
+    "goldInLexicalTopSix": 49,
+    "goldInCandidate64": 55,
+    "sidecarCallsWithValidScores": 126,
+    "goldInKnownSidecarCases": 55,
+    "thresholdTP": 37,
+    "thresholdFP": 6,
+    "nomineeTP": 37,
+    "nomineeFP": 6,
+    "nomineeFN": 18,
+    "knownNegativeSidecarCases": 75,
+    "negativeSidecarAlertCases": 2
+  },
+  "missingOrInvalidSidecarCases": [
+    "c_12e8548fde7e",
+    "c_6edc42e2ed71"
+  ],
+  "noOpPairs": [
+    {
+      "id": "c_c8045275b48c",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_640b69e014d6",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_d3ea1b411ce1",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_fddafb2befb5",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_bce13a31009f",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_85370c16a35f",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_4e373c789668",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_7c67cd8ccf6c",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_99d9ef148591",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_de189d3b7552",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_abb36bc84651",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_596cac207746",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_f059d7e91755",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_8a6460557ba9",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_292e08beb0b5",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_66ddf93ec94f",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_15d47a127805",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_0b143f2e156c",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_772f5543fa2d",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_1ad427125f04",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_c836731d1b23",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_e6266cf6be8d",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_633cc69e60c6",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_e40f63729506",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_b13996ddcb67",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_530edae1540a",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_fbcf4498e07c",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_3f9cc3102d39",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_83e897c77468",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 1.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_dd4bb65077fd",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_bd5d6458964e",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_64bca12f0f42",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_f052ecc5c4de",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_010778dabd86",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_fd4b3f7e3df8",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_662036cddc5b",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_539fba06423e",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_991e73b0a41a",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_17f57686ed00",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_ddcfeca723a2",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_8835270edd8f",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_249a0fe081e3",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_e712d44c9860",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_aac7ae4f2ed7",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_477fa1ab4acf",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_6bff5a4f501c",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_dfa3fa640bcf",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_cfaf9877a7da",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_402dfc781175",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_8b312fb55946",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_85a2a65558e3",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_cb7557f0bbc2",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_04350e39c04f",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_a0e63ea016e4",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_b8dacdca96b2",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_88fc5bf6bc90",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_8fe6b145eb4c",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_afff6a67b281",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_44a32e78e75b",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_d887a2f80119",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_e5b067c8191e",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_163d8a3c1366",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_a65b2955fd91",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_5923474fbd32",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_49ed719ccf91",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_77e9daafdd77",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_d535b3db38c8",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_a5b9cb0a8b5d",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_30f79e221fee",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_94d5fcbc160a",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_2981d0165b43",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_7eb9c63329d5",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_594dd70a3f97",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_4a05948b4b7a",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_e14a800972bc",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_06f681f23d47",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_d2339832ac34",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_58a50aef2334",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    },
+    {
+      "id": "c_64be1b8dab47",
+      "identicalFirstPrompt": true,
+      "scoreDifference": 0.0,
+      "standardStatus": "done",
+      "jevStatus": "done"
+    }
+  ],
+  "mainModelOverrides": [
+    {
+      "id": "c_b3fab763273e",
+      "suggested": [
+        "m_769740f4384b"
+      ],
+      "final": [
+        "m_769740f4384b",
+        "m_f7a2c0ce4d50"
+      ],
+      "gold": [
+        "m_769740f4384b",
+        "m_f7a2c0ce4d50"
+      ]
+    },
+    {
+      "id": "c_0f90e9f51232",
+      "suggested": [],
+      "final": [
+        "m_21f40db3136d"
+      ],
+      "gold": [
+        "m_21f40db3136d"
+      ]
+    },
+    {
+      "id": "c_ca02a7dfaef6",
+      "suggested": [],
+      "final": [
+        "m_5e8df93ec6a1"
+      ],
+      "gold": [
+        "m_5e8df93ec6a1"
+      ]
+    },
+    {
+      "id": "c_7afb2190d0ca",
+      "suggested": [
+        "m_2ef918dee4dc"
+      ],
+      "final": [
+        "m_2ef918dee4dc",
+        "m_bb45ba1924fe"
+      ],
+      "gold": [
+        "m_2ef918dee4dc",
+        "m_bb45ba1924fe"
+      ]
+    },
+    {
+      "id": "c_e40f63729506",
+      "suggested": [],
+      "final": [
+        "m_2f254ba8939a"
+      ],
+      "gold": [
+        "m_2f254ba8939a"
+      ]
+    },
+    {
+      "id": "c_83e897c77468",
+      "suggested": [],
+      "final": [
+        "m_805c30c392ef"
+      ],
+      "gold": [
+        "m_805c30c392ef"
+      ]
+    },
+    {
+      "id": "c_010778dabd86",
+      "suggested": [],
+      "final": [
+        "m_c765121405d8"
+      ],
+      "gold": [
+        "m_c765121405d8"
+      ]
+    },
+    {
+      "id": "c_4abc92a9bf72",
+      "suggested": [
+        "m_9dc08a52292c"
+      ],
+      "final": [
+        "m_5306770a3340",
+        "m_9dc08a52292c"
+      ],
+      "gold": [
+        "m_9dc08a52292c"
+      ]
+    },
+    {
+      "id": "c_539fba06423e",
+      "suggested": [],
+      "final": [
+        "m_c7c56ad151d1"
+      ],
+      "gold": [
+        "m_c7c56ad151d1"
+      ]
+    },
+    {
+      "id": "c_5316422d5204",
+      "suggested": [
+        "m_9dc1d1ff171a",
+        "m_d9cee78db62f"
+      ],
+      "final": [
+        "m_9dc1d1ff171a"
+      ],
+      "gold": [
+        "m_9dc1d1ff171a"
+      ]
+    },
+    {
+      "id": "c_6ab8b0fd58b7",
+      "suggested": [],
+      "final": [
+        "m_09f585eeb4a0"
+      ],
+      "gold": [
+        "m_09f585eeb4a0"
+      ]
+    },
+    {
+      "id": "c_6bff5a4f501c",
+      "suggested": [],
+      "final": [
+        "m_65a040c9211b"
+      ],
+      "gold": [
+        "m_65a040c9211b"
+      ]
+    },
+    {
+      "id": "c_04350e39c04f",
+      "suggested": [],
+      "final": [
+        "m_1b20d8fb89d1"
+      ],
+      "gold": [
+        "m_1b20d8fb89d1"
+      ]
+    },
+    {
+      "id": "c_77e9daafdd77",
+      "suggested": [],
+      "final": [
+        "m_5c112f59c408"
+      ],
+      "gold": [
+        "m_5c112f59c408"
+      ]
+    },
+    {
+      "id": "c_860309758cbf",
+      "suggested": [
+        "m_3f06079e0b8a",
+        "m_4bcd94a5fba1"
+      ],
+      "final": [
+        "m_3f06079e0b8a"
+      ],
+      "gold": [
+        "m_093072a5aaca",
+        "m_3f06079e0b8a"
+      ]
+    },
+    {
+      "id": "c_8a8c9b9a51d4",
+      "suggested": [
+        "m_26a989863d59",
+        "m_7ce856cb69e8"
+      ],
+      "final": [
+        "m_26a989863d59"
+      ],
+      "gold": [
+        "m_26a989863d59"
+      ]
+    }
+  ],
+  "maxEstimatedContextByArm": {
+    "standard": 8631,
+    "lexical": 8633,
+    "jev": 8619,
+    "full": 18947
+  },
+  "failureDiagnostics": [
+    {
+      "id": "c_640b69e014d6",
+      "arm": "lexical",
+      "category": "request_rate_limit",
+      "calls": [
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        },
+        {
+          "status": 429,
+          "stop": null,
+          "outputTokens": null,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_640b69e014d6",
+      "arm": "full",
+      "category": "two_output_limit_responses_without_final_text",
+      "calls": [
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        },
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_0f90e9f51232",
+      "arm": "standard",
+      "category": "request_rate_limit",
+      "calls": [
+        {
+          "status": 429,
+          "stop": null,
+          "outputTokens": null,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_0f90e9f51232",
+      "arm": "full",
+      "category": "request_rate_limit",
+      "calls": [
+        {
+          "status": 429,
+          "stop": null,
+          "outputTokens": null,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_e42707777ea5",
+      "arm": "standard",
+      "category": "request_rate_limit",
+      "calls": [
+        {
+          "status": 429,
+          "stop": null,
+          "outputTokens": null,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_e42707777ea5",
+      "arm": "lexical",
+      "category": "request_rate_limit",
+      "calls": [
+        {
+          "status": 429,
+          "stop": null,
+          "outputTokens": null,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_ca02a7dfaef6",
+      "arm": "standard",
+      "category": "two_output_limit_responses_without_final_text",
+      "calls": [
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        },
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_ca02a7dfaef6",
+      "arm": "lexical",
+      "category": "two_output_limit_responses_without_final_text",
+      "calls": [
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        },
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_ca02a7dfaef6",
+      "arm": "full",
+      "category": "two_output_limit_responses_without_final_text",
+      "calls": [
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        },
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_bfc76cc6efe2",
+      "arm": "standard",
+      "category": "two_output_limit_responses_without_final_text",
+      "calls": [
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        },
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_bfc76cc6efe2",
+      "arm": "lexical",
+      "category": "two_output_limit_responses_without_final_text",
+      "calls": [
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        },
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_bfc76cc6efe2",
+      "arm": "jev",
+      "category": "two_output_limit_responses_without_final_text",
+      "calls": [
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        },
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_bfc76cc6efe2",
+      "arm": "full",
+      "category": "two_output_limit_responses_without_final_text",
+      "calls": [
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        },
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_e40f63729506",
+      "arm": "lexical",
+      "category": "request_rate_limit",
+      "calls": [
+        {
+          "status": 429,
+          "stop": null,
+          "outputTokens": null,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_abf3f634ab6f",
+      "arm": "lexical",
+      "category": "two_output_limit_responses_without_final_text",
+      "calls": [
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        },
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_abf3f634ab6f",
+      "arm": "jev",
+      "category": "main_timeout",
+      "calls": [
+        {
+          "status": null,
+          "stop": null,
+          "outputTokens": null,
+          "visibleChars": 0,
+          "error": "TimeoutError"
+        }
+      ]
+    },
+    {
+      "id": "c_6ab8b0fd58b7",
+      "arm": "standard",
+      "category": "two_output_limit_responses_without_final_text",
+      "calls": [
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        },
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_6bf5393a4baf",
+      "arm": "jev",
+      "category": "two_output_limit_responses_without_final_text",
+      "calls": [
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        },
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_ddcfeca723a2",
+      "arm": "lexical",
+      "category": "request_rate_limit",
+      "calls": [
+        {
+          "status": 429,
+          "stop": null,
+          "outputTokens": null,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_e712d44c9860",
+      "arm": "lexical",
+      "category": "request_rate_limit",
+      "calls": [
+        {
+          "status": 429,
+          "stop": null,
+          "outputTokens": null,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_85a2a65558e3",
+      "arm": "full",
+      "category": "two_output_limit_responses_without_final_text",
+      "calls": [
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        },
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_f337965b8439",
+      "arm": "standard",
+      "category": "request_rate_limit",
+      "calls": [
+        {
+          "status": 429,
+          "stop": null,
+          "outputTokens": null,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_77e9daafdd77",
+      "arm": "full",
+      "category": "two_output_limit_responses_without_final_text",
+      "calls": [
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        },
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "c_1e1ae0d03f6c",
+      "arm": "standard",
+      "category": "two_output_limit_responses_without_final_text",
+      "calls": [
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        },
+        {
+          "status": 200,
+          "stop": "max_tokens",
+          "outputTokens": 4096,
+          "visibleChars": 0,
+          "error": null
+        }
+      ]
+    }
+  ],
+  "scope": "All planned cases for candidate recall; successful raw sidecar score responses for conditional nomination diagnostics. No-op prompt equality covers first calls; differences are not evidence-recovery gains. These descriptive diagnostics do not alter frozen scores."
+}
