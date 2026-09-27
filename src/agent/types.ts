@@ -1,6 +1,8 @@
 import type { CausalContextMode, CausalWeaveSnapshot } from "../core/causalTypes.js";
 export type { CausalContextMode } from "../core/causalTypes.js";
 import type { StateGraph } from "../core/types.js";
+import type { JevConfiguration, RecallDiagnostics } from "../core/recallTypes.js";
+export type { JevConfiguration, RecallDiagnostics } from "../core/recallTypes.js";
 import type { Model } from "../llm/model.js";
 import type { Tool } from "../tools/types.js";
 import type { FocusReranker, FocusDiagnostics } from "./focusReranker.js";
@@ -22,6 +24,7 @@ export const defaultSemanticNodeTypes: SemanticNodeType[] = [
 
 export type AgentArgs = {
   model: Model;
+  jev?: JevConfiguration;
   tools?: Tool[];
   maxIterations?: number;
   maxNoProgressIterations?: number;
@@ -70,6 +73,7 @@ export type AgentProgress = {
   tool?: string;
   error?: string;
   focus?: FocusDiagnostics;
+  recall?: RecallDiagnostics;
 };
 
 export type AgentTraceStep = {
@@ -107,6 +111,7 @@ export type AgentRunMetadata = {
   tokenCountSource: TokenCountSource;
   status: "done";
   focus?: FocusDiagnostics;
+  recall?: RecallDiagnostics;
 };
 
 export type AgentRunResult = {

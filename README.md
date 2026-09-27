@@ -12,6 +12,8 @@ immutable causal graph → bounded working context → ordinary model action →
 
 There is one public agent class: `Agent`.
 
+**Experimental native-recall branch:** ordinary Agents now require server-side Jev setup and use it automatically when historical state needs bounded source retrieval. This candidate has not been merged, deployed, or shown to improve answer quality. See the [development plan](evaluations/native-recall-v1/DEVELOPMENT_PLAN.md).
+
 The runtime automatically records goals, model inferences, tool calls, tool results, resource versions, verification evidence, protocol errors, and answers as content-addressed causal nodes. Every model action points to the exact graph nodes compiled for that inference. The complete graph remains append-only while a deterministic multi-resolution projection keeps each model call bounded.
 
 StateWeave does not expose `messages[]` as a primitive and does not require the model to author graph mutations. The model uses an ordinary `TOOL_CALL` / `FINAL` protocol; the runtime owns graph lineage. Recognized successful post-mutation reads, syntax checks, and explicit application checks are recorded as `verification` nodes linked to their tool evidence.
@@ -38,6 +40,8 @@ pnpm test
 ```
 
 ## Quick start
+
+Configure `TYPESAFE_API_KEY` on the server, alongside your answering-model credentials. No recall enable flag is required. Alternatively pass `jev: { apiKey }` to `Agent`; never ship this key to a browser. Missing setup and HTTP 401/403 produce a clear setup error. Temporary provider failures visibly fall back to lexical retrieval without discarding state.
 
 ```ts
 import { Agent, createModelFromEnv } from "stateweave";
@@ -84,11 +88,17 @@ const agent = new Agent({
 - `maxIterations` limits the internal model/tool loop for one user turn. It defaults to 30 and has no artificial SDK maximum.
 - `maxPromptTokens` is the hard model-input ceiling and must be at least 256.
 - `projectionTargetTokens` is the preferred bounded working context. Mandatory state may exceed the target but never the hard ceiling. If mandatory state cannot fit, the provider is not called. The SDK uses a conservative character-based token estimate rather than pretending to know every provider tokenizer.
-- `projectionMaxNodes` targets the maximum optional detailed source atoms in one compiled view. Mandatory frontier, current resource, and exact query-match nodes may exceed it. It defaults to 48.
+- `projectionMaxNodes` caps detailed source nodes in one compiled view, including recalled sources. It defaults to 48.
 - `contextMode: "molecular"` keeps the immutable causal graph unchanged but compiles deterministic outer-map molecules, expanded source atoms, and cross-molecule ports. The default remains `"causal"`; the development lab opts into molecular mode with a 16-node optional-detail target.
 - `enforceCompletionEvidence` rejects unsupported coding-task finals when required inspection, mutation, checks, restart, or smoke evidence is absent.
 
-### Experimental TypeSafe Jev focus (server-side only)
+### Native source recall
+
+Native recall searches current source versions, ranks up to 64 exact interior excerpts with pinned `jev-1.13.0`, and compiles up to 12 non-overlapping source windows under the existing node and token ceilings. Both text and original node identities remain intact. Jev judges evidence usefulness, not truth; it cannot authorize actions, rewrite memories, or establish that omitted information is absent. Small bounded states retain ordinary projection without an unnecessary provider call.
+
+This sends the task query (up to 8,000 characters) and bounded excerpts to TypeSafe. Consumers must authorize that processing and supply only state they may disclose. `metadata.recall` and streamed `progress.recall` separate ranking, lexical fallback, source limits, provider usage, latency, and actually visible windows. Main-model usage remains separate. Selection is prepared once per turn; newly observed tool evidence keeps its normal priority, and superseded source windows cannot reappear as current evidence. No graph watcher or world-truth validator is implied.
+
+### Legacy experimental Jev focus comparator
 
 ```ts
 import { Agent, createJevFocusReranker, createModelFromEnv } from "stateweave";
@@ -101,7 +111,7 @@ const agent = new Agent({
 });
 ```
 
-This is **off by default**, server-only, and experimental. Each opted-in turn sends its query (at most 4,000 characters) and bounded source excerpts (600 characters each) to TypeSafe. Use non-sensitive sample states. No credential belongs in browser settings or `AgentState`.
+This separate legacy focus hook is **off by default**, server-only, and experimental; native source recall above does not require it. Each opted-in turn sends its query (at most 4,000 characters) and bounded source excerpts (600 characters each) to TypeSafe. Use non-sensitive sample states. No credential belongs in browser settings or `AgentState`.
 
 Flat mode judges up to 24 deterministic candidates once per turn. Hierarchical mode judges at most 16 source-backed topics → three nominated branches → 12 child subgraphs → four nominated leaves → 24 source atoms. Eight global candidates bypass branch selection so a bad region judgment is not an absolute gate. Region descriptions are partial source excerpts, not authoritative summaries. Independent Noul judgments permit multiple relevant branches; 0.5 is an experimental threshold, not a truth guarantee. Jev cannot recover evidence omitted from these bounded candidates.
 
@@ -109,7 +119,7 @@ StateWeave selects up to six preferences, preserving latest system/goal and curr
 
 The entire ranking has one deadline (5s flat, 10s hierarchical; configurable 100–30,000ms). Caller abort propagates; other failures visibly fall back to the unchanged deterministic projection. `progress.focus` and result `metadata.focus` distinguish requested `preferredNodeIds` from actually compiled `selectedNodeIds`, and report each scoring stage, resolved model, provider usage and latency separately from the answering model. Fallback preserves completed-stage usage and marks unknown usage incomplete. The paired Dev session ledger persists a compact separate-overhead record across reloads. An opt-in lab Settings selector applies only to the StateWeave arm. Frozen evaluation surfaces and Traditional are unchanged.
 
-Software tests prove the contract, **not better answers**. The real Dev [twelve-case diagnostic](evaluations/jev-focus-v2/REPORT.md) found **no answer-quality gain**: deterministic, flat and hierarchical modes each completed 11/12 cases correctly and scored 10/12 on the strict evidence endpoint. Hierarchy added a median 0.798s of selection and 78,046 external input tokens across the twelve attempts. An earlier invalid calibration is preserved and excluded; this reused-corpus diagnostic is not independent confirmation. Keep Jev off by default and require new independent evidence before promotion.
+Software tests prove the contract, **not better answers**. The real Dev [twelve-case diagnostic](evaluations/jev-focus-v2/REPORT.md) found **no answer-quality gain**: deterministic, flat and hierarchical modes each completed 11/12 cases correctly and scored 10/12 on the strict evidence endpoint. Hierarchy added a median 0.798s of selection and 78,046 external input tokens across the twelve attempts. An earlier invalid calibration is preserved and excluded; this reused-corpus diagnostic is not independent confirmation. That result does not establish any benefit for native source recall. Preserve it and require the new independent evaluation before making an efficacy claim.
 
 ## Persistent state
 

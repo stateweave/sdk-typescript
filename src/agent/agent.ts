@@ -4,6 +4,9 @@ import path from "node:path";
 import { agentStateToGraph } from "../core/causalGraph.js";
 import { projectCausalVisualSnapshot } from "../core/causalVisualGraph.js";
 import { CausalWeave, type CausalCompileResult } from "../core/causalWeave.js";
+import { prepareRecall, selectRecall } from "../core/recallProjection.js";
+import type { JevRecallClient, RecallDiagnostics, RecallProjection } from "../core/recallTypes.js";
+import { createJevRecallClient, JevSetupError } from "../integrations/jevRecall.js";
 import { normalizeTaskInput, type TaskInput } from "../core/input.js";
 import type { StateGraph } from "../core/types.js";
 import type { Model, ModelInput, ModelOutput, ModelUsage } from "../llm/model.js";
@@ -46,6 +49,7 @@ export const defaultAgentSystemPrompt = "You are a StateWeave agent. Complete th
 export class Agent {
   private readonly args: Required<Pick<AgentArgs, "maxIterations" | "maxPromptTokens" | "projectionTargetTokens" | "projectionMaxNodes" | "contextMode" | "nodeTypes" | "allowDynamicNodeTypes">> & Omit<AgentArgs, "maxIterations" | "maxPromptTokens" | "projectionTargetTokens" | "projectionMaxNodes" | "contextMode" | "nodeTypes" | "allowDynamicNodeTypes" | "state">;
   private readonly tools: Tool[];
+  private readonly jev: JevRecallClient;
   private state?: AgentState;
   private runLock: Promise<void> = Promise.resolve();
   private stateGeneration = 0;
@@ -59,9 +63,11 @@ export class Agent {
     const maxNoProgressIterations = args.maxNoProgressIterations === undefined
       ? undefined
       : boundedInteger(args.maxNoProgressIterations, "maxNoProgressIterations", 1);
+    this.jev = createJevRecallClient(args.jev);
+    const { jev: _jev, ...runtimeArgs } = args;
     this.tools = args.tools ?? createDefaultTools();
     this.args = {
-      ...args,
+      ...runtimeArgs,
       tools: this.tools,
       systemPrompt: args.systemPrompt ?? defaultAgentSystemPrompt,
       maxIterations,
@@ -182,6 +188,7 @@ export class Agent {
     const task = normalizeTaskInput(input);
     const runtime = new AgentRuntime({
       model: this.args.model,
+      jev: this.jev,
       tools: this.tools,
       systemPrompt: this.args.systemPrompt ?? defaultAgentSystemPrompt,
       maxIterations: this.args.maxIterations,
@@ -318,8 +325,16 @@ type RuntimeResult = {
     outputTokens: number;
     tokenCountSource: TokenCountSource;
     focus?: FocusDiagnostics;
+    recall?: RecallDiagnostics;
   };
 };
+
+function parseTerminalNoToolFinal(text: string): ParsedFinal | undefined {
+  if (/```|~~~|\bTOOL_CALL\b/i.test(text)) return undefined;
+  const markers = [...text.matchAll(/^FINAL(?=\s|:|\{)/gim)];
+  if (markers.length !== 1 || markers[0]!.index === 0) return undefined;
+  return parseFinal(text.slice(markers[0]!.index));
+}
 
 function resolveTokenCountSource(modelCalls: number, providerUsageCalls: number): TokenCountSource {
   if (providerUsageCalls === 0) return "estimated";
@@ -328,6 +343,7 @@ function resolveTokenCountSource(modelCalls: number, providerUsageCalls: number)
 
 class AgentRuntime {
   private readonly model: Model;
+  private readonly jev: JevRecallClient;
   private readonly tools: Map<string, Tool>;
   private readonly maxIterations: number;
   private readonly maxContextTokens: number;
@@ -344,6 +360,7 @@ class AgentRuntime {
 
   constructor(args: {
     model: Model;
+    jev: JevRecallClient;
     tools: Tool[];
     systemPrompt: string;
     maxIterations: number;
@@ -360,6 +377,7 @@ class AgentRuntime {
     state?: AgentState;
   }) {
     this.model = args.model;
+    this.jev = args.jev;
     this.tools = new Map(args.tools.map((tool) => [tool.name, tool]));
     this.maxIterations = args.maxIterations;
     this.maxContextTokens = args.maxContextTokens;
@@ -404,6 +422,8 @@ class AgentRuntime {
     let lastMutationIteration = 0;
     let latestCompiled: CausalCompileResult | undefined;
     let focus: FocusDiagnostics | undefined;
+    let recall: RecallDiagnostics | undefined;
+    let recallProjection: RecallProjection | undefined;
     const metrics = (): RuntimeResult["metrics"] => ({
       modelCalls,
       toolCalls,
@@ -412,7 +432,8 @@ class AgentRuntime {
       totalInputTokens,
       outputTokens,
       tokenCountSource: resolveTokenCountSource(modelCalls, providerUsageCalls),
-      ...(focus ? { focus: structuredClone(focus) } : {})
+      ...(focus ? { focus: structuredClone(focus) } : {}),
+      ...(recall ? { recall: structuredClone(recall) } : {})
     });
     const visualGraph = (state: AgentState): StateGraph => projectCausalVisualSnapshot(state, {
       maxVisibleNodes: this.projectionMaxNodes,
@@ -443,6 +464,32 @@ class AgentRuntime {
       }
     };
 
+    const recallStarted = Date.now();
+    const index = prepareRecall(beforeGoal, task.slice(0, 8_000) || 'current task');
+    recall = { status: 'empty', sourceNodes: index.sourceNodeIds.length, candidateWindows: index.candidates.length, selectedWindows: 0, omittedSourceNodes: index.omittedSourceNodes, latencyMs: 0 };
+    if (index.candidates.length) {
+      const smallState = index.windows <= 12 && index.sourceNodeIds.length <= this.projectionMaxNodes - 2 && index.candidates.reduce((sum, row) => sum + row.text.length, 0) <= this.projectionTargetTokens;
+      if (smallState) {
+        recall.status = 'small_state';
+        recall.reason = 'Small bounded state; retained ordinary projection without a provider request.';
+      } else {
+        try {
+          const ranking = await this.jev.rank(task.slice(0, 8_000), index.candidates, options.signal);
+          options.signal?.throwIfAborted();
+          recallProjection = selectRecall(index, ranking.scores);
+          recall.status = 'ranked';
+          recall.ranking = ranking;
+        } catch (error) {
+          options.signal?.throwIfAborted();
+          if (error instanceof JevSetupError) throw error;
+          recallProjection = selectRecall(index);
+          recall.status = 'fallback';
+          recall.reason = 'Jev unavailable or invalid; using lexical source recall. Provider usage may be incomplete.';
+        }
+        recall.selectedWindows = recallProjection.windows.length;
+      }
+    }
+    recall.latencyMs = Date.now() - recallStarted;
     let preferredNodeIds: string[] = [];
     if (this.focusReranker) {
       const candidates = this.weave.focusCandidates(task, 24);
@@ -477,10 +524,11 @@ class AgentRuntime {
     }
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       options.signal?.throwIfAborted();
-      const compiled = this.weave.compile({ query: task, maxTokens: this.maxContextTokens, targetTokens: this.projectionTargetTokens, maxNodes: this.projectionMaxNodes, contextMode: this.contextMode, preferredNodeIds });
+      const compiled = this.weave.compile({ query: task, maxTokens: this.maxContextTokens, targetTokens: this.projectionTargetTokens, maxNodes: this.projectionMaxNodes, contextMode: this.contextMode, preferredNodeIds, recall: recallProjection });
       latestCompiled = compiled;
+      recall.visibleWindowIds = (recallProjection?.windows ?? []).filter(window => compiled.nodeIds.includes(window.nodeId) && compiled.prompt.includes(`[${window.id} ${window.start}:${window.end}]\n${window.text}`)).map(window => window.id);
       if (focus) focus.selectedNodeIds = compiled.nodeIds.filter((id) => preferredNodeIds.includes(id));
-      progress(iteration, "context", focus?.status === "fallback" ? "Jev unavailable; using deterministic projection" : this.contextMode === "molecular" ? "Compiled the molecular context view" : "Compiled the active causal frontier", { prompt: compiled.prompt, contextTokens: compiled.tokenEstimate.estimatedTokens, ...(focus ? { focus: structuredClone(focus) } : {}) });
+      progress(iteration, "context", recall.status === 'fallback' ? 'Jev unavailable; using lexical source recall' : focus?.status === "fallback" ? "Focus ranking unavailable; compiled the available context" : this.contextMode === "molecular" ? "Compiled the molecular context view" : "Compiled the active causal frontier", { prompt: compiled.prompt, contextTokens: compiled.tokenEstimate.estimatedTokens, recall: structuredClone(recall), ...(focus ? { focus: structuredClone(focus) } : {}) });
       progress(iteration, "model", `Waiting for model iteration ${iteration}`, { contextTokens: compiled.tokenEstimate.estimatedTokens });
       const modelInput: ModelInput = {
         prompt: compiled.prompt,
@@ -499,7 +547,7 @@ class AgentRuntime {
       outputTokens += output.usage?.outputTokens ?? estimateStateWeaveTokens(output.text).estimatedTokens;
 
       const call = parseToolCall(output.text.replace(/^(\s*TOOL_CALL)\s*:\s*/i, "$1 "));
-      const final = call ? undefined : parseFinal(output.text) ?? parsePlainInformationalFinal(task, output.text);
+      const final = call ? undefined : parseFinal(output.text) ?? (this.tools.size === 0 ? parseTerminalNoToolFinal(output.text) : undefined) ?? parsePlainInformationalFinal(task, output.text);
       if (!call && !final) {
         const invalid = output.text.trim();
         repeatedInvalidCount = invalid === repeatedInvalidOutput ? repeatedInvalidCount + 1 : 1;
