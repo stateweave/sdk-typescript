@@ -526,7 +526,7 @@ class AgentRuntime {
               dependentNodeIds: dependentNodeIds.slice(0, 64), dependenciesTruncated: dependentNodeIds.length > 64
             }, parents: [...input.sources.map(source => source.id), ...input.candidates.map(candidate => candidate.id)], advance: false });
             changeReview.annotationNodeId = annotation.id;
-            preferredNodeIds = [annotation.id, ...flagged.map(score => score.id)];
+            preferredNodeIds = [...new Set([annotation.id, ...flagged.map(score => score.id), ...preferredNodeIds])].slice(0, 6);
           }
         }
       } catch {
@@ -540,9 +540,9 @@ class AgentRuntime {
       options.signal?.throwIfAborted();
       const compiled = this.weave.compile({ query: task, maxTokens: this.maxContextTokens, targetTokens: this.projectionTargetTokens, maxNodes: this.projectionMaxNodes, contextMode: this.contextMode, preferredNodeIds });
       latestCompiled = compiled;
-      if (focus) focus.selectedNodeIds = compiled.nodeIds.filter((id) => preferredNodeIds.includes(id));
+      if (focus) focus.selectedNodeIds = compiled.nodeIds.filter((id) => focus!.preferredNodeIds.includes(id));
       if (changeReview) changeReview.selectedNodeIds = compiled.nodeIds.filter(id => changeReview!.flaggedNodeIds.includes(id));
-      progress(iteration, "context", focus?.status === "fallback" ? "Jev unavailable; using deterministic projection" : this.contextMode === "molecular" ? "Compiled the molecular context view" : "Compiled the active causal frontier", { prompt: compiled.prompt, contextTokens: compiled.tokenEstimate.estimatedTokens, ...(focus ? { focus: structuredClone(focus) } : {}), ...(changeReview ? { changeReview: structuredClone(changeReview) } : {}) });
+      progress(iteration, "context", focus?.status === "fallback" ? "Focus ranking unavailable; compiled the available context" : this.contextMode === "molecular" ? "Compiled the molecular context view" : "Compiled the active causal frontier", { prompt: compiled.prompt, contextTokens: compiled.tokenEstimate.estimatedTokens, ...(focus ? { focus: structuredClone(focus) } : {}), ...(changeReview ? { changeReview: structuredClone(changeReview) } : {}) });
       progress(iteration, "model", `Waiting for model iteration ${iteration}`, { contextTokens: compiled.tokenEstimate.estimatedTokens });
       const modelInput: ModelInput = {
         prompt: compiled.prompt,

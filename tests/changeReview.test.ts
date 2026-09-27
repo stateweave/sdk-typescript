@@ -48,6 +48,28 @@ describe("optional change-impact review", () => {
     expect(result.state.nodes.filter(n => n.kind === "answer").at(-1)!.parents).toEqual([...result.trace.at(-1)!.nodeIds].sort());
     expect(agent.getState()).toEqual(result.state);
   });
+  it("composes review and focus preferences without cross-attributing their selected evidence", async () => {
+    const f = fixture();
+    for (const projectionMaxNodes of [5, 10]) {
+      const agent = new Agent({ model, tools: [], state: f.weave.snapshot(), projectionMaxNodes, changeReviewer: reviewer,
+        focusReranker: async (_query, candidates) => ({ model: "test-focus", inputTokens: 1, outputTokens: 1, scores: candidates.map(candidate => ({ id: candidate.id, relevance: candidate.id === f.unrelated.id ? 1 : 0 })) })
+      });
+      const result = await agent.run("Assess changes. Carrier refuses all refrigerated parcels.", { changedNodeIds: [f.update.id] });
+      expect(result.metadata.focus!.preferredNodeIds).toEqual([f.unrelated.id]);
+      expect(result.metadata.focus!.selectedNodeIds).toEqual(projectionMaxNodes === 5 ? [] : [f.unrelated.id]);
+      expect(result.metadata.changeReview!.selectedNodeIds).toEqual([f.claim.id]);
+      expect(result.trace[0]!.nodeIds.length).toBeLessThanOrEqual(projectionMaxNodes);
+    }
+  });
+  it("does not attribute caller preferences to a failed focus provider", async () => {
+    const f = fixture();
+    const details: string[] = [];
+    const result = await new Agent({ model, tools: [], state: f.weave.snapshot(), changeReviewer: reviewer, focusReranker: async () => { throw new Error("Unavailable"); } }).run("Assess changes.", { preferredNodeIds: [f.claim.id], changedNodeIds: [f.update.id], onProgress: event => { if (event.phase === "context") details.push(event.detail); } });
+    expect(result.trace[0]!.nodeIds).toContain(f.claim.id);
+    expect(result.metadata.focus!.selectedNodeIds).toEqual([]);
+    expect(result.metadata.changeReview!.status).toBe("reviewed");
+    expect(details).toContain("Focus ranking unavailable; compiled the available context");
+  });
   it("does not run or change prompt bytes when disabled", async () => {
     const f = fixture(), state = f.weave.snapshot();
     let calls = 0;
