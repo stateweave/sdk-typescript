@@ -15,7 +15,8 @@ const runtimes = await Promise.all([frozenDist, candidateDist].map(async dist =>
   Agent: (await import(path.join(dist, 'agent/agent.js'))).Agent,
   Weave: (await import(path.join(dist, 'core/causalWeave.js'))).CausalWeave,
   prepareRecall: (await import(path.join(dist, 'core/recallProjection.js'))).prepareRecall,
-  SetupError: (await import(path.join(dist, 'integrations/jevRecall.js'))).JevSetupError
+  SetupError: (await import(path.join(dist, 'integrations/jevRecall.js'))).JevSetupError,
+  normalizeUsage: (await import(path.join(dist, 'llm/anthropicModel.js'))).normalizeAnthropicUsage
 })));
 assert.notEqual(runtimes[0].Agent, runtimes[1].Agent);
 const wellFormed = value => !/[\uD800-\uDFFF]/u.test(value);
@@ -47,6 +48,8 @@ for (const file of fs.readdirSync(cohort).filter(name => /^c_[a-f0-9]{16}\.json$
       continue;
     }
     const original = record.result;
+    const mainResponses = files.filter(name => name.startsWith(source.id + '.' + arm + '.main-') && name.endsWith('.response.json')).sort((a, b) => Number(a.match(/main-(\d+)/)[1]) - Number(b.match(/main-(\d+)/)[1]));
+    assert.equal(mainResponses.length, original.trace.length);
     const originalBase = { version: 1, nodes: original.state.nodes.slice(0, source.sources.length + 1), frontier: [] };
     const byId = new Map(original.state.nodes.map(node => [node.id, node]));
     const outcomes = [];
@@ -67,7 +70,9 @@ for (const file of fs.readdirSync(cohort).filter(name => /^c_[a-f0-9]{16}\.json$
           changedInput ??= 'main';
           throw new Error('Changed input cannot receive recorded model output.');
         }
-        return { text: step.rawModelOutput, usage: { inputTokens: original.metadata.totalInputTokens, outputTokens: original.metadata.outputTokens } };
+        const usage = runtime.normalizeUsage(load(path.join(root, mainResponses[calls - 1])).body.usage);
+        assert.ok(usage);
+        return { text: step.rawModelOutput, usage };
       } };
       const fetch = async (url, options) => {
         jevCalls++;
@@ -97,6 +102,8 @@ for (const file of fs.readdirSync(cohort).filter(name => /^c_[a-f0-9]{16}\.json$
         assert.deepEqual(result.trace, original.trace);
         assert.deepEqual(result.state, original.state);
         assert.equal(result.finalAnswer, original.finalAnswer);
+        assert.equal(result.metadata.totalInputTokens, original.metadata.totalInputTokens);
+        assert.equal(result.metadata.outputTokens, original.metadata.outputTokens);
         const { latencyMs: _latency, ...recall } = result.metadata.recall;
         const { latencyMs: _originalLatency, ...originalRecall } = original.metadata.recall;
         assert.deepEqual(recall, originalRecall);
@@ -138,7 +145,7 @@ for (const { id } of indices.filter(row => !row.candidateIndexUnchanged)) {
 }
 console.log(JSON.stringify({ sourceCommit: manifest.commit, frozenRuntime: manifest.runtime, candidateRuntime: candidateHashes,
   clockPolicy: 'Restore original node timestamps solely to reproduce clock-sensitive hierarchy labels.',
-  scope: 'Post-run engineering only: exact-source scalar-boundary checks plus differential replay of unchanged successful inputs. Failed arms and changed inputs receive no substitute answer or score; timing and usage are not remeasured. Not new live efficacy or general lifecycle certification.',
+  scope: 'Post-run engineering only: exact-source scalar-boundary checks plus differential replay of unchanged successful inputs. Failed arms and changed inputs receive no substitute answer or score; Recorded per-call usage is replayed and aggregate main usage must match; timing and usage are not remeasured. Not new live efficacy or general lifecycle certification.',
   networkCalls: 0, cases: indices.length, indexChanges: indices.filter(row => !row.candidateIndexUnchanged).length,
   originalSuccesses: rows.filter(row => row.frozen).length,
   candidateExactReplays: rows.filter(row => row.candidate === 'original_trace_reproduced').length,

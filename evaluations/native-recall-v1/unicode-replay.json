@@ -473,7 +473,7 @@
     "core/unicodeText.d.ts.map": "a760452d8e2fa7a35928e934772a3dc9f159171f7b1d5485a1e22506b807ee27"
   },
   "clockPolicy": "Restore original node timestamps solely to reproduce clock-sensitive hierarchy labels.",
-  "scope": "Post-run engineering only: exact-source scalar-boundary checks plus differential replay of unchanged successful inputs. Failed arms and changed inputs receive no substitute answer or score; timing and usage are not remeasured. Not new live efficacy or general lifecycle certification.",
+  "scope": "Post-run engineering only: exact-source scalar-boundary checks plus differential replay of unchanged successful inputs. Failed arms and changed inputs receive no substitute answer or score; Recorded per-call usage is replayed and aggregate main usage must match; timing and usage are not remeasured. Not new live efficacy or general lifecycle certification.",
   "networkCalls": 0,
   "cases": 196,
   "indexChanges": 1,
