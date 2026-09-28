@@ -2487,10 +2487,10 @@ function applyTokenUsageMetadata(point: TokenUsagePoint, metadata: Partial<Agent
 
 async function loadHealth(): Promise<void> {
   const response = await fetch(`${apiBase}/api/health`).catch(() => undefined);
-  const health = response?.ok ? ((await response.json()) as { provider?: string; defaultContextMode?: string; sessionStorage?: string; jevFocusAvailable?: boolean }) : undefined;
-  jevFocusAvailability.textContent = health?.jevFocusAvailable
-    ? "Opt-in · sends your query and bounded source excerpts to TypeSafe. Hierarchy judges up to 16 topics → 12 subgraphs → 24 atoms. Adds up to three calls per turn; Traditional is unchanged."
-    : "Not configured · set TYPESAFE_API_KEY on the dev server. No key belongs in this browser.";
+  const health = response?.ok ? ((await response.json()) as { provider?: string; defaultContextMode?: string; sessionStorage?: string; nativeRecall?: { required?: boolean; configured?: boolean; model?: string }; jevFocusAvailable?: boolean }) : undefined;
+  jevFocusAvailability.textContent = health?.nativeRecall?.configured
+    ? `Native ${health.nativeRecall.model ?? "Jev"} source recall is always on for StateWeave. This setting adds the older focus diagnostic; Traditional is unchanged.`
+    : "Native recall is not configured · set server-side TYPESAFE_API_KEY. No key belongs in this browser.";
   provider.textContent = health?.provider ?? "Offline";
   provider.title = health?.provider ? [health.provider, health.defaultContextMode, health.sessionStorage].filter(Boolean).join(" / ") : "Provider unavailable";
 }

@@ -1,0 +1,101 @@
+{
+  "sourceCommit": "2cba138f4afec03f83a1269622a089e2005cb5b6",
+  "judgeUsage": {
+    "calls": 394,
+    "assistantMessages": 399,
+    "knownInputIncludingCache": 242340,
+    "knownOutput": 52416,
+    "messagesWithoutCompleteUsage": 5,
+    "exposedRetryEvents": 8,
+    "exposedRetryStarts": 5,
+    "invocationsWithRetries": 3,
+    "assistantErrorMessages": 5,
+    "models": [
+      "gpt-5.6-sol"
+    ]
+  },
+  "failedArms": [
+    {
+      "id": "c_0d13024deedf9311",
+      "arm": "native",
+      "calls": [
+        {
+          "status": 429,
+          "code": "1302"
+        }
+      ]
+    },
+    {
+      "id": "c_a893716a2b8135e6",
+      "arm": "standard",
+      "calls": [
+        {
+          "status": 429,
+          "code": "1302"
+        }
+      ]
+    },
+    {
+      "id": "c_c3f4f5b45606d98f",
+      "arm": "lexical",
+      "calls": [
+        {
+          "status": 500,
+          "code": "500"
+        }
+      ]
+    },
+    {
+      "id": "c_c3f4f5b45606d98f",
+      "arm": "native",
+      "calls": [
+        {
+          "status": 500,
+          "code": "500"
+        }
+      ]
+    },
+    {
+      "id": "c_d037e58f62350e61",
+      "arm": "lexical",
+      "calls": [
+        {
+          "status": 429,
+          "code": "1302"
+        }
+      ]
+    },
+    {
+      "id": "c_eb0c857af19d2332",
+      "arm": "lexical",
+      "calls": [
+        {
+          "status": 429,
+          "code": "1302"
+        }
+      ]
+    },
+    {
+      "id": "c_fcc8b1c87bde9a47",
+      "arm": "lexical",
+      "calls": [
+        {
+          "status": 429,
+          "code": "1302"
+        }
+      ]
+    }
+  ],
+  "nonAbstentionSensitivity": {
+    "scope": "Post-hoc descriptive sensitivity only; not an acceptance endpoint or a replacement score.",
+    "cases": 180,
+    "correct": {
+      "standard": 120,
+      "lexical": 123,
+      "native": 161
+    }
+  },
+  "sameVisibleRecallSpans": 8,
+  "sameVisibleRecallSpanWins": 0,
+  "sameVisibleRecallSpanLosses": 0
+}

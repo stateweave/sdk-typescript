@@ -12,7 +12,7 @@ immutable causal graph → bounded working context → ordinary model action →
 
 There is one public agent class: `Agent`.
 
-**Experimental native-recall branch:** ordinary Agents now require server-side Jev setup and use it automatically when historical state needs bounded source retrieval. This candidate has not been merged or deployed. A 28-case development comparison is promising, but independent held-out confirmation is still required. See the [development results](evaluations/native-recall-v1/DEVELOPMENT_RESULTS.md).
+**Native Jev recall:** every ordinary `Agent` requires server-side Jev setup and automatically uses it when bounded historical source retrieval is needed; there is no recall opt-in flag. Small states retain ordinary projection without a needless provider request. The frozen 196-case study scored native **173/196**, current SDK **132/196**, and lexical **137/196**. Practical/statistical quality thresholds passed, but the complete preregistered adoption gate failed on scored abstention and lexical completion. See the [complete results and limitations](evaluations/native-recall-v1/CONFIRMATORY_RESULTS.md); the separate Unicode hardening never replaces measured outcomes.
 
 The runtime automatically records goals, model inferences, tool calls, tool results, resource versions, verification evidence, protocol errors, and answers as content-addressed causal nodes. Every model action points to the exact graph nodes compiled for that inference. The complete graph remains append-only while a deterministic multi-resolution projection keeps each model call bounded.
 
@@ -41,7 +41,7 @@ pnpm test
 
 ## Quick start
 
-Configure `TYPESAFE_API_KEY` on the server, alongside your answering-model credentials. No recall enable flag is required. Alternatively pass `jev: { apiKey }` to `Agent`; never ship this key to a browser. Missing setup and HTTP 401/403 produce a clear setup error. Temporary provider failures visibly fall back to lexical retrieval without discarding state.
+Configure `TYPESAFE_API_KEY` on the server, alongside your answering-model credentials. No recall enable flag exists. Alternatively pass `jev: { apiKey }` to `Agent`; never ship this key to a browser. Missing setup and HTTP 401/403 produce a clear setup error. Temporary provider failures visibly fall back to lexical retrieval without discarding state. Consumer applications must disclose and authorize sending the current query plus bounded source excerpts to TypeSafe.
 
 ```ts
 import { Agent, createModelFromEnv } from "stateweave";
@@ -119,7 +119,7 @@ StateWeave selects up to six preferences, preserving latest system/goal and curr
 
 The entire ranking has one deadline (5s flat, 10s hierarchical; configurable 100–30,000ms). Caller abort propagates; other failures visibly fall back to the unchanged deterministic projection. `progress.focus` and result `metadata.focus` distinguish requested `preferredNodeIds` from actually compiled `selectedNodeIds`, and report each scoring stage, resolved model, provider usage and latency separately from the answering model. Fallback preserves completed-stage usage and marks unknown usage incomplete. The paired Dev session ledger persists a compact separate-overhead record across reloads. An opt-in lab Settings selector applies only to the StateWeave arm. Frozen evaluation surfaces and Traditional are unchanged.
 
-Software tests prove the contract, **not better answers**. The real Dev [twelve-case diagnostic](evaluations/jev-focus-v2/REPORT.md) found **no answer-quality gain**: deterministic, flat and hierarchical modes each completed 11/12 cases correctly and scored 10/12 on the strict evidence endpoint. Hierarchy added a median 0.798s of selection and 78,046 external input tokens across the twelve attempts. An earlier invalid calibration is preserved and excluded; this reused-corpus diagnostic is not independent confirmation. That result does not establish any benefit for native source recall. Preserve it and require the new independent evaluation before making an efficacy claim.
+Software tests prove the contract, **not better answers**. The real Dev [twelve-case diagnostic](evaluations/jev-focus-v2/REPORT.md) found **no answer-quality gain**: deterministic, flat and hierarchical modes each completed 11/12 cases correctly and scored 10/12 on the strict evidence endpoint. Hierarchy added a median 0.798s of selection and 78,046 external input tokens across the twelve attempts. An earlier invalid calibration is preserved and excluded; this reused-corpus diagnostic is not independent confirmation. That result does not establish any benefit for native source recall. Native recall has its own separately frozen study above; its positive quality result does not revise this earlier null finding or remove its failed acceptance gates.
 
 ## Persistent state
 
@@ -283,7 +283,7 @@ Useful commands:
 /reset    clear agent state
 ```
 
-The development lab is available at `https://dev.stateweave.dev/lab/`. Its primary chat runs the same public `Agent`, keeps `AgentState` in the browser, streams causal progress, and visualizes the graph. The historical benchmark and frozen evaluation harnesses remain isolated internal evidence; they are not alternative public agent classes.
+The internal development lab is separate from the public SDK and is not a public demo. The historical benchmark and frozen evaluation harnesses remain isolated internal evidence; they are not alternative public agent classes.
 
 ## Low-level graph utilities
 

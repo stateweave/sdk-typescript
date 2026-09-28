@@ -189,7 +189,8 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   const url = requestUrl(request);
 
   if (request.method === "GET" && url.pathname === "/api/health") {
-    json(response, 200, { ok: true, provider: providerName(), agentEngine: "causal-weave-v3", sessionStorage: "jsonl-dual", comparison: { arms: ["stateweave", "traditional"], execution: "parallel", traditionalCompactionTokens: traditionalCompactionThreshold, traditionalRetainMessages }, defaultSystemPrompt: dualDefaultSystemPrompt, defaultProjectionTargetTokens: 16_000, defaultProjectionMaxNodes: 16, defaultContextMode: "molecular", defaultMaxIterations: 30, jevFocusAvailable: Boolean(process.env.TYPESAFE_API_KEY?.trim()) });
+    const jevAvailable = Boolean(process.env.TYPESAFE_API_KEY?.trim());
+    json(response, jevAvailable ? 200 : 503, { ok: jevAvailable, provider: providerName(), agentEngine: "causal-weave-v3", sessionStorage: "jsonl-dual", comparison: { arms: ["stateweave", "traditional"], execution: "parallel", traditionalCompactionTokens: traditionalCompactionThreshold, traditionalRetainMessages }, defaultSystemPrompt: dualDefaultSystemPrompt, defaultProjectionTargetTokens: 16_000, defaultProjectionMaxNodes: 16, defaultContextMode: "molecular", defaultMaxIterations: 30, nativeRecall: { required: true, configured: jevAvailable, model: "jev-1.13.0" }, jevFocusAvailable: jevAvailable });
     return;
   }
 
