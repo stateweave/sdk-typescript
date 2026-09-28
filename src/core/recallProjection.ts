@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { CausalWeaveNode, CausalWeaveSnapshot } from './causalTypes.js';
+import { isWellFormedUnicode, splitsSurrogatePair, utf16Prefix } from './unicodeText.js';
 
 import type { RecallWindow, RecallIndex, RecallProjection, RecallRanking } from './recallTypes.js';
 export type * from './recallTypes.js';
@@ -17,6 +18,7 @@ function canonical(value: unknown): string {
 
 export function prepareRecall(snapshot: CausalWeaveSnapshot, query: string, candidateLimit = 64): RecallIndex {
   if (!Number.isInteger(candidateLimit) || candidateLimit < 1 || candidateLimit > 96 || !query || query.length > 8_000) throw new Error('Invalid native recall bounds.');
+  if (!isWellFormedUnicode(query)) throw new Error('Recall query contains invalid Unicode.');
   const heads = new Map<string, string>();
   for (const node of snapshot.nodes) if (node.resourceKey) heads.set(node.resourceKey, node.id);
   const sources = snapshot.nodes.filter(node => {
@@ -33,12 +35,15 @@ export function prepareRecall(snapshot: CausalWeaveSnapshot, query: string, cand
   for (const node of [...sources].reverse()) {
     const text = recallSourceText(node);
     if (characters + text.length > 2_000_000) continue;
+    if (!isWellFormedUnicode(text)) throw new Error('Recall source contains invalid Unicode; original evidence was not modified.');
     characters += text.length;
     sourceNodeIds.push(node.id);
-    for (let start = 0; start < text.length; start += 1_200) {
-      const end = Math.min(text.length, start + 1_600);
+    for (let offset = 0; offset < text.length; offset += 1_200) {
+      const start = splitsSurrogatePair(text, offset) ? offset + 1 : offset;
+      const boundary = Math.min(text.length, offset + 1_600);
+      const end = splitsSurrogatePair(text, boundary) ? boundary - 1 : boundary;
       const id = 'rw_' + createHash('sha256').update(`${node.id}:${start}:${end}`).digest('hex').slice(0, 20);
-      windows.push({ id, nodeId: node.id, kind: node.kind, start, end, text: text.slice(start, end), sourcePrefix: text.slice(0, 240), lexicalScore: 0 });
+      windows.push({ id, nodeId: node.id, kind: node.kind, start, end, text: text.slice(start, end), sourcePrefix: utf16Prefix(text, 240), lexicalScore: 0 });
       if (end === text.length) break;
     }
   }
@@ -82,7 +87,7 @@ export function validateRecallProjection(snapshot: CausalWeaveSnapshot, projecti
   for (const window of projection.windows) {
     const node = nodes.get(window.nodeId);
     const text = node ? recallSourceText(node) : '';
-    if (!node || !projection.sourceNodeIds.includes(node.id) || window.kind !== node.kind || !Number.isInteger(window.start) || !Number.isInteger(window.end) || window.start < 0 || window.end <= window.start || window.end > text.length || window.end - window.start > 1_600 || text.slice(window.start, window.end) !== window.text || text.slice(0, 240) !== window.sourcePrefix) throw new Error('Recall projection must copy exact source spans.');
+    if (!node || !projection.sourceNodeIds.includes(node.id) || window.kind !== node.kind || !Number.isInteger(window.start) || !Number.isInteger(window.end) || window.start < 0 || window.end <= window.start || window.end > text.length || window.end - window.start > 1_600 || splitsSurrogatePair(text, window.start) || splitsSurrogatePair(text, window.end) || !isWellFormedUnicode(window.text) || text.slice(window.start, window.end) !== window.text || utf16Prefix(text, 240) !== window.sourcePrefix || !isWellFormedUnicode(window.sourcePrefix)) throw new Error('Recall projection must copy exact source spans.');
     const expectedId = 'rw_' + createHash('sha256').update(`${node.id}:${window.start}:${window.end}`).digest('hex').slice(0, 20);
     if (window.id !== expectedId) throw new Error('Invalid recall window identity.');
     const rows = grouped.get(node.id) ?? [];

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { utf16Prefix } from "./unicodeText.js";
 import type { FocusCandidate, FocusHierarchy } from "./focusTypes.js";
 import { validateRecallProjection } from "./recallProjection.js";
 import type { RecallProjection } from "./recallTypes.js";
@@ -704,7 +705,7 @@ function projectionHash(value: unknown): string {
 
 function inline(value: string, limit: number): string {
   const compact = value.replace(/\s+/g, " ").trim();
-  return compact.length <= limit ? compact : `${compact.slice(0, Math.max(0, limit - 16))}...[truncated]`;
+  return compact.length <= limit ? compact : `${utf16Prefix(compact, Math.max(0, limit - 16))}...[truncated]`;
 }
 
 function queryOverlap(node: CausalWeaveNode, queryTerms: Set<string>): number {
@@ -797,7 +798,8 @@ function unique(values: string[]): string[] {
 }
 
 function truncate(value: string, limit: number): string {
-  return value.length <= limit ? value : `${value.slice(0, limit)}\n...[${value.length - limit} characters omitted]`;
+  const prefix = utf16Prefix(value, limit);
+  return value.length <= limit ? value : `${prefix}\n...[${value.length - prefix.length} characters omitted]`;
 }
 
 function removableProjectionNode(chosen: string[], nodes: Map<string, CausalWeaveNode>, frontier: Set<string>, latestGoal: string | undefined, protectedQueryIds: Set<string>): number {

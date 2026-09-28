@@ -5,6 +5,7 @@ import { agentStateToGraph } from "../core/causalGraph.js";
 import { projectCausalVisualSnapshot } from "../core/causalVisualGraph.js";
 import { CausalWeave, type CausalCompileResult } from "../core/causalWeave.js";
 import { prepareRecall, selectRecall } from "../core/recallProjection.js";
+import { utf16Prefix } from "../core/unicodeText.js";
 import type { JevRecallClient, RecallDiagnostics, RecallProjection } from "../core/recallTypes.js";
 import { createJevRecallClient, JevSetupError } from "../integrations/jevRecall.js";
 import { normalizeTaskInput, type TaskInput } from "../core/input.js";
@@ -465,7 +466,8 @@ class AgentRuntime {
     };
 
     const recallStarted = Date.now();
-    const index = prepareRecall(beforeGoal, task.slice(0, 8_000) || 'current task');
+    const recallQuery = utf16Prefix(task, 8_000);
+    const index = prepareRecall(beforeGoal, recallQuery || 'current task');
     recall = { status: 'empty', sourceNodes: index.sourceNodeIds.length, candidateWindows: index.candidates.length, selectedWindows: 0, omittedSourceNodes: index.omittedSourceNodes, latencyMs: 0 };
     if (index.candidates.length) {
       const smallState = index.windows <= 12 && index.sourceNodeIds.length <= this.projectionMaxNodes - 2 && index.candidates.reduce((sum, row) => sum + row.text.length, 0) <= this.projectionTargetTokens;
@@ -474,7 +476,7 @@ class AgentRuntime {
         recall.reason = 'Small bounded state; retained ordinary projection without a provider request.';
       } else {
         try {
-          const ranking = await this.jev.rank(task.slice(0, 8_000), index.candidates, options.signal);
+          const ranking = await this.jev.rank(recallQuery, index.candidates, options.signal);
           options.signal?.throwIfAborted();
           recallProjection = selectRecall(index, ranking.scores);
           recall.status = 'ranked';

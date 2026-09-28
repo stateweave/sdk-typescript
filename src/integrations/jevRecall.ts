@@ -1,4 +1,5 @@
 import type { RecallRanking, JevConfiguration, JevRecallClient } from '../core/recallTypes.js';
+import { isWellFormedUnicode } from '../core/unicodeText.js';
 export type { JevConfiguration, JevRecallClient } from '../core/recallTypes.js';
 export type RecallQuestionDesign = 'direct' | 'indexed' | 'graded';
 export class JevSetupError extends Error {
@@ -39,6 +40,7 @@ export function createJevRecallClient(options: JevConfiguration = {}, design: Re
   return { async rank(query, candidates, signal) {
     signal?.throwIfAborted();
     if (!query || query.length > 8_000 || !candidates.length || candidates.length > 96 || new Set(candidates.map(row => row.id)).size !== candidates.length || candidates.some(row => row.text.length > 1_600 || row.sourcePrefix.length > 240)) throw new Error('Jev recall input exceeds bounds.');
+    if (!isWellFormedUnicode(query) || candidates.some(row => !isWellFormedUnicode(row.text) || !isWellFormedUnicode(row.sourcePrefix))) throw new Error('Jev recall input contains invalid Unicode.');
     const state = design === 'indexed' ? { query, passages: candidates.map(row => ({ sourcePrefix: row.sourcePrefix, excerpt: row.text })) } : { query };
     const questions = Object.fromEntries(candidates.map((candidate, index) => ['q' + index, {
       type: design === 'graded' ? 'score' : 'noul',
