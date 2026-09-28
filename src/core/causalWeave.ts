@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
+import { utf16Prefix } from "./unicodeText.js";
 import type { FocusCandidate, FocusHierarchy } from "./focusTypes.js";
+import { validateRecallProjection } from "./recallProjection.js";
+import type { RecallProjection } from "./recallTypes.js";
 import { estimateStateWeaveTokens, type StateWeaveTokenEstimate } from "../llm/tokenizer.js";
 import { projectCausalSnapshot, type CausalProjection } from "./causalProjection.js";
 import { buildCausalHierarchy, type CausalHierarchy } from "./causalHierarchy.js";
@@ -149,13 +152,16 @@ export class CausalWeave {
     };
   }
 
-  compile(args: { query?: string; maxTokens?: number; targetTokens?: number; maxNodes?: number; contextMode?: CausalContextMode; preferredNodeIds?: string[] } = {}): CausalCompileResult {
+  compile(args: { query?: string; maxTokens?: number; targetTokens?: number; maxNodes?: number; contextMode?: CausalContextMode; preferredNodeIds?: string[]; recall?: RecallProjection } = {}): CausalCompileResult {
     if (!this.order.length) throw new Error("Cannot compile an empty Causal Weave.");
     const maxTokens = boundedCompileBudget(args.maxTokens ?? 64_000, "maxTokens");
     const targetTokens = boundedCompileBudget(Math.min(args.targetTokens ?? maxTokens, maxTokens), "targetTokens");
     const maxNodes = boundedPositiveInteger(args.maxNodes ?? 48, "maxNodes");
     const contextMode = args.contextMode ?? "causal";
     const snapshot = this.snapshot();
+    const sourceViews = args.recall ? validateRecallProjection(snapshot, args.recall) : new Map<string, string>();
+    const historicalSources = new Set(args.recall?.sourceNodeIds ?? []);
+    const explicitPreferences = new Set(args.preferredNodeIds ?? []);
     const overview = projectCausalSnapshot(snapshot);
     const hierarchy = buildCausalHierarchy(snapshot, overview);
     const latestEquivalent = latestProjectionEquivalents(this.order, this.nodes);
@@ -163,36 +169,48 @@ export class CausalWeave {
     const latestSystem = reverseOrder.find((id) => this.nodes.get(id)?.kind === "system");
     const latestGoal = reverseOrder.find((id) => this.nodes.get(id)?.kind === "goal");
     const latestAnswer = reverseOrder.find((id) => this.nodes.get(id)?.kind === "answer");
+    const previousGoal = reverseOrder.find((id) => id !== latestGoal && this.nodes.get(id)?.kind === "goal");
+    const continuityIds = args.recall ? unique([
+      ...(latestGoal ? [...this.nodes.get(latestGoal)!.parents].sort((a, b) => this.nodes.get(b)!.sequence - this.nodes.get(a)!.sequence).slice(0, 4) : []),
+      ...[previousGoal, latestAnswer].filter((id): id is string => Boolean(id))
+    ]) : [];
+    const continuity = new Set(continuityIds);
+    for (const id of continuity) sourceViews.delete(id);
+    const permitted = (id: string): boolean => !historicalSources.has(id) || sourceViews.has(id) || explicitPreferences.has(id) || continuity.has(id);
     const recent = latestAnswer ? [latestAnswer] : [];
     const queryTerms = meaningfulQueryTerms([args.query ?? "", latestGoal ? payloadText(this.nodes.get(latestGoal)?.payload) : ""].join(" "));
     const eligible = this.order.filter((id) => {
       const key = projectionEquivalenceKey(this.nodes.get(id)!);
-      return !key || latestEquivalent.get(key) === id;
+      return permitted(id) && (!key || latestEquivalent.get(key) === id);
     });
+    const currentEligible = new Set(eligible);
+    const recallIds = unique((args.recall?.windows ?? []).map(window => window.nodeId)).filter(id => currentEligible.has(id));
     const ranked = eligible
       .map((id) => ({ id, score: relevanceScore(this.nodes.get(id)!, queryTerms, this.order.length), overlap: queryOverlap(this.nodes.get(id)!, queryTerms) }))
       .filter((candidate) => candidate.overlap > 0 && usefulQueryCandidate(this.nodes.get(candidate.id)!, args.query ?? "", queryTerms, candidate.overlap))
       .sort((a, b) => b.overlap - a.overlap || b.score - a.score || this.nodes.get(b.id)!.sequence - this.nodes.get(a.id)!.sequence);
     const preferredIds = (args.preferredNodeIds ?? []).filter((id) => eligible.includes(id)).slice(0, 6);
-    const protectedQueryIds = new Set([...preferredIds, ...ranked.slice(0, 8).map((candidate) => candidate.id)]);
+    const protectedQueryIds = new Set([...continuityIds, ...recallIds, ...preferredIds, ...ranked.slice(0, 8).map((candidate) => candidate.id)]);
     const relevantResourceIds = selectRelevantResourceHeads(this.resourceHeads.values(), this.nodes, args.query ?? "", queryTerms, latestAnswer, maxNodes);
     const selected = selectBoundedNodeIds(maxNodes, this.nodes, [
       [latestSystem, latestGoal, ...this.frontier().filter((id) => !preferredIds.length || this.nodes.get(id)!.sequence > (latestGoal ? this.nodes.get(latestGoal)!.sequence : 0))].filter((id): id is string => Boolean(id)),
+      continuityIds,
       preferredIds,
+      recallIds,
       relevantResourceIds,
       ...(preferredIds.length ? [this.frontier()] : []),
       [...protectedQueryIds],
       [...recent].reverse(),
       ranked.map((candidate) => candidate.id)
-    ]);
+    ], args.recall ? (id) => currentEligible.has(id) : undefined);
 
     let chosen = this.order.filter((id) => selected.has(id));
     const digest = renderGraphDigest(this.order.map((id) => this.nodes.get(id)!), this.resourceHeads);
     const render = (payloadLimit?: number): { prompt: string; estimate: StateWeaveTokenEstimate } => {
       const visibleNodes = chosen.map((id) => this.nodes.get(id)!);
       const prompt = contextMode === "molecular"
-        ? renderMolecularWeave(visibleNodes, this.order.map((id) => this.nodes.get(id)!), this.frontierIds, overview, hierarchy, latestGoal ? payloadText(this.nodes.get(latestGoal)?.payload) : "", payloadLimit)
-        : renderCompiledWeave(visibleNodes, this.frontierIds, digest, overview, latestGoal ? payloadText(this.nodes.get(latestGoal)?.payload) : "", payloadLimit);
+        ? renderMolecularWeave(visibleNodes, this.order.map((id) => this.nodes.get(id)!), this.frontierIds, overview, hierarchy, latestGoal ? payloadText(this.nodes.get(latestGoal)?.payload) : "", payloadLimit, sourceViews)
+        : renderCompiledWeave(visibleNodes, this.frontierIds, digest, overview, latestGoal ? payloadText(this.nodes.get(latestGoal)?.payload) : "", payloadLimit, sourceViews);
       return { prompt, estimate: estimateStateWeaveTokens(prompt) };
     };
     let rendered = render();
@@ -323,14 +341,14 @@ function resourceQueryOverlap(node: CausalWeaveNode, queryTerms: Set<string>): n
   return direct + ([...queryTerms].some((term) => pathTerms.has(term)) ? 1 : 0);
 }
 
-function selectBoundedNodeIds(maxNodes: number, nodes: Map<string, CausalWeaveNode>, groups: string[][]): Set<string> {
+function selectBoundedNodeIds(maxNodes: number, nodes: Map<string, CausalWeaveNode>, groups: string[][], allowed: (id: string) => boolean = () => true): Set<string> {
   const selected = new Set<string>();
   for (const group of groups) {
     for (const id of group) {
-      if (!nodes.has(id) || selected.has(id)) continue;
+      if (!nodes.has(id) || selected.has(id) || !allowed(id)) continue;
       const closure = operationalSelectionClosure(id, nodes);
       for (const candidate of closure) {
-        if (!nodes.has(candidate) || selected.has(candidate)) continue;
+        if (!nodes.has(candidate) || selected.has(candidate) || !allowed(candidate)) continue;
         if (selected.size >= maxNodes) return selected;
         selected.add(candidate);
       }
@@ -356,7 +374,8 @@ function renderMolecularWeave(
   overview: CausalProjection,
   hierarchy: CausalHierarchy,
   currentGoal: string,
-  payloadLimit?: number
+  payloadLimit?: number,
+  sourceViews: ReadonlyMap<string, string> = new Map()
 ): string {
   const visible = new Set(nodes.map((node) => node.id));
   const clusterByNode = new Map<string, CausalProjection["bigBrainClusters"][number]>();
@@ -425,7 +444,7 @@ function renderMolecularWeave(
     lines.push(`<EXPANDED id=${JSON.stringify(aliases.get(molecule.id))} label=${JSON.stringify(truncate(molecule.label, 100))}>`);
     for (const node of members) {
       const nodeLimit = payloadLimit ?? (node.kind === "system" ? 64_000 : node.kind === "tool_result" || node.kind === "resource" ? 8_000 : 4_000);
-      lines.push(`ATOM ${shortId(node.id)} kind=${node.kind}${frontier.has(node.id) ? " HEAD" : ""} parents=${node.parents.map(shortId).join(",") || "root"}`, truncate(payloadText(node.payload), nodeLimit));
+      lines.push(`ATOM ${shortId(node.id)} kind=${node.kind}${frontier.has(node.id) ? " HEAD" : ""} parents=${node.parents.map(shortId).join(",") || "root"}`, truncate(sourceViews.get(node.id) ?? payloadText(node.payload), nodeLimit));
     }
     lines.push("</EXPANDED>", "");
   }
@@ -435,7 +454,7 @@ function renderMolecularWeave(
     lines.push('<EXPANDED id="molecule_unclustered" label="Unclustered causal atoms">');
     for (const node of unclustered) {
       const nodeLimit = payloadLimit ?? (node.kind === "system" ? 64_000 : 4_000);
-      lines.push(`ATOM ${shortId(node.id)} kind=${node.kind}${frontier.has(node.id) ? " HEAD" : ""} parents=${node.parents.map(shortId).join(",") || "root"}`, truncate(payloadText(node.payload), nodeLimit));
+      lines.push(`ATOM ${shortId(node.id)} kind=${node.kind}${frontier.has(node.id) ? " HEAD" : ""} parents=${node.parents.map(shortId).join(",") || "root"}`, truncate(sourceViews.get(node.id) ?? payloadText(node.payload), nodeLimit));
     }
     lines.push("</EXPANDED>");
   }
@@ -450,7 +469,8 @@ function renderCompiledWeave(
   digest: string,
   overview: CausalProjection,
   currentGoal: string,
-  payloadLimit?: number
+  payloadLimit?: number,
+  sourceViews: ReadonlyMap<string, string> = new Map()
 ): string {
   const compact = payloadLimit !== undefined;
   const lines = [
@@ -484,7 +504,7 @@ function renderCompiledWeave(
     lines.push(
       `node ${shortId(node.id)} [${node.kind}]${frontier.has(node.id) ? " HEAD" : ""}`,
       `parents: ${node.parents.map(shortId).join(", ") || "(root)"}`,
-      truncate(payloadText(node.payload), nodeLimit),
+      truncate(sourceViews.get(node.id) ?? payloadText(node.payload), nodeLimit),
       ""
     );
   }
@@ -496,7 +516,7 @@ function renderCompiledWeave(
     lines.push("", "<TIMELINE>", "recent non-structural nodes in causal sequence (lower sequence means earlier)");
     for (const id of timeline) {
       const node = nodes.find((candidate) => candidate.id === id);
-      if (node) lines.push(`- seq=${node.sequence} ${shortId(node.id)} [${node.kind}] ${inline(payloadText(node.payload), compact ? 120 : 240)}`);
+      if (node) lines.push(`- seq=${node.sequence} ${shortId(node.id)} [${node.kind}] ${inline(sourceViews.get(node.id) ?? payloadText(node.payload), compact ? 120 : 240)}`);
     }
     lines.push("</TIMELINE>");
   }
@@ -685,7 +705,7 @@ function projectionHash(value: unknown): string {
 
 function inline(value: string, limit: number): string {
   const compact = value.replace(/\s+/g, " ").trim();
-  return compact.length <= limit ? compact : `${compact.slice(0, Math.max(0, limit - 16))}...[truncated]`;
+  return compact.length <= limit ? compact : `${utf16Prefix(compact, Math.max(0, limit - 16))}...[truncated]`;
 }
 
 function queryOverlap(node: CausalWeaveNode, queryTerms: Set<string>): number {
@@ -778,7 +798,8 @@ function unique(values: string[]): string[] {
 }
 
 function truncate(value: string, limit: number): string {
-  return value.length <= limit ? value : `${value.slice(0, limit)}\n...[${value.length - limit} characters omitted]`;
+  const prefix = utf16Prefix(value, limit);
+  return value.length <= limit ? value : `${prefix}\n...[${value.length - prefix.length} characters omitted]`;
 }
 
 function removableProjectionNode(chosen: string[], nodes: Map<string, CausalWeaveNode>, frontier: Set<string>, latestGoal: string | undefined, protectedQueryIds: Set<string>): number {

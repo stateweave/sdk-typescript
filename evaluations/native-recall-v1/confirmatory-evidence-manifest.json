@@ -1,0 +1,39 @@
+{
+  "measuredSourceCommit": "2cba138f4afec03f83a1269622a089e2005cb5b6",
+  "freezeCommit": "a1a3e33591c57a44c549422974c5cbee89a228ba",
+  "freezeSha256": "a02c1444477a335dadb87e5317a4ad16011b697949e096b9bd85e3a5f6828d7c",
+  "postRunHardeningCommit": "3e1c7bee40af67a7c696d73b67469f02318a1ea2",
+  "frozenRuntimeArchive": {
+    "name": "native-recall-confirmation-2cba138-runtime.tar.gz",
+    "sha256": "4c3923c9256b1483e11d59f87649abc86b0ca91975b70e94d3ed3b57999f6f64",
+    "goldIncluded": false
+  },
+  "generationArchive": {
+    "name": "native-recall-v1-2cba138-evidence.tar.gz",
+    "bytes": 149179611,
+    "sha256": "00c24b08090d44cb2aff37c3b7337cdccb82471ead8bbd3a28400d69dcd25aa5"
+  },
+  "judgmentAndFinalEvidenceArchive": {
+    "name": "native-recall-confirmation-final-evidence-2cba138.tar.gz",
+    "bytes": 1152206,
+    "sha256": "bfb28b0b9950386a819bb914243ba3d847e08ddc979456937b280c6479645b71",
+    "contentFiles": 1407,
+    "includes": ["original judgments", "operation receipts and logs", "frozen audit and scans", "original scored summary", "post-run source review", "post-run Unicode replay", "hardened runtime"]
+  },
+  "copies": {
+    "offHostCopyVerified": true,
+    "archivePermissions": "0600",
+    "archiveHashesVerifiedAfterTransfer": true
+  },
+  "generationDigest": "5cce3e6fd5ca8a2480f51edc3461f1db16e207a63f60cc972ef2a4e9e3e2ea3d",
+  "judgmentDigest": "7e850d834f49545a7c3a184603bd542e7ccacaebaabc61af9684abc99af0199f",
+  "sourceAuditSha256": "3b8977fa8820a6d561d70ff4b99361d27d261ca3742bb927860a81f82eacb7fd",
+  "persistentOneShotReceipt": "/data/native-recall-v1-confirmation-started.json",
+  "deploymentAtMeasurement": {
+    "changed": false,
+    "status": "development and production remained on the prior SDK",
+    "agentSha256": "1112abe8df5a444b978fb761c12afd4bd45757ae324e648cdecc58e7efdbaeb0",
+    "causalWeaveSha256": "9376bc0f1d4db1fb37675ae7936d1cfb07b6cd02473d449094967cddd7768381"
+  },
+  "scope": "The measured study and original failures are immutable. Post-run engineering is not a second live efficacy result. No merge or deployment is authorized. Never remove the receipt or replay this cohort to repair the outcome."
+}

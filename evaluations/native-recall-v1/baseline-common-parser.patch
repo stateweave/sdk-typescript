@@ -1,0 +1,27 @@
+diff --git a/src/agent/agent.ts b/src/agent/agent.ts
+index f7d9bd8..d7ec79f 100644
+--- a/src/agent/agent.ts
++++ b/src/agent/agent.ts
+@@ -321,6 +321,13 @@ type RuntimeResult = {
+   };
+ };
+ 
++function parseTerminalNoToolFinal(text: string): ParsedFinal | undefined {
++  if (/```|~~~|\bTOOL_CALL\b/i.test(text)) return undefined;
++  const markers = [...text.matchAll(/^FINAL(?=\s|:|\{)/gim)];
++  if (markers.length !== 1 || markers[0]!.index === 0) return undefined;
++  return parseFinal(text.slice(markers[0]!.index));
++}
++
+ function resolveTokenCountSource(modelCalls: number, providerUsageCalls: number): TokenCountSource {
+   if (providerUsageCalls === 0) return "estimated";
+   return providerUsageCalls === modelCalls ? "provider" : "mixed";
+@@ -499,7 +506,7 @@ class AgentRuntime {
+       outputTokens += output.usage?.outputTokens ?? estimateStateWeaveTokens(output.text).estimatedTokens;
+ 
+       const call = parseToolCall(output.text.replace(/^(\s*TOOL_CALL)\s*:\s*/i, "$1 "));
+-      const final = call ? undefined : parseFinal(output.text) ?? parsePlainInformationalFinal(task, output.text);
++      const final = call ? undefined : parseFinal(output.text) ?? (this.tools.size === 0 ? parseTerminalNoToolFinal(output.text) : undefined) ?? parsePlainInformationalFinal(task, output.text);
+       if (!call && !final) {
+         const invalid = output.text.trim();
+         repeatedInvalidCount = invalid === repeatedInvalidOutput ? repeatedInvalidCount + 1 : 1;

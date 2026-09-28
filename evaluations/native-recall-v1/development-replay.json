@@ -1,0 +1,417 @@
+{
+  "sourceCommit": "4073d2b6593138c806900cfda4c2e250b63311cf",
+  "frozenRuntime": {
+    "agent/agent.js": "5ac6a91df5d06342898a13f4ec3381f4d51dc3d0e8089ec621fc4b852686a725",
+    "core/causalWeave.js": "5eabed2766391b75c35bafc223597ddc0d2860e77f65921b402fea4852442b9c",
+    "core/recallProjection.js": "81615c64f681b4563922d5bcc24e45b75899d5b8fb82bc1fe45d19edd688147f",
+    "core/recallTypes.js": "608812e4df9af9140c7940696accdeb72b4c83b69b03f2f72fbb625e409038d9",
+    "integrations/jevRecall.js": "84559bc5c8c61afa3e2eacd27c488f734bff2fffd2ec1d2cb0302fca7f772ee7",
+    "llm/anthropicModel.js": "2117635cd1e3406fedf93ca859ad0aa5ae1fc95ae4eadfe4af10b137feb3371e"
+  },
+  "candidateRuntime": {
+    "agent/agent.js": "5ac6a91df5d06342898a13f4ec3381f4d51dc3d0e8089ec621fc4b852686a725",
+    "core/causalWeave.js": "6bd51ad4fa6b4bb4af09c96d25827c036edc4af84fa5f9b0b044b1bb6198ed63",
+    "core/recallProjection.js": "4c3122ae4a9a3c739662ad8d2b65795bc8e36d1c212ca28969cbf3620e64a8ec",
+    "core/recallTypes.js": "608812e4df9af9140c7940696accdeb72b4c83b69b03f2f72fbb625e409038d9",
+    "integrations/jevRecall.js": "6c5215bc7462c144e72a12bd4df03edcf42ff9756e086b2995b23c962d4643fc",
+    "llm/anthropicModel.js": "2117635cd1e3406fedf93ca859ad0aa5ae1fc95ae4eadfe4af10b137feb3371e"
+  },
+  "clockPolicy": "Replay restores each recorded node timestamp solely to reproduce the existing clock-dependent cluster summaries. It never changes original evidence or performs a model call.",
+  "scope": "Differential engineering replay, not new efficacy evidence or general lifecycle certification.",
+  "networkCalls": 0,
+  "replayed": 56,
+  "rows": [
+    {
+      "id": "c_01a4490028db7439",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "d08d4a240a8854b3ac8b38014b3d698b6db13cc64cb8b2028e2246cb2dd16ec6"
+    },
+    {
+      "id": "c_01a4490028db7439",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "af0c7b4f29c24303753a9da85b28a9a04f868096712f9b00b27e34ad3be59ec4"
+    },
+    {
+      "id": "c_0fd0d551690c14bc",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "9bd4cbb81558b95cf8ce916e5c0b0bb23ed3d93452879bb80fa0d239789f6293"
+    },
+    {
+      "id": "c_0fd0d551690c14bc",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "21ae0305ccd4b55a688ea2d93460abd83947419d68d90808645f8573314e5bec"
+    },
+    {
+      "id": "c_16ba53ecb5ac6988",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "65dec9a35a19c94b9f6cfd86a4ed657053d0426a4c555a5373d124885ff8e966"
+    },
+    {
+      "id": "c_16ba53ecb5ac6988",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "a72d272ce3ecdb75f5624250f5d60ae36df9bdf8321a459c24272ecbd2def972"
+    },
+    {
+      "id": "c_18dd216378b82f4a",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "bc79376aedb0fe7c9d09628fff971bb83c56d4cd0e5024b5585025ae73f127e6"
+    },
+    {
+      "id": "c_18dd216378b82f4a",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "b92bb6f927408c8f4a2b4e1ee42171e42ca37b0526bb04d92963b08a1cd734e6"
+    },
+    {
+      "id": "c_1b657d5574235de1",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "5b9a11ba4a123410d9b77b6d503734f3e1a2e9a3adf3a3e6581976923d6dd424"
+    },
+    {
+      "id": "c_1b657d5574235de1",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "44722bd0acc3bb9cd6fa9b3cb88dc0a33b810b8ca5f40ae66f5a507740c943d3"
+    },
+    {
+      "id": "c_1d092cbfbefde097",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "fb67a86ce214a227b439452d485d03b424ecabfa4355001d60df0273103bcd87"
+    },
+    {
+      "id": "c_1d092cbfbefde097",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "25a603d76ca537b04ab4aa3a867316009b5901f01d2c15398d929a82f87b3355"
+    },
+    {
+      "id": "c_29da39a7d5141d27",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "5c9b1d80045b8f6b1d39428bcaedae9907ac58a4d07bed40382163bc2f8d0fe8"
+    },
+    {
+      "id": "c_29da39a7d5141d27",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "1e94b4a25db076ff3b889c9c61fa997bbcc07fe2980c0864e8fdb5b85c212c88"
+    },
+    {
+      "id": "c_3cf6c796d6f3ffec",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "ff0bb4f4bc35dd5c4848049bbf303bb3e6b3e8580e6bc317e62eab13eb0c1711"
+    },
+    {
+      "id": "c_3cf6c796d6f3ffec",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "0b1d7598c0cf209f3702174d868d4252777e956957cabc40cfbbeeea63156b6d"
+    },
+    {
+      "id": "c_3df3dce92ed7843a",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "91af6b98363d8f06c9ed13c57adddfb2ee0e0740ba71f39a24d6cc51a7535cb5"
+    },
+    {
+      "id": "c_3df3dce92ed7843a",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "0d5c621a9fb1a02b298fa8b519036adc266a7c324dca6372ceb476c1eb3c4ec5"
+    },
+    {
+      "id": "c_45dd88e6b9d1f2d8",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "73dd8053210887f3412042a5b0a284a800b6f1dc91a9a45acb1b8dc3550f20df"
+    },
+    {
+      "id": "c_45dd88e6b9d1f2d8",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "3844c197c05337eba3d86c0ee53a33b832e7feeefa160aaf7650d3426144616e"
+    },
+    {
+      "id": "c_588833c2dc10f463",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "9a28c9c5eec31859ff29f613814735c9f06e56cdc24d1edee0e767402b5b41ee"
+    },
+    {
+      "id": "c_588833c2dc10f463",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "01378f7ba116fca4646a2d568ea5af9388bc5fe0cf7963a901e622faf6739f1a"
+    },
+    {
+      "id": "c_5b79813aeb5cac2e",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "3497629052f4d9d7d737600cb70f3f36f682398b866e98253a2b44957f577d5f"
+    },
+    {
+      "id": "c_5b79813aeb5cac2e",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "612bb6ba7cf94ebf73ad87cbb91f2bc3157d6c487441a3784a0842f7e5e45265"
+    },
+    {
+      "id": "c_691f84cdd5b6bcbc",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "a7a8ac7fead0183c979c3665796f08d557dbe8bdf1ee04943e12a39c30f676ba"
+    },
+    {
+      "id": "c_691f84cdd5b6bcbc",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "727a6534698afece283b8194f952f100ba62f076153da7f566b3166f9dbde14b"
+    },
+    {
+      "id": "c_7ea41d7967a07e5c",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "b22e98afbbcd2cefc2e58116d15af5899111a493c19e9fd0e1b6377fb223b177"
+    },
+    {
+      "id": "c_7ea41d7967a07e5c",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "0368a73a195519039dc70d04502e8e7e53da713d0155fe181607452757bed0c2"
+    },
+    {
+      "id": "c_99dc0c148fa46efa",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "0073f5692c17cfaaf2dba47d0f45a7c3c7b6f60893e28c2ac776769ae9eadc31"
+    },
+    {
+      "id": "c_99dc0c148fa46efa",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "2f643564415f9d149a15b9e58c4aa84e75731e85f46a59c313da32dec338b96a"
+    },
+    {
+      "id": "c_9dc2dd8d9edcdafd",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "10b53fa0467bc56aea1196c8da547ea1c520ca446c359bee351b9f470fda0f17"
+    },
+    {
+      "id": "c_9dc2dd8d9edcdafd",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "b267f5f4518126963afe6bdaa9a35b066ff50d3ab8eebb60010e273c244438db"
+    },
+    {
+      "id": "c_a4412dd3b9d9b6c9",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "fce39c92d7794ba2bcd484bee300136722bfaf6755b58bce8eb92796f009cc20"
+    },
+    {
+      "id": "c_a4412dd3b9d9b6c9",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "159019d227d947bfbf8dd68ef7681db68ba1d26fc3da1c21d3c9cd2315fcc1c4"
+    },
+    {
+      "id": "c_a4a2db3ddd0aa2df",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "da7ca7c1ef444766c6fc677c70011f2d7f7d7af4f1361a4d7eabb04c09ef8d6d"
+    },
+    {
+      "id": "c_a4a2db3ddd0aa2df",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "fc184c59bb9f4e3432b3d4a732cc07ce8b98ea080ed071bfa7e8b83f7629ac71"
+    },
+    {
+      "id": "c_a7b44eaefe1a2c03",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "f522595aa7d9292c27a1dcd96b497116cf93c4eef140b3ddbc7ce35dd12f11d5"
+    },
+    {
+      "id": "c_a7b44eaefe1a2c03",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "a1510835a81bd54ab575fa3fade3259cb8196cf018898c9382f25272b3689aa4"
+    },
+    {
+      "id": "c_ac39c224172a4d97",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "5ad101d58d04cfe2214e6c745b606f2216b62a0a4663c7e73f97fb7a333c2f2b"
+    },
+    {
+      "id": "c_ac39c224172a4d97",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "7e604ad643e498c86b0401f3258860d0c9cc434f90361f8816274d52547fa3e4"
+    },
+    {
+      "id": "c_b1b3e9cb14679d34",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "bede725be68d8babaae9b8e21f7030a509d7a6acec784a562b2ea25e672c8e94"
+    },
+    {
+      "id": "c_b1b3e9cb14679d34",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "95c051017adff4a2c5f7476a887da4428783ae14316472a4b93a9785972cdfbb"
+    },
+    {
+      "id": "c_c0ba4caecf439c2d",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "a674da514277b33fd5a46fe9df7f45061510d0d0d74cda95fc0ef99b2c36b04d"
+    },
+    {
+      "id": "c_c0ba4caecf439c2d",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "e1917f5fea7896254ba314dddccafdd374fd0ef18113c45803cb70cd0907c005"
+    },
+    {
+      "id": "c_d4c1a1db8209e671",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "b95b275d378c5229fddc6aa62e400fa98d0f1b937b88e9141182a8031f8fc6cf"
+    },
+    {
+      "id": "c_d4c1a1db8209e671",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "bab3fddee2bc8b8ba82df223f0961058d186d43a7f2b3bc8e23e08ba2166ce57"
+    },
+    {
+      "id": "c_e2ac65a6574d7dcf",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "fd35f2e91914ac5cfcf90414627c6257c21950d8b382d72cba5894a99e3b3958"
+    },
+    {
+      "id": "c_e2ac65a6574d7dcf",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "3d196bf5108581629d73508c50f3a42a0fec7ca66c4fadc1482e73e980e21861"
+    },
+    {
+      "id": "c_e56c8235beed1aa0",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "6375456498727e3f3672c86aaeea59dc209232bac95e3bea1a1c0213e8c27637"
+    },
+    {
+      "id": "c_e56c8235beed1aa0",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "acab9226939879e4b2686c70ad717b8ad44b15ec03b502664b73658191af4ea7"
+    },
+    {
+      "id": "c_f7feb9b74e77cfec",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "1e983fd8d38ce096e76e6f044f1ad56dcb95e894338bf4c7be2f2ea45c58fd6e"
+    },
+    {
+      "id": "c_f7feb9b74e77cfec",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "8656a1315a75229e03315d02e1bfd4d16e3b5eaca7a8582b5fb639501038de91"
+    },
+    {
+      "id": "c_f9095957ea219882",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "b4a0b32b2cdd2ccb8777d48f47b1eb7a23f7feb032e119df2bbf37fa129c9774"
+    },
+    {
+      "id": "c_f9095957ea219882",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "515ea3a6710e68e4905ed8f3b3c81e14315555e64b628e6a241d97f1b772c192"
+    },
+    {
+      "id": "c_fd533aba036ab1ec",
+      "arm": "lexical",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "2d4ae6eafa56773a51951caf661516f434c8652da8f8cf60e728092575817888"
+    },
+    {
+      "id": "c_fd533aba036ab1ec",
+      "arm": "native",
+      "originalTraceReproduced": true,
+      "stateAndAnswerIdentical": true,
+      "traceSha256": "45f0b7b65c6d383ec320b6fd25228c2d398741992bb3b3bc6a2d207aba325e40"
+    }
+  ]
+}

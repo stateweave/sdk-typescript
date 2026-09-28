@@ -24,4 +24,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+      - name: Verify offline evaluation logic
+        run: python3 -m unittest discover -s evaluations/native-recall-v1 -p 'test_[cjs]*.py' -v
       - run: pnpm build
+      - run: node evaluations/native-recall-v1/test-import.mjs

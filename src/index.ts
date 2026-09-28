@@ -9,6 +9,7 @@ export * from "./core/visualize.js";
 export * from "./agent/agent.js";
 export type { FocusCandidate, FocusHierarchy, FocusRanking, FocusReranker, FocusStage, FocusDiagnostics } from "./agent/focusReranker.js";
 export { createJevFocusReranker } from "./integrations/jevFocus.js";
+export { JevSetupError } from "./integrations/jevRecall.js";
 export * from "./llm/model.js";
 export * from "./llm/anthropicModel.js";
 export * from "./llm/factory.js";
