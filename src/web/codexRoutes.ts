@@ -143,7 +143,8 @@ export async function handleCodexRoute(request: IncomingMessage, response: Serve
       const pricing = readPricing(body.pricing);
       const turns = Number(body.turns ?? 10);
       if (!Number.isInteger(turns) || turns < 1 || turns > halcyonScript.length) throw new CodexSafeError(`Turns must be between 1 and ${halcyonScript.length}.`, 400);
-      const run = bench.start({ createModel: () => new CodexResponsesModel(selection, () => account.headers()), selection, pricing, turns });
+      const runKey = randomBytes(12).toString("hex");
+      const run = bench.start({ createModel: (arm) => new CodexResponsesModel(selection, () => account.headers(), fetch, `stateweave-lab-${runKey}-${arm}`), selection, pricing, turns });
       send(response, 202, { run });
       return true;
     }
