@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CodexModelError, normalizeCodexUsage, parseCodexStream } from "../src/llm/codexModel.js";
+import { CodexModelError, CodexResponsesModel, normalizeCodexUsage, parseCodexStream } from "../src/llm/codexModel.js";
 import { addUsage, callCost, emptyTotals, halcyonScript, MeteredModel, scoreCheck } from "../src/web/codexCostBench.js";
 import { chooseModel, modelChoices } from "../src/web/codexAccount.js";
 import type { Model, ModelToken } from "../src/llm/model.js";
@@ -29,6 +29,18 @@ describe("Codex SSE parsing", () => {
   it("rejects interrupted and failed streams", async () => {
     await expect(collect(parseCodexStream(chunks(`data: {"type":"response.output_text.delta","delta":"x"}\n`), "m"))).rejects.toBeInstanceOf(CodexModelError);
     await expect(collect(parseCodexStream(chunks(`data: {"type":"response.failed"}\n`), "m"))).rejects.toBeInstanceOf(CodexModelError);
+  });
+
+  it("sends a stable prompt cache key so repeated prefixes can hit the cache", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetcher = (async (_url: unknown, init: { body: string }) => {
+      bodies.push(JSON.parse(init.body));
+      return new Response(completed({ input_tokens: 10, output_tokens: 1 }));
+    }) as unknown as typeof fetch;
+    const model = new CodexResponsesModel({ model: "gpt-5.5" }, async () => ({}), fetcher, "run-traditional");
+    await model.complete({ prompt: "a" });
+    await model.complete({ prompt: "a b" });
+    expect(bodies.map((b) => b.prompt_cache_key)).toEqual(["run-traditional", "run-traditional"]);
   });
 
   it("ignores usage without token counts", () => {

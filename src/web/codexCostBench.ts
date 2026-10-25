@@ -135,7 +135,7 @@ export class CodexCostBench {
     return this.state?.status === "running";
   }
 
-  start(args: { createModel: () => Model; selection: CodexSelection; pricing: Pricing; turns: number }): BenchState {
+  start(args: { createModel: (arm: "stateweave" | "traditional") => Model; selection: CodexSelection; pricing: Pricing; turns: number }): BenchState {
     if (this.running) throw new Error("A bench run is already in progress.");
     const turns = Math.max(1, Math.min(halcyonScript.length, Math.floor(args.turns)));
     this.controller = new AbortController();
@@ -159,9 +159,9 @@ export class CodexCostBench {
     this.controller?.abort();
   }
 
-  private async execute(state: BenchState, args: { createModel: () => Model; pricing: Pricing }, turns: number, signal: AbortSignal): Promise<void> {
-    const stateModel = new MeteredModel(args.createModel(), args.pricing);
-    const traditionalModel = new MeteredModel(args.createModel(), args.pricing);
+  private async execute(state: BenchState, args: { createModel: (arm: "stateweave" | "traditional") => Model; pricing: Pricing }, turns: number, signal: AbortSignal): Promise<void> {
+    const stateModel = new MeteredModel(args.createModel("stateweave"), args.pricing);
+    const traditionalModel = new MeteredModel(args.createModel("traditional"), args.pricing);
     const stateAgent = new Agent({ model: stateModel, tools: [], maxIterations: 6, maxPromptTokens: 64_000, projectionTargetTokens: 16_000, projectionMaxNodes: 16, contextMode: "molecular", systemPrompt: benchSystemPrompt });
     const traditionalAgent = new AgenticBaseline({
       model: traditionalModel,

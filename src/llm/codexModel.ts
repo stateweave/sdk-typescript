@@ -17,7 +17,8 @@ export class CodexResponsesModel implements Model {
   constructor(
     private readonly selection: CodexSelection,
     private readonly headers: CodexHeadersProvider,
-    private readonly fetcher: typeof fetch = fetch
+    private readonly fetcher: typeof fetch = fetch,
+    private readonly promptCacheKey?: string
   ) {}
 
   async complete(input: ModelInput): Promise<ModelOutput> {
@@ -45,6 +46,7 @@ export class CodexResponsesModel implements Model {
         instructions: input.system?.trim() || "Follow the user's instructions exactly.",
         tools: [],
         tool_choice: "none",
+        ...(this.promptCacheKey ? { prompt_cache_key: this.promptCacheKey } : {}),
         ...(this.selection.reasoningEffort ? { reasoning: { effort: this.selection.reasoningEffort } } : {}),
         input: [{ role: "user", content: [{ type: "input_text", text: input.prompt }] }]
       })
