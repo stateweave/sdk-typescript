@@ -2,7 +2,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { CodexResponsesModel } from "../llm/codexModel.js";
 import { CodexAccount, CodexSafeError } from "./codexAccount.js";
-import { CodexCostBench, defaultPricing, halcyonScript, type Pricing } from "./codexCostBench.js";
+import { CodexCostBench, defaultPricing, halcyonScript, type BenchState, type Pricing } from "./codexCostBench.js";
 
 // One operator connection at a time, bound to the browser that started it.
 type Slot = { account: CodexAccount; sid: string; login?: { verificationUrl: string; userCode: string }; createdAt: number };
@@ -16,6 +16,12 @@ export type CodexRouteContext = {
 };
 
 let bench: CodexCostBench | undefined;
+
+/** Call traces stay in the saved report; the polling view only needs answers and totals. */
+function liveView(state: BenchState | undefined) {
+  if (!state) return null;
+  return { ...state, turns: state.turns.map((turn) => ({ ...turn, arms: Object.fromEntries(Object.entries(turn.arms).map(([arm, { calls: _calls, ...rest }]) => [arm, rest])) })) };
+}
 
 function send(response: ServerResponse, status: number, body: unknown, cookie?: string): void {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "private, no-store", ...(cookie ? { "set-cookie": cookie } : {}) });
@@ -126,12 +132,12 @@ export async function handleCodexRoute(request: IncomingMessage, response: Serve
       return true;
     }
     if (request.method === "GET" && pathname === "/api/codex-bench/state") {
-      send(response, 200, { run: owns(request) ? bench.state ?? null : null });
+      send(response, 200, { run: owns(request) ? liveView(bench.state) : null });
       return true;
     }
     if (request.method === "POST" && pathname === "/api/codex-bench/stop") {
       if (owns(request)) bench.stop();
-      send(response, 200, { run: owns(request) ? bench.state ?? null : null });
+      send(response, 200, { run: owns(request) ? liveView(bench.state) : null });
       return true;
     }
     if (request.method === "POST" && pathname === "/api/codex-bench/start") {
@@ -145,7 +151,7 @@ export async function handleCodexRoute(request: IncomingMessage, response: Serve
       if (!Number.isInteger(turns) || turns < 1 || turns > halcyonScript.length) throw new CodexSafeError(`Turns must be between 1 and ${halcyonScript.length}.`, 400);
       const runKey = randomBytes(12).toString("hex");
       const run = bench.start({ createModel: (arm) => new CodexResponsesModel(selection, () => account.headers(), fetch, `stateweave-lab-${runKey}-${arm}`), selection, pricing, turns });
-      send(response, 202, { run });
+      send(response, 202, { run: liveView(run) });
       return true;
     }
     send(response, 404, { error: "Not found" });

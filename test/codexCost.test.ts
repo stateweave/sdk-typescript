@@ -90,6 +90,19 @@ describe("recall scoring and model selection", () => {
     expect(scoreCheck("Budget NOK 4.2 million, launch 2 May 2027, Mateo.", check)).toMatchObject({ passed: false, missing: ["3.8"], forbidden: ["4.2"] });
   });
 
+  it("accepts spelled-out numbers", () => {
+    expect(scoreCheck("Thirty-eight households signed; budget NOK 3.8 million, launch 2 May, snow-load certification.", halcyonScript[9]!).passed).toBe(true);
+  });
+
+  it("traces every metered call for later evaluation", async () => {
+    const inner: Model = { complete: async () => ({ text: "out", usage: { inputTokens: 5, outputTokens: 1, totalTokens: 6 } }), async *stream() {} };
+    const metered = new MeteredModel(inner, { input: 1, cachedInput: 0, output: 1 });
+    await metered.complete({ system: "sys", prompt: "in" });
+    expect(metered.calls).toMatchObject([{ system: "sys", prompt: "in", output: "out" }]);
+    metered.reset();
+    expect(metered.calls).toEqual([]);
+  });
+
   it("only accepts advertised model and thinking combinations", () => {
     const choices = modelChoices([{ model: "gpt-5.5", displayName: "GPT-5.5", isDefault: true, supportedReasoningEfforts: [{ reasoningEffort: "low" }, { reasoningEffort: "high" }] }, { model: "old", hidden: true }]);
     expect(choices.map((c) => c.id)).toEqual(["gpt-5.5"]);
