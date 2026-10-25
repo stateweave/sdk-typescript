@@ -14,6 +14,7 @@ import { listChallengerScenarios, readChallengerScenario } from "../evals/challe
 import { AgenticBaseline, type AgenticProgress, type AgenticTurnResult } from "../evals/agenticBaseline.js";
 import { InfiniteAgentHarness } from "../evals/infiniteAgentHarness.js";
 import { SdkBuildBenchmarkApi } from "./sdkBuildBenchmark.js";
+import { handleCodexRoute } from "./codexRoutes.js";
 import { SubgraphExperimentHarness } from "./subgraphExperiment.js";
 import { generateLongHorizonPrompt } from "./longHorizonDirector.js";
 import { createJevFocusReranker } from "../integrations/jevFocus.js";
@@ -187,6 +188,7 @@ createServer((request, response) => {
 
 async function route(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const url = requestUrl(request);
+  if (await handleCodexRoute(request, response, url.pathname, { readJson, reportDir: path.resolve(process.env.STATEWEAVE_CODEX_BENCH_DIR ?? "/data/codex-bench") })) return;
 
   if (request.method === "GET" && url.pathname === "/api/health") {
     const jevAvailable = Boolean(process.env.TYPESAFE_API_KEY?.trim());

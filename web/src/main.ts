@@ -8,6 +8,7 @@ import { promptFiveCases, promptFiveCategoryOrder, type PromptFiveCategory } fro
 import { promptSixCases, promptSixCategoryOrder, promptSixHypothesis, type PromptSixCategory, type PromptSixHypothesis } from "./promptSix.js";
 import { oneShotPromptStats, oneShotSdkBuildPrompt } from "../../src/evals/oneShotSdkBenchmark.js";
 import { protocolExperiment } from "./protocolExperiment.js";
+import { createCodexCostLab } from "./codexCost.js";
 import { maxTokenUsageHistory, parseTokenUsageHistory, renderDualTokenUsageView, type TokenUsagePoint, type TokenUsageStatus } from "./tokenUsage.js";
 import type { DualArm, DualSessionSummary, DualSessionView, DualTurnView, DualUsageRecord } from "../../src/web/dualSessionTypes.js";
 import type { SessionHistoryEntry, StateWeaveSessionView } from "../../src/web/stateweaveSessionTypes.js";
@@ -53,7 +54,7 @@ type CompareResponse = {
   };
 };
 
-type PageName = "state" | "quickstart" | "ab" | "protocol-experiment" | "subgraph-experiment" | "sdk-build" | "infinite" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six";
+type PageName = "state" | "quickstart" | "ab" | "protocol-experiment" | "subgraph-experiment" | "sdk-build" | "infinite" | "prompt-one" | "prompt-two" | "prompt-three" | "prompt-four" | "prompt-five" | "prompt-six" | "codex-cost";
 type SubgraphArmResult = { promptTokens: number; providerInputTokens?: number; rawOutput: string; answer?: string; evidence: string[]; formatValid: boolean; answerCorrect: boolean; evidenceComplete: boolean; evidenceClean: boolean; fullPass: boolean; latencyMs: number; providerAttempts: number };
 type SubgraphCaseResult = { id: string; title: string; category: string; question: string; goldAnswer: string; requiredEvidence: string[]; order: ("flat" | "compound")[]; flat: SubgraphArmResult; compound: SubgraphArmResult; winner: "flat" | "compound" | "both" | "neither" };
 type SubgraphExperimentState = {
@@ -589,6 +590,7 @@ const multiFiveTab = element<HTMLButtonElement>("multi-five-tab");
 const multiSixTab = element<HTMLButtonElement>("multi-six-tab");
 const sdkBuildTab = element<HTMLButtonElement>("sdk-build-tab");
 const infiniteTab = element<HTMLButtonElement>("infinite-tab");
+const codexCostTab = element<HTMLButtonElement>("codex-cost-tab");
 const labNavMenu = element<HTMLDetailsElement>("lab-nav-menu");
 const statePage = element<HTMLElement>("state-page");
 const mobileChatPane = element<HTMLButtonElement>("mobile-chat-pane");
@@ -602,6 +604,8 @@ const subgraphReport = element<HTMLElement>("subgraph-report");
 const multiPage = element<HTMLElement>("multi-page");
 const sdkBuildPage = element<HTMLElement>("sdk-build-page");
 const infinitePage = element<HTMLElement>("infinite-page");
+const codexCostPage = element<HTMLElement>("codex-cost-page");
+const codexCostLab = createCodexCostLab(codexCostPage, apiBase);
 const sdkBuildPrompt = element<HTMLElement>("sdk-build-prompt");
 const sdkBuildPromptStats = element<HTMLElement>("sdk-build-prompt-stats");
 const sdkBuildCopy = element<HTMLButtonElement>("sdk-build-copy");
@@ -758,6 +762,7 @@ multiThreeTab.addEventListener("click", () => setActivePage("prompt-three"));
 multiFourTab.addEventListener("click", () => setActivePage("prompt-four"));
 multiFiveTab.addEventListener("click", () => setActivePage("prompt-five"));
 multiSixTab.addEventListener("click", () => setActivePage("prompt-six"));
+codexCostTab.addEventListener("click", () => setActivePage("codex-cost"));
 sdkBuildTab.addEventListener("click", () => setActivePage("sdk-build"));
 infiniteTab.addEventListener("click", () => setActivePage("infinite"));
 sdkBuildCopy.addEventListener("click", () => void copyText(oneShotSdkBuildPrompt, sdkBuildCopy));
@@ -921,6 +926,7 @@ function pageFromHash(): PageName {
   if (location.hash === "#subgraph-experiment") return "subgraph-experiment";
   if (location.hash === "#sdk-build") return "sdk-build";
   if (location.hash === "#infinite") return "infinite";
+  if (location.hash === "#codex-cost") return "codex-cost";
   if (location.hash === "#prompt-one") return "prompt-one";
   if (location.hash === "#prompt-two") return "prompt-two";
   if (location.hash === "#prompt-three") return "prompt-three";
@@ -1487,12 +1493,19 @@ function setActivePage(page: PageName, updateHash = true): void {
   sdkBuildPage.classList.toggle("active", isSdkBuild);
   infinitePage.hidden = !isInfinite;
   infinitePage.classList.toggle("active", isInfinite);
+  const isCodexCost = page === "codex-cost";
+  codexCostTab.classList.toggle("active", isCodexCost);
+  codexCostTab.setAttribute("aria-selected", String(isCodexCost));
+  codexCostPage.hidden = !isCodexCost;
+  codexCostPage.classList.toggle("active", isCodexCost);
+  if (isCodexCost) codexCostLab.activate();
+  else codexCostLab.deactivate();
   multiTitle.textContent = suite.title;
   multiDescription.textContent = suite.description;
   reset.hidden = isState;
-  reset.textContent = isQuickstart || isProtocolExperiment || isSubgraphExperiment || isSdkBuild ? "Back to chat" : isAb ? "Reset A/B" : isInfinite ? "Reset harness" : `Reset ${suite.title.toLowerCase()}`;
+  reset.textContent = isQuickstart || isProtocolExperiment || isSubgraphExperiment || isSdkBuild || isCodexCost ? "Back to chat" : isAb ? "Reset A/B" : isInfinite ? "Reset harness" : `Reset ${suite.title.toLowerCase()}`;
   syncMultiModeControls();
-  if (updateHash) history.replaceState(null, "", isState ? location.pathname : isQuickstart ? "#quick-start" : isAb ? "#ab" : isProtocolExperiment ? "#protocol-experiment" : isSubgraphExperiment ? "#subgraph-experiment" : isSdkBuild ? "#sdk-build" : isInfinite ? "#infinite" : `#${suite.id}`);
+  if (updateHash) history.replaceState(null, "", isState ? location.pathname : isQuickstart ? "#quick-start" : isAb ? "#ab" : isProtocolExperiment ? "#protocol-experiment" : isSubgraphExperiment ? "#subgraph-experiment" : isSdkBuild ? "#sdk-build" : isInfinite ? "#infinite" : isCodexCost ? "#codex-cost" : `#${suite.id}`);
   if (isMulti) void resumeStoredEvalRun();
   else stopBackgroundPoll();
   if (isInfinite) {
