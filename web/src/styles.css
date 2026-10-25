@@ -6118,3 +6118,13 @@ label {
     top: 72px;
   }
 }
+
+.codex-cost .codex-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin: 12px 0; }
+.codex-cost .codex-controls label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; }
+.codex-cost .codex-controls input { width: 7rem; }
+.codex-cost .data-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.85rem; }
+.codex-cost .data-table th, .codex-cost .data-table td { border-bottom: 1px solid rgba(127,127,127,0.25); padding: 6px 8px; text-align: left; vertical-align: top; }
+.codex-cost pre { white-space: pre-wrap; max-height: 320px; overflow: auto; }
+.codex-cost .muted { opacity: 0.7; font-size: 0.85rem; }
+.codex-cost .error { color: #d14343; }
+.codex-cost .mono { font-family: ui-monospace, monospace; font-size: 1.1rem; letter-spacing: 0.08em; }

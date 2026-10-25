@@ -25,8 +25,10 @@ ENV STATEWEAVE_SESSION_DIR=/data/sessions
 ENV STATEWEAVE_DUAL_SESSION_DIR=/data/dual-sessions
 ENV STATEWEAVE_WORKSPACE_DIR=/data/workspace
 ENV STATEWEAVE_TRADITIONAL_WORKSPACE_DIR=/data/workspace-traditional
+ENV STATEWEAVE_CODEX_BENCH_DIR=/data/codex-bench
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
+RUN npm install -g @openai/codex@0.164.0 && npm cache clean --force
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --prod --frozen-lockfile
