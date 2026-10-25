@@ -12,11 +12,12 @@ import type { CodexSelection, CodexUsage } from "../llm/codexModel.js";
 export type Pricing = { input: number; cachedInput: number; output: number };
 export type ArmName = "stateweave" | "traditional";
 export type ArmTotals = { calls: number; inputTokens: number; cachedInputTokens: number; outputTokens: number; reasoningTokens: number; missingUsageCalls: number; costUsd: number; peakInputTokens: number };
+export type CallTrace = { system?: string; prompt: string; output: string; ms: number; usage?: CodexUsage; error?: string };
 export type TurnRecord = {
   turn: number;
   kind: "fact" | "filler" | "check";
   prompt: string;
-  arms: Record<ArmName, { status: "done" | "failed"; answer?: string; error?: string; ms: number; usage: ArmTotals; check?: { passed: boolean; missing: string[]; forbidden: string[] } }>;
+  arms: Record<ArmName, { status: "done" | "failed"; answer?: string; error?: string; ms: number; usage: ArmTotals; check?: { passed: boolean; missing: string[]; forbidden: string[] }; calls: CallTrace[] }>;
 };
 export type BenchState = {
   id: string;
@@ -82,21 +83,53 @@ function mergeTotals(into: ArmTotals, from: ArmTotals): void {
 /** Wraps a model and meters every call made through it into the active turn bucket. */
 export class MeteredModel implements Model {
   bucket: ArmTotals = emptyTotals();
+  calls: CallTrace[] = [];
   constructor(private readonly inner: Model, private readonly pricing: Pricing) {}
 
+  reset(): void {
+    this.bucket = emptyTotals();
+    this.calls = [];
+  }
+
   async complete(input: ModelInput): Promise<ModelOutput> {
-    const output = await this.inner.complete(input);
-    addUsage(this.bucket, output.usage as CodexUsage | undefined, this.pricing);
-    return output;
+    const started = Date.now();
+    try {
+      const output = await this.inner.complete(input);
+      this.record(input, output.text, started, output.usage as CodexUsage | undefined);
+      return output;
+    } catch (error) {
+      this.record(input, "", started, undefined, error);
+      throw error;
+    }
   }
 
   async *stream(input: ModelInput): AsyncIterable<ModelToken> {
+    const started = Date.now();
+    const text: string[] = [];
     let usage: CodexUsage | undefined;
-    for await (const event of this.inner.stream(input)) {
-      if (event.type === "metadata" && event.metadata.usage) usage = event.metadata.usage as CodexUsage;
-      yield event;
+    try {
+      for await (const event of this.inner.stream(input)) {
+        if (event.type === "token") text.push(event.token);
+        else if (event.metadata.usage) usage = event.metadata.usage as CodexUsage;
+        yield event;
+      }
+    } catch (error) {
+      this.record(input, text.join(""), started, usage, error);
+      throw error;
     }
+    this.record(input, text.join(""), started, usage);
+  }
+
+  private record(input: ModelInput, output: string, started: number, usage: CodexUsage | undefined, error?: unknown): void {
     addUsage(this.bucket, usage, this.pricing);
+    this.calls.push({
+      ...(input.system ? { system: input.system } : {}),
+      prompt: input.prompt,
+      output,
+      ms: Date.now() - started,
+      ...(usage ? { usage } : {}),
+      ...(error ? { error: error instanceof Error ? error.message : String(error) } : {})
+    });
   }
 }
 
@@ -116,8 +149,17 @@ export const halcyonScript: ScriptTurn[] = [
   { kind: "check", prompt: "Final sanity check. Give, in one sentence each: the current budget, the launch date, how many households signed letters of intent, and why the launch moved.", expect: ["3.8", "2 May", "38", "snow"], forbid: ["4.2 million is the current", "14 March 2027 launch"] }
 ];
 
+const numberWords: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+
+/** Lets "thirty-eight" satisfy an expected "38". */
+function spellOutNumbers(text: string): string {
+  return text.replace(/\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)[- ](one|two|three|four|five|six|seven|eight|nine)\b|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b/g, (match, tens, unit, single) =>
+    `${match} ${tens ? numberWords[tens]! + numberWords[unit]! : numberWords[single]!}`
+  );
+}
+
 export function scoreCheck(answer: string, turn: ScriptTurn): { passed: boolean; missing: string[]; forbidden: string[] } {
-  const lower = answer.toLowerCase();
+  const lower = spellOutNumbers(answer.toLowerCase());
   const missing = (turn.expect ?? []).filter((value) => !lower.includes(value.toLowerCase()));
   const forbidden = (turn.forbid ?? []).filter((value) => lower.includes(value.toLowerCase()));
   return { passed: missing.length === 0 && forbidden.length === 0, missing, forbidden };
@@ -177,8 +219,8 @@ export class CodexCostBench {
       for (let index = 0; index < turns; index++) {
         if (signal.aborted) break;
         const script = halcyonScript[index]!;
-        stateModel.bucket = emptyTotals();
-        traditionalModel.bucket = emptyTotals();
+        stateModel.reset();
+        traditionalModel.reset();
         const timed = async (arm: ArmName, run: () => Promise<{ ok: boolean; answer: string; error?: string }>) => {
           const started = Date.now();
           try {
@@ -199,17 +241,20 @@ export class CodexCostBench {
           })
         ]);
         const record: TurnRecord = { turn: index + 1, kind: script.kind, prompt: script.prompt, arms: {} as TurnRecord["arms"] };
-        for (const [run, bucket] of [[sw, stateModel.bucket], [tr, traditionalModel.bucket]] as const) {
+        for (const [run, metered] of [[sw, stateModel], [tr, traditionalModel]] as const) {
+          const bucket = metered.bucket;
           mergeTotals(state.totals[run.arm], bucket);
           record.arms[run.arm] = {
             status: run.ok ? "done" : "failed",
             ...(run.ok ? { answer: run.answer.slice(0, 20_000) } : { error: run.error }),
             ms: run.ms,
             usage: { ...bucket },
-            ...(script.kind === "check" && run.ok ? { check: scoreCheck(run.answer, script) } : {})
+            ...(script.kind === "check" && run.ok ? { check: scoreCheck(run.answer, script) } : {}),
+            calls: metered.calls
           };
         }
         state.turns.push(record);
+        await this.persist(state).catch(() => undefined);
         if (!sw.ok && !tr.ok) throw new Error("Both arms failed this turn; the run stopped to avoid spending more.");
       }
       state.status = signal.aborted ? "stopped" : "done";
