@@ -74,6 +74,9 @@ for(const failure of [undefined,'missing-usage','native-missing-usage','native-i
       const sum=report.episodes.reduce((n,e)=>n+e.graph.inputTokens+e.graph.outputTokens+e.transcript.inputTokens+e.transcript.outputTokens,0);
       const native=events.find(e=>e.type==='response'&&e.context.phase==='calibration-native').response.usage;
       assert.equal(sum+native.input_tokens+native.output_tokens,report.budget.knownTokens);
+      const analyzer=fileURLToPath(new URL('../scripts/paired-ledger/analyze.mjs',import.meta.url));
+      const verification=spawnSync(process.execPath,[analyzer,out],{encoding:'utf8',timeout:10000,maxBuffer:1_000_000});assert.equal(verification.status,0,verification.stderr);
+      assert.ok(JSON.parse(readFileSync(path.join(out,'analysis.json'),'utf8')).checks.every(check=>check.pass));
       const second=spawnSync(process.execPath,['--import',mock,script,sdk,out],{env,encoding:'utf8',timeout:5000});assert.notEqual(second.status,0);
       assert.equal(readFileSync(path.join(out,'events.jsonl'),'utf8'),text);
     }
