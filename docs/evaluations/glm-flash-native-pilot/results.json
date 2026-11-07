@@ -1,0 +1,645 @@
+{
+  "analysisVersion": 1,
+  "status": "deadline",
+  "startedAt": "2026-11-07T13:49:45.561Z",
+  "completedAt": "2026-11-07T14:34:45.562Z",
+  "elapsedMinutes": 45,
+  "provenance": {
+    "preregisteredCommit": "19944ec1e2fd60844098881f20f8f0e0960bfb82",
+    "analysisSourceSha256": "391afa1178c5342c5df0ff7ed52f791e0c391c8de41f1d5b29352f277b7bf82b",
+    "reportSha256": "e7c294a4c75abc2a73fbc1d30395793c529663d96ae6918d8a4efe94ce7f2dbf",
+    "eventsSha256": "ee953d58b09db12ec66bae15ed71f8e63a953cc526c1520e92b5068242cd8843"
+  },
+  "checks": [
+    {
+      "name": "frozen protocol identity",
+      "pass": true
+    },
+    {
+      "name": "source hash pilot.mjs",
+      "pass": true
+    },
+    {
+      "name": "source hash ledger.mjs",
+      "pass": true
+    },
+    {
+      "name": "source hash budget.mjs",
+      "pass": true
+    },
+    {
+      "name": "source hash runtime-lock.json",
+      "pass": true
+    },
+    {
+      "name": "call cap / contiguous request identities",
+      "pass": true
+    },
+    {
+      "name": "at most one response per authorized dispatch",
+      "pass": true
+    },
+    {
+      "name": "token ceiling including unresolved reservations",
+      "pass": true
+    },
+    {
+      "name": "no final-test dispatch",
+      "pass": true
+    },
+    {
+      "name": "only authorized development/validation/calibration visits",
+      "pass": true
+    },
+    {
+      "name": "no duplicate participant/provider dispatches or retries",
+      "pass": true
+    },
+    {
+      "name": "one visible outcome per participant turn",
+      "pass": true
+    },
+    {
+      "name": "frozen final-only scoring",
+      "pass": true
+    },
+    {
+      "name": "all successful response usage reconciles",
+      "pass": true
+    },
+    {
+      "name": "all unresolved dispatch reservations reconcile",
+      "pass": true
+    },
+    {
+      "name": "configured identities and GLM limits",
+      "pass": true
+    },
+    {
+      "name": "served model identities",
+      "pass": true
+    },
+    {
+      "name": "provider-reported GLM output cap",
+      "pass": true
+    },
+    {
+      "name": "no reported server-side tools",
+      "pass": true
+    },
+    {
+      "name": "no completed study silently uses lexical fallback",
+      "pass": true
+    },
+    {
+      "name": "calibration graph outcomes/correct",
+      "pass": true
+    },
+    {
+      "name": "calibration graph token attribution",
+      "pass": true
+    },
+    {
+      "name": "calibration transcript outcomes/correct",
+      "pass": true
+    },
+    {
+      "name": "calibration transcript token attribution",
+      "pass": true
+    },
+    {
+      "name": "development-baseline graph outcomes/correct",
+      "pass": true
+    },
+    {
+      "name": "development-baseline graph token attribution",
+      "pass": true
+    },
+    {
+      "name": "development-baseline transcript outcomes/correct",
+      "pass": true
+    },
+    {
+      "name": "development-baseline transcript token attribution",
+      "pass": true
+    },
+    {
+      "name": "development-candidate graph outcomes/correct",
+      "pass": true
+    },
+    {
+      "name": "development-candidate graph token attribution",
+      "pass": true
+    },
+    {
+      "name": "development-candidate transcript outcomes/correct",
+      "pass": true
+    },
+    {
+      "name": "development-candidate transcript token attribution",
+      "pass": true
+    },
+    {
+      "name": "validation-selected graph outcomes/correct",
+      "pass": true
+    },
+    {
+      "name": "validation-selected transcript outcomes/correct",
+      "pass": true
+    },
+    {
+      "name": "frozen candidate selection replay",
+      "pass": true
+    }
+  ],
+  "providers": {
+    "zai": {
+      "attempts": 273,
+      "responses": 272,
+      "inputTokens": 950182,
+      "outputTokens": 164710,
+      "totalLatencyMs": 2665478,
+      "maxOutputTokens": 1024
+    },
+    "jev": {
+      "attempts": 118,
+      "responses": 118,
+      "inputTokens": 888522,
+      "outputTokens": 70994,
+      "totalLatencyMs": 15178,
+      "maxOutputTokens": 894,
+      "classifiedQuestions": 3983
+    }
+  },
+  "recallStatuses": {
+    "empty": 4,
+    "small_state": 14,
+    "ranked": 40
+  },
+  "unreturned": [
+    {
+      "id": 391,
+      "provider": "zai",
+      "context": {
+        "phase": "validation-selected",
+        "nodes": 12,
+        "seed": 227701,
+        "turn": 16,
+        "arm": "graph"
+      },
+      "reservation": 17850
+    }
+  ],
+  "budget": {
+    "calls": 391,
+    "knownTokens": 2074408,
+    "unresolvedReservedTokens": 17850,
+    "unknownUsageCalls": 0,
+    "maxCalls": 600,
+    "maxTokens": 3000000
+  },
+  "selectedNodes": 12,
+  "roundsSkipped": [
+    {
+      "nodes": 8,
+      "reason": "reserve 180 calls for validation plus 180 for candidate"
+    }
+  ],
+  "episodes": [
+    {
+      "phase": "calibration",
+      "nodes": 48,
+      "seed": 447701,
+      "complete": true,
+      "arms": {
+        "graph": {
+          "correct": 1,
+          "lateCorrect": 0,
+          "turns": 1,
+          "lateTurns": 0,
+          "protocolFailures": 0,
+          "parseErrors": 0,
+          "inputTokens": 1098,
+          "outputTokens": 142,
+          "calls": 1,
+          "latencyMs": 3156,
+          "meanEndToEndMs": 3156,
+          "truncatedResponses": 0,
+          "emptyVisibleResponses": 0,
+          "categories": {
+            "assignment": {
+              "correct": 1,
+              "total": 1
+            }
+          }
+        },
+        "transcript": {
+          "correct": 1,
+          "lateCorrect": 0,
+          "turns": 1,
+          "lateTurns": 0,
+          "protocolFailures": 0,
+          "parseErrors": 0,
+          "inputTokens": 421,
+          "outputTokens": 151,
+          "calls": 1,
+          "latencyMs": 4309,
+          "meanEndToEndMs": 4309,
+          "truncatedResponses": 0,
+          "emptyVisibleResponses": 0,
+          "categories": {
+            "assignment": {
+              "correct": 1,
+              "total": 1
+            }
+          }
+        }
+      },
+      "primary": null
+    },
+    {
+      "phase": "development-baseline",
+      "nodes": 48,
+      "seed": 117701,
+      "complete": true,
+      "arms": {
+        "graph": {
+          "correct": 17,
+          "lateCorrect": 1,
+          "turns": 60,
+          "lateTurns": 20,
+          "protocolFailures": 37,
+          "parseErrors": 37,
+          "inputTokens": 686835,
+          "outputTokens": 85820,
+          "calls": 113,
+          "latencyMs": 820277,
+          "meanEndToEndMs": 13671,
+          "truncatedResponses": 37,
+          "emptyVisibleResponses": 28,
+          "categories": {
+            "assignment": {
+              "correct": 7,
+              "total": 8
+            },
+            "sum": {
+              "correct": 0,
+              "total": 4
+            },
+            "correction": {
+              "correct": 4,
+              "total": 12
+            },
+            "revocation": {
+              "correct": 1,
+              "total": 4
+            },
+            "reactivation": {
+              "correct": 2,
+              "total": 4
+            },
+            "alias-chain": {
+              "correct": 2,
+              "total": 4
+            },
+            "alias-correction": {
+              "correct": 0,
+              "total": 4
+            },
+            "filtered-sum": {
+              "correct": 0,
+              "total": 4
+            },
+            "owner-aggregate": {
+              "correct": 0,
+              "total": 4
+            },
+            "owner-join": {
+              "correct": 0,
+              "total": 4
+            },
+            "latest": {
+              "correct": 1,
+              "total": 8
+            }
+          }
+        },
+        "transcript": {
+          "correct": 33,
+          "lateCorrect": 8,
+          "turns": 60,
+          "lateTurns": 20,
+          "protocolFailures": 19,
+          "parseErrors": 19,
+          "inputTokens": 160298,
+          "outputTokens": 25461,
+          "calls": 60,
+          "latencyMs": 425772,
+          "meanEndToEndMs": 7096,
+          "truncatedResponses": 17,
+          "emptyVisibleResponses": 19,
+          "categories": {
+            "assignment": {
+              "correct": 8,
+              "total": 8
+            },
+            "sum": {
+              "correct": 1,
+              "total": 4
+            },
+            "correction": {
+              "correct": 10,
+              "total": 12
+            },
+            "revocation": {
+              "correct": 0,
+              "total": 4
+            },
+            "reactivation": {
+              "correct": 4,
+              "total": 4
+            },
+            "alias-chain": {
+              "correct": 3,
+              "total": 4
+            },
+            "alias-correction": {
+              "correct": 3,
+              "total": 4
+            },
+            "filtered-sum": {
+              "correct": 1,
+              "total": 4
+            },
+            "owner-aggregate": {
+              "correct": 1,
+              "total": 4
+            },
+            "owner-join": {
+              "correct": 2,
+              "total": 4
+            },
+            "latest": {
+              "correct": 0,
+              "total": 8
+            }
+          }
+        }
+      },
+      "primary": {
+        "graph": {
+          "correct": 1,
+          "total": 20,
+          "accuracy": 0.05
+        },
+        "transcript": {
+          "correct": 8,
+          "total": 20,
+          "accuracy": 0.4
+        }
+      }
+    },
+    {
+      "phase": "development-candidate",
+      "nodes": 12,
+      "seed": 117701,
+      "complete": true,
+      "arms": {
+        "graph": {
+          "correct": 21,
+          "lateCorrect": 3,
+          "turns": 60,
+          "lateTurns": 20,
+          "protocolFailures": 37,
+          "parseErrors": 37,
+          "inputTokens": 700606,
+          "outputTokens": 85091,
+          "calls": 115,
+          "latencyMs": 798633,
+          "meanEndToEndMs": 13311,
+          "truncatedResponses": 37,
+          "emptyVisibleResponses": 37,
+          "categories": {
+            "assignment": {
+              "correct": 8,
+              "total": 8
+            },
+            "sum": {
+              "correct": 0,
+              "total": 4
+            },
+            "correction": {
+              "correct": 8,
+              "total": 12
+            },
+            "revocation": {
+              "correct": 2,
+              "total": 4
+            },
+            "reactivation": {
+              "correct": 2,
+              "total": 4
+            },
+            "alias-chain": {
+              "correct": 1,
+              "total": 4
+            },
+            "alias-correction": {
+              "correct": 0,
+              "total": 4
+            },
+            "filtered-sum": {
+              "correct": 0,
+              "total": 4
+            },
+            "owner-aggregate": {
+              "correct": 0,
+              "total": 4
+            },
+            "owner-join": {
+              "correct": 0,
+              "total": 4
+            },
+            "latest": {
+              "correct": 0,
+              "total": 8
+            }
+          }
+        },
+        "transcript": {
+          "correct": 38,
+          "lateCorrect": 9,
+          "turns": 60,
+          "lateTurns": 20,
+          "protocolFailures": 13,
+          "parseErrors": 13,
+          "inputTokens": 162447,
+          "outputTokens": 20759,
+          "calls": 60,
+          "latencyMs": 352714,
+          "meanEndToEndMs": 5879,
+          "truncatedResponses": 13,
+          "emptyVisibleResponses": 13,
+          "categories": {
+            "assignment": {
+              "correct": 8,
+              "total": 8
+            },
+            "sum": {
+              "correct": 3,
+              "total": 4
+            },
+            "correction": {
+              "correct": 11,
+              "total": 12
+            },
+            "revocation": {
+              "correct": 0,
+              "total": 4
+            },
+            "reactivation": {
+              "correct": 4,
+              "total": 4
+            },
+            "alias-chain": {
+              "correct": 4,
+              "total": 4
+            },
+            "alias-correction": {
+              "correct": 3,
+              "total": 4
+            },
+            "filtered-sum": {
+              "correct": 1,
+              "total": 4
+            },
+            "owner-aggregate": {
+              "correct": 1,
+              "total": 4
+            },
+            "owner-join": {
+              "correct": 1,
+              "total": 4
+            },
+            "latest": {
+              "correct": 2,
+              "total": 8
+            }
+          }
+        }
+      },
+      "primary": {
+        "graph": {
+          "correct": 3,
+          "total": 20,
+          "accuracy": 0.15
+        },
+        "transcript": {
+          "correct": 9,
+          "total": 20,
+          "accuracy": 0.45
+        }
+      }
+    },
+    {
+      "phase": "validation-selected",
+      "nodes": 12,
+      "seed": 227701,
+      "complete": false,
+      "arms": {
+        "graph": {
+          "correct": 10,
+          "lateCorrect": 0,
+          "turns": 15,
+          "lateTurns": 0,
+          "protocolFailures": 4,
+          "parseErrors": 4,
+          "inputTokens": 80471,
+          "outputTokens": 10207,
+          "calls": 23,
+          "latencyMs": 157429,
+          "meanEndToEndMs": 10495,
+          "truncatedResponses": 4,
+          "emptyVisibleResponses": 3,
+          "categories": {
+            "assignment": {
+              "correct": 7,
+              "total": 8
+            },
+            "sum": {
+              "correct": 0,
+              "total": 1
+            },
+            "correction": {
+              "correct": 1,
+              "total": 2
+            },
+            "revocation": {
+              "correct": 0,
+              "total": 1
+            },
+            "reactivation": {
+              "correct": 1,
+              "total": 1
+            },
+            "alias-chain": {
+              "correct": 1,
+              "total": 1
+            },
+            "alias-correction": {
+              "correct": 0,
+              "total": 1
+            }
+          }
+        },
+        "transcript": {
+          "correct": 12,
+          "lateCorrect": 0,
+          "turns": 15,
+          "lateTurns": 0,
+          "protocolFailures": 2,
+          "parseErrors": 2,
+          "inputTokens": 40407,
+          "outputTokens": 7627,
+          "calls": 15,
+          "latencyMs": 123640,
+          "meanEndToEndMs": 8243,
+          "truncatedResponses": 1,
+          "emptyVisibleResponses": 0,
+          "categories": {
+            "assignment": {
+              "correct": 6,
+              "total": 8
+            },
+            "sum": {
+              "correct": 1,
+              "total": 1
+            },
+            "correction": {
+              "correct": 2,
+              "total": 2
+            },
+            "revocation": {
+              "correct": 0,
+              "total": 1
+            },
+            "reactivation": {
+              "correct": 1,
+              "total": 1
+            },
+            "alias-chain": {
+              "correct": 1,
+              "total": 1
+            },
+            "alias-correction": {
+              "correct": 1,
+              "total": 1
+            }
+          }
+        }
+      },
+      "primary": null
+    }
+  ],
+  "limits": "Whole-system comparison: graph arm has paid native Jev retrieval; transcript does not. One development and one validation episode are descriptive, not a powered superiority test. Validation compares selected graph configuration with transcript, not default graph versus candidate. Final test remains untouched."
+}

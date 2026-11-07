@@ -83,6 +83,8 @@ node scripts/paired-ledger/analyze.mjs /path/to/terminated/receipt-directory
 
 The verifier checks the pinned source revision, deployment byte hashes and normalized transpiled JavaScript. The analyzer refuses active runs, verifies frozen participant/scorer hashes, reconciles requests and all known usage, replays candidate selection and leaves incomplete primary endpoints unavailable. Additional truncation/empty-output diagnostics are descriptive; they do not change the frozen endpoint or scorer.
 
-Actual paid execution is intentionally not a package-script default. It requires the explicitly authorized configured server environment, the deployed SDK `dist` path and a new receipt directory. Never invoke it as an incidental test or retry an existing receipt.
+Actual paid execution is intentionally not a package-script default.
+
+The archived v1 run ended at its deadline without a complete validation endpoint. See [recorded results and limitations](./RESULTS.md); this protocol is not authorization to rerun or resume it. It requires the explicitly authorized configured server environment, the deployed SDK `dist` path and a new receipt directory. Never invoke it as an incidental test or retry an existing receipt.
 
 Artifacts are a separately versioned pilot, never corrections to frozen earlier scores. Any stop must be reported honestly, including whether validation was reached.
