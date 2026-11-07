@@ -42,6 +42,7 @@
     "dev": "tsx src/demo.ts",
     "cli": "tsx src/cli.ts",
     "eval": "tsx src/evals/runEval.ts",
+    "eval:audit": "tsx scripts/audit-eval-graders.ts",
     "test": "vitest run",
     "prepublishOnly": "pnpm test && pnpm build",
     "repo:protect": "node scripts/protect-main.mjs"
