@@ -1,0 +1,137 @@
+{
+  "sourceRevision": "bcf490a5231cba70ba316578e24ceb26762d83d9",
+  "typescript": "5.9.3",
+  "method": "ES2022 TypeScript transpilation and JS AST printer normalization; excludes comments, not raw byte identity",
+  "matches": 32,
+  "total": 32,
+  "results": [
+    {
+      "file": "agent/agent.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "agent/baselineAgent.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "agent/focusReranker.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "agent/graphFrameAgent.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "agent/stateweaveRunner.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "agent/toolProtocol.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "agent/types.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "core/applyOps.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "core/causalGraph.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "core/causalHierarchy.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "core/causalProjection.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "core/causalTypes.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "core/causalVisualGraph.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "core/causalWeave.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "core/focusTypes.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "core/graph.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "core/input.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "core/projection.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "core/recallProjection.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "core/recallTypes.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "core/serialize.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "core/types.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "core/unicodeText.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "core/validateOps.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "core/visualize.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "llm/anthropicModel.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "llm/codexModel.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "llm/factory.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "llm/model.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "llm/tokenizer.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "integrations/jevFocus.js",
+      "normalizedEqual": true
+    },
+    {
+      "file": "integrations/jevRecall.js",
+      "normalizedEqual": true
+    }
+  ]
+}
