@@ -40,6 +40,10 @@ StateWeave is experimental. The core primitive is intentionally small and readab
 - No hidden message-history abstraction.
 - In-memory JSON graph for the MVP.
 
+## Bounded evaluation pilot
+
+See the [current-Agent / GLM Flash pilot protocol](docs/evaluations/glm-flash-native-pilot/PROTOCOL.md) for its independent deterministic oracle, offline checks, native-recall accounting and interpretation limits. It does not modify frozen benchmark results or the runtime in this checkout.
+
 ## Installation
 
 From source today:
