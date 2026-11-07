@@ -252,6 +252,10 @@ pnpm eval
 pnpm cli
 ```
 
+### Offline eval audit
+
+Run `pnpm eval:audit` to check the existing graders with synthetic positive and negative controls, without loading `.env`, starting a server, or calling a model. Exit code `1` means controls found grader defects; it is not a model-quality result. See the [repository eval audit and Hill Climb fit](./docs/EVAL_AUDIT.md) for pinned findings, raw results, and the provider-neutral comparison scope.
+
 ## Roadmap
 
 See [`ROADMAP.md`](./ROADMAP.md).

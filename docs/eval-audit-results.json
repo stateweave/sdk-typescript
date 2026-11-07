@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "evidence": "offline synthetic controls; no provider calls or server initialization",
+  "results": [
+    {
+      "branch": "main",
+      "revision": "8d11c609c0c5fc780be53b91a5d4cc2437be5802",
+      "sourceSha256": {
+        "src/evals/judge.ts": "9754de24a010bcf74741c462b5a6092adae1d2542e292efd0d13461239d8b832"
+      },
+      "exitCode": 1,
+      "controls": [
+        {
+          "id": "toy.correct-final",
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "id": "toy.empty-final",
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "id": "toy.graph-only-facts",
+          "expected": false,
+          "actual": true,
+          "passed": false
+        },
+        {
+          "id": "toy.wrong-final-with-graph-facts",
+          "expected": false,
+          "actual": true,
+          "passed": false
+        },
+        {
+          "id": "toy.unrelated-final",
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "id": "toy.forbidden-rewrite",
+          "expected": false,
+          "actual": false,
+          "passed": true
+        }
+      ],
+      "unavailable": [
+        "Web graders: src/web/server.ts is absent from this source tree."
+      ],
+      "passed": 4,
+      "failed": 2
+    },
+    {
+      "branch": "development",
+      "revision": "bcf490a5231cba70ba316578e24ceb26762d83d9",
+      "sourceSha256": {
+        "src/evals/judge.ts": "7cb7d439c80d0f44ef6e6926e72d1422873af267e9463dbecfdc12965fd57e89",
+        "src/web/server.ts": "0754ad8a01f9ce54790cfbe387907f091efb64f932820c2cea19dc2050d18e1a"
+      },
+      "exitCode": 1,
+      "controls": [
+        {
+          "id": "toy.correct-final",
+          "expected": true,
+          "actual": true,
+          "passed": true
+        },
+        {
+          "id": "toy.empty-final",
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "id": "toy.graph-only-facts",
+          "expected": false,
+          "actual": true,
+          "passed": false
+        },
+        {
+          "id": "toy.wrong-final-with-graph-facts",
+          "expected": false,
+          "actual": true,
+          "passed": false
+        },
+        {
+          "id": "toy.unrelated-final",
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "id": "toy.forbidden-rewrite",
+          "expected": false,
+          "actual": false,
+          "passed": true
+        },
+        {
+          "id": "web.label-a",
+          "expected": "a",
+          "actual": "a",
+          "passed": true
+        },
+        {
+          "id": "web.label-b",
+          "expected": "b",
+          "actual": "b",
+          "passed": true
+        },
+        {
+          "id": "web.label-both",
+          "expected": "both",
+          "actual": "b",
+          "passed": false
+        },
+        {
+          "id": "web.label-neither",
+          "expected": "neither",
+          "actual": "neither",
+          "passed": true
+        },
+        {
+          "id": "web.malformed-unscored",
+          "expected": true,
+          "actual": false,
+          "passed": false
+        },
+        {
+          "id": "web.prefix-label-unscored",
+          "expected": true,
+          "actual": false,
+          "passed": false
+        },
+        {
+          "id": "web.identical-wrong-not-promoted",
+          "expected": true,
+          "actual": false,
+          "passed": false
+        }
+      ],
+      "unavailable": [],
+      "passed": 7,
+      "failed": 6
+    }
+  ]
+}
