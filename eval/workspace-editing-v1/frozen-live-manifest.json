@@ -1,6 +1,6 @@
 {
   "protocolId": "workspace-editing-v1-glm-live-20261108",
-  "implementationRevision": "2be6e6b",
+  "implementationRevision": "2be6e6bb1e0498f5938194557e109d71299419a9",
   "executionAck": "run-workspace-editing-v1-glm-20261108",
   "approvedAt": "2026-11-08",
   "expectedEndpoint": {
