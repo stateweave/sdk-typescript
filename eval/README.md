@@ -28,12 +28,15 @@ is multi-turn JSON/SVG workspace editing grounded in retained SDK tool/runner
 regressions, graded on actual final workspace effects and any requested answers.
 Record exact source paths and revision, permissions, retention constraints, and
 expected-output provenance.
-Documentation/regression-derived proposals are not production traffic and still
-require input approval; selecting the product did not approve actual cases.
+Documentation/regression-derived proposals are not production traffic. The user
+explicitly approved the five synthetic seeds in `workspace-editing-v1/cases.json`
+after reviewing their complete initial files and twenty turns. That input sign-off
+does not approve an expanded cohort.
 
-Show the complete proposed inputs to the user and obtain explicit approval.
-Then demonstrate actual graded outputs and obtain a separate grading sign-off.
-Until then, do not invent a dataset or claim that the evaluation is runnable.
+The deterministic actual-output grader in `workspace-editing-v1/` is now under
+separate review. Demonstrate its grades on explicit reference and wrong outputs
+and obtain grading sign-off before building a model runner. Do not claim that the
+comparison is runnable or has a baseline.
 
 ## Construction requirements
 

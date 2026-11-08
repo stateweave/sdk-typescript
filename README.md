@@ -94,7 +94,7 @@ Agent state imports are validated. Calls serialize in invocation order and commi
 
 The previous evaluation systems, datasets, and reports have been removed from the active tree; Git history retains them. There is no current baseline, live comparison runner, or result.
 
-A fresh comparison must use `GraphFrame -> GraphOps -> StateGraph` directly, not `Agent`. The user selected the current StateWeave SDK code/docs as the source for fresh product-derived task proposals. The selected workflow is multi-turn JSON/SVG workspace editing grounded in retained SDK tool/runner regressions. Complete inputs, actual-output grading, provider/model, and execution/token budgets still need approval. Documentation/regression-derived tasks are not production traffic; do not recycle deleted cases or harnesses, invent a baseline, or automatically run experiments. No model/provider change, corpus, benchmark result, or performance claim is implied by this clean start.
+A fresh comparison must use `GraphFrame -> GraphOps -> StateGraph` directly, not `Agent`. The user selected the current StateWeave SDK code/docs as the source for fresh product-derived task proposals. The selected workflow is multi-turn JSON/SVG workspace editing grounded in retained SDK tool/runner regressions. The five synthetic seeds in `eval/workspace-editing-v1/cases.json` have input approval; they are not production traffic. Their deterministic actual-output grader remains under separate review. Provider/model, execution/token budgets, and any expanded cohort still need approval. Do not recycle deleted cases or harnesses, invent a baseline, or automatically run experiments. No model/provider change, corpus, benchmark result, or performance claim is implied by this clean start.
 
 ## Release safety
 

@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "kind": "synthetic-regression-derived",
+    "revision": "d4d91fe434758e20c072a89fab4f49947e2bd19d",
+    "inputApproval": "User approved all five seeds after reviewing SEED-INPUTS.md",
+    "productionTraffic": false
+  },
+  "commonInstructions": "You are maintaining a small demo workspace. Follow the user turns in order. Only the paths listed as editable may be created or changed. All other listed files must remain byte-for-byte unchanged. Do not create extra files. Use the workspace file tools; there is no shell, external network, or worker. Do not execute generated files. SVG must remain inert and self-contained: no scripts, event-handler attributes, foreignObject, or external references. Changes supersede earlier instructions only when the user says so; preserve all other requirements and unrelated data. You may read, edit, or rewrite an editable file; no specific tool-call sequence is required. JSON object key order and insignificant formatting are not requirements unless stated. When the user requests a JSON final answer, return exactly one JSON object, without a Markdown fence. Otherwise the final answer may be brief prose.",
+  "cases": [
+    {
+      "id": "SDKWS-01",
+      "title": "Refine an SVG panel",
+      "editable": ["assets/panel.svg"],
+      "initialFiles": {
+        "assets/panel.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 160 80\">\n  <rect id=\"background\" x=\"0\" y=\"0\" width=\"160\" height=\"80\" fill=\"#ffffff\"/>\n  <rect id=\"indicator\" x=\"16\" y=\"24\" width=\"24\" height=\"24\" fill=\"#64748b\"/>\n  <text id=\"caption\" x=\"52\" y=\"41\" fill=\"#111827\">Draft</text>\n</svg>\n"
+      },
+      "turns": [
+        "In assets/panel.svg, make the indicator 48 units wide and 12 high, move its y to 34, and use fill #0f766e. Keep its x unchanged. Keep the background, caption, viewBox, and element identities unchanged. Do not add or remove elements.",
+        "Change the caption to SDK ready, at x=74 and y=43. Keep its existing text color. Preserve the indicator changes and every other requirement.",
+        "Revise just the indicator width: use 36, not 48. Its height, position, and color still stand. Do not change the caption or background.",
+        "Use SDK queued instead of SDK ready for the caption. Preserve every other agreed property and leave the completed artifact in assets/panel.svg."
+      ],
+      "expectedFiles": {
+        "assets/panel.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 160 80\">\n  <rect id=\"background\" x=\"0\" y=\"0\" width=\"160\" height=\"80\" fill=\"#ffffff\"/>\n  <rect id=\"indicator\" x=\"16\" y=\"34\" width=\"36\" height=\"12\" fill=\"#0f766e\"/>\n  <text id=\"caption\" x=\"74\" y=\"43\" fill=\"#111827\">SDK queued</text>\n</svg>\n"
+      }
+    },
+    {
+      "id": "SDKWS-02",
+      "title": "Update nested fixture options",
+      "editable": ["fixtures/viewer.json"],
+      "initialFiles": {
+        "fixtures/viewer.json": "{\n  \"workspace\": \"sdk-demo\",\n  \"viewport\": { \"width\": 640, \"height\": 360 },\n  \"export\": { \"format\": \"svg\", \"transparent\": false },\n  \"metadata\": { \"owner\": \"Mira\", \"note\": null },\n  \"tags\": [\"inspector\", \"fixture\"]\n}\n",
+        "fixtures/reference.json": "{\"doNotModify\":\"reference-v1\",\"checksumLabel\":\"fixture-only\"}\n"
+      },
+      "turns": [
+        "In fixtures/viewer.json, change the viewport width to 1024 and enable transparent export. Preserve the height and every unrelated value. The reference file is not editable.",
+        "Add metadata.reviewed as the Boolean false. Set metadata.note to this exact text, without the surrounding backticks: `He said \"keep <g>\" — café`. Preserve the owner, export settings, dimensions, and tags.",
+        "Set the viewport height to 576. Append manual to the tags once, after the two existing tags. Keep their order and all earlier changes.",
+        "Turn transparent export off again, using the Boolean false, not a string. Keep every other agreed change. Do not add any other keys or files."
+      ],
+      "expectedFiles": {
+        "fixtures/viewer.json": "{\n  \"workspace\": \"sdk-demo\",\n  \"viewport\": { \"width\": 1024, \"height\": 576 },\n  \"export\": { \"format\": \"svg\", \"transparent\": false },\n  \"metadata\": {\n    \"owner\": \"Mira\",\n    \"note\": \"He said \\\"keep <g>\\\" — café\",\n    \"reviewed\": false\n  },\n  \"tags\": [\"inspector\", \"fixture\", \"manual\"]\n}\n",
+        "fixtures/reference.json": "{\"doNotModify\":\"reference-v1\",\"checksumLabel\":\"fixture-only\"}\n"
+      }
+    },
+    {
+      "id": "SDKWS-03",
+      "title": "Verify an already-correct manual setup",
+      "editable": ["settings/manual.json"],
+      "initialFiles": {
+        "settings/manual.json": "{\n  \"workspaceLabel\": \"canvas-check-q7\",\n  \"mode\": \"manual\",\n  \"autoRun\": false,\n  \"reviewers\": [\"nora\", \"li\", \"sam\"],\n  \"displayScale\": 2,\n  \"annotation\": null\n}\n"
+      },
+      "turns": [
+        "Check settings/manual.json. This demo must use manual mode with automatic runs disabled. If it already meets that requirement, do not write the file. Report the mode and autoRun values you found.",
+        "The reviewers list must have three distinct non-empty names. Check it and report the count. Do not replace already-correct reviewers.",
+        "Check that displayScale is 2 and annotation is JSON null, not an empty string. Do not change values that are already correct.",
+        "Return one JSON object with exactly these keys: changeNeeded, reviewerCount, displayScale, mode, autoRun, annotation, workspaceLabel. Include the actual workspaceLabel stored in the file. changeNeeded means whether any requirement from this conversation still needs a correction now. Do not modify the file merely to reformat it, and do not create any other files."
+      ],
+      "expectedFiles": {
+        "settings/manual.json": "{\n  \"workspaceLabel\": \"canvas-check-q7\",\n  \"mode\": \"manual\",\n  \"autoRun\": false,\n  \"reviewers\": [\"nora\", \"li\", \"sam\"],\n  \"displayScale\": 2,\n  \"annotation\": null\n}\n"
+      },
+      "expectedFinalAnswer": {
+        "changeNeeded": false,
+        "reviewerCount": 3,
+        "displayScale": 2,
+        "mode": "manual",
+        "autoRun": false,
+        "annotation": null,
+        "workspaceLabel": "canvas-check-q7"
+      }
+    },
+    {
+      "id": "SDKWS-04",
+      "title": "Edit repeated labels without conflating cards",
+      "editable": ["fixtures/cards.json"],
+      "initialFiles": {
+        "fixtures/cards.json": "{\n  \"cards\": [\n    { \"id\": \"left\", \"label\": \"Draft\", \"color\": \"slate\" },\n    { \"id\": \"right\", \"label\": \"Draft\", \"color\": \"slate\" }\n  ],\n  \"selection\": \"right\"\n}\n"
+      },
+      "turns": [
+        "Change only the right card's label from Draft to Ready. Keep the left card and both colors unchanged. Preserve the cards' order and identities.",
+        "Set only the left card's color to teal. Keep both labels as currently requested and leave the selected card unchanged.",
+        "Select the left card instead of the right card. Make no other changes.",
+        "Change the currently selected card's label to Review. Keep the other card's latest label, preserve both colors, and do not add keys or files."
+      ],
+      "expectedFiles": {
+        "fixtures/cards.json": "{\n  \"cards\": [\n    { \"id\": \"left\", \"label\": \"Review\", \"color\": \"teal\" },\n    { \"id\": \"right\", \"label\": \"Ready\", \"color\": \"slate\" }\n  ],\n  \"selection\": \"left\"\n}\n"
+      }
+    },
+    {
+      "id": "SDKWS-05",
+      "title": "Keep catalog and preview consistent",
+      "editable": ["assets/catalog.json", "docs/preview.json"],
+      "initialFiles": {
+        "assets/catalog.json": "{\n  \"selected\": \"alpha\",\n  \"items\": [\n    { \"id\": \"alpha\", \"file\": \"alpha.svg\", \"title\": \"Alpha\" },\n    { \"id\": \"beta\", \"file\": \"beta.svg\", \"title\": \"Beta\" }\n  ]\n}\n",
+        "docs/preview.json": "{\n  \"title\": \"Preview\",\n  \"activeId\": \"alpha\",\n  \"activeFile\": \"alpha.svg\",\n  \"showGrid\": false\n}\n",
+        "assets/alpha.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><circle id=\"alpha\" cx=\"16\" cy=\"16\" r=\"10\"/></svg>\n",
+        "assets/beta.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><rect id=\"beta\" x=\"6\" y=\"6\" width=\"20\" height=\"20\"/></svg>\n"
+      },
+      "turns": [
+        "Select beta in assets/catalog.json. Set docs/preview.json's activeId and activeFile to that item's id and file. Do not change showGrid or either SVG. Preserve item order, identities, and unrelated values.",
+        "Rename beta's catalog title to Wave mark. The preview title must now match the selected item's title instead of the generic Preview label. Preserve all other requirements.",
+        "Switch the selected item back to alpha. Update the preview's activeId, activeFile, and title from that newly selected item. Keep beta's renamed title for later use, and do not change showGrid.",
+        "Set showGrid in docs/preview.json to the Boolean true. Preserve every other latest requirement. Do not add keys, reorder items, create files, or edit the SVG assets."
+      ],
+      "expectedFiles": {
+        "assets/catalog.json": "{\n  \"selected\": \"alpha\",\n  \"items\": [\n    { \"id\": \"alpha\", \"file\": \"alpha.svg\", \"title\": \"Alpha\" },\n    { \"id\": \"beta\", \"file\": \"beta.svg\", \"title\": \"Wave mark\" }\n  ]\n}\n",
+        "docs/preview.json": "{\n  \"title\": \"Alpha\",\n  \"activeId\": \"alpha\",\n  \"activeFile\": \"alpha.svg\",\n  \"showGrid\": true\n}\n",
+        "assets/alpha.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><circle id=\"alpha\" cx=\"16\" cy=\"16\" r=\"10\"/></svg>\n",
+        "assets/beta.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><rect id=\"beta\" x=\"6\" y=\"6\" width=\"20\" height=\"20\"/></svg>\n"
+      }
+    }
+  ]
+}
