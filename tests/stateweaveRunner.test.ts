@@ -110,6 +110,22 @@ it("records failed mutations as rejected evidence without committing proposed se
   }
 });
 
+it("does not count a failed write as workspace mutation evidence", async () => {
+  const failedWrite: Tool = {
+    name: "write_file",
+    description: "Reject every write.",
+    schema: z.object({ file_path: z.string(), content: z.string() }),
+    execute: async () => ({ ok: false, error: "synthetic write failure" })
+  };
+  const model = new SequenceModel([
+    "SWX/1\n@tool write_file file_path=config.txt content=ready",
+    'SWX/1\n@final "Updated config.txt."'
+  ]);
+
+  await expect(runStateWeave({ model, tools: [failedWrite], maxIterations: 2 }, "Update file config.txt to ready"))
+    .rejects.toThrow(/requires workspace mutation evidence/);
+});
+
 it("counts full-shell workspace changes as mutation evidence", async () => {
   const bashTool: Tool = {
     name: "bash_command",

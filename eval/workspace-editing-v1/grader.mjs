@@ -24,7 +24,7 @@ export async function gradeWorkspaceEditingCase({ caseId, workspaceDir, finalAns
     try {
       contents[relativePath] = await readFile(path.join(workspaceDir, relativePath), "utf8");
     } catch (error) {
-      failures.push(`cannot read ${relativePath}: ${errorMessage(error)}`);
+      throw new Error(`grader cannot read ${relativePath}: ${errorMessage(error)}`);
     }
   }
 
@@ -105,9 +105,14 @@ function gradeJsonFile(item, contents, relativePath, failures) {
     failures.push(`missing ${relativePath}`);
     return;
   }
+  let expected;
+  try {
+    expected = parseJsonNoDuplicateKeys(item.expectedFiles[relativePath]);
+  } catch (error) {
+    throw new Error(`grader expected state for ${relativePath} is invalid: ${errorMessage(error)}`);
+  }
   try {
     const actual = parseJsonNoDuplicateKeys(actualText);
-    const expected = parseJsonNoDuplicateKeys(item.expectedFiles[relativePath]);
     if (!isDeepStrictEqual(actual, expected)) failures.push(`${relativePath} has the wrong JSON value`);
   } catch (error) {
     failures.push(`${relativePath} is not strict JSON: ${errorMessage(error)}`);
@@ -207,8 +212,7 @@ async function listWorkspaceFiles(root, failures) {
     try {
       entries = await readdir(path.join(root, relative), { withFileTypes: true });
     } catch (error) {
-      failures.push(`cannot enumerate workspace: ${errorMessage(error)}`);
-      return;
+      throw new Error(`grader cannot enumerate workspace: ${errorMessage(error)}`);
     }
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       const child = path.posix.join(relative.split(path.sep).join(path.posix.sep), entry.name);

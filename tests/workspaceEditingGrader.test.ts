@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { expect, it } from "vitest";
+import { gradeWorkspaceEditingCase } from "../eval/workspace-editing-v1/grader.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -22,4 +23,12 @@ it("passes reference outputs and rejects workspace-editing negative controls", a
   expect(report.results.find((item) => item.control === "SDKWS-03-oracle")?.grade).toMatchObject({ taskOutcome: true, answerCorrect: true });
   expect(report.results.find((item) => item.control === "SDKWS-03-empty-answer")?.grade).toMatchObject({ taskOutcome: false, workspaceCorrect: true, answerCorrect: false });
   expect(report.results.find((item) => item.control === "SDKWS-03-needless-reformat")?.grade).toMatchObject({ taskOutcome: false, workspaceCorrect: false, answerCorrect: true });
+});
+
+it("throws on grader workspace I/O failure instead of manufacturing a task failure", async () => {
+  await expect(gradeWorkspaceEditingCase({
+    caseId: "SDKWS-03",
+    workspaceDir: "/definitely/missing/stateweave-grader-workspace",
+    finalAnswer: "{}"
+  })).rejects.toThrow(/grader cannot enumerate workspace/);
 });

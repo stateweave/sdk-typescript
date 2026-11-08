@@ -329,8 +329,7 @@ function failedToolOutcome(originalFrame: GraphFrame, op: Extract<GraphOp, { op:
   next.frame.lastGraphOpsError = `Tool ${op.tool} failed: ${message}`;
   next.frame.currentFocus = `The ${op.tool} operation failed without committing its proposed semantic GraphOps. Use the rejected tool_result and current file evidence to correct the call.`;
   next.frame.nextExpectedOutput = "Do not claim success. Address the concrete failure, re-read stale files when needed, then retry one corrected tool operation.";
-  const mutationPaths = toolMutationPaths(op.tool, op.args, result);
-  return { ...emptyToolOutcome(next), mutationSucceeded: mutationPaths.length > 0, ...(mutationPaths.length ? { mutatedPaths: mutationPaths } : {}) };
+  return emptyToolOutcome(next);
 }
 
 function toolMutationPaths(tool: string, args: Record<string, unknown>, result: unknown): string[] {
