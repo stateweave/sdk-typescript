@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { Agent } from "../src/agent/agent.js";
+import { Agent, type Model } from "../src/index.js";
 import { parseToolCall } from "../src/agent/toolProtocol.js";
-import type { Model } from "../src/llm/model.js";
 
 function model(outputs: string[]): Model {
  let index=0;

@@ -7,8 +7,10 @@ coverage
 .github
 .env
 .env.*
-src/traces/*.json
-traces/*.json
+src/traces
+traces
+.stateweave
+*.tgz
 *.log
 .mintlify
 .next

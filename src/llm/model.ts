@@ -74,61 +74,34 @@ export class MockModel implements Model {
     const source = input.frame ? frameText(input.frame) : input.prompt;
     const inputNodeId = input.frame?.frame.latestInputNodeId ?? "user_input_1";
     const lower = source.toLowerCase();
-    if (lower.includes("evaluate a blind a/b answer comparison")) return mockJudge(source);
-    if (source.includes("LONG_HORIZON_DIRECTOR/1")) return "Explain why ocean tides occur and distinguish the roles of the Moon and the Sun. Keep the answer under 200 words.";
-    if (input.mode === "text" && input.prompt.startsWith("Summarize the following older coding-agent transcript")) return mockCompactionSummary();
     const identity = identityOutput(source, inputNodeId);
     const task = inferTask(lower);
     if (input.prompt.startsWith("CAUSAL_WEAVE/1") || input.prompt.startsWith("MOLECULAR_WEAVE/1")) return `FINAL: ${identity?.answer ?? finalFor(task)}`;
-    if (input.mode === "text" && input.prompt.startsWith("SYSTEM:") && input.prompt.includes("transcript is your complete working memory")) return `FINAL: ${identity?.answer ?? finalFor(task)}`;
     if (identity && input.mode === "text") return identity.answer;
-    if (identity && input.mode !== "text") return identity.swx;
+    if (identity && input.mode !== "text") return identity.ops;
 
     const hasToolResult = input.frame?.graph.nodes.some((node) => node.type === "tool_result") ?? input.prompt.toLowerCase().includes("tool_result");
     if (input.mode === "text") return finalFor(task);
 
     if (!hasToolResult && source.includes(`tool:${toolFor(task)}`)) {
       return [
-        "SWX/1",
-        `@edge system_root follows ${inputNodeId}`,
-        `@node hypothesis_${task} hypothesis "${hypothesisFor(task)}" confidence=0.72 status=active`,
-        `@edge ${inputNodeId} supports hypothesis_${task}`,
-        `@tool ${toolFor(task)} ${argsForSwx(task)}`
+        "SW2",
+        `N hypothesis_${task} hypothesis "${hypothesisFor(task)}"`,
+        `E ${inputNodeId} supports hypothesis_${task}`,
+        `T ${toolFor(task)} ${toolArgsText(task)}`
       ].join("\n");
     }
 
     return [
-      "SWX/1",
-      `@edge system_root follows ${inputNodeId}`,
-      `@node decision_${task} decision "${finalFor(task)}" confidence=0.86 status=resolved`,
-      `@edge ${inputNodeId} supports decision_${task}`,
-      `@final "${finalFor(task)}"`
+      "SW2",
+      `N decision_${task} decision "${finalFor(task)}" resolved`,
+      `E ${inputNodeId} supports decision_${task}`,
+      `F "${finalFor(task)}"`
     ].join("\n");
   }
 }
 
-function mockCompactionSummary(): string {
-  return [
-    "User facts: Preserve explicit user identity, preferences, and durable corrections from the prior transcript.",
-    "Artifacts and files: Preserve every confirmed path, the purpose of each artifact, and whether tool evidence verified its creation or inspection.",
-    "Decisions and constraints: Keep the active system constraints, requested output formats, implementation decisions, and later corrections that supersede older instructions.",
-    "Failures and corrections: Retain unresolved failures and distinguish confirmed tool results from unsupported claims.",
-    "Unresolved work: Continue only tasks explicitly left incomplete; do not infer completion from planning prose.",
-    "The retained latest messages remain authoritative for immediate context. This summary is durable working memory of older committed turns and contains no new tool claims."
-  ].join("\n\n");
-}
-
-function mockJudge(source: string): string {
-  const gold = source.match(/GOLD ANSWER:\n([\s\S]*?)\n\nANSWER A:/)?.[1]?.trim().toLowerCase() ?? "";
-  const answerA = source.match(/ANSWER A:\n([\s\S]*?)\n\nANSWER B:/)?.[1]?.trim().toLowerCase() ?? "";
-  const answerB = source.match(/ANSWER B:\n([\s\S]*?)\n\nReturn exactly:/)?.[1]?.trim().toLowerCase() ?? "";
-  const a = Boolean(gold && answerA.includes(gold));
-  const b = Boolean(gold && answerB.includes(gold));
-  const winner = a && b ? "BOTH" : a ? "A" : b ? "B" : "NEITHER";
-  return `WINNER: ${winner}\nREASON: Mock judge compared answers to the gold string.`;
-}
-
-function identityOutput(source: string, inputNodeId: string): { answer: string; swx: string } | undefined {
+function identityOutput(source: string, inputNodeId: string): { answer: string; ops: string } | undefined {
   const name = source.match(/my name is\s+([a-z][a-z0-9_-]*)/i)?.[1];
   const asksName = /what(?:'| i)?s my name|what is my name/i.test(source);
   if (!name) return undefined;
@@ -136,12 +109,11 @@ function identityOutput(source: string, inputNodeId: string): { answer: string; 
   const answer = asksName ? `Your name is ${name}.` : `Nice to meet you, ${name}.`;
   return {
     answer,
-    swx: [
-      "SWX/1",
-      `@edge system_root follows ${inputNodeId}`,
-      `@node fact_user_name fact "The user's name is ${name}." confidence=1 status=active`,
-      `@edge ${inputNodeId} supports fact_user_name`,
-      `@final "${answer}"`
+    ops: [
+      "SW2",
+      `N fact_user_name fact "The user's name is ${name}."`,
+      `E ${inputNodeId} supports fact_user_name`,
+      `F "${answer}"`
     ].join("\n")
   };
 }
@@ -168,7 +140,7 @@ function argsFor(task: "login" | "payment" | "api"): Record<string, unknown> {
   return { path: "auth.ts" };
 }
 
-function argsForSwx(task: "login" | "payment" | "api"): string {
+function toolArgsText(task: "login" | "payment" | "api"): string {
   return Object.entries(argsFor(task)).map(([key, value]) => `${key}="${String(value)}"`).join(" ");
 }
 

@@ -21,6 +21,9 @@ const defaultMaxOutputBytes = 64_000;
 const defaultReadLimit = 500;
 const defaultAllowedBashCommands = ["pwd", "ls", "find", "rg", "grep", "head", "tail", "wc", "sort", "uniq", "diff", "cmp", "node"];
 
+// Full SHA-256 hex, or a prefix of at least 12 chars (as shown in the frame's FILES list).
+const hashSchema = z.string().regex(/^[0-9a-fA-F]{12,64}$/, "expected_hash must be 12-64 hex chars of content_hash");
+
 const readFileSchema = z.object({
   file_path: z.string().min(1).optional(),
   path: z.string().min(1).optional(),
@@ -34,8 +37,8 @@ const writeFileSchema = z.object({
   file_path: z.string().min(1).optional(),
   path: z.string().min(1).optional(),
   content: z.string(),
-  expected_hash: z.string().min(8).optional(),
-  expectedHash: z.string().min(8).optional()
+  expected_hash: hashSchema.optional(),
+  expectedHash: hashSchema.optional()
 }).superRefine(requireFilePath);
 
 const booleanArgSchema = z.preprocess((value) => {
@@ -53,8 +56,8 @@ const editFileSchema = z.object({
   newText: z.string().optional(),
   replace_all: booleanArgSchema,
   replaceAll: booleanArgSchema,
-  expected_hash: z.string().min(8).optional(),
-  expectedHash: z.string().min(8).optional()
+  expected_hash: hashSchema.optional(),
+  expectedHash: hashSchema.optional()
 }).superRefine((args, context) => {
   requireFilePath(args, context);
   if (args.old_string === undefined && args.oldText === undefined) context.addIssue({ code: z.ZodIssueCode.custom, message: "old_string is required" });
@@ -73,89 +76,103 @@ export function createDefaultTools(options: FileSystemToolsOptions = {}): Tool[]
 
 export function createFileSystemTools(options: FileSystemToolsOptions = {}): Tool[] {
   const rootDir = path.resolve(/* turbopackIgnore: true */ options.rootDir ?? process.env.STATEWEAVE_WORKSPACE_DIR ?? ".stateweave/workspace");
-  const timeoutMs = options.timeoutMs ?? numberEnv(process.env.STATEWEAVE_TOOL_TIMEOUT_MS) ?? defaultTimeoutMs;
-  const maxOutputBytes = options.maxOutputBytes ?? numberEnv(process.env.STATEWEAVE_TOOL_MAX_OUTPUT_BYTES) ?? defaultMaxOutputBytes;
-  const allowedBashCommands = new Set(options.allowedBashCommands ?? defaultAllowedBashCommands);
+  const bash: BashConfig = {
+    rootDir,
+    timeoutMs: options.timeoutMs ?? numberEnv(process.env.STATEWEAVE_TOOL_TIMEOUT_MS) ?? defaultTimeoutMs,
+    maxOutputBytes: options.maxOutputBytes ?? numberEnv(process.env.STATEWEAVE_TOOL_MAX_OUTPUT_BYTES) ?? defaultMaxOutputBytes,
+    allowedCommands: new Set(options.allowedBashCommands ?? defaultAllowedBashCommands)
+  };
+  return [readFileTool(rootDir), writeFileTool(rootDir), editFileTool(rootDir), bashCommandTool(bash)];
+}
 
-  return [
-    {
-      name: "read_file",
-      description: `Read a UTF-8 text file from the agent workspace (${rootDir}). Returns content plus a SHA-256 content_hash for safe edits. Args: file_path, optional offset (0-indexed line), limit. Alias: path/startLine/maxLines.`,
-      schema: readFileSchema,
-      async execute(args: unknown) {
-        const parsed = normalizeReadFileArgs(args);
-        const filePath = await resolveWorkspacePath(rootDir, parsed.filePath);
-        const content = await readFile(filePath, "utf8");
-        const lines = content.split(/\r?\n/);
-        const limited = lines.slice(parsed.offset, parsed.offset + parsed.limit).join("\n");
-        return { path: parsed.filePath, file_path: parsed.filePath, offset: parsed.offset, limit: parsed.limit, content: limited, content_hash: contentHash(content) };
-      }
-    },
-    {
-      name: "write_file",
-      description: `Create or overwrite a UTF-8 text file inside the agent workspace (${rootDir}). Args: file_path, content, optional expected_hash from read_file. For multiline/SVG/HTML/code content in SWX, use content_ref=<block_id>. Alias: path.`,
-      schema: writeFileSchema,
-      async execute(args: unknown) {
-        const parsed = normalizeWriteFileArgs(args);
-        await mkdir(rootDir, { recursive: true });
-        const filePath = await resolveWorkspacePath(rootDir, parsed.filePath);
-        await assertExpectedHash(filePath, parsed.expectedHash);
-        await mkdir(path.dirname(filePath), { recursive: true });
-        await writeFile(filePath, parsed.content, "utf8");
-        return { path: parsed.filePath, file_path: parsed.filePath, bytes: Buffer.byteLength(parsed.content), content_hash: contentHash(parsed.content), ok: true };
-      }
-    },
-    {
-      name: "edit_file",
-      description: `Edit one UTF-8 text file inside the agent workspace (${rootDir}) by exact replacement. Args: file_path, old_string, new_string, optional replace_all and expected_hash from read_file. old_string must match exactly and be unique unless replace_all=true. For multiline edits in SWX, use old_string_ref/new_string_ref blocks. Aliases: path/oldText/newText/replaceAll.`,
-      schema: editFileSchema,
-      async execute(args: unknown) {
-        const parsed = normalizeEditFileArgs(args);
-        const filePath = await resolveWorkspacePath(rootDir, parsed.filePath);
-        const content = await readFile(filePath, "utf8");
-        assertContentHash(content, parsed.expectedHash, parsed.filePath);
-        if (parsed.oldString === parsed.newString) throw new Error(`Refusing a no-op edit: old_string and new_string are identical. Quote complete one-line values or use old_string_ref/new_string_ref blocks.\nCurrent file preview:\n${filePreview(content)}`);
-        const replacement = replaceExact(content, parsed.oldString, parsed.newString, parsed.replaceAll);
-        if (typeof replacement === "string") throw new Error(`${replacement}\nQuote complete one-line values or use old_string_ref/new_string_ref blocks.\nCurrent file preview:\n${filePreview(content)}`);
-        await writeFile(filePath, replacement.content, "utf8");
-        return { path: parsed.filePath, file_path: parsed.filePath, replacements: replacement.occurrences, occurrences: replacement.occurrences, content_hash: contentHash(replacement.content), ok: true };
-      }
-    },
-    {
-      name: "bash_command",
-      description: `Run a read-only, allowlisted shell command in the agent workspace (${rootDir}). Allowed commands: ${[...allowedBashCommands].join(", ")}. Shell expansion, redirects, pipes, command substitution, absolute paths, and parent traversal are blocked. node is limited to --check. Args: command, optional timeout_ms. Alias: timeoutMs.`,
-      schema: bashCommandSchema,
-      async execute(args: unknown) {
-        const parsed = normalizeBashCommandArgs(args);
-        validateBashCommand(parsed.command, allowedBashCommands);
-        await mkdir(rootDir, { recursive: true });
-        await validateBashWorkspacePaths(parsed.command, rootDir);
-        try {
-          let stdout = "";
-          let stderr = "";
-          for (const segment of commandSegments(parsed.command)) {
-            const result = await execFileAsync(segment[0]!, segment.slice(1), {
-              cwd: rootDir,
-              env: safeToolEnv(rootDir),
-              timeout: Math.min(parsed.timeoutMs ?? timeoutMs, 60_000),
-              maxBuffer: maxOutputBytes
-            });
-            stdout += result.stdout;
-            stderr += result.stderr;
-          }
-          return { exitCode: 0, stdout: truncate(stdout, maxOutputBytes), stderr: truncate(stderr, maxOutputBytes) };
-        } catch (error) {
-          const failure = error as Error & { stdout?: string; stderr?: string; code?: number | string; signal?: string };
-          return {
-            exitCode: typeof failure.code === "number" ? failure.code : 1,
-            signal: failure.signal,
-            stdout: truncate(failure.stdout ?? "", maxOutputBytes),
-            stderr: truncate(failure.stderr ?? failure.message, maxOutputBytes)
-          };
-        }
-      }
+type BashConfig = { rootDir: string; timeoutMs: number; maxOutputBytes: number; allowedCommands: Set<string> };
+
+function readFileTool(rootDir: string): Tool {
+  return {
+    name: "read_file",
+    description: "Read a UTF-8 workspace file. Args: path, [offset] (0-indexed line), [limit]. Returns content + content_hash.",
+    schema: readFileSchema,
+    async execute(args: unknown) {
+      const parsed = normalizeReadFileArgs(args);
+      const filePath = await resolveWorkspacePath(rootDir, parsed.filePath);
+      const content = await readFile(filePath, "utf8");
+      const lines = content.split(/\r?\n/);
+      const limited = lines.slice(parsed.offset, parsed.offset + parsed.limit).join("\n");
+      return { path: parsed.filePath, file_path: parsed.filePath, offset: parsed.offset, limit: parsed.limit, content: limited, content_hash: contentHash(content) };
     }
-  ];
+  };
+}
+
+function writeFileTool(rootDir: string): Tool {
+  return {
+    name: "write_file",
+    description: "Create or overwrite a UTF-8 workspace file. Args: path, content (content_ref=<block> for multiline), [expected_hash].",
+    schema: writeFileSchema,
+    async execute(args: unknown) {
+      const parsed = normalizeWriteFileArgs(args);
+      await mkdir(rootDir, { recursive: true });
+      const filePath = await resolveWorkspacePath(rootDir, parsed.filePath);
+      await assertExpectedHash(filePath, parsed.expectedHash);
+      await mkdir(path.dirname(filePath), { recursive: true });
+      await writeFile(filePath, parsed.content, "utf8");
+      return { path: parsed.filePath, file_path: parsed.filePath, bytes: Buffer.byteLength(parsed.content), content_hash: contentHash(parsed.content), ok: true };
+    }
+  };
+}
+
+function editFileTool(rootDir: string): Tool {
+  return {
+    name: "edit_file",
+    description: "Exact-replace text in a workspace file. Args: path, old_string, new_string (*_ref=<block> for multiline), [replace_all], [expected_hash]. old_string must match exactly and be unique unless replace_all=true.",
+    schema: editFileSchema,
+    async execute(args: unknown) {
+      const parsed = normalizeEditFileArgs(args);
+      const filePath = await resolveWorkspacePath(rootDir, parsed.filePath);
+      const content = await readFile(filePath, "utf8");
+      assertContentHash(content, parsed.expectedHash, parsed.filePath);
+      if (parsed.oldString === parsed.newString) throw new Error(`Refusing a no-op edit: old_string and new_string are identical. Quote complete one-line values or use old_string_ref/new_string_ref blocks.\nCurrent file preview:\n${filePreview(content)}`);
+      const replacement = replaceExact(content, parsed.oldString, parsed.newString, parsed.replaceAll);
+      if (typeof replacement === "string") throw new Error(`${replacement}\nQuote complete one-line values or use old_string_ref/new_string_ref blocks.\nCurrent file preview:\n${filePreview(content)}`);
+      await writeFile(filePath, replacement.content, "utf8");
+      return { path: parsed.filePath, file_path: parsed.filePath, replacements: replacement.occurrences, occurrences: replacement.occurrences, content_hash: contentHash(replacement.content), ok: true };
+    }
+  };
+}
+
+function bashCommandTool(config: BashConfig): Tool {
+  return {
+    name: "bash_command",
+    description: `Run a read-only workspace command: ${[...config.allowedCommands].join("|")}. ¬expansion ¬redirects ¬pipes ¬absolute paths ¬..; node only --check. Args: command, [timeout_ms].`,
+    schema: bashCommandSchema,
+    async execute(args: unknown) {
+      const parsed = normalizeBashCommandArgs(args);
+      validateBashCommand(parsed.command, config.allowedCommands);
+      await mkdir(config.rootDir, { recursive: true });
+      await validateBashWorkspacePaths(parsed.command, config.rootDir);
+      return runCommandSegments(parsed.command, Math.min(parsed.timeoutMs ?? config.timeoutMs, 60_000), config);
+    }
+  };
+}
+
+async function runCommandSegments(command: string, timeout: number, { rootDir, maxOutputBytes }: BashConfig): Promise<Record<string, unknown>> {
+  try {
+    let stdout = "";
+    let stderr = "";
+    for (const segment of commandSegments(command)) {
+      const result = await execFileAsync(segment[0]!, segment.slice(1), { cwd: rootDir, env: safeToolEnv(rootDir), timeout, maxBuffer: maxOutputBytes });
+      stdout += result.stdout;
+      stderr += result.stderr;
+    }
+    return { exitCode: 0, stdout: truncate(stdout, maxOutputBytes), stderr: truncate(stderr, maxOutputBytes) };
+  } catch (error) {
+    const failure = error as Error & { stdout?: string; stderr?: string; code?: number | string; signal?: string };
+    return {
+      exitCode: typeof failure.code === "number" ? failure.code : 1,
+      signal: failure.signal,
+      stdout: truncate(failure.stdout ?? "", maxOutputBytes),
+      stderr: truncate(failure.stderr ?? failure.message, maxOutputBytes)
+    };
+  }
 }
 
 export function describeTools(tools: Tool[]): BuiltInToolInfo[] {
@@ -214,7 +231,7 @@ async function assertExpectedHash(filePath: string, expectedHash: string | undef
 function assertContentHash(content: string, expectedHash: string | undefined, filePath: string): void {
   if (!expectedHash) return;
   const currentHash = contentHash(content);
-  if (currentHash !== expectedHash) throw new Error(`File version mismatch for ${filePath}: expected ${expectedHash}, current ${currentHash}. Re-read the file before editing.\nCurrent file preview:\n${filePreview(content)}`);
+  if (!currentHash.startsWith(expectedHash.toLowerCase())) throw new Error(`File version mismatch for ${filePath}: expected ${expectedHash}, current ${currentHash}. Re-read the file before editing.\nCurrent file preview:\n${filePreview(content)}`);
 }
 
 function filePreview(content: string): string {

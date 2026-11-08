@@ -3,501 +3,56 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3Crect width='1' height='1' fill='%237c3aed'/%3E%3C/svg%3E" />
-    <title>StateWeave Chat Lab</title>
+    <link rel="icon" href="data:," />
+    <title>StateWeave · Primitive inspector</title>
   </head>
   <body>
-    <div id="app">
-      <header class="topbar">
-        <div class="lab-brand">
-          <h1>StateWeave Lab</h1>
-          <p class="topbar-copy">Can graph memory outlast appended messages without context bloat?</p>
-        </div>
-        <div class="topbar-actions">
-          <nav class="tabs" aria-label="Lab pages">
-            <button id="state-tab" class="tab active" type="button" aria-controls="state-page" aria-selected="true">Lab</button>
-            <details id="lab-nav-menu" class="lab-nav-menu">
-              <summary>Experiments</summary>
-              <div class="lab-nav-panel">
-                <button id="quickstart-tab" class="tab" type="button" aria-controls="quickstart-page" aria-selected="false">Quick Start</button>
-                <button id="ab-tab" class="tab" type="button" aria-controls="ab-page" aria-selected="false">A/B testing</button>
-                <button id="protocol-tab" class="tab" type="button" aria-controls="protocol-page" aria-selected="false">Protocol lab</button>
-                <button id="subgraph-tab" class="tab" type="button" aria-controls="subgraph-page" aria-selected="false">Subgraph A/B</button>
-                <button id="multi-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt one</button>
-                <button id="multi-two-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt two</button>
-                <button id="multi-three-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt three</button>
-                <button id="multi-four-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt four</button>
-                <button id="multi-five-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt five</button>
-                <button id="multi-six-tab" class="tab" type="button" aria-controls="multi-page" aria-selected="false">Prompt six</button>
-                <button id="sdk-build-tab" class="tab" type="button" aria-controls="sdk-build-page" aria-selected="false">SDK build</button>
-                <button id="infinite-tab" class="tab" type="button" aria-controls="infinite-page" aria-selected="false">Infinite</button>
-                <button id="codex-cost-tab" class="tab" type="button" aria-controls="codex-cost-page" aria-selected="false">Codex cost</button>
-              </div>
-            </details>
-          </nav>
-          <span id="provider" class="badge">Checking provider…</span>
-          <button id="reset" class="button secondary" type="button">Reset</button>
-        </div>
+    <main>
+      <header class="page-header">
+        <div><p class="eyebrow">STATEWEAVE / LOCAL WORKBENCH</p><h1>Primitive inspector</h1></div>
+        <span class="local-badge">No model requests</span>
       </header>
+      <p class="intro">A manual inspector for <strong>GraphFrame → GraphOps → StateGraph</strong>.<br />Inspect real core transitions in your browser. Not an agent, benchmark, or evaluation score.</p>
 
-      <main id="state-page" class="page active shell">
-        <div class="mobile-pane-switch" role="group" aria-label="Lab workspace">
-          <button id="mobile-chat-pane" class="active" type="button" aria-pressed="true">Chat</button>
-          <button id="mobile-memory-pane" type="button" aria-pressed="false">Memory</button>
-        </div>
-        <section class="card chat-card" aria-label="Parallel agent chat">
-          <div class="chat-toolbar">
-            <div class="arm-switcher" role="group" aria-label="Displayed memory primitive">
-              <button id="stateweave-arm" class="arm-switch active" type="button" aria-pressed="true"><span>StateWeave</span><small id="stateweave-context-label">graph context</small></button>
-              <button id="traditional-arm" class="arm-switch" type="button" aria-pressed="false"><span>Traditional</span><small id="traditional-context-label">message context</small></button>
-            </div>
-            <div class="chat-actions">
-              <details id="session-browser" class="session-browser">
-                <summary><span>Session</span><strong id="current-session-title">New comparison</strong><small id="current-session-meta">0 turns</small></summary>
-                <div class="session-browser-panel">
-                  <div class="session-browser-header">
-                    <strong>Sessions</strong>
-                    <button id="clear-messages" class="button secondary small-button" type="button">New</button>
-                  </div>
-                  <div id="dual-session-list" class="session-list" role="list" aria-live="polite">Loading sessions…</div>
-                </div>
-              </details>
-              <div class="long-horizon-controller">
-                <span id="long-horizon-status" hidden>Paused</span>
-                <button id="long-horizon-toggle" class="button secondary small-button long-horizon-toggle" type="button" aria-pressed="false"><span aria-hidden="true">▶</span> Run long</button>
-              </div>
-              <details class="chat-more">
-                <summary>More</summary>
-                <div class="chat-more-panel">
-                  <div class="chat-more-actions">
-                    <button id="export-graph" class="button secondary small-button" type="button">Export state</button>
-                    <button id="import-graph" class="button secondary small-button" type="button">Import state</button>
-                  </div>
-                  <details class="agent-settings">
-                    <summary>Agent settings</summary>
-                    <div class="agent-settings-grid">
-                      <label>
-                        <span>System prompt</span>
-                        <textarea id="agent-system-prompt" rows="4"></textarea>
-                      </label>
-                      <label>
-                        <span>Projection target</span>
-                        <input id="agent-projection-target" type="number" min="1000" max="64000" step="1000" />
-                      </label>
-                      <label>
-                        <span>Max iterations</span>
-                        <input id="agent-max-iterations" type="number" min="1" step="1" />
-                      </label>
-                      <label>
-                        <span>Additional legacy focus diagnostic (StateWeave arm only)</span>
-                        <select id="agent-jev-focus"><option value="off">Off · native recall only</option><option value="flat">Add flat focus ranking</option><option value="hierarchical">Add topic → subgraph → atom focus</option></select>
-                        <small id="jev-focus-availability">Native Jev source recall is mandatory and automatic. This setting only adds the older experimental focus reranker.</small>
-                      </label>
-                      <button id="reset-agent-settings" class="button secondary small-button" type="button">Reset defaults</button>
-                    </div>
-                  </details>
-                </div>
-              </details>
-            </div>
+      <section class="task-panel" aria-labelledby="task-heading">
+        <form id="task-form">
+          <label id="task-heading" for="task">1. Start with one task</label>
+          <p id="task-help" class="help">Build a fresh frame. This replaces the current local state and resets applied operations.</p>
+          <div class="task-controls">
+            <textarea id="task" name="task" rows="2" required placeholder="Describe a task to represent in the graph…" aria-describedby="task-help"></textarea>
+            <button type="submit">Build GraphFrame</button>
           </div>
-          <div id="dual-session-context-menu" class="session-context-menu" role="menu" hidden>
-            <button id="delete-dual-session" class="session-context-action danger" type="button" role="menuitem">Delete conversation</button>
-          </div>
-          <div id="chat" class="chat">
-            <div class="empty-state">
-              <h2>One prompt. Two memories.</h2>
-              <p>Every turn runs both approaches. Keep going to see which context stays useful.</p>
-            </div>
-          </div>
-
-          <form id="composer" class="composer">
-            <textarea id="input" rows="3" placeholder="Continue the same task, change direction, or start something new…"></textarea>
-            <button id="send" class="button primary" type="submit">Send</button>
-          </form>
-          <p id="status" class="status" aria-live="polite">Ready.</p>
-        </section>
-
-        <section class="card compare-card graph-workspace" aria-label="StateWeave graph workspace">
-          <div class="graph-card">
-            <div class="graph-toolbar">
-              <h2 id="memory-view-title">Graph memory</h2>
-              <div class="workspace-switcher" aria-label="Memory evidence view">
-                <button id="graph-view-tab" class="tab active" type="button" aria-controls="graph-view" aria-selected="true">Graph</button>
-                <button id="token-usage-view-tab" class="tab" type="button" aria-controls="token-usage-view" aria-selected="false">Context</button>
-                <button id="files-view-tab" class="tab" type="button" aria-controls="files-view" aria-selected="false">Files</button>
-                <button id="tools-view-tab" class="tab" type="button" aria-controls="tools-view" aria-selected="false">Tools</button>
-              </div>
-            </div>
-            <div class="workspace-views">
-              <div id="graph-view" class="workspace-view active">
-                <div id="graph" class="graph-empty">No graph yet.</div>
-              </div>
-              <aside id="tools-view" class="workspace-view tools-panel" aria-label="Available agent tools" hidden>
-                <div class="tools-panel-header">
-                  <p class="eyebrow">Agent tools</p>
-                  <span id="tool-count" class="badge">Loading…</span>
-                </div>
-                <div id="tool-list" class="tool-list">Loading tools…</div>
-              </aside>
-              <aside id="files-view" class="workspace-view files-panel" aria-label="Workspace files" hidden>
-                <div class="files-layout">
-                  <section class="files-sidebar" aria-label="Workspace file list">
-                    <div class="tools-panel-header files-sidebar-header">
-                      <div>
-                        <p id="workspace-files-eyebrow" class="eyebrow">StateWeave workspace</p>
-                        <strong>Project browser</strong>
-                      </div>
-                      <span id="file-count" class="badge">Loading…</span>
-                    </div>
-                    <div class="file-actions">
-                      <button id="refresh-files" class="button secondary small-button" type="button">Refresh</button>
-                      <button id="reboot-files" class="button secondary small-button danger-button" type="button">Reboot files</button>
-                    </div>
-                    <div id="file-list" class="file-list">Loading files…</div>
-                  </section>
-                  <section id="file-viewer" class="file-viewer" aria-label="Workspace file preview">
-                    <p class="muted-copy">Open a file to inspect or render HTML/SVG output.</p>
-                  </section>
-                </div>
-              </aside>
-              <aside id="token-usage-view" class="workspace-view token-usage-panel" aria-label="LLM token usage" hidden>
-                <header class="token-usage-header">
-                  <div>
-                    <h3>Context over time</h3>
-                    <p>Final-call context for both arms. Drops show transcript compaction.</p>
-                  </div>
-                  <span id="token-usage-count" class="badge">No turns</span>
-                </header>
-                <div id="token-usage-content" class="token-usage-content"></div>
-              </aside>
-            </div>
-          </div>
-
-          <details class="model-io-panel">
-            <summary id="model-io-summary">Inspect latest run</summary>
-            <div class="comparison single">
-              <article class="compare-column">
-                <label id="model-input-label">Exact model input / compiled causal context</label>
-                <pre id="state-input" class="code">No turn yet.</pre>
-                <label id="model-output-label">Model actions, tools, retries, and trace metadata</label>
-                <pre id="state-output" class="code small">No output yet.</pre>
-              </article>
-            </div>
-          </details>
-        </section>
-      </main>
-
-      <main id="quickstart-page" class="page quickstart-page" hidden>
-        <section class="card quickstart-card" aria-label="Quick Start">
-          <p class="eyebrow">Quick Start</p>
-          <h2>Start a graph-native agent</h2>
-          <p class="muted-copy">Primitive: <code>immutable causal graph → molecular context → ordinary action → causal graph</code>. There is one public agent class and no provider transcript primitive.</p>
-          <pre class="code quickstart-code"><code>import { Agent, createModelFromEnv } from "stateweave";
-
-const agent = new Agent({
-  model: createModelFromEnv(),
-  // tools: myTools,
-  // maxIterations: 30,
-  // maxPromptTokens: 64_000,
-  // projectionTargetTokens: 16_000,
-  // systemPrompt: "You are a careful product engineer.",
-  // traceDir: ".stateweave/traces"
-});
-
-for await (const chunk of agent.stream("Create a tiny HTML todo app in ./todo")) {
-  process.stdout.write(chunk);
-}
-
-await agent.run("Add keyboard shortcuts.");
-console.log(agent.getState());
-console.log(agent.getGraph());</code></pre>
-          <div class="quickstart-grid">
-            <article><h3>The primitive</h3><p>Each call appends a goal to the same immutable graph. Tool calls, results, resources, retries, and answers record their exact causal parents automatically.</p></article>
-            <article><h3>System prompt</h3><p>Pass provider/system instructions through the model adapter, e.g. <code>new AnthropicModel({ system: "..." })</code>. Graph state stays separate.</p></article>
-            <article><h3>Tools</h3><p>Workspace tools are built in by default: <code>read_file</code>, <code>write_file</code>, <code>edit_file</code>, and <code>bash_command</code>. No tool setup needed to start.</p></article>
-            <article><h3>Streaming + internals</h3><p><code>agent.stream()</code> yields answer text. Use <code>agent.streamEvents()</code> for compiled contexts, actions, tools, retries, and graph growth.</p></article>
-          </div>
-        </section>
-      </main>
-
-      <main id="ab-page" class="page ab-page" hidden>
-        <section class="card ab-control-card" aria-label="A/B testing input">
-          <div class="card-header">
-            <div>
-              <p class="eyebrow">A/B testing</p>
-              <h2>Regular messages vs StateWeave</h2>
-            </div>
-          </div>
-          <p class="muted-copy">This tab invokes both paths with the same neutral system prompt explaining regular messages and StateWeave; only the input/state format differs.</p>
-          <form id="ab-composer" class="composer ab-composer">
-            <textarea id="ab-input" rows="3" placeholder="Type a test prompt…"></textarea>
-            <button id="ab-send" class="button primary" type="submit">Run A/B</button>
-          </form>
-          <p id="ab-status" class="status">Ready.</p>
-        </section>
-
-        <section class="card ab-results-card" aria-label="A/B testing results">
-          <div id="ab-results" class="ab-results">
-            <div class="empty-state compact">
-              <h2>No A/B runs yet.</h2>
-              <p>Run a prompt to see regular messages and StateWeave responses side by side.</p>
-            </div>
-          </div>
-        </section>
-      </main>
-
-      <main id="protocol-page" class="page protocol-page" hidden>
-        <section id="protocol-report" class="protocol-shell" aria-label="StateWeave protocol fine-tuning experiment">
-          <div class="empty-state compact"><h2>Loading protocol experiment…</h2><p>Reading the frozen Modal evaluation result.</p></div>
-        </section>
-      </main>
-
-      <main id="codex-cost-page" class="page protocol-page" hidden></main>
-
-      <main id="subgraph-page" class="page protocol-page" hidden>
-        <section id="subgraph-report" class="protocol-shell" aria-label="Compound node versus flat graph experiment">
-          <div class="empty-state compact"><h2>Loading subgraph experiment…</h2><p>Comparing the current flat projection with a node that can expand into a subgraph.</p></div>
-        </section>
-      </main>
-
-      <main id="multi-page" class="page multi-page" hidden>
-        <section class="card multi-shell" aria-label="Blind multi-turn test">
-          <div class="multi-sidebar">
-            <p class="eyebrow">Blind multi-turn A/B</p>
-            <h2 id="multi-title">Prompt one</h2>
-            <p id="multi-description" class="muted-copy">Ten connected prompts run through regular messages and StateWeave. Vote A, B, both, or neither against the expected behavior. Labels stay hidden until all votes are done.</p>
-            <div id="multi-progress" class="multi-progress">0 / 10 voted</div>
-            <div id="multi-live-score" class="multi-live-score"></div>
-            <label id="multi-confirm-wrap" class="multi-option">
-              <input id="multi-confirm-judges" type="checkbox" />
-              <span>Confirm judge decisions</span>
-            </label>
-            <div id="multi-steps" class="multi-steps"></div>
-            <button id="multi-start" class="button primary" type="button">Start prompt one</button>
-          </div>
-
-          <div class="multi-main">
-            <div id="multi-stage" class="multi-stage">
-              <div class="empty-state compact">
-                <h2>Ready for a harder test.</h2>
-                <p>This sequence tests memory, constraint retention, topic switching, and corrections over ten turns.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-      </main>
-
-      <main id="sdk-build-page" class="page sdk-build-page" hidden>
-        <section class="card sdk-build-shell" aria-labelledby="sdk-build-title">
-          <header class="sdk-build-header">
-            <div>
-              <p class="eyebrow">One-shot artifact experiment</p>
-              <h2 id="sdk-build-title">Build a JavaScript SDK and an interactive economic model</h2>
-              <p class="muted-copy">Two coding agents receive the same prompt, model, resources, and fresh OpenShell environment. Only their state representation differs.</p>
-            </div>
-            <span id="sdk-build-live-badge" class="sdk-build-review-badge">Checking worker</span>
-          </header>
-
-          <section class="sdk-build-contract" aria-labelledby="sdk-build-contract-title">
-            <div class="sdk-build-contract-heading">
-              <div>
-                <h3 id="sdk-build-contract-title">Execution contract</h3>
-                <p id="sdk-build-message">Checking the paired OpenShell worker. Deployment alone never starts a run.</p>
-              </div>
-              <div class="sdk-build-actions">
-                <button id="sdk-build-start" class="button primary" type="button" disabled>Start benchmark</button>
-                <button id="sdk-build-stop" class="button secondary" type="button" disabled>Stop</button>
-              </div>
-            </div>
-            <div class="sdk-build-environments">
-              <article id="sdk-build-environment-1">
-                <span>Participant 1</span>
-                <strong>Isolated OpenShell sandbox</strong>
-                <p>Fresh project directory, full sandbox shell, identical model and resource limits.</p>
-                <small data-environment-status>Not provisioned</small>
-                <p class="sdk-build-environment-progress" data-environment-progress></p>
-              </article>
-              <article id="sdk-build-environment-2">
-                <span>Participant 2</span>
-                <strong>Isolated OpenShell sandbox</strong>
-                <p>Fresh project directory, full sandbox shell, identical model and resource limits.</p>
-                <small data-environment-status>Not provisioned</small>
-                <p class="sdk-build-environment-progress" data-environment-progress></p>
-              </article>
-            </div>
-            <ul class="sdk-build-guardrails">
-              <li>One initial prompt and one uninterrupted run per arm</li>
-              <li>Independent Landlock-isolated filesystems</li>
-              <li>Same model, dependencies, limits, and starting contents</li>
-              <li>Blind labels until both human scores are submitted</li>
-            </ul>
-          </section>
-
-          <section id="sdk-build-review" class="sdk-build-review" aria-labelledby="sdk-build-review-title" hidden>
-            <header>
-              <div>
-                <p class="eyebrow">Blind human review</p>
-                <h3 id="sdk-build-review-title">Score both finished applications</h3>
-                <p>Candidate identities and efficiency metrics remain hidden until you submit both scores.</p>
-              </div>
-            </header>
-            <div class="sdk-build-candidates">
-              <article>
-                <header><h3>Candidate A</h3><a id="sdk-build-open-a" class="button secondary small-button" target="_blank" rel="noopener">Open full page</a></header>
-                <iframe id="sdk-build-preview-a" title="Candidate A application preview" sandbox="allow-scripts"></iframe>
-                <details><summary>Final response</summary><pre id="sdk-build-answer-a"></pre></details>
-              </article>
-              <article>
-                <header><h3>Candidate B</h3><a id="sdk-build-open-b" class="button secondary small-button" target="_blank" rel="noopener">Open full page</a></header>
-                <iframe id="sdk-build-preview-b" title="Candidate B application preview" sandbox="allow-scripts"></iframe>
-                <details><summary>Final response</summary><pre id="sdk-build-answer-b"></pre></details>
-              </article>
-            </div>
-            <form id="sdk-build-score-form" class="sdk-build-score-form">
-              <label><span>Candidate A score</span><input id="sdk-build-score-a" type="number" min="0" max="100" step="0.1" required></label>
-              <label><span>Candidate B score</span><input id="sdk-build-score-b" type="number" min="0" max="100" step="0.1" required></label>
-              <label class="sdk-build-score-notes"><span>Judge notes</span><textarea id="sdk-build-score-notes" rows="3" placeholder="Optional observations made before reveal"></textarea></label>
-              <button id="sdk-build-submit-score" class="button primary" type="submit">Submit scores and reveal</button>
-            </form>
-            <div id="sdk-build-reveal" class="sdk-build-reveal" hidden></div>
-          </section>
-
-          <section class="sdk-build-variant-c" aria-labelledby="sdk-build-variant-c-title">
-            <header class="sdk-build-contract-heading">
-              <div>
-                <p class="eyebrow">Experimental third primitive</p>
-                <h3 id="sdk-build-variant-c-title">Variant C · Causal Weave</h3>
-                <p>One fresh workspace receives the unchanged task, model, tools, and 3,000-step ceiling. State is an immutable causal graph whose frontier compiles directly into tokens; the model still emits the same ordinary tool calls.</p>
-              </div>
-              <button id="sdk-build-start-c" class="button primary" type="button" disabled>Run Variant C</button>
-            </header>
-            <div id="sdk-build-c-status" class="sdk-build-variant-c-status">Not started</div>
-            <div id="sdk-build-c-metrics" class="sdk-build-reveal-metrics"></div>
-            <article id="sdk-build-c-result" class="sdk-build-variant-c-result" hidden>
-              <header>
-                <h3>Variant C application</h3>
-                <div class="sdk-build-preview-actions">
-                  <a id="sdk-build-open-c-raw" class="button secondary small-button" target="_blank" rel="noopener" hidden>Open raw artifact</a>
-                  <a id="sdk-build-open-c" class="button secondary small-button" target="_blank" rel="noopener">Open full page</a>
-                </div>
-              </header>
-              <p id="sdk-build-c-repair-note" class="sdk-build-c-repair-note" hidden><strong>Import-repaired preview.</strong> This view serves the preserved <code>vendor/desmos.js</code> at the built path the application requested. No candidate files were changed; the raw artifact remains available above.</p>
-              <iframe id="sdk-build-preview-c" title="Variant C application preview" sandbox="allow-scripts"></iframe>
-              <details><summary>Final response</summary><pre id="sdk-build-answer-c"></pre></details>
-            </article>
-          </section>
-
-          <section class="sdk-build-prompt-panel" aria-labelledby="sdk-build-prompt-title">
-            <header>
-              <div>
-                <p class="eyebrow">Exact participant input</p>
-                <h3 id="sdk-build-prompt-title">Canonical prompt</h3>
-                <p id="sdk-build-prompt-stats" class="sdk-build-prompt-stats"></p>
-              </div>
-              <button id="sdk-build-copy" class="button primary" type="button">Copy prompt</button>
-            </header>
-            <pre id="sdk-build-prompt" class="sdk-build-prompt" tabindex="0"></pre>
-          </section>
-        </section>
-      </main>
-
-      <main id="infinite-page" class="page infinite-page" hidden>
-        <section class="card infinite-shell" aria-label="Infinite agent harness">
-          <div class="infinite-header">
-            <div>
-              <p class="eyebrow">Long-horizon agent benchmark</p>
-              <h2>Infinite agent</h2>
-              <p class="muted-copy">V8 runs the sandbox-hardened frozen held-out trajectory: both persistent participants receive identical canonical requests and generated starting evidence, while two order-reversed private blind judgments score behavior and provenance. Driver and judge tokens are tracked separately from participant efficiency.</p>
-            </div>
-            <div id="infinite-live-badge" class="infinite-live-badge">waiting</div>
-          </div>
-          <div class="infinite-controls" style="margin-bottom: 14px;">
-            <button id="infinite-calibrate" class="button secondary" type="button">Calibrate blind judge</button>
-            <button id="sw-loop-start" class="button" type="button">Start held-out run</button>
-            <button id="sw-loop-stop" class="button secondary" type="button" disabled>Stop run</button>
-            <button id="infinite-open-graph" class="button secondary" type="button">Open live graph</button>
-          </div>
-          <div id="sw-loop-status" class="sw-loop-status"></div>
-          <div id="infinite-metrics" class="infinite-metrics"></div>
-          <div id="infinite-executive-live" class="infinite-executive-live"></div>
-          <div class="infinite-chart-wrap">
-            <div class="infinite-chart-header">
-              <h3>Context sent on the latest model call</h3>
-              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave agent <span class="legend-dot baseline"></span>Naive agent · compact at 250k</div>
-            </div>
-            <canvas id="infinite-chart" class="infinite-chart" width="800" height="220"></canvas>
-          </div>
-          <div class="infinite-chart-wrap">
-            <div class="infinite-chart-header">
-              <h3>Quality: cumulative completion-gated pass rate</h3>
-              <div class="infinite-legend"><span class="legend-dot sw"></span>StateWeave agent <span class="legend-dot baseline"></span>Naive agent</div>
-            </div>
-            <canvas id="infinite-quality-chart" class="infinite-chart" width="800" height="220"></canvas>
-          </div>
-          <div id="infinite-statistics" class="infinite-statistics"></div>
-          <div id="infinite-report" class="infinite-report" hidden></div>
-          <section class="challenger-library" aria-labelledby="challenger-library-title">
-            <header class="challenger-library-header">
-              <div>
-                <h3 id="challenger-library-title">Challenger scenario library</h3>
-                <p id="challenger-library-tldr">Private Markdown files that define the human context, canonical requests, hidden checks, and quality rubric for long-running paired tests.</p>
-              </div>
-              <span id="challenger-library-count" class="scenario-count">Loading drafts…</span>
-            </header>
-            <div class="scenario-workbench">
-              <nav id="challenger-scenario-list" class="scenario-list" aria-label="Challenger scenarios">
-                <p class="muted-copy">Loading scenario files…</p>
-              </nav>
-              <article class="scenario-reader" aria-live="polite">
-                <header id="challenger-scenario-heading" class="scenario-reader-heading">
-                  <div><span class="scenario-file">Markdown review</span><h3>Select a scenario</h3></div>
-                </header>
-                <div id="challenger-scenario-content" class="scenario-document markdown">
-                  <p>Choose a file to review the full private brief and the exact requests that would be sent to both agents.</p>
-                </div>
-              </article>
-            </div>
-          </section>
-          <div class="infinite-body">
-            <section class="infinite-panel">
-              <h3>Turn inspector</h3>
-              <div class="infinite-turn-picker">
-                <label for="infinite-turn-number">Turn</label>
-                <input id="infinite-turn-number" type="number" min="1" step="1" inputmode="numeric" placeholder="Turn #">
-                <button id="infinite-turn-open" class="button secondary" type="button">Open</button>
-                <button id="infinite-turn-latest" class="button secondary" type="button">Latest</button>
-              </div>
-              <div id="infinite-turn-detail" class="infinite-turn-detail"><p class="muted-copy">Select any archived turn to inspect the full task, both answers, and every grading check.</p></div>
-              <h3 class="infinite-recent-heading">Recent turns</h3>
-              <div id="infinite-turns" class="infinite-turns"><p class="muted-copy">Waiting for the first task.</p></div>
-            </section>
-            <section class="infinite-panel">
-              <h3>Graph-candidate memory map</h3>
-              <div id="infinite-clusters" class="infinite-clusters"><p class="muted-copy">No graph topics yet.</p></div>
-            </section>
-          </div>
-        </section>
-      </main>
-    </div>
-
-    <div id="graph-transfer-modal" class="modal-backdrop" hidden>
-      <section class="modal-card transfer-card" role="dialog" aria-modal="true" aria-labelledby="graph-transfer-title">
-        <div class="modal-header">
-          <div>
-            <p class="eyebrow">StateGraph transfer</p>
-            <h2 id="graph-transfer-title">Export / Import graph</h2>
-          </div>
-          <button id="close-transfer" class="button secondary small-button" type="button">Close</button>
-        </div>
-        <p id="graph-transfer-help" class="muted-copy">Export produces TypeScript you can paste into another project. Import accepts that export or raw AgentState JSON.</p>
-        <textarea id="graph-transfer-text" class="transfer-textarea" spellcheck="false"></textarea>
-        <div class="modal-actions">
-          <button id="copy-transfer" class="button secondary" type="button">Copy</button>
-          <button id="apply-import" class="button primary" type="button">Import graph</button>
-        </div>
+        </form>
       </section>
-    </div>
 
+      <p id="status" class="status" role="status">Ready. Enter a task to create the initial GraphFrame.</p>
+      <p id="error" class="error" role="alert" hidden></p>
+
+      <div class="pipeline">
+        <section class="panel" aria-labelledby="frame-heading">
+          <div class="panel-heading"><span class="step">01</span><h2 id="frame-heading">GraphFrame</h2></div>
+          <p class="help">Initial snapshot from <code>createInitialGraphFrame()</code>. Your task is the objective and input.</p>
+          <pre id="frame-output" tabindex="0" aria-label="Serialized initial GraphFrame">Build a frame to inspect its JSON.</pre>
+        </section>
+
+        <section class="panel" aria-labelledby="ops-heading">
+          <div class="panel-heading"><span class="step">02</span><h2 id="ops-heading">GraphOps</h2></div>
+          <p id="ops-help" class="help">Hand-edit this sample JSON envelope. Nothing is model-generated. Apply to the current state.</p>
+          <label class="sr-only" for="ops">GraphOps JSON envelope</label>
+          <textarea id="ops" class="code-editor" spellcheck="false" aria-describedby="ops-help" disabled></textarea>
+          <button id="apply" type="button" disabled>Apply validated ops</button>
+          <p class="help validation-note"><code>parseAndValidateOps()</code> → <code>applyOps()</code>. Invalid transactions leave state unchanged. Tool and worker operations are disabled.</p>
+        </section>
+
+        <section class="panel" aria-labelledby="graph-heading">
+          <div class="panel-heading"><span class="step">03</span><h2 id="graph-heading">StateGraph</h2></div>
+          <p class="help">Current <code>frame.graph</code> after successful operations. Core may add connecting edges automatically.</p>
+          <pre id="graph-output" tabindex="0" aria-label="Serialized current StateGraph">No graph yet.</pre>
+          <p id="graph-summary" class="graph-summary">0 nodes · 0 edges · 0 transactions</p>
+        </section>
+      </div>
+      <footer>Local memory only · Refresh clears state · No providers, tools, persistence, or API calls</footer>
+    </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

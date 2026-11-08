@@ -68,6 +68,8 @@ export function clusterGraph(graph: StateGraph, adjacency: Map<string, string[]>
     .sort((a, b) => createdAtOf(byId.get(a.seedId)) - createdAtOf(byId.get(b.seedId)));
 }
 
+type QueryMode = { chronology: boolean; conflict: boolean };
+
 export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Projection {
   const zoom = Math.max(0, focus.zoom ?? 0);
   const radius = focus.radius ?? DEFAULT_RADIUS + zoom;
@@ -76,14 +78,7 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
   const adjacency = undirectedAdjacency(graph);
   const clusters = clusterGraph(graph, adjacency);
 
-  const explicitFocus = focusNodeIdResolved(graph, focus);
-  const latestInput = latestUserInputId(graph);
-  const centers = unique([
-    latestInput,
-    explicitFocus,
-    "system_root",
-    ...(explicitFocus ? [] : [latestAssistantOutputId(graph)])
-  ].filter((id): id is string => typeof id === "string" && byId.has(id)));
+  const { centers, latestInput } = focusCenters(graph, focus, byId);
   const latestToolEvidenceIds = graph.nodes
     .filter((node) => node.type === "tool_call" || node.type === "tool_result")
     .slice(-2)
@@ -95,131 +90,104 @@ export function projectGraph(graph: StateGraph, focus: ProjectionFocus): Project
   const positionalCenters = centers.filter((id) => id !== "system_root");
   const positionalFocus = bfsBounded(graph, positionalCenters, radius, budget, withoutSystemHub(adjacency));
 
-  // Retrieval focus: if the active node looks like a question, search ALL nodes
-  // for keyword matches and pull them (and their clusters) into view.
+  // Retrieval focus: search ALL nodes for keyword matches of the active input. Imperative
+  // tasks need it too: exact paths, symbols, and entity ids in "update X" are strong signals.
   const activeNodeText = latestInput && byId.get(latestInput)?.type === "user_input" ? byId.get(latestInput)!.text : "";
-  const chronologyMode = looksLikeChronology(activeNodeText);
-  const conflictMode = looksLikeConflict(activeNodeText);
-  const retrievalBudget = chronologyMode
-    ? RETRIEVAL_BUDGET_CHRONOLOGY
-    : conflictMode
-      ? RETRIEVAL_BUDGET_CONFLICT
-      : RETRIEVAL_BUDGET;
-  // Imperative tasks still need retrieval: exact paths, symbols, and entity ids
-  // in "update X" are stronger signals than a trailing question mark.
+  const mode: QueryMode = { chronology: looksLikeChronology(activeNodeText), conflict: looksLikeConflict(activeNodeText) };
   const retrievedNodeIds = activeNodeText.length >= 3
-    ? retrieveNodes(graph, clusters, activeNodeText, retrievalBudget, chronologyMode, conflictMode, adjacency)
+    ? retrieveNodes(graph, clusters, activeNodeText, byMode(mode, RETRIEVAL_BUDGET_CHRONOLOGY, RETRIEVAL_BUDGET_CONFLICT, RETRIEVAL_BUDGET), mode.chronology, mode.conflict, adjacency)
     : [];
 
-  // Merge positional + retrieved into the final focus set.
   const focusSet = new Set<string>(["system_root", ...positionalFocus, ...retrievedNodeIds, ...latestToolEvidenceIds]);
+  const relationalNeighborIds = expandRelationalContext(retrievedNodeIds, byId, adjacency, focusSet);
 
-  // Relational + sibling context for synthesis/combine. Atomized semantic
-  // facts (fact, artifact, decision, ...) carry only their bare value and drop
-  // both the framing prose and the OTHER facts that were stated alongside them
-  // in the same conversational turn. So when retrieval recalls ONE fact from a
-  // turn, combine probes that need that turn's sibling facts (e.g. "plan a
-  // party for my sister" needs BOTH the shellfish allergy AND the family pet
-  // from the same turn; "derive the reduction ratio" needs BOTH the native
-  // focal length AND the reducer) fail: the model sees the single recalled fact
-  // and hedges instead of synthesizing the turn as a whole. This is exactly the
-  // fragmentation naive messages[] avoids by keeping a turn's full prose
-  // together. It also bites retrieval itself: a recalled user_input (which
-  // scores on the framing nouns like "sister") is structural and was skipped,
-  // so its sibling facts were never co-located.
-  //
-  // Fix: for every retrieved node, pull in its originating user_input AND that
-  // user_input's other directly-connected semantic facts (the siblings) as
-  // distinct, co-visible focus nodes. This lets the model synthesize across
-  // co-occurring facts the way it would from a turn's prose. It replaces an
-  // earlier "first 8 oldest cluster members" expansion which, for a merged
-  // multi-topic cluster, just re-injected unrelated oldest facts and crowded
-  // out exactly the siblings combine needs.
-  const retrievalAdjacency = adjacency;
+  const focusNodeCap = byMode(mode, FOCUS_NODE_CAP_CHRONOLOGY, FOCUS_NODE_CAP_CONFLICT, FOCUS_NODE_CAP) + zoom * 32;
+  const focusNodes = capFocusNodes(
+    [...focusSet].map((id) => byId.get(id)).filter((node): node is GraphNode => Boolean(node)),
+    retrievedNodeIds,
+    requiredFocusIds,
+    relationalNeighborIds,
+    focusNodeCap,
+    mode.chronology
+  ).sort(byCreatedAt);
+
+  return { focusNodes, focusEdgeLines: visibleEdgeLines(graph, focusNodes), ...clusterViews(graph, clusters, focusSet, byId), retrievedNodeIds };
+}
+
+function byMode<T>(mode: QueryMode, chronology: T, conflict: T, otherwise: T): T {
+  if (mode.chronology) return chronology;
+  return mode.conflict ? conflict : otherwise;
+}
+
+function focusCenters(graph: StateGraph, focus: ProjectionFocus, byId: Map<string, GraphNode>): { centers: string[]; latestInput?: string } {
+  const explicitFocus = focusNodeIdResolved(graph, focus);
+  const latestInput = latestUserInputId(graph);
+  const centers = unique([
+    latestInput,
+    explicitFocus,
+    "system_root",
+    ...(explicitFocus ? [] : [latestAssistantOutputId(graph)])
+  ].filter((id): id is string => typeof id === "string" && byId.has(id)));
+  return { centers, latestInput };
+}
+
+/**
+ * Relational + sibling context for synthesis. Atomized facts carry only their bare value and lose the
+ * other facts stated in the same turn, so a recalled fact alone makes combine probes hedge ("plan a party
+ * for my sister" needs both the allergy and the pet from one turn). For every retrieved node, pull in its
+ * originating user_input and that input's other direct semantic neighbours as co-visible focus nodes.
+ * Mutates `focusSet`; returns the ids added as relational context.
+ */
+function expandRelationalContext(retrievedNodeIds: string[], byId: Map<string, GraphNode>, adjacency: Map<string, string[]>, focusSet: Set<string>): Set<string> {
   const relationalNeighborIds = new Set<string>();
   const shouldExposeNode = (node: GraphNode): boolean => node.type !== "system" && node.type !== "tool_call" && node.type !== "tool_result";
-
   const expandFrom = (originId: string): void => {
-    const origin = byId.get(originId);
-    if (!origin) return;
+    if (!byId.has(originId)) return;
     focusSet.add(originId);
     relationalNeighborIds.add(originId);
-    for (const siblingId of retrievalAdjacency.get(originId) ?? []) {
+    for (const siblingId of adjacency.get(originId) ?? []) {
       const sibling = byId.get(siblingId);
       if (!sibling || !shouldExposeNode(sibling)) continue;
       focusSet.add(siblingId);
       relationalNeighborIds.add(siblingId);
     }
   };
-
   for (const nodeId of retrievedNodeIds) {
     const node = byId.get(nodeId);
     if (!node) continue;
-
-    if (node.type === "user_input") {
-      // A recalled user_input is its own origin; expand its direct context so
-      // the turn's co-occurring nodes remain co-visible.
-      expandFrom(nodeId);
-      continue;
-    }
-
+    // A recalled user_input (or rare structural node) is its own origin.
     if (isStructural(node.type)) {
-      // A recalled structural node (rare) may still anchor useful context.
       expandFrom(nodeId);
       continue;
     }
-
-    // A recalled semantic fact: expand via its originating user_input(s).
-    for (const neighborId of retrievalAdjacency.get(nodeId) ?? []) {
-      const neighbor = byId.get(neighborId);
-      if (!neighbor || neighbor.type !== "user_input") continue;
-      expandFrom(neighborId);
+    // A recalled semantic fact expands via its originating user_input(s).
+    for (const neighborId of adjacency.get(nodeId) ?? []) {
+      if (byId.get(neighborId)?.type === "user_input") expandFrom(neighborId);
     }
   }
+  return relationalNeighborIds;
+}
 
-  const baseFocusNodeCap = chronologyMode
-    ? FOCUS_NODE_CAP_CHRONOLOGY
-    : conflictMode
-      ? FOCUS_NODE_CAP_CONFLICT
-      : FOCUS_NODE_CAP;
-  const focusNodeCap = baseFocusNodeCap + zoom * 32;
-  const focusNodes = capFocusNodes(
-    [...focusSet]
-      .map((id) => byId.get(id))
-      .filter((node): node is GraphNode => Boolean(node)),
-    retrievedNodeIds,
-    requiredFocusIds,
-    relationalNeighborIds,
-    focusNodeCap,
-    chronologyMode
-  ).sort(byCreatedAt);
-
-  // Only render edges between nodes that survived the focus cap, so the detail
-  // window never references nodes the model cannot see.
+/** Only edges between nodes that survived the focus cap, so the detail window never references unseen nodes. */
+function visibleEdgeLines(graph: StateGraph, focusNodes: GraphNode[]): string[] {
   const visibleNodeIds = new Set(focusNodes.map((node) => node.id));
-  const focusEdgeLines = graph.edges
+  return graph.edges
     .filter((edge) => visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to))
     .map((edge) => `edge ${edge.from} ${edge.type} ${edge.to}`);
+}
 
+function clusterViews(graph: StateGraph, clusters: Cluster[], focusSet: Set<string>, byId: Map<string, GraphNode>): Pick<Projection, "peripheralClusters" | "bigBrainClusters" | "focusClusterIds"> {
   const nodeToClusterId = new Map<string, string>();
   for (const cluster of clusters) {
     for (const nodeId of cluster.nodeIds) nodeToClusterId.set(nodeId, cluster.id);
   }
-
-  const focusClusterIds = new Set(
-    [...focusSet]
-      .map((nodeId) => nodeToClusterId.get(nodeId))
-      .filter((id): id is string => Boolean(id))
-  );
-
+  const focusClusterIds = new Set([...focusSet].map((nodeId) => nodeToClusterId.get(nodeId)).filter((id): id is string => Boolean(id)));
   const peripheralClusterIds = touchedPeripheralClusters(graph, nodeToClusterId, focusSet, focusClusterIds);
   const peripheralClusters = clusters
     .filter((cluster) => peripheralClusterIds.has(cluster.id))
     .sort((a, b) => b.nodeCount - a.nodeCount);
-
   const bigBrainClusters = [...clusters].sort((a, b) => createdAtOf(byId.get(a.seedId)) - createdAtOf(byId.get(b.seedId)));
-
-  return { focusNodes, focusEdgeLines, peripheralClusters, bigBrainClusters, focusClusterIds: [...focusClusterIds], retrievedNodeIds };
+  return { peripheralClusters, bigBrainClusters, focusClusterIds: [...focusClusterIds] };
 }
 
 // --- Retrieval: deterministic keyword matching ---
@@ -251,6 +219,16 @@ function looksLikeConflict(text: string): boolean {
   return /\b(actually|instead|conflict|contradict|correction|disagree|wrong|should be|did you mean|second[- ]guess|not right|not sure|revise|changed|override|revoke|decoy|true|false)\b/i.test(text);
 }
 
+type RetrievalContext = {
+  keywords: string[];
+  entityKeys: string[];
+  byId: Map<string, GraphNode>;
+  clusterLookup: Map<string, Cluster>;
+  userInputTextByNode: Map<string, string>;
+  chronologyMode: boolean;
+  conflictMode: boolean;
+};
+
 function retrieveNodes(
   graph: StateGraph,
   clusters: Cluster[],
@@ -262,83 +240,77 @@ function retrieveNodes(
 ): string[] {
   const keywords = extractKeywords(queryText);
   if (!keywords.length) return [];
-  const entityKeys = strongEntityKeys(queryText);
-
   const byId = new Map(graph.nodes.map((node) => [node.id, node]));
   const clusterLookup = new Map<string, Cluster>();
   for (const cluster of clusters) {
     for (const nodeId of cluster.nodeIds) clusterLookup.set(nodeId, cluster);
   }
-  const userInputTextByNode = userInputContextByNode(graph, byId, adjacency);
+  const context: RetrievalContext = {
+    keywords,
+    entityKeys: strongEntityKeys(queryText),
+    byId,
+    clusterLookup,
+    userInputTextByNode: userInputContextByNode(graph, byId, adjacency),
+    chronologyMode,
+    conflictMode
+  };
+  const scored = graph.nodes.flatMap((node) => {
+    const score = retrievalScore(node, context);
+    return score > 0 ? [{ id: node.id, score }] : [];
+  });
+  const sorted = scored.sort((a, b) => b.score - a.score || (chronologyMode
+    ? createdAtOf(byId.get(a.id)) - createdAtOf(byId.get(b.id))
+    : createdAtOf(byId.get(b.id)) - createdAtOf(byId.get(a.id))));
+  const selected = new Set(sorted.slice(0, budget).map((item) => item.id));
 
-  const contradictionMap = conflictMode ? contradictionNeighbors(graph) : undefined;
-  const scored: Array<{ id: string; score: number }> = [];
-  for (const node of graph.nodes) {
-    if (node.type === "system" || node.type === "tool_call" || node.type === "tool_result") continue;
-    const parts = [`${node.type} ${node.text}`.toLowerCase()];
-    const userContext = userInputTextByNode.get(node.id);
-    if (userContext) parts.push(userContext);
-
-    // Also include the merged cluster seed as a fallback for nodes that have no
-    // direct user_input context (for backwards-compat with merged semantic
-    // clusters used by the current peripheral vision model).
-    const cluster = clusterLookup.get(node.id);
-    if (cluster) {
-      const seed = byId.get(cluster.seedId);
-      if (seed) parts.push(oneLine(seed.text).toLowerCase());
-    }
-
-    const ownEntityKeys = strongEntityKeys(parts[0]);
-    if (entityKeys.length && ownEntityKeys.length && !entityKeys.some((key) => parts[0].includes(key))) continue;
-    const text = parts.join(" ");
-    if (entityKeys.length && !entityKeys.some((key) => text.includes(key))) continue;
-    let score = 0;
-    for (const kw of keywords) {
-      if (text.includes(kw)) score += kw.length > 4 ? 3 : 2;
-    }
-    // Boost nodes that hold data (facts, artifacts, decisions carry the answers).
-    if (node.type === "fact" || node.type === "artifact" || node.type === "decision" || node.type === "assistant_output") score += 1;
-    // Current canonical state always outranks stale/rejected history, not only
-    // when the query happens to contain conflict vocabulary.
-    if (node.status === "stale" || node.status === "rejected") score -= 4;
-    else if (node.data?.canonical === true && node.status === "active") score += 4;
-    else if (conflictMode && (!node.status || node.status === "active" || node.status === "resolved")) score += 1;
-    // For chronology probes, surface user-input turn sources more reliably than
-    // very recent noise so ordered questions can compare historical intent accurately.
-    if (chronologyMode && node.type === "user_input") score += 2;
-    if (score > 0) scored.push({ id: node.id, score });
-  }
-
-  const sorted = scored
-    .sort((a, b) => b.score - a.score || (chronologyMode
-      ? createdAtOf(byId.get(a.id)) - createdAtOf(byId.get(b.id))
-      : createdAtOf(byId.get(b.id)) - createdAtOf(byId.get(a.id))));
-
-  const selected = new Set<string>();
-
-  for (const item of sorted) {
-    if (selected.size >= budget) break;
-    selected.add(item.id);
-  }
-
-  // Ensure semantically relevant historical user_inputs are not starved by recency
-  // bias: older turns should stay reachable when the probe references names/facts
-  // embedded in user_input prose but their matching nodes rank outside the budget.
-  for (const item of sorted.slice(0, Math.min(6, sorted.length))) {
-    const node = byId.get(item.id);
-    if (node?.type === "user_input") selected.add(item.id);
+  // Keep semantically relevant historical user_inputs reachable when recency bias ranks them
+  // outside the budget but the probe references names/facts embedded in their prose.
+  for (const item of sorted.slice(0, 6)) {
+    if (byId.get(item.id)?.type === "user_input") selected.add(item.id);
     if (selected.size >= budget + 2) break;
   }
-
-  if (conflictMode && contradictionMap) {
+  if (conflictMode) {
+    const contradictionMap = contradictionNeighbors(graph);
     for (const id of [...selected]) {
-      for (const neighbor of contradictionMap.get(id) ?? []) {
-        selected.add(neighbor);
-      }
+      for (const neighbor of contradictionMap.get(id) ?? []) selected.add(neighbor);
     }
   }
-
   return [...selected];
+}
+
+/** Keyword relevance of one node; 0 or less means "not retrieved". */
+function retrievalScore(node: GraphNode, context: RetrievalContext): number {
+  if (node.type === "system" || node.type === "tool_call" || node.type === "tool_result") return 0;
+  const own = `${node.type} ${node.text}`.toLowerCase();
+  const { entityKeys } = context;
+  if (entityKeys.length && strongEntityKeys(own).length && !entityKeys.some((key) => own.includes(key))) return 0;
+  const text = retrievalText(node, own, context);
+  if (entityKeys.length && !entityKeys.some((key) => text.includes(key))) return 0;
+  let score = 0;
+  for (const keyword of context.keywords) {
+    if (text.includes(keyword)) score += keyword.length > 4 ? 3 : 2;
+  }
+  // Data-bearing nodes carry the answers.
+  if (node.type === "fact" || node.type === "artifact" || node.type === "decision" || node.type === "assistant_output") score += 1;
+  return score + statusBoost(node, context.conflictMode) + (context.chronologyMode && node.type === "user_input" ? 2 : 0);
+}
+
+/** Own text, plus the originating user_input prose and the merged cluster seed as fallback context. */
+function retrievalText(node: GraphNode, own: string, context: RetrievalContext): string {
+  const parts = [own];
+  const userContext = context.userInputTextByNode.get(node.id);
+  if (userContext) parts.push(userContext);
+  const cluster = context.clusterLookup.get(node.id);
+  const seed = cluster ? context.byId.get(cluster.seedId) : undefined;
+  if (seed) parts.push(oneLine(seed.text).toLowerCase());
+  return parts.join(" ");
+}
+
+/** Current canonical state always outranks stale/rejected history, not only under conflict vocabulary. */
+function statusBoost(node: GraphNode, conflictMode: boolean): number {
+  if (node.status === "stale" || node.status === "rejected") return -4;
+  if (node.data?.canonical === true && node.status === "active") return 4;
+  return conflictMode && (!node.status || node.status === "active" || node.status === "resolved") ? 1 : 0;
 }
 
 function contradictionNeighbors(graph: StateGraph): Map<string, string[]> {

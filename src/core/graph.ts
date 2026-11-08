@@ -1,10 +1,11 @@
 import type { GraphFrame, GraphNode, StateGraph } from "./types.js";
+import { nextSequenceId, unique } from "./graphEdit.js";
 
 export function nowIso(): string {
   return new Date().toISOString();
 }
 
-export const defaultSystemPrompt = "StateWeave system root. The graph is the runtime state; compile GraphFrame from the graph instead of provider messages.";
+export const defaultSystemPrompt = "StateWeave system root.";
 
 export function createEmptyGraph(): StateGraph {
   return { nodes: [], edges: [] };
@@ -22,7 +23,6 @@ export function createInitialGraphFrame(args: {
     id: "system_root",
     type: "system",
     text: args.systemPrompt ?? defaultSystemPrompt,
-    data: { activeSystemNodeId: "system_root", ...(args.systemPrompt ? { systemPrompt: args.systemPrompt } : {}) },
     status: "active",
     confidence: 1,
     createdAt
@@ -43,16 +43,14 @@ export function createInitialGraphFrame(args: {
   return {
     frame: {
       objective: args.objective,
-      currentFocus: input ? "Cortex focus is user_input_1; weave it into the graph." : "Cortex focus is system_root; append input or create semantic nodes.",
+      currentFocus: input ? "user_input_1" : "system_root; waiting for input",
       focusNodeId: input ? "user_input_1" : "system_root",
       latestInputNodeId: input ? "user_input_1" : undefined,
       activeUserInputNodeId: input ? "user_input_1" : undefined,
       candidateFocusNodeIds: input ? ["system_root", "user_input_1"] : ["system_root"],
-      nextExpectedOutput: input
-        ? "SWX/1: attach user_input to the right node, add semantic nodes if recording new facts, then @final/@final_ref with a human answer."
-        : "SWX/1: create/update nodes, or wait for input.",
+      nextExpectedOutput: input ? "T to gather evidence, or F to answer." : "N/E to record facts, or wait for input.",
       activeConstraints: constraints,
-      availableActions: ["add_node", "add_edge", "update_node", "focus", "zoom", "call_tool", "final", ...args.availableActions],
+      availableActions: [...args.availableActions],
       nodeTypes: normalizeNodeTypes(args.nodeTypes ?? [])
     },
     graph: {
@@ -81,12 +79,12 @@ export function appendInputToGraphFrame(frame: GraphFrame, args: { objective: st
   next.graph.nodes.push({ id: inputId, type: "user_input", text: args.input, status: "active", confidence: 1, createdAt });
 
   next.frame.objective = args.objective;
-  next.frame.currentFocus = `Cortex focus is ${inputId}; StateWeave will attach this user_input structurally while the model handles task semantics and evidence.`;
+  next.frame.currentFocus = inputId;
   next.frame.focusNodeId = inputId;
   next.frame.latestInputNodeId = inputId;
   next.frame.activeUserInputNodeId = inputId;
   next.frame.candidateFocusNodeIds = candidateFocusNodeIds(next);
-  next.frame.nextExpectedOutput = "SWX/1: use one evidence tool per transaction when needed, add semantic nodes only for durable new facts, then return a supported @final/@final_ref answer.";
+  next.frame.nextExpectedOutput = "T to gather evidence, or F to answer.";
   next.frame.activeConstraints = unique([...next.frame.activeConstraints, ...extractConstraints(args.input)]);
   return next;
 }
@@ -163,27 +161,6 @@ export function assertValidGraphFrame(frame: GraphFrame): void {
   if (errors.length) throw new Error(`Invalid GraphFrame: ${errors.join("; ")}`);
 }
 
-function nextSequenceId(nodes: GraphNode[], prefix: string): string {
-  let next = nodes.reduce((max, node) => {
-    const match = node.id.match(new RegExp(`^${escapeRegExp(prefix)}(\\d+)$`));
-    return match ? Math.max(max, Number(match[1])) : max;
-  }, 0) + 1;
-  while (nodes.some((node) => node.id === `${prefix}${next}`)) next += 1;
-  return `${prefix}${next}`;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function normalizeNodeTypes(values: string[]): string[] {
   return unique(values.map((value) => value.trim()).filter((value) => /^[a-z][a-z0-9_-]{0,63}$/.test(value)));
-}
-
-function unique(values: string[]): string[] {
-  return [...new Set(values)];
-}
-
-function edgeId(from: string, type: string, to: string): string {
-  return `edge_${from}_${type}_${to}`.replace(/[^a-zA-Z0-9_]/g, "_");
 }

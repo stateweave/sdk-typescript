@@ -1,14 +1,11 @@
 import { z } from "zod";
-import { describe, expect, it } from "vitest";
-import { Agent } from "../src/agent/agent.js";
+import { expect, it } from "vitest";
+import { Agent, type Model, type ModelInput, type ModelOutput, type ModelToken, type Tool } from "../src/index.js";
 import { agentStateToGraph } from "../src/core/causalGraph.js";
 import { CausalWeave } from "../src/core/causalWeave.js";
 import { projectCausalVisualGraphView, projectCausalVisualSnapshot } from "../src/core/causalVisualGraph.js";
 import * as publicSdk from "../src/index.js";
-import { AgenticBaseline } from "../src/evals/agenticBaseline.js";
 import { parseFinal } from "../src/agent/toolProtocol.js";
-import type { Model, ModelInput, ModelOutput, ModelToken } from "../src/llm/model.js";
-import type { Tool } from "../src/tools/types.js";
 
 class SequenceModel implements Model {
   private index = 0;
@@ -42,463 +39,442 @@ function recordingTool(calls: unknown[]): Tool {
   };
 }
 
-describe("Causal Weave", () => {
-  it("uses deterministic content-addressed nodes and exact read-set parents", () => {
-    const first = new CausalWeave();
-    const firstSystem = first.append({ kind: "system", payload: "shared", parents: [], advance: false });
-    const firstGoal = first.append({ kind: "goal", payload: "build", parents: [firstSystem.id] });
-    const compiled = first.compile({ query: "build", maxTokens: 4_000 });
-    const action = first.append({ kind: "tool_call", payload: { name: "read_file", args: { file_path: "a.js" } }, parents: compiled.nodeIds });
+it("uses deterministic content-addressed nodes and exact read-set parents", () => {
+  const first = new CausalWeave();
+  const firstSystem = first.append({ kind: "system", payload: "shared", parents: [], advance: false });
+  const firstGoal = first.append({ kind: "goal", payload: "build", parents: [firstSystem.id] });
+  const compiled = first.compile({ query: "build", maxTokens: 4_000 });
+  const action = first.append({ kind: "tool_call", payload: { name: "read_file", args: { file_path: "a.js" } }, parents: compiled.nodeIds });
 
-    const second = new CausalWeave();
-    const secondSystem = second.append({ kind: "system", payload: "shared", parents: [], advance: false });
-    const secondGoal = second.append({ kind: "goal", payload: "build", parents: [secondSystem.id] });
+  const second = new CausalWeave();
+  const secondSystem = second.append({ kind: "system", payload: "shared", parents: [], advance: false });
+  const secondGoal = second.append({ kind: "goal", payload: "build", parents: [secondSystem.id] });
 
-    expect(firstSystem.id).toBe(secondSystem.id);
-    expect(firstGoal.id).toBe(secondGoal.id);
-    expect(action.parents).toEqual([...compiled.nodeIds].sort());
-  });
+  expect(firstSystem.id).toBe(secondSystem.id);
+  expect(firstGoal.id).toBe(secondGoal.id);
+  expect(action.parents).toEqual([...compiled.nodeIds].sort());
+});
 
-  it("keeps current resource heads in a bounded compiled graph", () => {
-    const weave = new CausalWeave();
-    const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
-    const goal = weave.append({ kind: "goal", payload: "maintain project files", parents: [system.id] });
-    const oldResource = weave.append({ kind: "resource", payload: { path: "src/app.js", contentHash: "old" }, parents: [goal.id], resourceKey: "src/app.js" });
-    weave.append({ kind: "resource", payload: { path: "src/app.js", contentHash: "current" }, parents: [oldResource.id], resourceKey: "src/app.js" });
-    for (let index = 0; index < 80; index++) weave.append({ kind: "inference", payload: `irrelevant planning ${index}`, parents: weave.frontier() });
+it("keeps current resource heads in a bounded compiled graph", () => {
+  const weave = new CausalWeave();
+  const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
+  const goal = weave.append({ kind: "goal", payload: "maintain project files", parents: [system.id] });
+  const oldResource = weave.append({ kind: "resource", payload: { path: "src/app.js", contentHash: "old" }, parents: [goal.id], resourceKey: "src/app.js" });
+  weave.append({ kind: "resource", payload: { path: "src/app.js", contentHash: "current" }, parents: [oldResource.id], resourceKey: "src/app.js" });
+  for (let index = 0; index < 80; index++) weave.append({ kind: "inference", payload: `irrelevant planning ${index}`, parents: weave.frontier() });
 
-    const compiled = weave.compile({ query: "app project", maxTokens: 2_000, maxNodes: 20 });
+  const compiled = weave.compile({ query: "app project", maxTokens: 2_000, maxNodes: 20 });
 
-    expect(compiled.prompt).toContain('"contentHash":"current"');
-    expect(compiled.prompt).toContain("CAUSAL_WEAVE/1");
-    expect(compiled.tokenEstimate.estimatedTokens).toBeLessThanOrEqual(2_100);
-    expect(compiled.nodeIds.length).toBeLessThanOrEqual(30);
-  });
+  expect(compiled.prompt).toContain('"contentHash":"current"');
+  expect(compiled.prompt).toContain("CAUSAL_WEAVE/1");
+  expect(compiled.tokenEstimate.estimatedTokens).toBeLessThanOrEqual(2_100);
+  expect(compiled.nodeIds.length).toBeLessThanOrEqual(30);
+});
 
-  it("compiles a smaller deterministic molecular view over unchanged causal truth", () => {
-    const weave = new CausalWeave();
-    const system = weave.append({ kind: "system", payload: `protocol ${"instruction ".repeat(80)}`, parents: [], advance: false });
-    for (let turn = 0; turn < 24; turn++) {
-      const goal = weave.append({ kind: "goal", payload: `project-${turn} objective and constraints`, parents: [system.id, ...weave.frontier()] });
-      const result = weave.append({ kind: "tool_result", payload: { project: turn, content: `verified-${turn} ${"evidence ".repeat(24)}` }, parents: [goal.id] });
-      weave.append({ kind: "answer", payload: `project-${turn} complete`, parents: [result.id] });
+it("compiles a smaller deterministic molecular view over unchanged causal truth", () => {
+  const weave = new CausalWeave();
+  const system = weave.append({ kind: "system", payload: `protocol ${"instruction ".repeat(80)}`, parents: [], advance: false });
+  for (let turn = 0; turn < 24; turn++) {
+    const goal = weave.append({ kind: "goal", payload: `project-${turn} objective and constraints`, parents: [system.id, ...weave.frontier()] });
+    const result = weave.append({ kind: "tool_result", payload: { project: turn, content: `verified-${turn} ${"evidence ".repeat(24)}` }, parents: [goal.id] });
+    weave.append({ kind: "answer", payload: `project-${turn} complete`, parents: [result.id] });
+  }
+  const before = weave.snapshot();
+  const causal = weave.compile({ query: "project-23 objective", maxTokens: 16_000, maxNodes: 48, contextMode: "causal" });
+  const molecular = weave.compile({ query: "project-23 objective", maxTokens: 16_000, maxNodes: 16, contextMode: "molecular" });
+
+  expect(molecular.contextMode).toBe("molecular");
+  expect(molecular.prompt).toContain("MOLECULAR_WEAVE/1");
+  expect(molecular.prompt).toContain("<MAP>");
+  expect(molecular.prompt).toContain("<EXPANDED");
+  expect(molecular.prompt).toContain("PORT ");
+  expect(molecular.prompt).toContain("project-23 objective");
+  expect(molecular.nodeIds.every((id) => causal.nodeIds.includes(id))).toBe(true);
+  expect(molecular.nodeIds.length).toBeLessThan(causal.nodeIds.length);
+  expect(molecular.tokenEstimate.estimatedTokens).toBeLessThan(causal.tokenEstimate.estimatedTokens);
+  expect(weave.snapshot()).toEqual(before);
+});
+
+it("keeps an exact old semantic match in a small molecular detail window", () => {
+  const weave = new CausalWeave();
+  const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
+  const original = weave.append({ kind: "goal", payload: "Record the Atlas launch code", parents: [system.id] });
+  weave.append({ kind: "semantic", payload: { type: "memory", key: "atlas-code", content: "Atlas launch code is ORBIT-731." }, parents: [original.id], resourceKey: "semantic:memory:atlas-code", advance: false });
+  for (let turn = 0; turn < 80; turn++) {
+    const goal = weave.append({ kind: "goal", payload: `Unrelated task ${turn}`, parents: [system.id, ...weave.frontier()] });
+    weave.append({ kind: "answer", payload: `Unrelated result ${turn}`, parents: [goal.id] });
+  }
+
+  const compiled = weave.compile({ query: "What is the Atlas launch code?", maxTokens: 8_000, maxNodes: 16, contextMode: "molecular" });
+
+  expect(compiled.prompt).toContain("ORBIT-731");
+  expect(compiled.prompt).toContain("MOLECULAR_WEAVE/1");
+});
+
+it("projects turn molecules into consumer-safe graph metadata", () => {
+  const weave = new CausalWeave();
+  const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
+  const firstGoal = weave.append({ kind: "goal", payload: "First objective", parents: [system.id] });
+  const firstAnswer = weave.append({ kind: "answer", payload: "First result", parents: [firstGoal.id] });
+  const secondGoal = weave.append({ kind: "goal", payload: "Second objective", parents: [system.id, firstAnswer.id] });
+  const secondAnswer = weave.append({ kind: "answer", payload: "Second result", parents: [secondGoal.id] });
+  const graph = agentStateToGraph(weave.snapshot());
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+
+  expect(byId.get(firstGoal.id)?.data?.moleculeId).toBe(byId.get(firstAnswer.id)?.data?.moleculeId);
+  expect(byId.get(secondGoal.id)?.data?.moleculeId).toBe(byId.get(secondAnswer.id)?.data?.moleculeId);
+  expect(byId.get(firstGoal.id)?.data?.moleculeId).not.toBe(byId.get(secondGoal.id)?.data?.moleculeId);
+  expect(byId.get(secondAnswer.id)?.data?.moleculeLabel).toBe("Second objective");
+});
+
+it("runs the public Agent with an opt-in molecular context mode", async () => {
+  const model = new SequenceModel(["FINAL: molecular mode complete"]);
+  const agent = new Agent({ model, tools: [], contextMode: "molecular", projectionMaxNodes: 24, enforceCompletionEvidence: false });
+  const result = await agent.run("Test molecular context.");
+
+  expect(model.prompts[0]).toContain("MOLECULAR_WEAVE/1");
+  expect(result.metadata.contextMode).toBe("molecular");
+  expect(result.metadata.projectionMaxNodes).toBe(24);
+  expect(result.graph.nodes.filter((node) => node.data?.visualFocus === true).length).toBeLessThanOrEqual(24);
+  expect(result.graph.nodes.some((node) => typeof node.data?.hierarchyTopicId === "string")).toBe(true);
+  expect(result.finalAnswer).toBe("molecular mode complete");
+});
+
+it("enforces a hard molecular detail cap while exposing a deterministic hierarchy", () => {
+  const weave = new CausalWeave();
+  const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
+  for (let turn = 0; turn < 40; turn++) {
+    const goal = weave.append({ kind: "goal", payload: `topic-${turn} objective and constraints`, parents: [system.id, ...weave.frontier()] });
+    const result = weave.append({ kind: "tool_result", payload: { path: `topic-${turn}.md`, content: `verified-${turn}` }, parents: [goal.id] });
+    const resource = weave.append({ kind: "resource", payload: { path: `topic-${turn}.md`, operation: "write_file", contentHash: `hash-${turn}`, succeeded: true }, parents: [result.id], resourceKey: `topic-${turn}.md` });
+    weave.append({ kind: "answer", payload: `topic-${turn} complete`, parents: [resource.id] });
+  }
+  const before = weave.snapshot();
+  const compiled = weave.compile({ query: "topic-39 objective", maxTokens: 16_000, targetTokens: 8_000, maxNodes: 8, contextMode: "molecular" });
+
+  expect(compiled.nodeIds.length).toBeLessThanOrEqual(8);
+  expect(compiled.prompt).toContain("<CURRENT_TASK>");
+  expect(compiled.prompt).toContain("<SESSION_MAP>");
+  expect(compiled.prompt).toContain("TOPIC ");
+  expect(compiled.hierarchy.topics.length).toBeGreaterThan(1);
+  expect(weave.snapshot()).toEqual(before);
+});
+
+it("projects the same hierarchy into a bounded drill-down graph without pruning source truth", () => {
+  const weave = new CausalWeave();
+  const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
+  for (let turn = 0; turn < 40; turn++) {
+    const goal = weave.append({ kind: "goal", payload: `Build report-${turn}.md`, parents: [system.id, ...weave.frontier()] });
+    const result = weave.append({ kind: "tool_result", payload: { path: `reports/report-${turn}.md`, content: `verified-${turn}` }, parents: [goal.id] });
+    const resource = weave.append({ kind: "resource", payload: { path: `reports/report-${turn}.md`, operation: "write_file", succeeded: true }, parents: [result.id], resourceKey: `reports/report-${turn}.md` });
+    weave.append({ kind: "answer", payload: `report-${turn} complete`, parents: [resource.id] });
+  }
+  const before = weave.snapshot();
+  const projected = projectCausalVisualSnapshot(before, { maxVisibleNodes: 8 });
+  const focused = projectCausalVisualGraphView(projected.graph, { mode: "focus", topicLimit: 6, leafLimit: 3 });
+  const topicMap = projectCausalVisualGraphView(projected.graph, { mode: "map", topicLimit: 6, leafLimit: 3 });
+  const full = projectCausalVisualGraphView(projected.graph, { mode: "full" });
+
+  expect(projected.graph.nodes).toHaveLength(before.nodes.length);
+  expect(projected.graph.edges).toHaveLength(agentStateToGraph(before).edges.length);
+  expect(projected.graph.nodes.filter((node) => node.data?.visualFocus === true).length).toBeLessThanOrEqual(8);
+  expect(projected.graph.nodes.some((node) => typeof node.data?.hierarchyTopicId === "string")).toBe(true);
+  expect(focused.hierarchical).toBe(true);
+  expect(focused.graph.nodes.length).toBeLessThan(before.nodes.length / 2);
+  expect(focused.graph.edges.length).toBeLessThanOrEqual(focused.graph.nodes.length * 4);
+  expect(focused.graph.edges.every((edge) => typeof edge.data?.visualSourceEdgeCount === "number")).toBe(true);
+  expect(focused.summaryNodeCount).toBeGreaterThan(0);
+  expect(focused.archivedTopicCount).toBeGreaterThan(0);
+  expect(topicMap.topics.every((topic) => !topic.archived)).toBe(true);
+  expect(topicMap.graph.nodes.length).toBeLessThan(before.nodes.length);
+  expect(full.graph.nodes).toHaveLength(before.nodes.length);
+  expect(full.summaryNodeCount).toBe(0);
+  expect(weave.snapshot()).toEqual(before);
+
+  const collapsedTopic = focused.topics.find((topic) => !topic.archived && topic.state === "collapsed");
+  expect(collapsedTopic).toBeDefined();
+  const topicStates = new Map([[collapsedTopic!.id, "full" as const]]);
+  const topicOpened = projectCausalVisualGraphView(projected.graph, { mode: "focus", topicLimit: 6, leafLimit: 3, topicStates });
+  const leafSummary = topicOpened.graph.nodes.find((node) => node.data?.visualKind === "leaf" && node.data?.hierarchyTopicId === collapsedTopic!.id);
+  expect(leafSummary).toBeDefined();
+  const leafId = String(leafSummary?.data?.hierarchyLeafId);
+  const expanded = projectCausalVisualGraphView(projected.graph, { mode: "focus", topicLimit: 6, leafLimit: 3, topicStates, leafStates: new Map([[leafId, "full"]]) });
+  expect(expanded.renderedSourceNodeCount).toBeGreaterThan(topicOpened.renderedSourceNodeCount);
+  const sourceIds = new Set(before.nodes.map((node) => node.id));
+  for (const summary of focused.graph.nodes.filter((node) => node.data?.visualSynthetic === true)) {
+    expect((summary.data?.visualMemberIds as string[]).every((id) => sourceIds.has(id))).toBe(true);
+  }
+});
+
+it("keeps unrelated semantic memories out while preserving exact recall matches", () => {
+  const weave = new CausalWeave();
+  const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
+  const memoryGoal = weave.append({ kind: "goal", payload: "My name is Radi, remember it", parents: [system.id] });
+  const memory = weave.append({ kind: "semantic", payload: { type: "memory", key: "user-name", content: "The user's name is Radi." }, parents: [memoryGoal.id], resourceKey: "semantic:memory:user-name", advance: false });
+  weave.append({ kind: "answer", payload: "Remembered.", parents: [memoryGoal.id] });
+  const task = weave.append({ kind: "goal", payload: "Explain how human memory works for a teenager.", parents: [system.id, ...weave.frontier()] });
+  const unrelated = new CausalWeave(weave.snapshot()).compile({ query: String(task.payload), maxTokens: 8_000, maxNodes: 16, contextMode: "molecular" });
+
+  expect(unrelated.nodeIds).not.toContain(memory.id);
+  expect(unrelated.prompt).toContain("Explain how human memory works for a teenager.");
+
+  const recallWeave = new CausalWeave(weave.snapshot());
+  const recallGoal = recallWeave.append({ kind: "goal", payload: "What's my name?", parents: [system.id, ...recallWeave.frontier()] });
+  const recall = recallWeave.compile({ query: String(recallGoal.payload), maxTokens: 8_000, maxNodes: 16, contextMode: "molecular" });
+  expect(recall.nodeIds).toContain(memory.id);
+});
+
+it("accepts a direct informational response without losing it to protocol retries", async () => {
+  const model = new SequenceModel(["Memory is strengthened by spaced retrieval and meaningful connections."]);
+  const agent = new Agent({ model, tools: [], enforceCompletionEvidence: true });
+  const result = await agent.run("Explain how memory is formed for a curious student.");
+
+  expect(result.finalAnswer).toBe("Memory is strengthened by spaced retrieval and meaningful connections.");
+  expect(result.metadata.modelCalls).toBe(1);
+});
+
+it("strips a trailing structured state envelope from a human final", () => {
+  const parsed = parseFinal('FINAL: Created the artifact.\n{"answer":"Created the artifact.","state":[{"type":"artifact","key":"artifact","content":"done"}]}');
+  expect(parsed).toEqual({ answer: "Created the artifact.", state: [{ type: "artifact", key: "artifact", content: "done" }] });
+});
+
+it("rejects a stale final after a successful mutation", async () => {
+  const writes: string[] = [];
+  const writeTool: Tool = {
+    name: "write_file",
+    description: "Write one file.",
+    schema: z.object({ file_path: z.string(), content: z.string() }),
+    execute: async (args) => {
+      const parsed = args as { file_path: string; content: string };
+      writes.push(parsed.file_path);
+      return { ok: true, path: parsed.file_path };
     }
-    const before = weave.snapshot();
-    const causal = weave.compile({ query: "project-23 objective", maxTokens: 16_000, maxNodes: 48, contextMode: "causal" });
-    const molecular = weave.compile({ query: "project-23 objective", maxTokens: 16_000, maxNodes: 16, contextMode: "molecular" });
+  };
+  const model = new SequenceModel([
+    'TOOL_CALL {"name":"write_file","args":{"file_path":"quiz_grader.py","content":"ready"}}',
+    "FINAL: Your name is Radi.",
+    "FINAL: quiz_grader.py was created."
+  ]);
+  const agent = new Agent({ model, tools: [writeTool] });
+  const result = await agent.run("Create quiz_grader.py with a working quiz grader.");
 
-    expect(molecular.contextMode).toBe("molecular");
-    expect(molecular.prompt).toContain("MOLECULAR_WEAVE/1");
-    expect(molecular.prompt).toContain("<MAP>");
-    expect(molecular.prompt).toContain("<EXPANDED");
-    expect(molecular.prompt).toContain("PORT ");
-    expect(molecular.prompt).toContain("project-23 objective");
-    expect(molecular.nodeIds.every((id) => causal.nodeIds.includes(id))).toBe(true);
-    expect(molecular.nodeIds.length).toBeLessThan(causal.nodeIds.length);
-    expect(molecular.tokenEstimate.estimatedTokens).toBeLessThan(causal.tokenEstimate.estimatedTokens);
-    expect(weave.snapshot()).toEqual(before);
-  });
+  expect(writes).toEqual(["quiz_grader.py"]);
+  expect(result.finalAnswer).toBe("quiz_grader.py was created.");
+  expect(result.metadata.modelCalls).toBe(3);
+  expect(result.trace.some((step) => step.action === "invalid" && step.error?.includes("quiz_grader.py"))).toBe(true);
+});
 
-  it("keeps an exact old semantic match in a small molecular detail window", () => {
-    const weave = new CausalWeave();
-    const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
-    const original = weave.append({ kind: "goal", payload: "Record the Atlas launch code", parents: [system.id] });
-    weave.append({ kind: "semantic", payload: { type: "memory", key: "atlas-code", content: "Atlas launch code is ORBIT-731." }, parents: [original.id], resourceKey: "semantic:memory:atlas-code", advance: false });
-    for (let turn = 0; turn < 80; turn++) {
-      const goal = weave.append({ kind: "goal", payload: `Unrelated task ${turn}`, parents: [system.id, ...weave.frontier()] });
-      weave.append({ kind: "answer", payload: `Unrelated result ${turn}`, parents: [goal.id] });
-    }
+it("keeps many user turns bounded instead of making every historical goal mandatory", () => {
+  const weave = new CausalWeave();
+  const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
+  for (let turn = 0; turn < 100; turn++) {
+    const goal = weave.append({ kind: "goal", payload: `turn-${turn} ${"detail ".repeat(20)}`, parents: [system.id, ...weave.frontier()] });
+    weave.append({ kind: "answer", payload: `answer-${turn}`, parents: [goal.id] });
+  }
 
-    const compiled = weave.compile({ query: "What is the Atlas launch code?", maxTokens: 8_000, maxNodes: 16, contextMode: "molecular" });
+  const compiled = weave.compile({ query: "turn-99", maxTokens: 4_000, targetTokens: 2_000, maxNodes: 32 });
 
-    expect(compiled.prompt).toContain("ORBIT-731");
-    expect(compiled.prompt).toContain("MOLECULAR_WEAVE/1");
-  });
+  expect(compiled.prompt).toContain("turn-99");
+  expect(compiled.prompt).not.toContain("turn-0 detail");
+  expect(compiled.tokenEstimate.estimatedTokens).toBeLessThanOrEqual(2_100);
+});
 
-  it("projects turn molecules into consumer-safe graph metadata", () => {
-    const weave = new CausalWeave();
-    const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
-    const firstGoal = weave.append({ kind: "goal", payload: "First objective", parents: [system.id] });
-    const firstAnswer = weave.append({ kind: "answer", payload: "First result", parents: [firstGoal.id] });
-    const secondGoal = weave.append({ kind: "goal", payload: "Second objective", parents: [system.id, firstAnswer.id] });
-    const secondAnswer = weave.append({ kind: "answer", payload: "Second result", parents: [secondGoal.id] });
-    const graph = agentStateToGraph(weave.snapshot());
-    const byId = new Map(graph.nodes.map((node) => [node.id, node]));
-
-    expect(byId.get(firstGoal.id)?.data?.moleculeId).toBe(byId.get(firstAnswer.id)?.data?.moleculeId);
-    expect(byId.get(secondGoal.id)?.data?.moleculeId).toBe(byId.get(secondAnswer.id)?.data?.moleculeId);
-    expect(byId.get(firstGoal.id)?.data?.moleculeId).not.toBe(byId.get(secondGoal.id)?.data?.moleculeId);
-    expect(byId.get(secondAnswer.id)?.data?.moleculeLabel).toBe("Second objective");
-  });
-
-  it("runs the public Agent with an opt-in molecular context mode", async () => {
-    const model = new SequenceModel(["FINAL: molecular mode complete"]);
-    const agent = new Agent({ model, tools: [], contextMode: "molecular", projectionMaxNodes: 24, enforceCompletionEvidence: false });
-    const result = await agent.run("Test molecular context.");
-
-    expect(model.prompts[0]).toContain("MOLECULAR_WEAVE/1");
-    expect(result.metadata.contextMode).toBe("molecular");
-    expect(result.metadata.projectionMaxNodes).toBe(24);
-    expect(result.graph.nodes.filter((node) => node.data?.visualFocus === true).length).toBeLessThanOrEqual(24);
-    expect(result.graph.nodes.some((node) => typeof node.data?.hierarchyTopicId === "string")).toBe(true);
-    expect(result.finalAnswer).toBe("molecular mode complete");
-  });
-
-  it("enforces a hard molecular detail cap while exposing a deterministic hierarchy", () => {
-    const weave = new CausalWeave();
-    const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
-    for (let turn = 0; turn < 40; turn++) {
-      const goal = weave.append({ kind: "goal", payload: `topic-${turn} objective and constraints`, parents: [system.id, ...weave.frontier()] });
-      const result = weave.append({ kind: "tool_result", payload: { path: `topic-${turn}.md`, content: `verified-${turn}` }, parents: [goal.id] });
-      const resource = weave.append({ kind: "resource", payload: { path: `topic-${turn}.md`, operation: "write_file", contentHash: `hash-${turn}`, succeeded: true }, parents: [result.id], resourceKey: `topic-${turn}.md` });
-      weave.append({ kind: "answer", payload: `topic-${turn} complete`, parents: [resource.id] });
-    }
-    const before = weave.snapshot();
-    const compiled = weave.compile({ query: "topic-39 objective", maxTokens: 16_000, targetTokens: 8_000, maxNodes: 8, contextMode: "molecular" });
-
-    expect(compiled.nodeIds.length).toBeLessThanOrEqual(8);
-    expect(compiled.prompt).toContain("<CURRENT_TASK>");
-    expect(compiled.prompt).toContain("<SESSION_MAP>");
-    expect(compiled.prompt).toContain("TOPIC ");
-    expect(compiled.hierarchy.topics.length).toBeGreaterThan(1);
-    expect(weave.snapshot()).toEqual(before);
-  });
-
-  it("projects the same hierarchy into a bounded drill-down graph without pruning source truth", () => {
-    const weave = new CausalWeave();
-    const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
-    for (let turn = 0; turn < 40; turn++) {
-      const goal = weave.append({ kind: "goal", payload: `Build report-${turn}.md`, parents: [system.id, ...weave.frontier()] });
-      const result = weave.append({ kind: "tool_result", payload: { path: `reports/report-${turn}.md`, content: `verified-${turn}` }, parents: [goal.id] });
-      const resource = weave.append({ kind: "resource", payload: { path: `reports/report-${turn}.md`, operation: "write_file", succeeded: true }, parents: [result.id], resourceKey: `reports/report-${turn}.md` });
-      weave.append({ kind: "answer", payload: `report-${turn} complete`, parents: [resource.id] });
-    }
-    const before = weave.snapshot();
-    const projected = projectCausalVisualSnapshot(before, { maxVisibleNodes: 8 });
-    const focused = projectCausalVisualGraphView(projected.graph, { mode: "focus", topicLimit: 6, leafLimit: 3 });
-    const topicMap = projectCausalVisualGraphView(projected.graph, { mode: "map", topicLimit: 6, leafLimit: 3 });
-    const full = projectCausalVisualGraphView(projected.graph, { mode: "full" });
-
-    expect(projected.graph.nodes).toHaveLength(before.nodes.length);
-    expect(projected.graph.edges).toHaveLength(agentStateToGraph(before).edges.length);
-    expect(projected.graph.nodes.filter((node) => node.data?.visualFocus === true).length).toBeLessThanOrEqual(8);
-    expect(projected.graph.nodes.some((node) => typeof node.data?.hierarchyTopicId === "string")).toBe(true);
-    expect(focused.hierarchical).toBe(true);
-    expect(focused.graph.nodes.length).toBeLessThan(before.nodes.length / 2);
-    expect(focused.graph.edges.length).toBeLessThanOrEqual(focused.graph.nodes.length * 4);
-    expect(focused.graph.edges.every((edge) => typeof edge.data?.visualSourceEdgeCount === "number")).toBe(true);
-    expect(focused.summaryNodeCount).toBeGreaterThan(0);
-    expect(focused.archivedTopicCount).toBeGreaterThan(0);
-    expect(topicMap.topics.every((topic) => !topic.archived)).toBe(true);
-    expect(topicMap.graph.nodes.length).toBeLessThan(before.nodes.length);
-    expect(full.graph.nodes).toHaveLength(before.nodes.length);
-    expect(full.summaryNodeCount).toBe(0);
-    expect(weave.snapshot()).toEqual(before);
-
-    const collapsedTopic = focused.topics.find((topic) => !topic.archived && topic.state === "collapsed");
-    expect(collapsedTopic).toBeDefined();
-    const topicStates = new Map([[collapsedTopic!.id, "full" as const]]);
-    const topicOpened = projectCausalVisualGraphView(projected.graph, { mode: "focus", topicLimit: 6, leafLimit: 3, topicStates });
-    const leafSummary = topicOpened.graph.nodes.find((node) => node.data?.visualKind === "leaf" && node.data?.hierarchyTopicId === collapsedTopic!.id);
-    expect(leafSummary).toBeDefined();
-    const leafId = String(leafSummary?.data?.hierarchyLeafId);
-    const expanded = projectCausalVisualGraphView(projected.graph, { mode: "focus", topicLimit: 6, leafLimit: 3, topicStates, leafStates: new Map([[leafId, "full"]]) });
-    expect(expanded.renderedSourceNodeCount).toBeGreaterThan(topicOpened.renderedSourceNodeCount);
-    const sourceIds = new Set(before.nodes.map((node) => node.id));
-    for (const summary of focused.graph.nodes.filter((node) => node.data?.visualSynthetic === true)) {
-      expect((summary.data?.visualMemberIds as string[]).every((id) => sourceIds.has(id))).toBe(true);
-    }
-  });
-
-  it("keeps unrelated semantic memories out while preserving exact recall matches", () => {
-    const weave = new CausalWeave();
-    const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
-    const memoryGoal = weave.append({ kind: "goal", payload: "My name is Radi, remember it", parents: [system.id] });
-    const memory = weave.append({ kind: "semantic", payload: { type: "memory", key: "user-name", content: "The user's name is Radi." }, parents: [memoryGoal.id], resourceKey: "semantic:memory:user-name", advance: false });
-    weave.append({ kind: "answer", payload: "Remembered.", parents: [memoryGoal.id] });
-    const task = weave.append({ kind: "goal", payload: "Explain how human memory works for a teenager.", parents: [system.id, ...weave.frontier()] });
-    const unrelated = new CausalWeave(weave.snapshot()).compile({ query: String(task.payload), maxTokens: 8_000, maxNodes: 16, contextMode: "molecular" });
-
-    expect(unrelated.nodeIds).not.toContain(memory.id);
-    expect(unrelated.prompt).toContain("Explain how human memory works for a teenager.");
-
-    const recallWeave = new CausalWeave(weave.snapshot());
-    const recallGoal = recallWeave.append({ kind: "goal", payload: "What's my name?", parents: [system.id, ...recallWeave.frontier()] });
-    const recall = recallWeave.compile({ query: String(recallGoal.payload), maxTokens: 8_000, maxNodes: 16, contextMode: "molecular" });
-    expect(recall.nodeIds).toContain(memory.id);
-  });
-
-  it("accepts a direct informational response without losing it to protocol retries", async () => {
-    const model = new SequenceModel(["Memory is strengthened by spaced retrieval and meaningful connections."]);
-    const agent = new Agent({ model, tools: [], enforceCompletionEvidence: true });
-    const result = await agent.run("Explain how memory is formed for a curious student.");
-
-    expect(result.finalAnswer).toBe("Memory is strengthened by spaced retrieval and meaningful connections.");
-    expect(result.metadata.modelCalls).toBe(1);
-  });
-
-  it("strips a trailing structured state envelope from a human final", () => {
-    const parsed = parseFinal('FINAL: Created the artifact.\n{"answer":"Created the artifact.","state":[{"type":"artifact","key":"artifact","content":"done"}]}');
-    expect(parsed).toEqual({ answer: "Created the artifact.", state: [{ type: "artifact", key: "artifact", content: "done" }] });
-  });
-
-  it("rejects a stale final after a successful mutation", async () => {
-    const writes: string[] = [];
-    const writeTool: Tool = {
-      name: "write_file",
-      description: "Write one file.",
-      schema: z.object({ file_path: z.string(), content: z.string() }),
-      execute: async (args) => {
-        const parsed = args as { file_path: string; content: string };
-        writes.push(parsed.file_path);
-        return { ok: true, path: parsed.file_path };
-      }
-    };
-    const model = new SequenceModel([
-      'TOOL_CALL {"name":"write_file","args":{"file_path":"quiz_grader.py","content":"ready"}}',
-      "FINAL: Your name is Radi.",
-      "FINAL: quiz_grader.py was created."
-    ]);
-    const agent = new Agent({ model, tools: [writeTool] });
-    const result = await agent.run("Create quiz_grader.py with a working quiz grader.");
-
-    expect(writes).toEqual(["quiz_grader.py"]);
-    expect(result.finalAnswer).toBe("quiz_grader.py was created.");
-    expect(result.metadata.modelCalls).toBe(3);
-    expect(result.trace.some((step) => step.action === "invalid" && step.error?.includes("quiz_grader.py"))).toBe(true);
-  });
-
-  it("keeps many user turns bounded instead of making every historical goal mandatory", () => {
-    const weave = new CausalWeave();
-    const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
-    for (let turn = 0; turn < 100; turn++) {
-      const goal = weave.append({ kind: "goal", payload: `turn-${turn} ${"detail ".repeat(20)}`, parents: [system.id, ...weave.frontier()] });
-      weave.append({ kind: "answer", payload: `answer-${turn}`, parents: [goal.id] });
-    }
-
-    const compiled = weave.compile({ query: "turn-99", maxTokens: 4_000, targetTokens: 2_000, maxNodes: 32 });
-
-    expect(compiled.prompt).toContain("turn-99");
-    expect(compiled.prompt).not.toContain("turn-0 detail");
-    expect(compiled.tokenEstimate.estimatedTokens).toBeLessThanOrEqual(2_100);
-  });
-
-  it("does not recursively resend prior inference read sets as causal closure", () => {
-    const weave = new CausalWeave();
-    const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
-    weave.append({ kind: "goal", payload: "long running task", parents: [system.id] });
-    for (let step = 0; step < 120; step++) {
-      const compiled = weave.compile({ query: "long running task", maxTokens: 8_000, maxNodes: 32 });
-      const call = weave.append({ kind: "tool_call", payload: { name: "read_file", args: { file_path: `file-${step % 4}.js` } }, parents: compiled.nodeIds });
-      weave.append({ kind: "tool_result", payload: { file_path: `file-${step % 4}.js`, content: `value-${step}` }, parents: [call.id] });
-    }
-
+it("does not recursively resend prior inference read sets as causal closure", () => {
+  const weave = new CausalWeave();
+  const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
+  weave.append({ kind: "goal", payload: "long running task", parents: [system.id] });
+  for (let step = 0; step < 120; step++) {
     const compiled = weave.compile({ query: "long running task", maxTokens: 8_000, maxNodes: 32 });
+    const call = weave.append({ kind: "tool_call", payload: { name: "read_file", args: { file_path: `file-${step % 4}.js` } }, parents: compiled.nodeIds });
+    weave.append({ kind: "tool_result", payload: { file_path: `file-${step % 4}.js`, content: `value-${step}` }, parents: [call.id] });
+  }
 
-    expect(weave.snapshot().nodes.length).toBeGreaterThan(200);
-    expect(compiled.nodeIds.length).toBeLessThanOrEqual(40);
-    expect(compiled.tokenEstimate.estimatedTokens).toBeLessThan(4_000);
+  const compiled = weave.compile({ query: "long running task", maxTokens: 8_000, maxNodes: 32 });
+
+  expect(weave.snapshot().nodes.length).toBeGreaterThan(200);
+  expect(compiled.nodeIds.length).toBeLessThanOrEqual(40);
+  expect(compiled.tokenEstimate.estimatedTokens).toBeLessThan(4_000);
+});
+
+it("indexes the whole graph while superseding redundant detailed evidence", () => {
+  const weave = new CausalWeave();
+  const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
+  weave.append({ kind: "goal", payload: "finish the application with tests and documentation", parents: [system.id] });
+  const note = weave.append({
+    kind: "inference",
+    payload: "The SDK is implemented. I still need to create the browser entry point, focused tests, and README before verification.",
+    parents: weave.frontier()
   });
-
-  it("indexes the whole graph while superseding redundant detailed evidence", () => {
-    const weave = new CausalWeave();
-    const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
-    weave.append({ kind: "goal", payload: "finish the application with tests and documentation", parents: [system.id] });
-    const note = weave.append({
-      kind: "inference",
-      payload: "The SDK is implemented. I still need to create the browser entry point, focused tests, and README before verification.",
-      parents: weave.frontier()
+  weave.append({ kind: "protocol_error", payload: "Return one action.", parents: [note.id] });
+  const repeatedContent = `UNIQUE_CURRENT_SOURCE\n${"export const value = 1;\n".repeat(320)}`;
+  for (let index = 0; index < 60; index++) {
+    const call = weave.append({ kind: "tool_call", payload: { name: "read_file", args: { file_path: "src/model.js" } }, parents: weave.frontier() });
+    const result = weave.append({
+      kind: "tool_result",
+      payload: { tool: "read_file", result: { path: "src/model.js", content_hash: "same", content: repeatedContent } },
+      parents: [call.id]
     });
-    weave.append({ kind: "protocol_error", payload: "Return one action.", parents: [note.id] });
-    const repeatedContent = `UNIQUE_CURRENT_SOURCE\n${"export const value = 1;\n".repeat(320)}`;
-    for (let index = 0; index < 60; index++) {
-      const call = weave.append({ kind: "tool_call", payload: { name: "read_file", args: { file_path: "src/model.js" } }, parents: weave.frontier() });
-      const result = weave.append({
-        kind: "tool_result",
-        payload: { tool: "read_file", result: { path: "src/model.js", content_hash: "same", content: repeatedContent } },
-        parents: [call.id]
-      });
-      weave.append({
-        kind: "resource",
-        payload: { path: "src/model.js", operation: "read_file", contentHash: "same", succeeded: true },
-        parents: [result.id],
-        resourceKey: "src/model.js"
-      });
-    }
-
-    const compiled = weave.compile({ query: "finish application tests documentation", maxTokens: 20_000, targetTokens: 6_000, maxNodes: 48 });
-
-    expect(compiled.prompt).toContain("GRAPH_DIGEST");
-    expect(compiled.prompt).toContain("src/model.js | total=60 reads=60");
-    expect(compiled.prompt).toContain("I still need to create the browser entry point");
-    expect(compiled.prompt.match(/UNIQUE_CURRENT_SOURCE/g)).toHaveLength(1);
-    expect(compiled.tokenEstimate.estimatedTokens).toBeLessThanOrEqual(6_200);
-  });
-
-  it("keeps chunked reads of one file at different offsets in the projection (no read ping-pong)", () => {
-    const weave = new CausalWeave();
-    const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
-    weave.append({ kind: "goal", payload: "edit app.js to be responsive", parents: [system.id] });
-    const readChunk = (offset: number, body: string, hash: string) => {
-      const call = weave.append({ kind: "tool_call", payload: { name: "read_file", args: { file_path: "app.js", offset, limit: 100 } }, parents: weave.frontier() });
-      const result = weave.append({ kind: "tool_result", payload: { tool: "read_file", result: { path: "app.js", file_path: "app.js", offset, limit: 100, content_hash: hash, content: body } }, parents: [call.id] });
-      weave.append({ kind: "resource", payload: { path: "app.js", operation: "read_file", contentHash: hash, succeeded: true }, parents: [result.id], resourceKey: "app.js" });
-    };
-    readChunk(0, "CHUNK_ZERO_BODY", "h0");
-    readChunk(100, "CHUNK_HUNDRED_BODY", "h1");
-
-    const compiled = weave.compile({ query: "responsive app.js", maxTokens: 20_000, targetTokens: 8_000, maxNodes: 48 });
-    // Before the range-aware equivalence key, both reads collapsed to the latest
-    // offset and the model could only see CHUNK_HUNDRED_BODY, forcing it to
-    // re-read offset 0, then 100, then 0, ... (the loop). Both ranges now survive.
-    expect(compiled.prompt).toContain("CHUNK_ZERO_BODY");
-    expect(compiled.prompt).toContain("CHUNK_HUNDRED_BODY");
-  });
-
-  it("still collapses identical re-reads of the same offset", () => {
-    const weave = new CausalWeave();
-    const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
-    weave.append({ kind: "goal", payload: "inspect app.js", parents: [system.id] });
-    for (let i = 0; i < 5; i++) {
-      const call = weave.append({ kind: "tool_call", payload: { name: "read_file", args: { file_path: "app.js", offset: 0, limit: 100 } }, parents: weave.frontier() });
-      const result = weave.append({ kind: "tool_result", payload: { tool: "read_file", result: { path: "app.js", offset: 0, limit: 100, content_hash: "same", content: "SAME_BODY" } }, parents: [call.id] });
-      weave.append({ kind: "resource", payload: { path: "app.js", operation: "read_file", contentHash: "same", succeeded: true }, parents: [result.id], resourceKey: "app.js" });
-    }
-    const compiled = weave.compile({ query: "inspect app.js", maxTokens: 20_000, targetTokens: 8_000, maxNodes: 48 });
-    expect(compiled.prompt.match(/SAME_BODY/g)).toHaveLength(1);
-  });
-
-  it("grows from ordinary tool actions without model-authored graph operations", async () => {
-    const calls: unknown[] = [];
-    const model = new SequenceModel([
-      'TOOL_CALL {"name":"read_file","args":{"file_path":"src/app.js"}}',
-      "FINAL: Inspected the application."
-    ]);
-    const agent = new Agent({ model, tools: [recordingTool(calls)], systemPrompt: "Work carefully.", maxIterations: 3 });
-
-    const result = await agent.run("Inspect src/app.js");
-    const toolCall = result.state.nodes.find((node) => node.kind === "tool_call")!;
-    const toolResult = result.state.nodes.find((node) => node.kind === "tool_result")!;
-    const answer = result.state.nodes.find((node) => node.kind === "answer")!;
-
-    expect(calls).toEqual([{ file_path: "src/app.js" }]);
-    expect(toolCall.parents).toEqual([...result.trace[0].nodeIds].sort());
-    expect(toolResult.parents).toEqual([toolCall.id]);
-    expect(answer.parents).toEqual([...result.trace[1].nodeIds].sort());
-    expect(result.state.nodes.every((node) => !("role" in node))).toBe(true);
-    expect(model.prompts.every((prompt) => prompt.startsWith("CAUSAL_WEAVE/1"))).toBe(true);
-  });
-
-  it("creates typed semantic memory without an extra model call", async () => {
-    const model = new SequenceModel([
-      'FINAL: {"answer":"I will remember that.","state":[{"type":"preference","key":"hotel-style","content":"The user prefers quiet hotels."}]}'
-    ]);
-    const agent = new Agent({ model, tools: [], enforceCompletionEvidence: false });
-
-    const result = await agent.run("I prefer quiet hotels.");
-    const preference = result.state.nodes.find((node) => node.kind === "semantic")!;
-
-    expect(result.finalAnswer).toBe("I will remember that.");
-    expect(model.prompts).toHaveLength(1);
-    expect(preference.payload).toEqual({ type: "preference", key: "hotel-style", content: "The user prefers quiet hotels." });
-    expect(preference.resourceKey).toBe("semantic:preference:hotel-style");
-    expect(result.graph.nodes.find((node) => node.id === preference.id)?.type).toBe("preference");
-  });
-
-  it("supports configured and agent-created semantic types with keyed supersession", async () => {
-    const model = new SequenceModel([
-      'FINAL {"answer":"Saved.","state":[{"type":"pros-cons","key":"database-choice","content":{"pros":["simple"],"cons":["limited"]}},{"type":"risk","key":"migration","content":"Migration requires a rollback plan."}]}',
-      'FINAL {"answer":"Updated.","state":[{"type":"pros-cons","key":"database-choice","content":{"pros":["simple","fast"],"cons":[]}}]}'
-    ]);
-    const agent = new Agent({
-      model,
-      tools: [],
-      enforceCompletionEvidence: false,
-      nodeTypes: [{ name: "pros-cons", description: "Pros and cons for a decision." }],
-      allowDynamicNodeTypes: true
+    weave.append({
+      kind: "resource",
+      payload: { path: "src/model.js", operation: "read_file", contentHash: "same", succeeded: true },
+      parents: [result.id],
+      resourceKey: "src/model.js"
     });
+  }
 
-    await agent.run("Save this database assessment.");
-    const result = await agent.run("Update the database assessment.");
-    const semanticNodes = result.state.nodes.filter((node) => node.kind === "semantic");
-    const latest = semanticNodes.at(-1)!;
-    const compiled = new CausalWeave(result.state).compile({ query: "show pros-cons database choice", targetTokens: 4_000 });
+  const compiled = weave.compile({ query: "finish application tests documentation", maxTokens: 20_000, targetTokens: 6_000, maxNodes: 48 });
 
-    expect(semanticNodes.map((node) => (node.payload as { type: string }).type)).toEqual(["pros-cons", "risk", "pros-cons"]);
-    expect(latest.parents).toContain(semanticNodes[0]!.id);
-    expect(compiled.prompt).toContain('"fast"');
-    expect(compiled.prompt).not.toContain('"limited"');
+  expect(compiled.prompt).toContain("GRAPH_DIGEST");
+  expect(compiled.prompt).toContain("src/model.js | total=60 reads=60");
+  expect(compiled.prompt).toContain("I still need to create the browser entry point");
+  expect(compiled.prompt.match(/UNIQUE_CURRENT_SOURCE/g)).toHaveLength(1);
+  expect(compiled.tokenEstimate.estimatedTokens).toBeLessThanOrEqual(6_200);
+});
+
+it("keeps chunked reads of one file at different offsets in the projection (no read ping-pong)", () => {
+  const weave = new CausalWeave();
+  const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
+  weave.append({ kind: "goal", payload: "edit app.js to be responsive", parents: [system.id] });
+  const readChunk = (offset: number, body: string, hash: string) => {
+    const call = weave.append({ kind: "tool_call", payload: { name: "read_file", args: { file_path: "app.js", offset, limit: 100 } }, parents: weave.frontier() });
+    const result = weave.append({ kind: "tool_result", payload: { tool: "read_file", result: { path: "app.js", file_path: "app.js", offset, limit: 100, content_hash: hash, content: body } }, parents: [call.id] });
+    weave.append({ kind: "resource", payload: { path: "app.js", operation: "read_file", contentHash: hash, succeeded: true }, parents: [result.id], resourceKey: "app.js" });
+  };
+  readChunk(0, "CHUNK_ZERO_BODY", "h0");
+  readChunk(100, "CHUNK_HUNDRED_BODY", "h1");
+
+  const compiled = weave.compile({ query: "responsive app.js", maxTokens: 20_000, targetTokens: 8_000, maxNodes: 48 });
+  // Before the range-aware equivalence key, both reads collapsed to the latest
+  // offset and the model could only see CHUNK_HUNDRED_BODY, forcing it to
+  // re-read offset 0, then 100, then 0, ... (the loop). Both ranges now survive.
+  expect(compiled.prompt).toContain("CHUNK_ZERO_BODY");
+  expect(compiled.prompt).toContain("CHUNK_HUNDRED_BODY");
+});
+
+it("still collapses identical re-reads of the same offset", () => {
+  const weave = new CausalWeave();
+  const system = weave.append({ kind: "system", payload: "protocol", parents: [], advance: false });
+  weave.append({ kind: "goal", payload: "inspect app.js", parents: [system.id] });
+  for (let i = 0; i < 5; i++) {
+    const call = weave.append({ kind: "tool_call", payload: { name: "read_file", args: { file_path: "app.js", offset: 0, limit: 100 } }, parents: weave.frontier() });
+    const result = weave.append({ kind: "tool_result", payload: { tool: "read_file", result: { path: "app.js", offset: 0, limit: 100, content_hash: "same", content: "SAME_BODY" } }, parents: [call.id] });
+    weave.append({ kind: "resource", payload: { path: "app.js", operation: "read_file", contentHash: "same", succeeded: true }, parents: [result.id], resourceKey: "app.js" });
+  }
+  const compiled = weave.compile({ query: "inspect app.js", maxTokens: 20_000, targetTokens: 8_000, maxNodes: 48 });
+  expect(compiled.prompt.match(/SAME_BODY/g)).toHaveLength(1);
+});
+
+it("grows from ordinary tool actions without model-authored graph operations", async () => {
+  const calls: unknown[] = [];
+  const model = new SequenceModel([
+    'TOOL_CALL {"name":"read_file","args":{"file_path":"src/app.js"}}',
+    "FINAL: Inspected the application."
+  ]);
+  const agent = new Agent({ model, tools: [recordingTool(calls)], systemPrompt: "Work carefully.", maxIterations: 3 });
+
+  const result = await agent.run("Inspect src/app.js");
+  const toolCall = result.state.nodes.find((node) => node.kind === "tool_call")!;
+  const toolResult = result.state.nodes.find((node) => node.kind === "tool_result")!;
+  const answer = result.state.nodes.find((node) => node.kind === "answer")!;
+
+  expect(calls).toEqual([{ file_path: "src/app.js" }]);
+  expect(toolCall.parents).toEqual([...result.trace[0].nodeIds].sort());
+  expect(toolResult.parents).toEqual([toolCall.id]);
+  expect(answer.parents).toEqual([...result.trace[1].nodeIds].sort());
+  expect(result.state.nodes.every((node) => !("role" in node))).toBe(true);
+  expect(model.prompts.every((prompt) => prompt.startsWith("CAUSAL_WEAVE/1"))).toBe(true);
+});
+
+it("creates typed semantic memory without an extra model call", async () => {
+  const model = new SequenceModel([
+    'FINAL: {"answer":"I will remember that.","state":[{"type":"preference","key":"hotel-style","content":"The user prefers quiet hotels."}]}'
+  ]);
+  const agent = new Agent({ model, tools: [], enforceCompletionEvidence: false });
+
+  const result = await agent.run("I prefer quiet hotels.");
+  const preference = result.state.nodes.find((node) => node.kind === "semantic")!;
+
+  expect(result.finalAnswer).toBe("I will remember that.");
+  expect(model.prompts).toHaveLength(1);
+  expect(preference.payload).toEqual({ type: "preference", key: "hotel-style", content: "The user prefers quiet hotels." });
+  expect(preference.resourceKey).toBe("semantic:preference:hotel-style");
+  expect(result.graph.nodes.find((node) => node.id === preference.id)?.type).toBe("preference");
+});
+
+it("supports configured and agent-created semantic types with keyed supersession", async () => {
+  const model = new SequenceModel([
+    'FINAL {"answer":"Saved.","state":[{"type":"pros-cons","key":"database-choice","content":{"pros":["simple"],"cons":["limited"]}},{"type":"risk","key":"migration","content":"Migration requires a rollback plan."}]}',
+    'FINAL {"answer":"Updated.","state":[{"type":"pros-cons","key":"database-choice","content":{"pros":["simple","fast"],"cons":[]}}]}'
+  ]);
+  const agent = new Agent({
+    model,
+    tools: [],
+    enforceCompletionEvidence: false,
+    nodeTypes: [{ name: "pros-cons", description: "Pros and cons for a decision." }],
+    allowDynamicNodeTypes: true
   });
 
-  it("continues one causal frontier across turns and commits only successful runs", async () => {
-    const agent = new Agent({
-      model: new SequenceModel(["FINAL: First answer.", "not an action"]),
-      tools: [],
-      maxIterations: 1,
-      enforceCompletionEvidence: false
-    });
+  await agent.run("Save this database assessment.");
+  const result = await agent.run("Update the database assessment.");
+  const semanticNodes = result.state.nodes.filter((node) => node.kind === "semantic");
+  const latest = semanticNodes.at(-1)!;
+  const compiled = new CausalWeave(result.state).compile({ query: "show pros-cons database choice", targetTokens: 4_000 });
 
-    const first = await agent.run("First goal");
-    const committed = agent.getState()!;
-    const firstAnswer = committed.nodes.find((node) => node.kind === "answer")!;
-    await expect(agent.run("Broken second goal")).rejects.toThrow(/recursion limit/i);
+  expect(semanticNodes.map((node) => (node.payload as { type: string }).type)).toEqual(["pros-cons", "risk", "pros-cons"]);
+  expect(latest.parents).toContain(semanticNodes[0]!.id);
+  expect(compiled.prompt).toContain('"fast"');
+  expect(compiled.prompt).not.toContain('"limited"');
+});
 
-    expect(agent.getState()).toEqual(committed);
-    expect(first.state).toEqual(committed);
-    expect(firstAnswer.payload).toBe("First answer.");
+it("continues one causal frontier across turns and commits only successful runs", async () => {
+  const agent = new Agent({
+    model: new SequenceModel(["FINAL: First answer.", "not an action"]),
+    tools: [],
+    maxIterations: 1,
+    enforceCompletionEvidence: false
   });
 
-  it("links a later goal to the prior frontier and supports state export/import", async () => {
-    const first = new Agent({ model: new SequenceModel(["FINAL: Remembered."]), tools: [], enforceCompletionEvidence: false });
-    const initial = await first.run("Remember this");
-    const resumed = new Agent({ model: new SequenceModel(["FINAL: Continued."]), tools: [], state: initial.state, enforceCompletionEvidence: false });
-    const next = await resumed.run("Continue");
-    const earlierAnswer = initial.state.nodes.find((node) => node.kind === "answer")!;
-    const laterGoal = next.state.nodes.filter((node) => node.kind === "goal").at(-1)!;
+  const first = await agent.run("First goal");
+  const committed = agent.getState()!;
+  const firstAnswer = committed.nodes.find((node) => node.kind === "answer")!;
+  await expect(agent.run("Broken second goal")).rejects.toThrow(/recursion limit/i);
 
-    expect(laterGoal.parents).toContain(earlierAnswer.id);
-    expect(next.graph.nodes.some((node) => node.type === "user_input")).toBe(true);
-    expect(next.graph.nodes.some((node) => node.type === "assistant_output")).toBe(true);
-  });
+  expect(agent.getState()).toEqual(committed);
+  expect(first.state).toEqual(committed);
+  expect(firstAnswer.payload).toBe("First answer.");
+});
 
-  it("keeps visualization payloads bounded while preserving lossless state", () => {
-    const weave = new CausalWeave();
-    weave.append({ kind: "system", payload: "x".repeat(10_000), parents: [], advance: false });
-    const state = weave.snapshot();
-    const graph = agentStateToGraph(state);
+it("links a later goal to the prior frontier and supports state export/import", async () => {
+  const first = new Agent({ model: new SequenceModel(["FINAL: Remembered."]), tools: [], enforceCompletionEvidence: false });
+  const initial = await first.run("Remember this");
+  const resumed = new Agent({ model: new SequenceModel(["FINAL: Continued."]), tools: [], state: initial.state, enforceCompletionEvidence: false });
+  const next = await resumed.run("Continue");
+  const earlierAnswer = initial.state.nodes.find((node) => node.kind === "answer")!;
+  const laterGoal = next.state.nodes.filter((node) => node.kind === "goal").at(-1)!;
 
-    expect(state.nodes[0]!.payload).toHaveLength(10_000);
-    expect(graph.nodes[0]!.text.length).toBeLessThan(2_100);
-  });
+  expect(laterGoal.parents).toContain(earlierAnswer.id);
+  expect(next.graph.nodes.some((node) => node.type === "user_input")).toBe(true);
+  expect(next.graph.nodes.some((node) => node.type === "assistant_output")).toBe(true);
+});
 
-  it("rejects tampered imported state and exposes only one public agent class", () => {
-    const weave = new CausalWeave();
-    weave.append({ kind: "system", payload: "system", parents: [], advance: false });
-    const tampered = weave.snapshot();
-    tampered.nodes[0]!.id = "cw_tampered";
+it("keeps visualization payloads bounded while preserving lossless state", () => {
+  const weave = new CausalWeave();
+  weave.append({ kind: "system", payload: "x".repeat(10_000), parents: [], advance: false });
+  const state = weave.snapshot();
+  const graph = agentStateToGraph(state);
 
-    expect(() => new Agent({ model: new SequenceModel([]), tools: [], state: tampered })).toThrow(/identity mismatch/i);
-    expect(publicSdk.Agent).toBe(Agent);
-    expect("StateWeaveAgent" in publicSdk).toBe(false);
-    expect("CausalWeaveAgent" in publicSdk).toBe(false);
-  });
+  expect(state.nodes[0]!.payload).toHaveLength(10_000);
+  expect(graph.nodes[0]!.text.length).toBeLessThan(2_100);
+});
 
-  it("uses the exact same tool action and executor semantics as the transcript baseline", async () => {
-    const output = ['TOOL_CALL {"name":"read_file","args":{"file_path":"same.js"}}', "FINAL: Done."];
-    const transcriptCalls: unknown[] = [];
-    const causalCalls: unknown[] = [];
-    const transcript = new AgenticBaseline({ model: new SequenceModel(output), tools: [recordingTool(transcriptCalls)], systemPrompt: "Shared system", maxIterations: 3 });
-    const causal = new Agent({ model: new SequenceModel(output), tools: [recordingTool(causalCalls)], systemPrompt: "Shared system", maxIterations: 3 });
+it("rejects tampered imported state and exposes only one public agent class", () => {
+  const weave = new CausalWeave();
+  weave.append({ kind: "system", payload: "system", parents: [], advance: false });
+  const tampered = weave.snapshot();
+  tampered.nodes[0]!.id = "cw_tampered";
 
-    const [transcriptResult, causalResult] = await Promise.all([
-      transcript.run("Read same.js"),
-      causal.run("Read same.js")
-    ]);
-
-    expect(transcriptResult.completed).toBe(true);
-    expect(causalResult.finalAnswer).toBe("Done.");
-    expect(causalCalls).toEqual(transcriptCalls);
-    expect(causalResult.metadata.toolCalls).toBe(transcriptResult.toolCalls);
-    expect(causalResult.metadata.modelCalls).toBe(transcriptResult.modelCalls);
-  });
+  expect(() => new Agent({ model: new SequenceModel([]), tools: [], state: tampered })).toThrow(/identity mismatch/i);
+  expect(publicSdk.Agent).toBe(Agent);
+  expect("StateWeaveAgent" in publicSdk).toBe(false);
+  expect("CausalWeaveAgent" in publicSdk).toBe(false);
 });

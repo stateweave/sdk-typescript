@@ -2,6 +2,7 @@ import { agentStateToGraph } from "./causalGraph.js";
 import { projectGraph, type Cluster } from "./projection.js";
 import type { CausalWeaveSnapshot } from "./causalTypes.js";
 import type { StateGraph } from "./types.js";
+import { asRecord, stableStringify, stringValue } from "./stableJson.js";
 
 export type CausalProjectionCluster = Pick<Cluster, "id" | "label" | "summary" | "nodeCount" | "edgeCount" | "dominantType" | "nodeIds">;
 
@@ -64,7 +65,7 @@ function currentProjectionNodes(snapshot: CausalWeaveSnapshot): Set<string> {
 }
 
 function projectionKey(node: CausalWeaveSnapshot["nodes"][number]): string | undefined {
-  const payload = record(node.payload);
+  const payload = asRecord(node.payload);
   if ((node.kind === "resource" || node.kind === "semantic") && node.resourceKey) return `${node.kind}:${node.resourceKey}`;
   if (node.kind === "inference" || node.kind === "protocol_error") return `${node.kind}:${stableStringify(node.payload)}`;
   if (node.kind === "tool_call") return `tool_call:${stringValue(payload.name)}:${stableStringify(payload.args)}`;
@@ -82,25 +83,6 @@ function compactCluster(cluster: Cluster, toSourceId: (id: string) => string): C
     dominantType: cluster.dominantType,
     nodeIds: cluster.nodeIds.map(toSourceId)
   };
-}
-
-function record(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function stringValue(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function stableStringify(value: unknown): string {
-  if (value === undefined) return "null";
-  if (value === null || typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
-  if (typeof value === "number") return Number.isFinite(value) ? String(value) : JSON.stringify(String(value));
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  if (typeof value === "object") {
-    return `{${Object.entries(value as Record<string, unknown>).filter(([, entry]) => entry !== undefined).sort(([a], [b]) => a.localeCompare(b)).map(([key, entry]) => `${JSON.stringify(key)}:${stableStringify(entry)}`).join(",")}}`;
-  }
-  return JSON.stringify(String(value));
 }
 
 function unique(values: string[]): string[] {

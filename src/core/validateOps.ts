@@ -1,21 +1,13 @@
 import { z } from "zod";
-import type { EdgeType, GraphOp, NodeType } from "./types.js";
+import { edgeTypes, type GraphOp } from "./types.js";
+import { isSw2, parseSw2 } from "./sw2.js";
+import { parseSwx } from "./swxLegacy.js";
 
 export const nodeTypeSchema = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/);
 
-export const edgeTypeSchema = z.enum([
-  "follows",
-  "creates",
-  "supports",
-  "contradicts",
-  "explains",
-  "depends_on",
-  "addresses",
-  "validates",
-  "constrains",
-  "causes",
-  "relates_to"
-]);
+export const edgeTypeSchema = z.enum(edgeTypes);
+
+const statusSchema = z.enum(["active", "resolved", "rejected", "stale"]);
 
 export const graphNodeWithoutCreatedAtSchema = z.object({
   id: z.string().min(1),
@@ -23,25 +15,13 @@ export const graphNodeWithoutCreatedAtSchema = z.object({
   text: z.string().min(1),
   data: z.record(z.unknown()).optional(),
   confidence: z.number().min(0).max(1).optional(),
-  status: z.enum(["active", "resolved", "rejected", "stale"]).optional()
+  status: statusSchema.optional()
 });
 
 export const graphOpSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("add_node"), node: graphNodeWithoutCreatedAtSchema }),
   z.object({ op: z.literal("add_edge"), from: z.string().min(1), to: z.string().min(1), type: edgeTypeSchema }),
-  z.object({
-    op: z.literal("update_node"),
-    id: z.string().min(1),
-    patch: z.object({
-      id: z.string().optional(),
-      type: nodeTypeSchema.optional(),
-      text: z.string().optional(),
-      data: z.record(z.unknown()).optional(),
-      confidence: z.number().min(0).max(1).optional(),
-      status: z.enum(["active", "resolved", "rejected", "stale"]).optional(),
-      createdAt: z.string().optional()
-    })
-  }),
+  z.object({ op: z.literal("update_node"), id: z.string().min(1), patch: graphNodeWithoutCreatedAtSchema.partial().extend({ createdAt: z.string().optional() }) }),
   z.object({ op: z.literal("focus"), currentFocus: z.string().min(1), nodeId: z.string().min(1).optional() }),
   z.object({ op: z.literal("zoom"), level: z.number().int().min(0).max(10) }),
   z.object({ op: z.literal("call_tool"), tool: z.string().min(1), args: z.record(z.unknown()) }),
@@ -51,517 +31,30 @@ export const graphOpSchema = z.discriminatedUnion("op", [
 
 export const graphOpsResponseSchema = z.object({ ops: z.array(graphOpSchema).min(1) });
 
-type SwxBlock = { id: string; mime: string; content: string; terminated: boolean };
-
+/** Parses model output: SW2 (current), SWX/1 (compatibility), or legacy JSON `{ ops: [...] }`. */
 export function parseAndValidateOps(raw: string): GraphOp[] {
+  if (isSw2(raw)) return graphOpsResponseSchema.parse({ ops: parseSw2(raw) }).ops;
   const text = stripFence(raw.trim());
-  const swxStart = text.indexOf("SWX/1");
-  if (swxStart >= 0) return parseSwx(text.slice(swxStart));
-
+  const swxStart = text.search(/^[\t ]*SWX\/1[\t ]*\r?$/m);
+  if (swxStart >= 0) {
+    const ops = parseSwx(text.slice(swxStart));
+    if (!ops.length) throw new Error("Model returned SWX/1 but no graph operations were found.");
+    return graphOpsResponseSchema.parse({ ops }).ops;
+  }
   try {
-    const parsed = JSON.parse(extractJsonObject(text)) as unknown;
-    return graphOpsResponseSchema.parse(parsed).ops;
+    return graphOpsResponseSchema.parse(JSON.parse(extractJsonObject(text)) as unknown).ops;
   } catch (error) {
-    if (error instanceof SyntaxError) {
-      throw new Error(`Model returned invalid StateWeave exchange. Expected SWX/1; legacy JSON parse failed: ${error.message}`);
-    }
+    if (error instanceof SyntaxError) throw new Error(`Model returned invalid StateWeave exchange. Expected a first line of SW2; legacy JSON parse failed: ${error.message}`);
     throw error;
   }
 }
 
-function parseSwx(raw: string): GraphOp[] {
-  const { commands, blocks } = extractBlocks(raw);
-  const unterminated = blocks.filter((block) => !block.terminated).map((block) => block.id);
-  if (unterminated.length) throw new Error(`Unterminated SWX raw block${unterminated.length === 1 ? "" : "s"}: ${unterminated.join(", ")}`);
-  const commandLines = mergeContinuedQuotes(commands.split(/\r?\n/));
-  const nodeOps: Extract<GraphOp, { op: "add_node" }>[] = [];
-  const otherOps: GraphOp[] = [];
-  const finalTargets: { command: "@final" | "@final_ref"; tokens: string[]; argText: string }[] = [];
-  const toolArgBlockIds = new Set<string>();
-
-  for (const line of commandLines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed === "SWX/1" || trimmed.startsWith("#")) continue;
-    if (!trimmed.startsWith("@")) continue;
-
-    const tokens = tokenize(trimmed);
-    const command = tokens[0];
-
-    if (command === "@node") {
-      const id = tokens[1];
-      const type = nodeTypeToken(tokens[2]);
-      if (!id || !type) throw new Error(`Invalid SWX @node command: ${trimmed}`);
-      const { label, attrs } = parseLabelAndAttrs(tokens.slice(3));
-      const node = {
-        id,
-        type,
-        text: stringAttr(attrs.text) ?? label ?? id,
-        status: statusAttr(attrs.status),
-        confidence: numberAttr(attrs.confidence),
-        data: dataAttrs(attrs, ["text", "status", "confidence"])
-      };
-      nodeOps.push({ op: "add_node", node: withoutUndefined(node) });
-      continue;
-    }
-
-    if (command === "@edge") {
-      const from = tokens[1];
-      const type = edgeTypeToken(tokens[2]);
-      const to = tokens[3];
-      if (!from || !to || !type) throw new Error(`Invalid SWX @edge command: ${trimmed}`);
-      otherOps.push({ op: "add_edge", from, to, type });
-      continue;
-    }
-
-    if (command === "@update") {
-      const id = tokens[1];
-      if (!id) throw new Error(`Invalid SWX @update command: ${trimmed}`);
-      const { label, attrs } = parseLabelAndAttrs(tokens.slice(2));
-      const patch = withoutUndefined({
-        text: stringAttr(attrs.text) ?? label,
-        type: nodeTypeAttr(attrs.type),
-        status: statusAttr(attrs.status),
-        confidence: numberAttr(attrs.confidence),
-        data: dataAttrs(attrs, ["text", "type", "status", "confidence"])
-      });
-      otherOps.push({ op: "update_node", id, patch });
-      continue;
-    }
-
-    if (command === "@focus") {
-      const focus = parseFocus(tokens.slice(1));
-      if (focus.currentFocus) otherOps.push(focus);
-      continue;
-    }
-
-    if (command === "@zoom") {
-      const raw = tokens[1];
-      const level = raw !== undefined ? Number(raw) : NaN;
-      if (!Number.isFinite(level)) throw new Error(`Invalid SWX @zoom command: ${trimmed}`);
-      otherOps.push({ op: "zoom", level: Math.max(0, Math.min(10, Math.floor(level))) });
-      continue;
-    }
-
-    if (command === "@tool") {
-      const { tool, argText } = parseRawToolCommand(trimmed);
-      const { args, blockIds } = parseToolArgsFromRaw(argText, blocks);
-      for (const id of blockIds) toolArgBlockIds.add(id);
-      otherOps.push({ op: "call_tool", tool, args });
-      continue;
-    }
-
-    if (command === "@worker") {
-      otherOps.push(parseWorker(tokens.slice(1), trimmed));
-      continue;
-    }
-
-    if (command === "@final" || command === "@final_ref") {
-      finalTargets.push({ command, tokens: tokens.slice(1), argText: trimmed.slice(command.length).trim() });
-      continue;
-    }
-
-    throw new Error(`Unknown SWX command: ${command}`);
-  }
-
-  if (finalTargets.length > 1) throw new Error(`SWX transaction must contain at most one final operation; received ${finalTargets.length}.`);
-  const duplicateNodeIds = duplicateValues(nodeOps.map((op) => op.node.id));
-  if (duplicateNodeIds.length) throw new Error(`SWX transaction declares duplicate node id${duplicateNodeIds.length === 1 ? "" : "s"}: ${duplicateNodeIds.join(", ")}`);
-  const duplicateWorkerIds = duplicateValues(otherOps.filter((op): op is Extract<GraphOp, { op: "spawn_worker" }> => op.op === "spawn_worker").map((op) => op.id));
-  if (duplicateWorkerIds.length) throw new Error(`SWX transaction declares duplicate worker id${duplicateWorkerIds.length === 1 ? "" : "s"}: ${duplicateWorkerIds.join(", ")}`);
-
-  const finalAnswerBlockIds = new Set(finalTargets.flatMap((target) => target.command === "@final_ref" && target.tokens[0] ? [target.tokens[0]] : []));
-  const artifactBlocks = blocks.filter((block) => !toolArgBlockIds.has(block.id) && !finalAnswerBlockIds.has(block.id));
-  for (const block of artifactBlocks) mergeArtifactBlock(nodeOps, block);
-  const finalOps = finalTargets.length ? finalTargets.map((target) => finalOpFor(target, blocks, artifactBlocks, nodeOps)) : finalFromImplicitBlock(artifactBlocks);
-  const parsed = graphOpsResponseSchema.parse({ ops: [...nodeOps, ...otherOps, ...finalOps] }).ops;
-  if (!parsed.length) throw new Error("Model returned SWX/1 but no graph operations were found.");
-  return parsed;
-}
-
-// A quoted @ command value may legitimately span multiple lines — most often a
-// structured @final answer whose header line ends with ":" and is followed by
-// bullets. Because commands are split per line, such continuation lines are
-// otherwise skipped (the body is silently dropped), truncating synthesis
-// answers. Re-join continuation lines while a quote stays open.
-function mergeContinuedQuotes(lines: string[]): string[] {
-  const merged: string[] = [];
-  for (let index = 0; index < lines.length; index++) {
-    let line = lines[index];
-    while (index + 1 < lines.length && openQuoteChar(line)) {
-      const next = lines[index + 1];
-      if (next.trim().startsWith("@") || next.trim().startsWith("<<<")) break;
-      index++;
-      line += "\n" + next;
-    }
-    merged.push(line);
-  }
-  return merged;
-}
-
-function openQuoteChar(line: string): string | undefined {
-  let quote: string | undefined;
-  for (let index = 0; index < line.length; index++) {
-    const char = line[index];
-    if (char === "\\" && index + 1 < line.length) { index++; continue; }
-    if (char !== '"' && char !== "'") continue;
-    if (quote === char) quote = undefined;
-    else if (!quote) quote = char;
-  }
-  return quote;
-}
-
-function extractBlocks(raw: string): { commands: string; blocks: SwxBlock[] } {
-  const lines = raw.split(/\r?\n/);
-  const commandLines: string[] = [];
-  const blocks: SwxBlock[] = [];
-
-  for (let index = 0; index < lines.length; index++) {
-    const start = lines[index].match(/^<<<([A-Za-z0-9_.:-]+)(?::([^\s>]+))?\s*$/);
-    if (!start) {
-      commandLines.push(lines[index]);
-      continue;
-    }
-
-    const id = start[1];
-    const mime = start[2] ?? "text/plain";
-    const content: string[] = [];
-    index++;
-    while (index < lines.length && lines[index].trim() !== ">>>") {
-      content.push(lines[index]);
-      index++;
-    }
-    blocks.push({ id, mime, content: content.join("\n"), terminated: index < lines.length });
-  }
-
-  return { commands: commandLines.join("\n"), blocks };
-}
-
-function mergeArtifactBlock(nodeOps: Extract<GraphOp, { op: "add_node" }>[], block: SwxBlock): void {
-  const existing = nodeOps.find((op) => op.node.id === block.id);
-  if (existing) {
-    existing.node.data = { ...existing.node.data, mime: block.mime, content: block.content, ...(block.terminated ? {} : { swxTerminated: false }) };
-    existing.node.status = existing.node.status ?? "resolved";
-    return;
-  }
-
-  nodeOps.push({
-    op: "add_node",
-    node: {
-      id: block.id,
-      type: "artifact",
-      text: `Artifact ${block.id}`,
-      status: "resolved",
-      data: { mime: block.mime, content: block.content, ...(block.terminated ? {} : { swxTerminated: false }) }
-    }
-  });
-}
-
-function finalOpFor(
-  target: { command: "@final" | "@final_ref"; tokens: string[]; argText: string },
-  allBlocks: SwxBlock[],
-  artifactBlocks: SwxBlock[],
-  nodeOps: Extract<GraphOp, { op: "add_node" }>[]
-): Extract<GraphOp, { op: "final" }> {
-  if (target.command === "@final_ref") return finalRefOpFor(target, allBlocks);
-
-  const { label, attrs } = parseLabelAndAttrs(target.tokens);
-  const artifactIds = artifactIdsFromAttrs(attrs);
-  const humanAnswer = stringAttr(attrs.text) ?? label;
-  const finalIsQuotedText = /^['"]/.test(target.argText);
-
-  const outcome = attrs.outcome === "already_satisfied" ? "already_satisfied" : undefined;
-  if (attrs.outcome !== undefined && !outcome) throw new Error(`Invalid SWX @final outcome: ${String(attrs.outcome)}`);
-
-  if (humanAnswer && (finalIsQuotedText || artifactIds.length || /\s/.test(humanAnswer))) return finalOp(humanAnswer, artifactIds, outcome);
-
-  const cleanTarget = unquote(humanAnswer ?? (target.argText.trim() || "final"));
-  const block = artifactBlocks.find((item) => item.id === cleanTarget);
-  const node = nodeOps.find((op) => op.node.id === cleanTarget)?.node;
-  if (node && (node.type === "assistant_output" || !node.data?.mime)) return finalOp(node.text);
-  const legacyArtifactId = block?.id ?? node?.id;
-  if (legacyArtifactId) return finalOp(`Completed. See ${legacyArtifactId}.`, [legacyArtifactId]);
-
-  if (/^[A-Za-z][A-Za-z0-9_-]*$/.test(cleanTarget)) return finalOp(`Completed. See ${cleanTarget}.`, [cleanTarget]);
-  return finalOp(cleanTarget, artifactIds);
-}
-
-function finalRefOpFor(target: { tokens: string[] }, blocks: SwxBlock[]): Extract<GraphOp, { op: "final" }> {
-  const blockId = target.tokens[0];
-  if (!blockId) throw new Error("Invalid SWX @final_ref command: missing final answer block id");
-  const { attrs } = parseLabelAndAttrs(target.tokens.slice(1));
-  const block = blocks.find((item) => item.id === blockId);
-  if (!block) throw new Error(`SWX @final_ref references missing block: ${blockId}`);
-  const outcome = attrs.outcome === "already_satisfied" ? "already_satisfied" : undefined;
-  if (attrs.outcome !== undefined && !outcome) throw new Error(`Invalid SWX @final_ref outcome: ${String(attrs.outcome)}`);
-  return finalOp(block.content, artifactIdsFromAttrs(attrs), outcome);
-}
-
-function finalOp(answer: string, artifactIds: string[] = [], outcome?: "already_satisfied"): Extract<GraphOp, { op: "final" }> {
-  const ids = unique(artifactIds.filter(Boolean));
-  return withoutUndefined({ op: "final", answer, artifactId: ids[0], artifactIds: ids.length ? ids : undefined, outcome });
-}
-
-function artifactIdsFromAttrs(attrs: Record<string, unknown>): string[] {
-  const raw = stringAttr(attrs.artifacts) ?? stringAttr(attrs.artifactIds) ?? stringAttr(attrs.artifact);
-  return raw ? raw.split(",").map((item) => item.trim()).filter(Boolean) : [];
-}
-
-function finalFromImplicitBlock(blocks: SwxBlock[]): Extract<GraphOp, { op: "final" }>[] {
-  const block = blocks.find((item) => item.id === "final" || item.id === "answer") ?? (blocks.length === 1 ? blocks[0] : undefined);
-  return block ? [finalOp(block.content)] : [];
-}
-
-function parseLabelAndAttrs(tokens: string[]): { label?: string; attrs: Record<string, unknown> } {
-  const firstAttr = tokens.findIndex(isAttrToken);
-  const labelTokens = firstAttr === -1 ? tokens : tokens.slice(0, firstAttr);
-  const attrTokens = firstAttr === -1 ? [] : tokens.slice(firstAttr);
-  const label = labelTokens.join(" ").trim() || undefined;
-  return { label, attrs: parseAttrs(attrTokens) };
-}
-
-function parseFocus(tokens: string[]): Extract<GraphOp, { op: "focus" }> {
-  const { label, attrs } = parseLabelAndAttrs(tokens);
-  const explicitNode = stringAttr(attrs.node) ?? stringAttr(attrs.nodeId) ?? stringAttr(attrs.focusNodeId);
-  const first = tokens[0];
-  const firstLooksLikeNodeId = first && tokens.length > 1 && !isAttrToken(first) && /^[A-Za-z][A-Za-z0-9_-]*$/.test(first);
-  const nodeId = explicitNode ?? (firstLooksLikeNodeId ? first : undefined);
-  const currentFocus = stringAttr(attrs.text) ?? (nodeId && tokens.length > 1 ? tokens.slice(1).join(" ").trim() : label) ?? nodeId ?? "focus";
-  return withoutUndefined({ op: "focus", currentFocus, nodeId });
-}
-
-function parseWorker(tokens: string[], raw: string): Extract<GraphOp, { op: "spawn_worker" }> {
-  const id = tokens[0];
-  if (!id) throw new Error(`Invalid SWX @worker command: ${raw}`);
-  const { label, attrs } = parseLabelAndAttrs(tokens.slice(1));
-  const objective = stringAttr(attrs.objective) ?? label;
-  if (!objective) throw new Error(`Invalid SWX @worker command: missing objective in ${raw}`);
-  const focusNodeId = stringAttr(attrs.focusNodeId) ?? stringAttr(attrs.focus) ?? stringAttr(attrs.node) ?? stringAttr(attrs.nodeId);
-  const input = stringAttr(attrs.input) ?? stringAttr(attrs.task);
-  const maxIterations = numberAttr(attrs.maxIterations);
-  return withoutUndefined({ op: "spawn_worker", id, objective, focusNodeId, input, maxIterations });
-}
-
-function parseRawToolCommand(line: string): { tool: string; argText: string } {
-  const body = line.slice("@tool".length).trim();
-  const boundary = body.search(/\s/);
-  const rawTool = boundary < 0 ? body : body.slice(0, boundary);
-  const tool = rawTool.startsWith("name=") ? rawTool.slice("name=".length) : rawTool;
-  if (!tool) throw new Error(`Invalid SWX @tool command: ${line}`);
-  return { tool, argText: boundary < 0 ? "" : body.slice(boundary).trim() };
-}
-
-function parseToolArgsFromRaw(argText: string, blocks: SwxBlock[]): { args: Record<string, unknown>; blockIds: Set<string> } {
-  const attrs = parseRawToolAttrs(argText);
-  const blocksById = new Map(blocks.map((block) => [block.id, block]));
-  const blockIds = new Set<string>();
-
-  for (const [key, value] of Object.entries(attrs)) {
-    if (!key.endsWith("_ref")) continue;
-    const targetKey = key.slice(0, -4);
-    if (!targetKey) throw new Error(`Invalid SWX @tool block ref arg: ${key}`);
-    if (typeof value !== "string") throw new Error(`SWX @tool ${key} must reference a block id.`);
-    const block = blocksById.get(value);
-    if (!block) throw new Error(`SWX @tool ${key} references missing block: ${value}`);
-    attrs[targetKey] = block.content;
-    delete attrs[key];
-    blockIds.add(block.id);
-  }
-
-  return { args: attrs, blockIds };
-}
-
-function parseRawToolAttrs(text: string): Record<string, unknown> {
-  const markers: { key: string; start: number; valueStart: number }[] = [];
-  let quote: string | undefined;
-  for (let index = 0; index < text.length; index++) {
-    const char = text[index];
-    if (char === "\\" && index + 1 < text.length) { index++; continue; }
-    if (quote) {
-      if (char === quote) quote = undefined;
-      continue;
-    }
-    if (char === "'" || char === '"') { quote = char; continue; }
-    if (index > 0 && !/\s/.test(text[index - 1])) continue;
-    const match = text.slice(index).match(/^([A-Za-z_][A-Za-z0-9_-]*)=/);
-    if (!match) continue;
-    markers.push({ key: match[1], start: index, valueStart: index + match[0].length });
-    index += match[0].length - 1;
-  }
-
-  const attrs: Record<string, unknown> = {};
-  for (let index = 0; index < markers.length; index++) {
-    const marker = markers[index];
-    const end = markers[index + 1]?.start ?? text.length;
-    attrs[marker.key] = parseRawToolScalar(text.slice(marker.valueStart, end).trim());
-  }
-  return attrs;
-}
-
-function parseRawToolScalar(value: string): unknown {
-  const quote = value[0];
-  if ((quote === '"' || quote === "'") && value.length >= 2 && value[value.length - 1] === quote) {
-    let decoded = "";
-    for (let index = 1; index < value.length - 1; index++) {
-      const char = value[index];
-      if (char === "\\" && index + 1 < value.length - 1) {
-        const escaped = value[index + 1];
-        if (escaped === quote || escaped === "\\") { decoded += escaped; index++; continue; }
-        if (escaped === "n" || escaped === "r" || escaped === "t") {
-          decoded += escaped === "n" ? "\n" : escaped === "r" ? "\r" : "\t";
-          index++;
-          continue;
-        }
-      }
-      decoded += char;
-    }
-    return parsePrimitive(decoded);
-  }
-  return parseScalar(value);
-}
-
-function parseAttrs(tokens: string[]): Record<string, unknown> {
-  const attrs: Record<string, unknown> = {};
-  for (const token of tokens) {
-    if (!isAttrToken(token)) continue;
-    const index = token.indexOf("=");
-    attrs[token.slice(0, index)] = parseScalar(token.slice(index + 1));
-  }
-  return attrs;
-}
-
-function isAttrToken(token: string): boolean {
-  return /^[A-Za-z_][A-Za-z0-9_-]*=/.test(token);
-}
-
-function tokenize(line: string): string[] {
-  const tokens: string[] = [];
-  let current = "";
-  let quote: string | undefined;
-
-  for (let index = 0; index < line.length; index++) {
-    const char = line[index];
-    if (quote) {
-      if (char === "\\" && index + 1 < line.length) {
-        const escaped = line[index + 1];
-        current += escaped === "n" ? "\n" : escaped === "r" ? "\r" : escaped === "t" ? "\t" : escaped;
-        index++;
-        continue;
-      }
-      if (char === quote) {
-        quote = undefined;
-        continue;
-      }
-      current += char;
-      continue;
-    }
-
-    if (char === "'" || char === '"') {
-      quote = char;
-      continue;
-    }
-    if (/\s/.test(char)) {
-      if (current) {
-        tokens.push(current);
-        current = "";
-      }
-      continue;
-    }
-    current += char;
-  }
-
-  if (current) tokens.push(current);
-  return tokens;
-}
-
-function parseScalar(value: string): unknown {
-  return parsePrimitive(unquote(value));
-}
-
-function parsePrimitive(value: string): unknown {
-  if (value === "true") return true;
-  if (value === "false") return false;
-  const numeric = Number(value);
-  if (/^-?\d+(?:\.\d+)?$/.test(value) && Number.isFinite(numeric)) return numeric;
-  return value;
-}
-
-function unquote(value: string): string {
-  const trimmed = value.trim();
-  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) return trimmed.slice(1, -1);
-  return trimmed;
-}
-
-function dataAttrs(attrs: Record<string, unknown>, exclude: string[]): Record<string, unknown> | undefined {
-  const data = Object.fromEntries(Object.entries(attrs).filter(([key]) => !exclude.includes(key)));
-  return Object.keys(data).length ? data : undefined;
-}
-
-function withoutUndefined<T extends Record<string, unknown>>(value: T): T {
-  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
-}
-
-function unique(values: string[]): string[] {
-  return [...new Set(values)];
-}
-
-function duplicateValues(values: string[]): string[] {
-  const seen = new Set<string>();
-  const duplicates = new Set<string>();
-  for (const value of values) {
-    if (seen.has(value)) duplicates.add(value);
-    seen.add(value);
-  }
-  return [...duplicates];
-}
-
-function stringAttr(value: unknown): string | undefined {
-  return typeof value === "string" && value ? value : undefined;
-}
-
-function numberAttr(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function statusAttr(value: unknown): "active" | "resolved" | "rejected" | "stale" | undefined {
-  return value === "active" || value === "resolved" || value === "rejected" || value === "stale" ? value : undefined;
-}
-
-function nodeTypeAttr(value: unknown): NodeType | undefined {
-  return isNodeType(value) ? value : undefined;
-}
-
-function nodeTypeToken(value: unknown): NodeType | undefined {
-  const cleaned = cleanTypeToken(value);
-  return isNodeType(cleaned) ? cleaned : undefined;
-}
-
-function edgeTypeToken(value: unknown): EdgeType | undefined {
-  const cleaned = cleanTypeToken(value);
-  return isEdgeType(cleaned) ? cleaned : undefined;
-}
-
-function cleanTypeToken(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  return value.replace(/^\[/, "").replace(/\]:?$/, "").replace(/:$/, "");
-}
-
-function isNodeType(value: unknown): value is NodeType {
-  return typeof value === "string" && nodeTypeSchema.safeParse(value).success;
-}
-
-function isEdgeType(value: unknown): value is EdgeType {
-  return typeof value === "string" && edgeTypeSchema.safeParse(value).success;
-}
-
 function extractJsonObject(raw: string): string {
-  const trimmed = raw.trim();
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)?.[1]?.trim();
+  const fenced = raw.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)?.[1]?.trim();
   if (fenced) return fenced;
-
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start > 0 && end > start) return trimmed.slice(start, end + 1);
-  return trimmed;
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  return start > 0 && end > start ? raw.slice(start, end + 1) : raw;
 }
 
 function stripFence(raw: string): string {
