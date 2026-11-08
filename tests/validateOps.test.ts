@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { parseAndValidateOps } from "../src/core/validateOps.js";
+import { parseAndValidateOps } from "../src/index.js";
 
 it.each([
   "Literal SWX/1 documentation",

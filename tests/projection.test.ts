@@ -1,7 +1,5 @@
 import { expect, it } from "vitest";
-import { appendInputToGraphFrame, createInitialGraphFrame } from "../src/core/graph.js";
-import { clusterGraph, projectGraph } from "../src/core/projection.js";
-import { serializeGraphFrame } from "../src/core/serialize.js";
+import { appendInputToGraphFrame, createInitialGraphFrame, clusterGraph, projectGraph, serializeGraphFrame } from "../src/index.js";
 
 function buildConversation(turns: { input: string; answer: string }[]) {
   let frame = createInitialGraphFrame({ objective: "Multi-turn", input: turns[0].input, availableActions: [] });

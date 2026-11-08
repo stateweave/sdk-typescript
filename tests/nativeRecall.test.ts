@@ -1,11 +1,9 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import * as sdk from '../src/index.js';
-import { Agent } from '../src/agent/agent.js';
-import type { AgentArgs } from '../src/agent/types.js';
+import { Agent, type AgentArgs, type Model, type ModelInput } from '../src/index.js';
 import { CausalWeave } from '../src/core/causalWeave.js';
 import { prepareRecall, selectRecall, validateRecallProjection } from '../src/core/recallProjection.js';
-import type { Model, ModelInput } from '../src/llm/model.js';
 
 function fixture() {
   const weave = new CausalWeave();

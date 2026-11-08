@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { Agent } from "../src/agent/agent.js";
+import { Agent, type Model, type ModelInput, type ModelOutput } from "../src/index.js";
 import { CausalWeave } from "../src/core/causalWeave.js";
 import type { FocusReranker } from "../src/agent/focusReranker.js";
-import type { Model, ModelInput, ModelOutput } from "../src/llm/model.js";
 
 class FixedModel implements Model {
   async complete(_input: ModelInput): Promise<ModelOutput> { return { text: "FINAL: done" }; }

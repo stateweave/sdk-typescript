@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
-import { Agent } from '../src/agent/agent.js';
+import { Agent } from '../src/index.js';
 import { CausalWeave } from '../src/core/causalWeave.js';
 import { prepareRecall, selectRecall, validateRecallProjection } from '../src/core/recallProjection.js';
 import { isWellFormedUnicode, splitsSurrogatePair, utf16Prefix } from '../src/core/unicodeText.js';

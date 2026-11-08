@@ -2,7 +2,7 @@ import { access, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
-import { createFileSystemTools } from "../src/tools/fileSystemTools.js";
+import { createFileSystemTools } from "../src/index.js";
 
 it("provides workspace-scoped read, write, edit, and bash tools", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-tools-"));

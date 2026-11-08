@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
-import { appendInputToGraphFrame, assertValidGraphFrame, createInitialGraphFrame } from "../src/core/graph.js";
-import { serializeGraphFrame } from "../src/core/serialize.js";
+import { appendInputToGraphFrame, assertValidGraphFrame, createInitialGraphFrame, serializeGraphFrame } from "../src/index.js";
 
 it("creates a system-only initial GraphFrame when no user input is provided", () => {
   const frame = createInitialGraphFrame({ objective: "Bootstrap", systemPrompt: "Be careful.", availableActions: [] });

@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { inspectPrimitiveTask, parseCliArgs } from "../src/cli.js";
-import { serializeGraphFrame } from "../src/core/serialize.js";
-import type { GraphFrame } from "../src/core/types.js";
-import type { Model } from "../src/llm/model.js";
+import { serializeGraphFrame, type GraphFrame, type Model } from "../src/index.js";
 
 describe("primitive inspector", () => {
   it("keeps configured providers off unless --live is explicit", async () => {

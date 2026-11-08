@@ -5,12 +5,7 @@ import { expect, it } from "vitest";
 import { z } from "zod";
 import { GraphFrameAgent as Agent } from "../src/agent/graphFrameAgent.js";
 import { runStateWeave, StateWeaveRunError, streamStateWeave } from "../src/agent/stateweaveRunner.js";
-import { applyOps } from "../src/core/applyOps.js";
-import { createInitialGraphFrame } from "../src/core/graph.js";
-import type { StateWeaveStreamEvent } from "../src/core/types.js";
-import type { Model, ModelInput, ModelOutput, ModelToken } from "../src/llm/model.js";
-import { createFileSystemTools } from "../src/tools/fileSystemTools.js";
-import type { Tool } from "../src/tools/types.js";
+import { applyOps, createInitialGraphFrame, type StateWeaveStreamEvent, type Model, type ModelInput, type ModelOutput, type ModelToken, createFileSystemTools, type Tool } from "../src/index.js";
 
 it("automatically connects pending inputs and model-added nodes", async () => {
   const firstFrame = applyOps(

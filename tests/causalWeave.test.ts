@@ -1,13 +1,11 @@
 import { z } from "zod";
 import { describe, expect, it } from "vitest";
-import { Agent } from "../src/agent/agent.js";
+import { Agent, type Model, type ModelInput, type ModelOutput, type ModelToken, type Tool } from "../src/index.js";
 import { agentStateToGraph } from "../src/core/causalGraph.js";
 import { CausalWeave } from "../src/core/causalWeave.js";
 import { projectCausalVisualGraphView, projectCausalVisualSnapshot } from "../src/core/causalVisualGraph.js";
 import * as publicSdk from "../src/index.js";
 import { parseFinal } from "../src/agent/toolProtocol.js";
-import type { Model, ModelInput, ModelOutput, ModelToken } from "../src/llm/model.js";
-import type { Tool } from "../src/tools/types.js";
 
 class SequenceModel implements Model {
   private index = 0;

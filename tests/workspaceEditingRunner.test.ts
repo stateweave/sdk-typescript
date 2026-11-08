@@ -13,7 +13,7 @@ import {
   type MessagesEntry,
   type MessagesModel
 } from "../eval/workspace-editing-v1/runner.js";
-import type { Model, ModelInput, ModelOutput, ModelToken } from "../src/llm/model.js";
+import type { Model, ModelInput, ModelOutput, ModelToken } from "../src/index.js";
 
 const offlineLimits = { maxIterationsPerTurn: 12, maxPromptTokens: 64_000 } as const;
 

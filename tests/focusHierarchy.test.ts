@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { Agent } from "../src/agent/agent.js";
+import { Agent, type Model } from "../src/index.js";
 import { FocusRankingError, summarizeFocus, type FocusReranker, type FocusStage } from "../src/agent/focusReranker.js";
 import { CausalWeave } from "../src/core/causalWeave.js";
 import type { FocusCandidate, FocusHierarchy } from "../src/core/focusTypes.js";
-import type { Model } from "../src/llm/model.js";
 
 const item = (id: string, text = id): FocusCandidate => ({ id, text, kind: "memory", sequence: 1 });
 const fixed: Model = { complete: async () => ({ text: "FINAL: done" }), async *stream() { yield { type: "token", token: "FINAL: done" }; } };
