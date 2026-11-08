@@ -40,7 +40,7 @@ export class AnthropicModel implements Model {
     if (!config.apiKey) throw new Error("ANTHROPIC_API_KEY is required for AnthropicModel.");
     this.config = {
       ...defaultConfig,
-      ...config,
+      ...omitUndefined(config),
       baseUrl: (config.baseUrl ?? defaultConfig.baseUrl).replace(/\/$/, ""),
       version: config.version ?? defaultConfig.version,
       apiKey: config.apiKey
@@ -105,7 +105,7 @@ export class AnthropicModel implements Model {
   }
 
   private payload(input: ModelInput, stream: boolean): Record<string, unknown> {
-    const parameters = { ...this.config, ...input.parameters };
+    const parameters = { ...this.config, ...omitUndefined(input.parameters ?? {}) };
     return omitUndefined({
       ...this.config.extra,
       model: parameters.model,
@@ -146,13 +146,7 @@ export function anthropicConfigFromEnv(env: NodeJS.ProcessEnv): AnthropicModelCo
 }
 
 function defaultSystem(): string {
-  return [
-    "You are a precise, helpful assistant evaluating two equivalent interaction formats: regular messages and StateWeave.",
-    "Regular messages provide conversation text and expect a direct answer.",
-    "StateWeave provides graph state and expects SWX/1 commands plus raw artifact blocks when useful.",
-    "Treat both formats as equally capable; optimize for the user's requested outcome and artifact quality, not for the surrounding protocol.",
-    "Follow the requested response format exactly for the format you receive."
-  ].join(" ");
+  return "You are a precise, helpful assistant. Follow the requested response format.";
 }
 
 export function normalizeAnthropicUsage(usage: AnthropicUsage | undefined): ModelUsage | undefined {

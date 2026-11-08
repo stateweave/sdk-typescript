@@ -55,7 +55,7 @@ type SwxBlock = { id: string; mime: string; content: string; terminated: boolean
 
 export function parseAndValidateOps(raw: string): GraphOp[] {
   const text = stripFence(raw.trim());
-  const swxStart = text.indexOf("SWX/1");
+  const swxStart = text.search(/^[\t ]*SWX\/1[\t ]*\r?$/m);
   if (swxStart >= 0) return parseSwx(text.slice(swxStart));
 
   try {

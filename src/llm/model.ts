@@ -74,13 +74,9 @@ export class MockModel implements Model {
     const source = input.frame ? frameText(input.frame) : input.prompt;
     const inputNodeId = input.frame?.frame.latestInputNodeId ?? "user_input_1";
     const lower = source.toLowerCase();
-    if (lower.includes("evaluate a blind a/b answer comparison")) return mockJudge(source);
-    if (source.includes("LONG_HORIZON_DIRECTOR/1")) return "Explain why ocean tides occur and distinguish the roles of the Moon and the Sun. Keep the answer under 200 words.";
-    if (input.mode === "text" && input.prompt.startsWith("Summarize the following older coding-agent transcript")) return mockCompactionSummary();
     const identity = identityOutput(source, inputNodeId);
     const task = inferTask(lower);
     if (input.prompt.startsWith("CAUSAL_WEAVE/1") || input.prompt.startsWith("MOLECULAR_WEAVE/1")) return `FINAL: ${identity?.answer ?? finalFor(task)}`;
-    if (input.mode === "text" && input.prompt.startsWith("SYSTEM:") && input.prompt.includes("transcript is your complete working memory")) return `FINAL: ${identity?.answer ?? finalFor(task)}`;
     if (identity && input.mode === "text") return identity.answer;
     if (identity && input.mode !== "text") return identity.swx;
 
@@ -105,27 +101,6 @@ export class MockModel implements Model {
       `@final "${finalFor(task)}"`
     ].join("\n");
   }
-}
-
-function mockCompactionSummary(): string {
-  return [
-    "User facts: Preserve explicit user identity, preferences, and durable corrections from the prior transcript.",
-    "Artifacts and files: Preserve every confirmed path, the purpose of each artifact, and whether tool evidence verified its creation or inspection.",
-    "Decisions and constraints: Keep the active system constraints, requested output formats, implementation decisions, and later corrections that supersede older instructions.",
-    "Failures and corrections: Retain unresolved failures and distinguish confirmed tool results from unsupported claims.",
-    "Unresolved work: Continue only tasks explicitly left incomplete; do not infer completion from planning prose.",
-    "The retained latest messages remain authoritative for immediate context. This summary is durable working memory of older committed turns and contains no new tool claims."
-  ].join("\n\n");
-}
-
-function mockJudge(source: string): string {
-  const gold = source.match(/GOLD ANSWER:\n([\s\S]*?)\n\nANSWER A:/)?.[1]?.trim().toLowerCase() ?? "";
-  const answerA = source.match(/ANSWER A:\n([\s\S]*?)\n\nANSWER B:/)?.[1]?.trim().toLowerCase() ?? "";
-  const answerB = source.match(/ANSWER B:\n([\s\S]*?)\n\nReturn exactly:/)?.[1]?.trim().toLowerCase() ?? "";
-  const a = Boolean(gold && answerA.includes(gold));
-  const b = Boolean(gold && answerB.includes(gold));
-  const winner = a && b ? "BOTH" : a ? "A" : b ? "B" : "NEITHER";
-  return `WINNER: ${winner}\nREASON: Mock judge compared answers to the gold string.`;
 }
 
 function identityOutput(source: string, inputNodeId: string): { answer: string; swx: string } | undefined {

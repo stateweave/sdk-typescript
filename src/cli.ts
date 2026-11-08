@@ -1,142 +1,100 @@
 #!/usr/bin/env node
-import "dotenv/config";
-import path from "node:path";
+import { existsSync, realpathSync } from "node:fs";
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
-import { Agent, type AgentProgress, type AgentState } from "./agent/agent.js";
-import { TraditionalMessagesAgent } from "./agent/baselineAgent.js";
-import type { StateGraph } from "./core/types.js";
+import { fileURLToPath } from "node:url";
+import { applyOps } from "./core/applyOps.js";
+import { createInitialGraphFrame } from "./core/graph.js";
+import { serializeGraphFrame } from "./core/serialize.js";
+import { parseAndValidateOps } from "./core/validateOps.js";
 import { graphToMermaid } from "./core/visualize.js";
 import { createModelFromEnv } from "./llm/factory.js";
-import { mockTools } from "./tools/mockTools.js";
+import { MockModel, type Model } from "./llm/model.js";
 
-type CliOptions = { input?: string; maxIterations: number; showPrompt: boolean; fullState: boolean; compare: boolean; showGraph: boolean };
+export type CliOptions = { input?: string; configuredModel: boolean; showPrompt: boolean; showGraph: boolean; help: boolean };
 
-const enabled = stdout.isTTY && !process.env.NO_COLOR;
-const paint = (open: number, close = 39) => (value: string) => enabled ? `\u001b[${open}m${value}\u001b[${close}m` : value;
-const color = { bold: paint(1, 22), dim: paint(2, 22), red: paint(31), green: paint(32), yellow: paint(33), blue: paint(34), magenta: paint(35), cyan: paint(36), gray: paint(90) };
-const options = parseArgs(process.argv.slice(2));
-const model = createModelFromEnv();
-const agent = new Agent({ model, tools: mockTools, maxIterations: options.maxIterations, traceDir: path.resolve("src/traces"), enforceCompletionEvidence: false });
-const traditional = new TraditionalMessagesAgent({ model, tools: mockTools });
-
-if (options.input) await runOnce(options.input);
-else await interactive();
-
-async function interactive(): Promise<void> {
-  console.log(color.bold("StateWeave CLI"));
-  console.log(color.dim("One Agent, one append-only causal graph. Type /help for commands.\n"));
-  if (!stdin.isTTY) {
-    for (const input of (await readPipedInput()).split(/\r?\n/)) if (await handleInput(input)) break;
-    return;
-  }
-  const rl = createInterface({ input: stdin, output: stdout });
-  while (!await handleInput(await rl.question(color.cyan("stateweave › ")))) continue;
-  rl.close();
-}
-
-async function handleInput(raw: string): Promise<boolean> {
-  const input = raw.trim();
-  if (!input) return false;
-  if (input === "/exit" || input === "/quit") return true;
-  if (input === "/help") { printHelp(); return false; }
-  if (input === "/prompt") { options.showPrompt = !options.showPrompt; line(`exact prompt: ${options.showPrompt ? "on" : "off"}`, color.yellow); return false; }
-  if (input === "/full") { options.fullState = true; line("state view: full JSON", color.yellow); return false; }
-  if (input === "/compact") { options.fullState = false; line("state view: compact", color.yellow); return false; }
-  if (input === "/compare") { options.compare = !options.compare; line(`traditional comparison: ${options.compare ? "on" : "off"}`, color.yellow); return false; }
-  if (input === "/graph") { options.showGraph = !options.showGraph; line(`Mermaid graph: ${options.showGraph ? "on" : "off"}`, color.yellow); return false; }
-  if (input === "/reset") { agent.reset(); line("agent state reset", color.yellow); return false; }
-  await runOnce(input).catch((error: unknown) => line(error instanceof Error ? error.message : String(error), color.red));
-  return false;
-}
-
-async function runOnce(input: string): Promise<void> {
-  section("USER INPUT", color.magenta);
-  console.log(input);
-  if (options.compare) {
-    const result = await traditional.inspect(input);
-    section("TRADITIONAL MESSAGES", color.gray);
-    console.log(JSON.stringify(result.messages, null, 2));
-    section("TRADITIONAL OUTPUT", color.gray);
-    console.log(result.rawModelOutput);
-  }
-
-  for await (const event of agent.streamEvents(input)) {
-    if (event.type === "metadata") {
-      section("RUN", color.cyan);
-      console.log(color.dim(`${event.metadata.runId} · ${event.metadata.engine}`));
-      continue;
-    }
-    if (event.type === "progress") printProgress(event.progress);
-    if (event.type === "final") {
-      section("FINAL", color.magenta);
-      console.log(event.result.finalAnswer);
-      printState(event.result.state, event.result.graph);
-      console.log(color.dim(`trace saved to src/traces/ · steps=${event.result.trace.length} · inputTokens=${event.result.metadata.totalInputTokens}`));
-    }
-  }
-}
-
-function printProgress(progress: AgentProgress): void {
-  if (progress.phase === "context" && progress.prompt) {
-    section(`STEP ${progress.iteration} · CAUSAL CONTEXT`, color.cyan);
-    console.log(color.dim(`${progress.contextTokens ?? "?"} tokens · ${progress.state?.nodes.length ?? 0} stored nodes`));
-    if (options.showPrompt) console.log(progress.prompt);
-    else console.log(color.dim("exact prompt hidden; type /prompt or pass --prompt"));
-    return;
-  }
-  if (progress.phase === "model") line(`step ${progress.iteration} · model`, color.green);
-  if (progress.phase === "tool") line(`step ${progress.iteration} · ${progress.detail}`, color.yellow);
-  if (progress.phase === "retrying") line(`step ${progress.iteration} · ${progress.detail}`, color.red);
-}
-
-function printState(state: AgentState, graph: StateGraph): void {
-  section("STATE", color.cyan);
-  if (options.fullState) console.log(JSON.stringify(state, null, 2));
-  else {
-    console.log(`${state.nodes.length} nodes · ${graph.edges.length} causal edges · frontier ${state.frontier.length}`);
-    for (const node of state.nodes.slice(-12)) console.log(`  ${color.blue(node.id.slice(0, 11))} ${color.magenta(`[${node.kind}]`)} ${truncate(typeof node.payload === "string" ? node.payload : JSON.stringify(node.payload), 110)}`);
-  }
-  if (options.showGraph) {
-    section("MERMAID GRAPH", color.blue);
-    console.log(graphToMermaid(graph));
-  }
-}
-
-function parseArgs(args: string[]): CliOptions {
-  const parsed: CliOptions = { maxIterations: 5, showPrompt: false, fullState: false, compare: false, showGraph: false };
+export function parseCliArgs(args: string[]): CliOptions {
+  const options: CliOptions = { configuredModel: false, showPrompt: false, showGraph: false, help: false };
   const positional: string[] = [];
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
-    if (arg === "--input" || arg === "-i") parsed.input = requireValue(args, ++index, arg);
-    else if (arg === "--max-iterations") parsed.maxIterations = Number(requireValue(args, ++index, arg));
-    else if (arg === "--prompt") parsed.showPrompt = true;
-    else if (arg === "--full") parsed.fullState = true;
-    else if (arg === "--compare") parsed.compare = true;
-    else if (arg === "--graph") parsed.showGraph = true;
+    if (arg === "--input" || arg === "-i") {
+      if (options.input !== undefined) throw new Error("Supply only one task");
+      const value = args[++index];
+      if (!value || value.startsWith("--")) throw new Error(`${arg} requires a task`);
+      options.input = value;
+    } else if (arg === "--live") options.configuredModel = true;
+    else if (arg === "--prompt") options.showPrompt = true;
+    else if (arg === "--graph") options.showGraph = true;
+    else if (arg === "--help" || arg === "-h") options.help = true;
+    else if (arg.startsWith("-")) throw new Error(`Unknown option: ${arg}`);
     else positional.push(arg);
   }
-  if (!parsed.input && positional.length) parsed.input = positional.join(" ");
-  if (!Number.isInteger(parsed.maxIterations) || parsed.maxIterations < 1) throw new Error("--max-iterations must be a positive integer");
-  return parsed;
+  if (options.input !== undefined && positional.length) throw new Error("Supply one task with --input or positional text, not both");
+  if (positional.length) options.input = positional.join(" ");
+  return options;
 }
 
-function requireValue(args: string[], index: number, flag: string): string {
-  const value = args[index];
-  if (!value) throw new Error(`${flag} requires a value`);
-  return value;
+export async function inspectPrimitiveTask(input: string, model: Model = new MockModel()) {
+  if (!input.trim()) throw new Error("A non-empty task is required");
+  const before = createInitialGraphFrame({
+    objective: input,
+    input,
+    systemPrompt: "Inspect one graph transaction. No tools or workers are available. Return valid SWX/1 graph operations; do not claim tool execution.",
+    availableActions: []
+  });
+  const prompt = serializeGraphFrame(before);
+  const output = await model.complete({ frame: before, prompt, mode: "graph_ops" });
+  const ops = parseAndValidateOps(output.text);
+  if (ops.some((op) => op.op === "call_tool" || op.op === "spawn_worker")) {
+    throw new Error("The primitive inspector does not execute tools or workers; the transaction was not applied");
+  }
+  const after = applyOps(before, ops);
+  return { before, prompt, rawModelOutput: output.text, ops, after };
 }
 
-function printHelp(): void {
-  console.log(["/prompt toggle exact compiled context", "/full show complete state JSON", "/compact show compact state", "/graph toggle Mermaid graph", "/compare toggle transcript comparison", "/reset clear state", "/exit quit"].join("\n"));
+async function main(): Promise<void> {
+  const options = parseCliArgs(process.argv.slice(2));
+  if (options.help) {
+    console.log("stateweave [--input TASK] [--prompt] [--graph] [--live]\nOne GraphFrame -> GraphOps -> StateGraph transaction. Offline MockModel by default, regardless of provider environment variables.\n--live explicitly uses the environment-configured model and may call a paid provider. The CLI never loads .env. No tools or retries.");
+    return;
+  }
+  const input = options.input ?? await readTask();
+  if (!input.trim()) throw new Error("A non-empty task is required");
+  const model = options.configuredModel ? createModelFromEnv() : new MockModel();
+  console.log(options.configuredModel
+    ? "Explicit live opt-in: one configured-model completion; provider charges may apply."
+    : "Offline mock fixture: output is not evidence of task correctness.");
+
+  const result = await inspectPrimitiveTask(input, model);
+  printSection("GRAPHFRAME BEFORE", result.before);
+  if (options.showPrompt) printSection("COMPILED PROMPT", result.prompt);
+  printSection("RAW OUTPUT", result.rawModelOutput);
+  printSection("VALIDATED GRAPHOPS", result.ops);
+  printSection("STATEGRAPH AFTER", result.after.graph);
+  printSection("FRAME AFTER", result.after.frame);
+  console.log(`\nTransition: ${result.before.graph.nodes.length} -> ${result.after.graph.nodes.length} nodes; ${result.before.graph.edges.length} -> ${result.after.graph.edges.length} edges. Prior snapshot preserved.`);
+  if (options.showGraph) printSection("MERMAID", graphToMermaid(result.after.graph));
 }
 
-async function readPipedInput(): Promise<string> {
+async function readTask(): Promise<string> {
+  if (stdin.isTTY) {
+    const reader = createInterface({ input: stdin, output: stdout });
+    try { return await reader.question("Task: "); }
+    finally { reader.close(); }
+  }
   const chunks: Buffer[] = [];
-  for await (const chunk of stdin) chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
-  return Buffer.concat(chunks).toString("utf8");
+  for await (const chunk of stdin) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString("utf8").trim();
 }
 
-function section(title: string, painter: (value: string) => string): void { console.log(`\n${painter(color.bold(`── ${title} ──`))}`); }
-function line(value: string, painter: (value: string) => string): void { console.log(painter(value)); }
-function truncate(value: string, limit: number): string { return value.length <= limit ? value : `${value.slice(0, limit - 1)}…`; }
+function printSection(title: string, value: unknown): void {
+  console.log(`\n── ${title} ──\n${typeof value === "string" ? value : JSON.stringify(value, null, 2)}`);
+}
+
+if (process.argv[1] && existsSync(process.argv[1]) && fileURLToPath(import.meta.url) === realpathSync(process.argv[1])) {
+  await main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}

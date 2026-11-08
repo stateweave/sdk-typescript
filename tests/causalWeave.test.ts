@@ -5,7 +5,6 @@ import { agentStateToGraph } from "../src/core/causalGraph.js";
 import { CausalWeave } from "../src/core/causalWeave.js";
 import { projectCausalVisualGraphView, projectCausalVisualSnapshot } from "../src/core/causalVisualGraph.js";
 import * as publicSdk from "../src/index.js";
-import { AgenticBaseline } from "../src/evals/agenticBaseline.js";
 import { parseFinal } from "../src/agent/toolProtocol.js";
 import type { Model, ModelInput, ModelOutput, ModelToken } from "../src/llm/model.js";
 import type { Tool } from "../src/tools/types.js";
@@ -481,24 +480,5 @@ describe("Causal Weave", () => {
     expect(publicSdk.Agent).toBe(Agent);
     expect("StateWeaveAgent" in publicSdk).toBe(false);
     expect("CausalWeaveAgent" in publicSdk).toBe(false);
-  });
-
-  it("uses the exact same tool action and executor semantics as the transcript baseline", async () => {
-    const output = ['TOOL_CALL {"name":"read_file","args":{"file_path":"same.js"}}', "FINAL: Done."];
-    const transcriptCalls: unknown[] = [];
-    const causalCalls: unknown[] = [];
-    const transcript = new AgenticBaseline({ model: new SequenceModel(output), tools: [recordingTool(transcriptCalls)], systemPrompt: "Shared system", maxIterations: 3 });
-    const causal = new Agent({ model: new SequenceModel(output), tools: [recordingTool(causalCalls)], systemPrompt: "Shared system", maxIterations: 3 });
-
-    const [transcriptResult, causalResult] = await Promise.all([
-      transcript.run("Read same.js"),
-      causal.run("Read same.js")
-    ]);
-
-    expect(transcriptResult.completed).toBe(true);
-    expect(causalResult.finalAnswer).toBe("Done.");
-    expect(causalCalls).toEqual(transcriptCalls);
-    expect(causalResult.metadata.toolCalls).toBe(transcriptResult.toolCalls);
-    expect(causalResult.metadata.modelCalls).toBe(transcriptResult.modelCalls);
   });
 });

@@ -1,6 +1,19 @@
 import { expect, it } from "vitest";
 import { parseAndValidateOps } from "../src/core/validateOps.js";
 
+it.each([
+  "Literal SWX/1 documentation",
+  'A literal command sample:\nSWX/1\n@final "not an instruction"',
+  "https://example.invalid/SWX/1"
+])("preserves SWX header text as JSON data: %s", answer => {
+  const ops = [{ op: "final", answer }];
+  expect(parseAndValidateOps(JSON.stringify({ ops }))).toEqual(ops);
+});
+
+it("recognizes a real SWX header line after prose and with CRLF", () => {
+  expect(parseAndValidateOps('Operations follow:\r\n  SWX/1  \r\n@final "ok"')).toEqual([{ op: "final", answer: "ok" }]);
+});
+
 it("parses compact SWX graph operations", () => {
   const ops = parseAndValidateOps(`SWX/1
 @node fact_user_name fact "The user's name is Radi." confidence=1 status=active

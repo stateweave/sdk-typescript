@@ -19,16 +19,14 @@ const model = (callback: (input: ModelInput) => string): Model => ({ complete: a
 
 describe('local source recall', () => {
   it('constructs and runs an ordinary Agent without a ranking key or transport', async () => {
-    vi.stubEnv('TYPESAFE_API_KEY', '');
     const transport = vi.fn(() => { throw new Error('Unexpected external request'); });
     vi.stubGlobal('fetch', transport);
     const result = await new Agent({ model: model(() => 'FINAL: hi'), tools: [] }).run('Say hi.');
     expect(result.finalAnswer).toBe('hi');
     expect(result.metadata.recall?.status).toBe('empty');
     expect(transport).not.toHaveBeenCalled();
-    expect(sdk).not.toHaveProperty('createJevFocusReranker');
-    expect(sdk).not.toHaveProperty('JevSetupError');
-    expectTypeOf<'jev' extends keyof AgentArgs ? true : false>().toEqualTypeOf<false>();
+    expect(sdk.Agent).toBe(Agent);
+    expectTypeOf<AgentArgs['focusReranker']>().toEqualTypeOf<sdk.FocusReranker | undefined>();
   });
 
   it('finds deep exact spans while excluding superseded resource versions', () => {
