@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, rename, stat } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getWorkspaceEditingCases, type WorkspaceEditingCase } from "./grader.mjs";
@@ -116,8 +117,11 @@ const result = {
   cases: caseEvidence,
   aggregate: aggregate(caseEvidence)
 };
+const outputLock = await acquireOutputLock(outputPath, sourceRevision);
+let unexpectedError: unknown;
 
-await persist();
+try {
+  await persist();
 
 for (const [caseIndex, item] of spec.cases.entries()) {
   if (stopReason) break;
@@ -127,11 +131,12 @@ for (const [caseIndex, item] of spec.cases.entries()) {
 
   const graphDir = path.join(evaluationRoot, `${item.id.toLowerCase()}-graph`);
   const messagesDir = path.join(evaluationRoot, `${item.id.toLowerCase()}-messages`);
+  await materializeWorkspace(item, graphDir, evaluationRoot);
+  await materializeWorkspace(item, messagesDir, evaluationRoot);
   await assertIsolatedWorkspaces(graphDir, messagesDir);
 
   for (const arm of order) {
     const workspaceDir = arm === "graph" ? graphDir : messagesDir;
-    await materializeWorkspace(item, workspaceDir, evaluationRoot);
     const audited = arm === "graph"
       ? await captureEpisode("graph", item.id, () => runGraphEpisode({
         item,
@@ -179,19 +184,63 @@ for (const [caseIndex, item] of spec.cases.entries()) {
   await persist();
 }
 
-result.status = stopReason ? "stopped" : "completed";
-result.completedAt = new Date().toISOString();
-result.stopReason = stopReason;
-result.budget = budget.snapshot();
-result.aggregate = aggregate(caseEvidence);
-await persist();
+  result.status = stopReason ? "stopped" : "completed";
+  result.completedAt = new Date().toISOString();
+  result.stopReason = stopReason;
+  result.budget = budget.snapshot();
+  result.aggregate = aggregate(caseEvidence);
+  await persist();
+} catch (error) {
+  unexpectedError = error;
+  result.status = "stopped";
+  result.completedAt = new Date().toISOString();
+  result.stopReason = `Executor failure: ${errorMessage(error)}`;
+  result.budget = budget.snapshot();
+  result.aggregate = aggregate(caseEvidence);
+  await persist().catch(() => undefined);
+} finally {
+  await finalizeOutputLock(outputLock, unexpectedError ? "failed" : "complete");
+}
+if (unexpectedError) throw unexpectedError;
 
 async function persist(): Promise<void> {
   const serialized = `${JSON.stringify(result, null, 2)}\n`;
   if (serialized.includes(config.apiKey)) throw new Error("Refusing to persist output containing the provider credential.");
-  const temporary = `${outputPath}.tmp`;
-  await writeFile(temporary, serialized, { mode: 0o600 });
+  const temporary = `${outputPath}.${process.pid}.tmp`;
+  const handle = await open(temporary, "w", 0o600);
+  try {
+    await handle.writeFile(serialized, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
   await rename(temporary, outputPath);
+  const directory = await open(path.dirname(outputPath), "r");
+  try {
+    await directory.sync();
+  } finally {
+    await directory.close();
+  }
+}
+
+async function acquireOutputLock(target: string, revision: string): Promise<{ handle: FileHandle; path: string }> {
+  await mkdir(path.dirname(target), { recursive: true });
+  try {
+    await stat(target);
+    throw new Error(`Live result output already exists and will not be overwritten: ${target}`);
+  } catch (error) {
+    if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
+  }
+  const lockPath = `${target}.lock`;
+  const handle = await open(lockPath, "wx", 0o600);
+  await handle.writeFile(`${JSON.stringify({ sourceRevision: revision, pid: process.pid, startedAt: new Date().toISOString() })}\n`, "utf8");
+  await handle.sync();
+  return { handle, path: lockPath };
+}
+
+async function finalizeOutputLock(lock: { handle: FileHandle; path: string }, status: "complete" | "failed"): Promise<void> {
+  await lock.handle.close();
+  await rename(lock.path, `${outputPath}.${status}`);
 }
 
 async function verifyFrozenFiles(value: FrozenManifest): Promise<void> {

@@ -50,7 +50,7 @@
     "src/core/visualize.ts": "bb3f160bb97ece8ee8f6661e9be188d66bee9e07eb7b06f67ff19dbbf8c2144a",
     "src/demo.ts": "56d0f53ee0910fce855bfa8e8dfeb04974113250a28e780c8a44db2fcdd17821",
     "src/index.ts": "9c85bf3b53ed263c996eac96c2f78e903944f7acf104274a0fb837844af6f318",
-    "src/llm/anthropicModel.ts": "d5eca87be64fbd24ad18a1d55b6794ce872c1ef6ffb354b9784aba66a3ec5f81",
+    "src/llm/anthropicModel.ts": "c9f266c7cad0383a9f658da1516f862610f1ed9235ff1b8cb8b826161bd27ae6",
     "src/llm/codexModel.ts": "5dbf50807bdfd47cbb655989fe7f69872776e5e126d4d687ad760b56876cdd8f",
     "src/llm/factory.ts": "fed5876f01044a36dd341f86217ee6bc4ec1fab39545f37190988bfc8c19a5dc",
     "src/llm/model.ts": "a1e6c407cd3050c35205fe5120f9b59e753b94b82acf187a1635f2bd37257910",
@@ -58,11 +58,13 @@
     "src/tools/fileSystemTools.ts": "9b0481b590748e381612db035134c5509bd14bbd6ace7af51eb2db65a9dd54cc",
     "src/tools/mockTools.ts": "5d574fa5157c7cee8ce079831a61cf89aa54133679f5d316efb7c09962817937",
     "src/tools/types.ts": "752edda56d6d2c7e856634a997bf76cabb660e7ea86735e858b462e98712ebcb",
+    "package.json": "4405d4c34e9bce9c1c2fa6bcc10fee84ef26544b64e1342a337cc0ff5dab4030",
     "eval/workspace-editing-v1/cases.json": "c8ba596395cc393b9ba7ae57a7ee87c1ecc1c40cc27093b8345501ebfc9312b9",
     "eval/workspace-editing-v1/grader.mjs": "b435e08df1047b353720ade1f563355bdb303360509366c04a49280650173904",
     "eval/workspace-editing-v1/runner.ts": "fbcb4401c4dc69357a2fb308b116d2a397019257f611eff528aa0e9c51b81bf8",
-    "eval/workspace-editing-v1/live-provider.ts": "85918de3378220361a486177e4cf73340d27ae9f6724bc4d62e2e4a7a77ca9f2",
-    "eval/workspace-editing-v1/run-live.ts": "bbd4c4735e28c8238df049fd21a3f46e99fb576236242da19a11d27ddee8fb40",
+    "eval/workspace-editing-v1/live-provider.ts": "c125cbe9d83452e6f1576e6dc5a708339fa32c938ecf9d513139068abe72acf3",
+    "eval/workspace-editing-v1/run-live.ts": "fabc12bb673245f38e8535c67671ef686e8da2cb26c589edd540d05c543e5299",
+    "eval/workspace-editing-v1/package-live.mjs": "3129c84cd62d5a7f6a8ab83508fd7d1f91cdaf3aebbd8636442ff59db5d620ba",
     "eval/workspace-editing-v1/tsconfig.live.json": "d5ac4108581b85b0e17df4e603514807ce3e18a21842ab75a3107ead4ba800ac"
   }
 }

@@ -89,28 +89,34 @@ export class ZaiGraphModel implements Model {
       model: config.model,
       maxTokens: config.maxOutputTokens,
       temperature: 0,
-      timeoutMs: config.timeoutMs
+      timeoutMs: config.timeoutMs,
+      redirect: "error"
     });
   }
 
-  async complete(input: ModelInput): Promise<ModelOutput> {
-    this.budget.reserve(estimateGraphPromptTokens(input), this.config.maxOutputTokens);
-    const output = await this.inner.complete(input);
-    this.budget.recordUsage(output.usage);
-    return output;
+  async complete(_input: ModelInput): Promise<ModelOutput> {
+    throw new Error("Z.ai Graph evaluation requires streaming served-model and stop-reason evidence.");
   }
 
   async *stream(input: ModelInput): AsyncIterable<ModelToken> {
     this.budget.reserve(estimateGraphPromptTokens(input), this.config.maxOutputTokens);
     const rawUsage: AnthropicUsage = {};
+    let servedModel = "";
+    let stopReason = "";
     for await (const event of this.inner.stream(input)) {
       if (event.type === "metadata") {
+        if (event.metadata.event === "message_start") {
+          servedModel = typeof event.metadata.model === "string" ? event.metadata.model : "";
+          if (servedModel !== this.config.model) throw new Error(`Z.ai served model mismatch: expected ${this.config.model}, received ${servedModel || "unknown"}.`);
+        }
+        if (event.metadata.event === "message_delta" && typeof event.metadata.stopReason === "string") stopReason = event.metadata.stopReason;
         mergeRawUsage(rawUsage, event.metadata.usage);
         yield { type: "metadata", metadata: { ...event.metadata, provider: "zai" } };
       } else {
         yield event;
       }
     }
+    if (!servedModel || !stopReason) throw new Error("Z.ai stream omitted served model or stop reason.");
     this.budget.recordUsage(normalizeAnthropicUsage(rawUsage));
   }
 }
@@ -130,6 +136,7 @@ export class ZaiMessagesModel implements MessagesModel {
         "x-api-key": this.config.apiKey,
         "anthropic-version": "2023-06-01"
       },
+      redirect: "error",
       signal,
       body: JSON.stringify({
         model: this.config.model,
@@ -146,6 +153,7 @@ export class ZaiMessagesModel implements MessagesModel {
     const model = typeof body.model === "string" ? body.model : "";
     const stopReason = typeof body.stop_reason === "string" ? body.stop_reason : "";
     if (!model || !stopReason) throw new Error("Z.ai response omitted served model or stop reason.");
+    if (model !== this.config.model) throw new Error(`Z.ai served model mismatch: expected ${this.config.model}, received ${model}.`);
     const usage = normalizeAnthropicUsage(body.usage);
     this.budget.recordUsage(usage);
     const text = body.content?.filter((item) => item.type === "text" && typeof item.text === "string").map((item) => item.text as string).join("") ?? "";
@@ -170,7 +178,10 @@ export function zaiConfigFromEnv(env: NodeJS.ProcessEnv = process.env): ZaiLiveC
   const baseUrl = env.ANTHROPIC_BASE_URL ?? "";
   const model = env.ANTHROPIC_MODEL ?? "";
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is required inside the authorized runtime.");
-  if (!baseUrl || new URL(baseUrl).hostname !== "api.z.ai") throw new Error("Authorized live run requires the configured api.z.ai Anthropic-compatible endpoint.");
+  const endpoint = new URL(baseUrl);
+  if (endpoint.protocol !== "https:" || endpoint.hostname !== "api.z.ai" || endpoint.pathname.replace(/\/$/, "") !== "/api/anthropic" || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+    throw new Error("Authorized live run requires the exact HTTPS api.z.ai/api/anthropic endpoint without credentials, query, or fragment.");
+  }
   if (model !== "glm-5.3-flash") throw new Error(`Authorized live run requires glm-5.3-flash, received ${model || "unset"}.`);
   return {
     apiKey,
