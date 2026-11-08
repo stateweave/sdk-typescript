@@ -1,6 +1,6 @@
 // Runtime-derived tool structure: anchor → tool_call → tool_result → file state.
 import { forkGraph, nowIso } from "./graph.js";
-import { addEdge, uniqueNodeId } from "./graphEdit.js";
+import { addEdge, isFileNodeFor, uniqueNodeId, workspacePathKey } from "./graphEdit.js";
 import type { GraphNode, StateGraph } from "./types.js";
 
 export type ToolResultArgs = { tool: string; toolArgs?: Record<string, unknown>; result: unknown; step: number; ok?: boolean; anchorId?: string };
@@ -32,16 +32,17 @@ function anchorNode(graph: StateGraph, anchorId: string | undefined): GraphNode 
 
 function addVersionedFileState(graph: StateGraph, resultId: string, result: unknown, createdAt: string): void {
   const record = asRecord(result);
-  const filePath = resultPath(record);
+  const rawPath = resultPath(record);
   const hash = contentHash(record);
-  if (!filePath || !hash) return;
-  const current = graph.nodes.find((node) => node.type === "file" && node.data?.path === filePath && node.data?.contentHash === hash && node.status === "active");
+  if (!rawPath || !hash) return;
+  const filePath = workspacePathKey(rawPath);
+  const current = graph.nodes.find((node) => isFileNodeFor(node, filePath) && node.data?.contentHash === hash && node.status === "active");
   if (current) {
     addEdge(graph, resultId, current.id, "validates");
     return;
   }
   for (const node of graph.nodes) {
-    if (node.type === "file" && node.data?.path === filePath && node.status === "active") node.status = "stale";
+    if (isFileNodeFor(node, filePath) && node.status === "active") node.status = "stale";
   }
   const id = uniqueNodeId(graph.nodes, `file_state_${filePath}_${hash.slice(0, 10)}`.replace(/[^a-zA-Z0-9_]/g, "_"));
   const node: GraphNode = { id, type: "file", text: `${filePath} current content version ${hash.slice(0, 12)}`, data: { path: filePath, contentHash: hash, canonical: true }, status: "active", confidence: 1, createdAt };

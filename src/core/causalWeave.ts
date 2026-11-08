@@ -5,6 +5,7 @@ import { validateRecallProjection } from "./recallProjection.js";
 import type { RecallProjection } from "./recallTypes.js";
 import { estimateStateWeaveTokens, type StateWeaveTokenEstimate } from "../llm/tokenizer.js";
 import { projectCausalSnapshot, type CausalProjection } from "./causalProjection.js";
+import { asRecord, stableStringify, stringValue } from "./stableJson.js";
 import { buildCausalHierarchy, type CausalHierarchy } from "./causalHierarchy.js";
 import type { CausalContextMode, CausalNodeKind, CausalWeaveNode, CausalWeaveSnapshot } from "./causalTypes.js";
 
@@ -728,14 +729,6 @@ function inferenceNote(payload: unknown): string {
   return note.length >= 20 && /\s/.test(note) ? note : "";
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function stringValue(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
 function resourcePath(record: Record<string, unknown>): string {
   return stringValue(record.file_path) || stringValue(record.path);
 }
@@ -802,21 +795,6 @@ function isParentOfSelectedFrontier(id: string, selected: string[], nodes: Map<s
 function payloadText(payload: unknown): string {
   if (typeof payload === "string") return payload;
   return stableStringify(payload);
-}
-
-function stableStringify(value: unknown): string {
-  if (value === undefined) return "null";
-  if (value === null || typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
-  if (typeof value === "number") return Number.isFinite(value) ? String(value) : JSON.stringify(String(value));
-  if (typeof value === "bigint") return JSON.stringify(value.toString());
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  if (typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, entry]) => entry !== undefined)
-      .sort(([a], [b]) => a.localeCompare(b));
-    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableStringify(entry)}`).join(",")}}`;
-  }
-  return JSON.stringify(String(value));
 }
 
 function meaningfulQueryTerms(value: string): Set<string> {

@@ -1,4 +1,5 @@
 // Internal graph-editing helpers shared by the transaction, evidence, and worker layers.
+import { posix } from "node:path";
 import type { EdgeType, GraphNode, StateGraph } from "./types.js";
 
 export function nextSequenceId(nodes: GraphNode[], prefix: string): string {
@@ -49,6 +50,16 @@ export function turnTask(graph: StateGraph, inputId: string | undefined): GraphN
 }
 
 /** Active canonical file-state node for a path, written by successful read/write/edit evidence. */
+/** Workspace paths compare by normalized form, so ./a.txt, a.txt and a//a.txt name one file. */
+export function workspacePathKey(path: string): string {
+  return posix.normalize(path);
+}
+
+/** True for a file-state node whose path names the same workspace file as `path`. */
+export function isFileNodeFor(node: GraphNode, path: string): boolean {
+  return node.type === "file" && typeof node.data?.path === "string" && workspacePathKey(node.data.path) === workspacePathKey(path);
+}
+
 export function activeFileState(graph: StateGraph, path: string): GraphNode | undefined {
-  return graph.nodes.find((node) => node.type === "file" && node.status === "active" && node.data?.canonical === true && node.data?.path === path);
+  return graph.nodes.find((node) => isFileNodeFor(node, path) && node.status === "active" && node.data?.canonical === true);
 }
