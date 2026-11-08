@@ -7,10 +7,7 @@ export type ToolResultArgs = { tool: string; toolArgs?: Record<string, unknown>;
 
 export function addToolResult(graph: StateGraph, args: ToolResultArgs): StateGraph {
   const next = forkGraph(graph);
-  const anchor = (args.anchorId ? next.nodes.find((node) => node.id === args.anchorId) : undefined)
-    ?? [...next.nodes].reverse().find((node) => node.type === "user_input")
-    ?? next.nodes.find((node) => node.id === "system_root")
-    ?? next.nodes[0];
+  const anchor = anchorNode(next, args.anchorId);
   const callId = uniqueNodeId(next.nodes, `tool_call_${args.step}`);
   const resultId = uniqueNodeId(next.nodes, `tool_result_${args.step}`);
   const createdAt = nowIso();
@@ -25,10 +22,18 @@ export function addToolResult(graph: StateGraph, args: ToolResultArgs): StateGra
   return next;
 }
 
+/** The explicit anchor, else the latest user input, else the system root, else the first node. */
+function anchorNode(graph: StateGraph, anchorId: string | undefined): GraphNode | undefined {
+  return (anchorId ? graph.nodes.find((node) => node.id === anchorId) : undefined)
+    ?? [...graph.nodes].reverse().find((node) => node.type === "user_input")
+    ?? graph.nodes.find((node) => node.id === "system_root")
+    ?? graph.nodes[0];
+}
+
 function addVersionedFileState(graph: StateGraph, resultId: string, result: unknown, createdAt: string): void {
   const record = asRecord(result);
   const filePath = resultPath(record);
-  const hash = typeof record?.content_hash === "string" ? record.content_hash : undefined;
+  const hash = contentHash(record);
   if (!filePath || !hash) return;
   const current = graph.nodes.find((node) => node.type === "file" && node.data?.path === filePath && node.data?.contentHash === hash && node.status === "active");
   if (current) {
@@ -50,21 +55,33 @@ function summarizeToolArgs(args: Record<string, unknown> | undefined): Record<st
 }
 
 function summarizeToolArgValue(key: string, value: unknown, depth: number): unknown {
-  if (typeof value === "string") {
-    const limit = key === "command" ? 8_000 : /(?:^|_)(?:content|old_string|new_string|oldText|newText)(?:$|_)/.test(key) ? 1_000 : 2_000;
-    return value.length <= limit ? value : { chars: value.length, preview: `${value.slice(0, limit)}…` };
-  }
-  if (value === null || typeof value !== "object") return typeof value === "number" || typeof value === "boolean" || value === null ? value : String(value);
+  if (typeof value === "string") return summarizeString(value, stringLimit(key));
+  if (value === null || typeof value !== "object") return summarizeScalar(value);
   if (depth >= 2) return Array.isArray(value) ? { items: value.length } : { keys: Object.keys(value).slice(0, 16) };
   if (Array.isArray(value)) return value.slice(0, 20).map((item) => summarizeToolArgValue(key, item, depth + 1));
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).slice(0, 32).map(([childKey, child]) => [childKey, summarizeToolArgValue(childKey, child, depth + 1)]));
+}
+
+const EDIT_TEXT_KEY = /(?:^|_)(?:content|old_string|new_string|oldText|newText)(?:$|_)/;
+
+function stringLimit(key: string): number {
+  if (key === "command") return 8_000;
+  return EDIT_TEXT_KEY.test(key) ? 1_000 : 2_000;
+}
+
+function summarizeString(value: string, limit: number): unknown {
+  return value.length <= limit ? value : { chars: value.length, preview: `${value.slice(0, limit)}…` };
+}
+
+function summarizeScalar(value: unknown): unknown {
+  return typeof value === "number" || typeof value === "boolean" || value === null ? value : String(value);
 }
 
 function toolResultSummary(tool: string, result: unknown, ok: boolean): string {
   const record = asRecord(result);
   if (!ok) return `${tool} failed: ${failureText(record).slice(0, 500)}`;
   const filePath = resultPath(record);
-  const hash = typeof record?.content_hash === "string" ? record.content_hash.slice(0, 12) : undefined;
+  const hash = contentHash(record)?.slice(0, 12);
   if (filePath) return `${tool} succeeded for ${filePath}${hash ? ` at ${hash}` : ""}`;
   if (tool === "bash_command") return `bash_command completed with exit code ${String(record?.exitCode ?? "unknown")}`;
   return `${tool} succeeded`;
@@ -75,6 +92,10 @@ function failureText(record: Record<string, unknown> | undefined): string {
   const details = asRecord(record?.acceptance)?.details;
   const text = Array.isArray(details) ? details.filter((detail): detail is string => typeof detail === "string").join("; ") : "";
   return text ? `acceptance criteria not met: ${text}` : "unknown error";
+}
+
+function contentHash(record: Record<string, unknown> | undefined): string | undefined {
+  return typeof record?.content_hash === "string" ? record.content_hash : undefined;
 }
 
 function resultPath(record: Record<string, unknown> | undefined): string | undefined {
