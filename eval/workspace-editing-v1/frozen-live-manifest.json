@@ -19,7 +19,7 @@
     "repetitions": 1
   },
   "armOrder": "alternating-by-case",
-  "stoppingRule": "No automatic retries. Stop globally on the first provider/model transport failure, endpoint mismatch, budget breach, or integrity failure.",
+  "stoppingRule": "No provider transport or episode retries. Protocol-error feedback stays within the matched per-turn model-call ceiling. Stop globally on the first provider/model transport failure, endpoint mismatch, budget breach, or integrity failure.",
   "billingMode": "zai-coding-plan",
   "portalTarget": "development-only",
   "files": {

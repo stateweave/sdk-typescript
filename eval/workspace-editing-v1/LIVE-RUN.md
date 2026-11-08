@@ -27,8 +27,8 @@ The adapter label is not the model vendor. Live evidence and the report identify
 - Call ceiling: `12` model calls per turn for both arms.
 - Global ceilings: `240` provider calls and `5,000,000` conservatively reserved prompt-plus-output tokens.
 - Timeout: `180` seconds per request.
-- Retries: none.
-- Fatal stopping: stop the complete run on the first provider/model transport failure, endpoint mismatch, budget breach, or integrity failure. Protocol failures remain `grade: null` and do not receive an automatic retry.
+- Provider transport and episode retries: none. Normal protocol-error feedback may consume another model iteration within the matched per-turn call ceiling; malformed output is never repaired.
+- Fatal stopping: stop the complete run on the first provider/model transport failure, endpoint mismatch, budget breach, or integrity failure. An exhausted protocol loop remains `grade: null` and receives no new episode attempt.
 - Billing: Z.ai coding-plan access; report exact known usage and conservative reservations, with no invented per-token dollar estimate.
 - Publication: sanitized static portal in StateWeave development only. Do not promote to UAT or production.
 
