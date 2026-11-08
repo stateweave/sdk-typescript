@@ -8,6 +8,7 @@ const paths = pack.files.map((file) => file.path);
 const forbidden = paths.filter((file) =>
   file.startsWith("dist/evals/")
   || file.startsWith("dist/web/")
+  || file.startsWith("dist/integrations/jev")
   || file.startsWith("data/")
   || file.startsWith("dist/agent/graphFrameAgent.")
   || file.startsWith("dist/agent/stateweaveRunner.")

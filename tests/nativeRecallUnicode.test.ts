@@ -4,7 +4,6 @@ import { Agent } from '../src/agent/agent.js';
 import { CausalWeave } from '../src/core/causalWeave.js';
 import { prepareRecall, selectRecall, validateRecallProjection } from '../src/core/recallProjection.js';
 import { isWellFormedUnicode, splitsSurrogatePair, utf16Prefix } from '../src/core/unicodeText.js';
-import { createJevRecallClient } from '../src/integrations/jevRecall.js';
 
 function fixture() {
   const units = ('MAPLE launch Kyoto. ' + 'x '.repeat(15_000)).split('');
@@ -75,23 +74,11 @@ describe('native recall Unicode boundaries', () => {
     weave.append({ kind: 'resource', payload: 'MAPLE \ud83c', advance: false });
     const state = weave.snapshot();
     const complete = vi.fn(), transport = vi.fn();
-    const agent = new Agent({ state, model: { complete, async *stream() { throw new Error('Unexpected stream.'); } }, tools: [], jev: { apiKey: 'unit-test-not-a-credential', fetch: transport } });
+    vi.stubGlobal('fetch', transport);
+    const agent = new Agent({ state, model: { complete, async *stream() { throw new Error('Unexpected stream.'); } }, tools: [] });
     await expect(agent.run('Where is MAPLE?')).rejects.toThrow('invalid Unicode');
     expect(agent.getState()).toEqual(state);
     expect(complete).not.toHaveBeenCalled();
-    expect(transport).not.toHaveBeenCalled();
-  });
-
-  it('rejects malformed Jev inputs before any transport call', async () => {
-    const transport = vi.fn();
-    const client = createJevRecallClient({ apiKey: 'unit-test-not-a-credential', fetch: transport });
-    const { weave } = fixture();
-    const candidate = prepareRecall(weave.snapshot(), 'MAPLE').candidates[0]!;
-    for (const [query, window] of [
-      ['MAPLE \ud83c', candidate],
-      ['MAPLE', { ...candidate, text: '\ud83c' }],
-      ['MAPLE', { ...candidate, sourcePrefix: '\udf08' }]
-    ] as const) await expect(client.rank(query, [window])).rejects.toThrow('invalid Unicode');
     expect(transport).not.toHaveBeenCalled();
   });
 
@@ -116,24 +103,23 @@ describe('native recall Unicode boundaries', () => {
       expect(weave.snapshot()).toEqual(before);
     });
 
-    it(`sends only well-formed excerpts and capped queries through the ${contextMode} Agent`, async () => {
+    it(`selects well-formed excerpts locally through the ${contextMode} Agent`, async () => {
       const { weave } = fixture();
       const state = weave.snapshot();
-      const transport = vi.fn(async (_url: string | URL | Request, options?: RequestInit) => {
-        const body = JSON.parse(String(options?.body));
-        checkStrings(body);
-        expect(body.state.query).toHaveLength(7_999);
-        return new Response(JSON.stringify({ model: 'jev-1.13.0', answers: Object.fromEntries(Object.keys(body.questions).map(key => [key, { type: 'noul', noul: .5 }])), usage: { input_tokens: 1, output_tokens: 1 } }));
-      });
+      const transport = vi.fn();
+      vi.stubGlobal('fetch', transport);
+      const query = 'MAPLE ' + 'x'.repeat(7_993) + '🌈 question';
+      expect(utf16Prefix(query, 8_000)).toHaveLength(7_999);
+      checkStrings(prepareRecall(state, utf16Prefix(query, 8_000)));
       const complete = vi.fn(async ({ prompt }: { prompt: string }) => {
         expect(isWellFormedUnicode(prompt)).toBe(true);
         return { text: 'FINAL: Unicode-safe.' };
       });
-      const agent = new Agent({ state, model: { complete, async *stream() { throw new Error('Unexpected streaming path.'); } }, tools: [], enforceCompletionEvidence: false, contextMode, jev: { apiKey: 'unit-test-not-a-credential', fetch: transport } });
-      const result = await agent.run('MAPLE ' + 'x'.repeat(7_993) + '🌈 question');
+      const agent = new Agent({ state, model: { complete, async *stream() { throw new Error('Unexpected streaming path.'); } }, tools: [], enforceCompletionEvidence: false, contextMode });
+      const result = await agent.run(query);
       expect(result.finalAnswer).toBe('Unicode-safe.');
-      expect(result.metadata.recall?.status).toBe('ranked');
-      expect(transport).toHaveBeenCalledOnce();
+      expect(result.metadata.recall?.status).toBe('lexical');
+      expect(transport).not.toHaveBeenCalled();
       expect(complete).toHaveBeenCalledOnce();
       expect(result.state.nodes.slice(0, state.nodes.length)).toEqual(state.nodes);
     });

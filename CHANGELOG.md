@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Remove the Jev/TypeSafe integrations, `AgentArgs.jev`, `JevConfiguration`, `JevSetupError`, and `createJevFocusReranker`. Historical source recall now uses deterministic local lexical selection with no ranking service or additional API key. Keep source provenance, graph state, selection budgets, and the provider-agnostic custom focus hook intact; new runs report recall status `lexical`. Frozen evaluation evidence remains historical, not a measurement of this changed runtime.
 - Promote deterministic big-brain, peripheral, focus, and timeline projection into the public `Agent` compiler without compacting the append-only graph.
 - Forward provider token and metadata events through `Agent.streamEvents()` while preserving ordinary action parsing and transactional commits; report peak context, provider-versus-estimated provenance, and complete cached input usage, with a persistent per-turn token chart in the development lab.
 - Emit causal `verification` nodes for recognized successful post-mutation reads, syntax checks, and explicit application checks.

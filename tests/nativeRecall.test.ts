@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
+import * as sdk from '../src/index.js';
 import { Agent } from '../src/agent/agent.js';
+import type { AgentArgs } from '../src/agent/types.js';
 import { CausalWeave } from '../src/core/causalWeave.js';
 import { prepareRecall, selectRecall, validateRecallProjection } from '../src/core/recallProjection.js';
-import { createJevRecallClient, JevSetupError } from '../src/integrations/jevRecall.js';
 import type { Model, ModelInput } from '../src/llm/model.js';
 
 function fixture() {
@@ -15,16 +16,19 @@ function fixture() {
   return { weave, old, current };
 }
 const model = (callback: (input: ModelInput) => string): Model => ({ complete: async input => ({ text: callback(input) }), async *stream(input) { yield { type: 'token', token: callback(input) }; } });
-const scoringFetch = (): typeof fetch => vi.fn(async (_url, options) => {
-  const request = JSON.parse(options!.body as string);
-  return new Response(JSON.stringify({ model: request.model, answers: Object.fromEntries(Object.entries(request.questions).map(([key, value]) => [key, { type: 'noul', noul: JSON.stringify(value).includes('Kyoto') ? .99 : .01 }])), usage: { input_tokens: 100, output_tokens: 20 } }));
-});
 
-describe('native source recall', () => {
-  it('requires credential setup for an ordinary Agent without any opt-in switch', () => {
+describe('local source recall', () => {
+  it('constructs and runs an ordinary Agent without a ranking key or transport', async () => {
     vi.stubEnv('TYPESAFE_API_KEY', '');
-    expect(() => new Agent({ model: model(() => 'FINAL: hi'), tools: [] })).toThrow('requires Jev setup');
-    expect(() => new Agent({ model: model(() => 'FINAL: hi'), tools: [], jev: { apiKey: 'fixture' } })).not.toThrow();
+    const transport = vi.fn(() => { throw new Error('Unexpected external request'); });
+    vi.stubGlobal('fetch', transport);
+    const result = await new Agent({ model: model(() => 'FINAL: hi'), tools: [] }).run('Say hi.');
+    expect(result.finalAnswer).toBe('hi');
+    expect(result.metadata.recall?.status).toBe('empty');
+    expect(transport).not.toHaveBeenCalled();
+    expect(sdk).not.toHaveProperty('createJevFocusReranker');
+    expect(sdk).not.toHaveProperty('JevSetupError');
+    expectTypeOf<'jev' extends keyof AgentArgs ? true : false>().toEqualTypeOf<false>();
   });
 
   it('finds deep exact spans while excluding superseded resource versions', () => {
@@ -68,43 +72,45 @@ describe('native source recall', () => {
     expect(compiled.prompt).toContain('Oslo');
   });
 
-  it('uses Jev automatically and records exact source parents without changing source truth', async () => {
+  it.each(['causal', 'molecular'] as const)('selects historical source windows locally with exact parents in %s mode', async contextMode => {
     const { weave, current } = fixture();
     const original = weave.snapshot();
-    const transport = scoringFetch();
-    const agent = new Agent({ model: model(input => { expect(input.prompt).toContain('Kyoto'); return 'FINAL: Kyoto'; }), state: original, tools: [], jev: { fetch: transport }, enforceCompletionEvidence: false });
-    const result = await agent.run('What is the approved launch city?');
-    expect(transport).toHaveBeenCalledOnce();
-    expect(result.metadata.recall?.status).toBe('ranked');
+    const transport = vi.fn(() => { throw new Error('Unexpected ranking request'); });
+    vi.stubGlobal('fetch', transport);
+    const agent = new Agent({ model: model(input => { expect(input.prompt).toContain('Kyoto'); return 'FINAL: Kyoto'; }), state: original, tools: [], contextMode, enforceCompletionEvidence: false });
+    const progress: string[] = [];
+    const result = await agent.run('What is the approved launch city?', { onProgress: event => { if (event.recall) progress.push(event.recall.status); } });
+    expect(transport).not.toHaveBeenCalled();
+    expect(result.metadata.recall).toMatchObject({ status: 'lexical', reason: 'Deterministic lexical source recall; no external ranking request.' });
+    expect(result.metadata.recall).not.toHaveProperty('ranking');
+    expect(progress).toContain('lexical');
     expect(result.state.nodes.slice(0, original.nodes.length)).toEqual(original.nodes);
     expect(result.state.nodes.at(-1)!.parents).toEqual([...result.trace[0]!.nodeIds].sort());
     expect(result.trace[0]!.nodeIds).toContain(current.id);
     expect(result.metadata.recall!.visibleWindowIds!.length).toBeGreaterThan(0);
-    expect(JSON.stringify(result)).not.toContain('unit-test-only-not-a-credential');
   });
 
-  it('falls back transparently without losing state when Jev is unavailable', async () => {
-    const { weave } = fixture();
-    const original = weave.snapshot();
-    const agent = new Agent({ state: original, tools: [], model: model(() => 'FINAL: Kyoto'), enforceCompletionEvidence: false });
-    const result = await agent.run('What is the approved launch city?');
-    expect(result.metadata.recall?.status).toBe('fallback');
-    expect(result.metadata.recall?.reason).toContain('usage may be incomplete');
-    expect(result.state.nodes.slice(0, original.nodes.length)).toEqual(original.nodes);
+  it('retains ordinary projection for a small source state without a transport', async () => {
+    const weave = new CausalWeave();
+    weave.append({ kind: 'resource', payload: 'The launch city is Kyoto.', advance: false });
+    const transport = vi.fn();
+    vi.stubGlobal('fetch', transport);
+    const result = await new Agent({ state: weave.snapshot(), tools: [], model: model(input => { expect(input.prompt).toContain('Kyoto'); return 'FINAL: Kyoto'; }) }).run('What is the launch city?');
+    expect(result.metadata.recall?.status).toBe('small_state');
+    expect(transport).not.toHaveBeenCalled();
   });
 
-  it('does not commit an aborted recall and preserves reset-generation fencing', async () => {
-    const { weave } = fixture();
-    const original = weave.snapshot();
+  it('does not commit an aborted turn and preserves reset-generation fencing', async () => {
+    const original = fixture().weave.snapshot();
     const controller = new AbortController();
-    let finish!: (response: Response) => void;
-    const transport = vi.fn(() => new Promise<Response>(resolve => { finish = resolve; }));
-    const agent = new Agent({ state: original, tools: [], model: model(() => 'FINAL: no'), jev: { fetch: transport } });
+    const complete = vi.fn(({ signal }: ModelInput) => new Promise<never>((_resolve, reject) => {
+      signal!.addEventListener('abort', () => reject(signal!.reason), { once: true });
+    }));
+    const agent = new Agent({ state: original, tools: [], model: { complete, async *stream() {} } });
     const running = agent.run('What is the approved launch city?', { signal: controller.signal });
-    await vi.waitFor(() => expect(transport).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(complete).toHaveBeenCalledOnce());
     agent.reset();
     controller.abort();
-    finish(new Response('{}', { status: 503 }));
     await expect(running).rejects.toThrow();
     expect(agent.getState()).toBeUndefined();
   });
@@ -141,69 +147,7 @@ describe('native source recall', () => {
     expect(() => validateRecallProjection(weave.snapshot(), { sourceNodeIds: [node.id], windows: [span(4, source.length + 1)] })).toThrow('exact source spans');
     expect(() => validateRecallProjection(weave.snapshot(), { sourceNodeIds: [node.id], windows: [valid, valid] })).toThrow('identities');
     expect(() => validateRecallProjection(weave.snapshot(), { sourceNodeIds: [node.id], windows: [span(0, 10), span(5, 15)] })).toThrow('packing');
-  });
-
-  it('accepts the mathematically bounded rounding in real four-level Score responses', async () => {
-    const { weave } = fixture();
-    const index = prepareRecall(weave.snapshot(), 'launch city', 1);
-    const client = createJevRecallClient({ fetch: async () => new Response(JSON.stringify({ model: 'jev-1.13.0', answers: { q0: { type: 'score', score: 2.83, probabilities: { '0': .05, '1': .01, '2': .02, '3': .92 } } }, usage: { input_tokens: 100, output_tokens: 5 } })) }, 'graded');
-    const result = await client.rank('launch city', index.candidates);
-    expect(result.scores[0]!.relevance).toBe(2.83 / 3);
-  });
-
-  it('fails clearly on rejected credentials instead of silently treating them as an outage', async () => {
-    const { weave } = fixture();
-    const original = weave.snapshot();
-    const agent = new Agent({ state: original, tools: [], model: model(() => 'FINAL: no'), jev: { fetch: async () => new Response('{}', { status: 401 }) } });
-    await expect(agent.run('approved launch city')).rejects.toThrow('credential setup was rejected');
-    expect(agent.getState()).toEqual(original);
-  });
-
-  it('rejects malformed Score distributions despite the rounding allowance', async () => {
-    const { weave } = fixture();
-    const index = prepareRecall(weave.snapshot(), 'launch city', 1);
-    for (const answer of [
-      { score: 2.83, probabilities: { '0': .1, '1': .1, '2': .1, '3': .9 } },
-      { score: 2.1, probabilities: { '0': .05, '1': .01, '2': .02, '3': .92 } },
-      { score: 2.83, probabilities: { '0': .05, '1': .01, '2': .02, '3': .92, '4': 0 } },
-      { score: 2.83, probabilities: { '0': .05, '1': '0.01', '2': .02, '3': .92 } }
-    ]) {
-      const client = createJevRecallClient({ fetch: async () => new Response(JSON.stringify({ model: 'jev-1.13.0', answers: { q0: { type: 'score', ...answer } }, usage: { input_tokens: 100, output_tokens: 5 } })) }, 'graded');
-      await expect(client.rank('launch city', index.candidates)).rejects.toThrow('score distribution');
-    }
-  });
-
-  it('cancels a stalled body reader and does not wait forever for stream cleanup', async () => {
-    const { weave } = fixture();
-    const index = prepareRecall(weave.snapshot(), 'launch city', 1);
-    let cancelled = false;
-    const client = createJevRecallClient({ timeoutMs: 100, fetch: async () => new Response(new ReadableStream({ cancel() { cancelled = true; return new Promise<void>(() => undefined); } })) });
-    await expect(client.rank('launch city', index.candidates)).rejects.toMatchObject({ name: 'TimeoutError' });
-    await Promise.resolve();
-    expect(cancelled).toBe(true);
-  });
-
-  it('does not let stalled error-body cleanup disguise a credential rejection as an outage', async () => {
-    const { weave } = fixture();
-    const index = prepareRecall(weave.snapshot(), 'launch city', 1);
-    const client = createJevRecallClient({ timeoutMs: 100, fetch: async () => new Response(new ReadableStream({ cancel: () => new Promise<void>(() => undefined) }), { status: 403 }) });
-    await expect(client.rank('launch city', index.candidates)).rejects.toBeInstanceOf(JevSetupError);
-  });
-
-  it('bounds a nonresponsive custom transport', async () => {
-    const { weave } = fixture();
-    const index = prepareRecall(weave.snapshot(), 'launch city', 1);
-    const client = createJevRecallClient({ timeoutMs: 100, fetch: () => new Promise<Response>(() => undefined) });
-    await expect(client.rank('launch city', index.candidates)).rejects.toMatchObject({ name: 'TimeoutError' });
-  });
-
-  it('rejects missing scores, invalid probabilities and mismatched provider identities', async () => {
-    const { weave } = fixture();
-    const index = prepareRecall(weave.snapshot(), 'launch city');
-    for (const response of [{ model: 'wrong', answers: {} }, { model: 'jev-1.13.0', answers: {} }]) {
-      const client = createJevRecallClient({ fetch: async () => new Response(JSON.stringify(response)) });
-      await expect(client.rank('launch city', index.candidates)).rejects.toThrow();
-    }
+    const index = prepareRecall(weave.snapshot(), 'exact source');
     expect(() => selectRecall(index, index.candidates.map(row => ({ id: row.id, relevance: 2 })))).toThrow();
   });
 });

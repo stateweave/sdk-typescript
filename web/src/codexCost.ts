@@ -98,7 +98,7 @@ export function createCodexCostLab(root: HTMLElement, apiBase: string) {
       ${r.error ? `<p class="error">${esc(r.error)}</p>` : ""}
       <p><strong>StateWeave ${usd(sw.costUsd)}</strong> vs <strong>Traditional ${usd(tr.costUsd)}</strong>${tr.costUsd > 0 ? ` — StateWeave is ${saving >= 0 ? `${saving.toFixed(1)}% cheaper` : `${(-saving).toFixed(1)}% more expensive`}` : ""}. Recall checks: StateWeave ${checks("stateweave")}, Traditional ${checks("traditional")}.</p>
       ${missing ? `<p class="error">${missing} call(s) returned no usage report; their cost is not counted.</p>` : ""}
-      <p class="muted">Equivalent API list price computed from Codex-reported tokens; your subscription is not billed per token. Jev recall calls run on the lab's TypeSafe key and are not included.</p>
+      <p class="muted">Equivalent API list price computed from Codex-reported tokens; your subscription is not billed per token.</p>
       <table class="data-table"><thead><tr><th>Arm</th><th>Calls</th><th>Input</th><th>Cached</th><th>Output</th><th>Reasoning</th><th>Peak input</th><th>Cost</th></tr></thead><tbody>${totalsRow("StateWeave", sw)}${totalsRow("Traditional", tr)}</tbody></table>
       <table class="data-table"><thead><tr><th>#</th><th>Kind</th><th>StateWeave</th><th>Traditional</th></tr></thead><tbody>${rows}</tbody></table>`;
   }

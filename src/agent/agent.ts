@@ -6,8 +6,7 @@ import { projectCausalVisualSnapshot } from "../core/causalVisualGraph.js";
 import { CausalWeave, type CausalCompileResult } from "../core/causalWeave.js";
 import { prepareRecall, selectRecall } from "../core/recallProjection.js";
 import { utf16Prefix } from "../core/unicodeText.js";
-import type { JevRecallClient, RecallDiagnostics, RecallProjection } from "../core/recallTypes.js";
-import { createJevRecallClient, JevSetupError } from "../integrations/jevRecall.js";
+import type { RecallDiagnostics, RecallProjection } from "../core/recallTypes.js";
 import { normalizeTaskInput, type TaskInput } from "../core/input.js";
 import type { StateGraph } from "../core/types.js";
 import type { Model, ModelInput, ModelOutput, ModelUsage } from "../llm/model.js";
@@ -50,7 +49,6 @@ export const defaultAgentSystemPrompt = "You are a StateWeave agent. Complete th
 export class Agent {
   private readonly args: Required<Pick<AgentArgs, "maxIterations" | "maxPromptTokens" | "projectionTargetTokens" | "projectionMaxNodes" | "contextMode" | "nodeTypes" | "allowDynamicNodeTypes">> & Omit<AgentArgs, "maxIterations" | "maxPromptTokens" | "projectionTargetTokens" | "projectionMaxNodes" | "contextMode" | "nodeTypes" | "allowDynamicNodeTypes" | "state">;
   private readonly tools: Tool[];
-  private readonly jev: JevRecallClient;
   private state?: AgentState;
   private runLock: Promise<void> = Promise.resolve();
   private stateGeneration = 0;
@@ -64,11 +62,9 @@ export class Agent {
     const maxNoProgressIterations = args.maxNoProgressIterations === undefined
       ? undefined
       : boundedInteger(args.maxNoProgressIterations, "maxNoProgressIterations", 1);
-    this.jev = createJevRecallClient(args.jev);
-    const { jev: _jev, ...runtimeArgs } = args;
     this.tools = args.tools ?? createDefaultTools();
     this.args = {
-      ...runtimeArgs,
+      ...args,
       tools: this.tools,
       systemPrompt: args.systemPrompt ?? defaultAgentSystemPrompt,
       maxIterations,
@@ -189,7 +185,6 @@ export class Agent {
     const task = normalizeTaskInput(input);
     const runtime = new AgentRuntime({
       model: this.args.model,
-      jev: this.jev,
       tools: this.tools,
       systemPrompt: this.args.systemPrompt ?? defaultAgentSystemPrompt,
       maxIterations: this.args.maxIterations,
@@ -344,7 +339,6 @@ function resolveTokenCountSource(modelCalls: number, providerUsageCalls: number)
 
 class AgentRuntime {
   private readonly model: Model;
-  private readonly jev: JevRecallClient;
   private readonly tools: Map<string, Tool>;
   private readonly maxIterations: number;
   private readonly maxContextTokens: number;
@@ -361,7 +355,6 @@ class AgentRuntime {
 
   constructor(args: {
     model: Model;
-    jev: JevRecallClient;
     tools: Tool[];
     systemPrompt: string;
     maxIterations: number;
@@ -378,7 +371,6 @@ class AgentRuntime {
     state?: AgentState;
   }) {
     this.model = args.model;
-    this.jev = args.jev;
     this.tools = new Map(args.tools.map((tool) => [tool.name, tool]));
     this.maxIterations = args.maxIterations;
     this.maxContextTokens = args.maxContextTokens;
@@ -475,19 +467,9 @@ class AgentRuntime {
         recall.status = 'small_state';
         recall.reason = 'Small bounded state; retained ordinary projection without a provider request.';
       } else {
-        try {
-          const ranking = await this.jev.rank(recallQuery, index.candidates, options.signal);
-          options.signal?.throwIfAborted();
-          recallProjection = selectRecall(index, ranking.scores);
-          recall.status = 'ranked';
-          recall.ranking = ranking;
-        } catch (error) {
-          options.signal?.throwIfAborted();
-          if (error instanceof JevSetupError) throw error;
-          recallProjection = selectRecall(index);
-          recall.status = 'fallback';
-          recall.reason = 'Jev unavailable or invalid; using lexical source recall. Provider usage may be incomplete.';
-        }
+        recallProjection = selectRecall(index);
+        recall.status = 'lexical';
+        recall.reason = 'Deterministic lexical source recall; no external ranking request.';
         recall.selectedWindows = recallProjection.windows.length;
       }
     }
@@ -530,7 +512,7 @@ class AgentRuntime {
       latestCompiled = compiled;
       recall.visibleWindowIds = (recallProjection?.windows ?? []).filter(window => compiled.nodeIds.includes(window.nodeId) && compiled.prompt.includes(`[${window.id} ${window.start}:${window.end}]\n${window.text}`)).map(window => window.id);
       if (focus) focus.selectedNodeIds = compiled.nodeIds.filter((id) => preferredNodeIds.includes(id));
-      progress(iteration, "context", recall.status === 'fallback' ? 'Jev unavailable; using lexical source recall' : focus?.status === "fallback" ? "Focus ranking unavailable; compiled the available context" : this.contextMode === "molecular" ? "Compiled the molecular context view" : "Compiled the active causal frontier", { prompt: compiled.prompt, contextTokens: compiled.tokenEstimate.estimatedTokens, recall: structuredClone(recall), ...(focus ? { focus: structuredClone(focus) } : {}) });
+      progress(iteration, "context", recall.status === 'lexical' ? 'Compiled locally selected source excerpts' : focus?.status === "fallback" ? "Focus ranking unavailable; compiled the available context" : this.contextMode === "molecular" ? "Compiled the molecular context view" : "Compiled the active causal frontier", { prompt: compiled.prompt, contextTokens: compiled.tokenEstimate.estimatedTokens, recall: structuredClone(recall), ...(focus ? { focus: structuredClone(focus) } : {}) });
       progress(iteration, "model", `Waiting for model iteration ${iteration}`, { contextTokens: compiled.tokenEstimate.estimatedTokens });
       const modelInput: ModelInput = {
         prompt: compiled.prompt,
