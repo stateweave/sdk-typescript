@@ -19,6 +19,7 @@ import { LiveBudget, ZaiGraphModel, ZaiMessagesModel, zaiConfigFromEnv } from ".
 
 type FrozenManifest = {
   protocolId: string;
+  implementationRevision: string;
   executionAck: string;
   approvedAt: string;
   expectedEndpoint: { provider: "zai"; hostPath: string; model: "glm-5.3-flash" };
