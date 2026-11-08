@@ -129,7 +129,7 @@ function toolMutationPaths(tool: string, args: Record<string, unknown>, result: 
 
 const generatedDirectories = new Set(["node_modules", ".home", ".npm-cache", ".cache", ".vite", "dist", "build", "coverage", "logs", "tmp"]);
 
-function isMeaningfulMutationPath(filePath: string): boolean {
+export function isMeaningfulMutationPath(filePath: string): boolean {
   const segments = filePath.replaceAll("\\", "/").split("/").filter(Boolean);
   if (segments.some((segment) => generatedDirectories.has(segment))) return false;
   const name = segments.at(-1) ?? filePath;
