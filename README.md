@@ -12,7 +12,7 @@ immutable causal graph → bounded working context → ordinary model action →
 
 There is one public agent class: `Agent`.
 
-**Native Jev recall:** every ordinary `Agent` requires server-side Jev setup and automatically uses it when bounded historical source retrieval is needed; there is no recall opt-in flag. Small states retain ordinary projection without a needless provider request. The frozen 196-case study scored native **173/196**, current SDK **132/196**, and lexical **137/196**. Practical/statistical quality thresholds passed, but the complete preregistered adoption gate failed on scored abstention and lexical completion. See the [complete results and limitations](evaluations/native-recall-v1/CONFIRMATORY_RESULTS.md); the separate Unicode hardening never replaces measured outcomes.
+**Built-in source recall:** every ordinary `Agent` automatically uses deterministic lexical ranking when bounded historical source retrieval is needed, with no external ranking provider, recall key, or opt-in flag. Small states retain ordinary projection. Historical evaluations remain frozen evidence for their original runtimes, not measurements of this runtime; no answer-quality superiority is claimed.
 
 The runtime automatically records goals, model inferences, tool calls, tool results, resource versions, verification evidence, protocol errors, and answers as content-addressed causal nodes. Every model action points to the exact graph nodes compiled for that inference. The complete graph remains append-only while a deterministic multi-resolution projection keeps each model call bounded.
 
@@ -41,7 +41,7 @@ pnpm test
 
 ## Quick start
 
-Configure `TYPESAFE_API_KEY` on the server, alongside your answering-model credentials. No recall enable flag exists. Alternatively pass `jev: { apiKey }` to `Agent`; never ship this key to a browser. Missing setup and HTTP 401/403 produce a clear setup error. Temporary provider failures visibly fall back to lexical retrieval without discarding state. Consumer applications must disclose and authorize sending the current query plus bounded source excerpts to TypeSafe.
+Configure your answering-model credentials for `createModelFromEnv()`. Source recall is built in and requires no separate key, external ranking provider, or enable flag.
 
 ```ts
 import { Agent, createModelFromEnv } from "stateweave";
@@ -94,32 +94,21 @@ const agent = new Agent({
 
 ### Native source recall
 
-Native recall searches current source versions, ranks up to 64 exact interior excerpts with pinned `jev-1.13.0`, and compiles up to 12 non-overlapping source windows under the existing node and token ceilings. Both text and original node identities remain intact. Jev judges evidence usefulness, not truth; it cannot authorize actions, rewrite memories, or establish that omitted information is absent. Small bounded states retain ordinary projection without an unnecessary provider call.
+Native recall searches current source versions, deterministically ranks up to 64 exact interior excerpts by lexical relevance, and compiles up to 12 non-overlapping source windows under the existing node and token ceilings. The exact source-window representation and bounds are unchanged; text and original node identities remain intact. Ranking runs locally with no external ranking provider or recall credential. It cannot authorize actions, rewrite memories, or establish that omitted information is absent. Small bounded states retain ordinary projection.
 
-This sends the task query (up to 8,000 characters) and bounded excerpts to TypeSafe. Consumers must authorize that processing and supply only state they may disclose. `metadata.recall` and streamed `progress.recall` separate ranking, lexical fallback, source limits, provider usage, latency, and actually visible windows. Main-model usage remains separate. Selection is prepared once per turn; newly observed tool evidence keeps its normal priority, and superseded source windows cannot reappear as current evidence. Under the same budgets, the immediately preceding request/answer and up to four direct current-goal parents retain ordinary views ahead of recalled history: a weak shortlist must not suppress a fresh correction or excerpt it away. No graph watcher or world-truth validator is implied.
+`metadata.recall` and streamed `progress.recall` report lexical selection, source limits, latency, and actually visible windows; active lexical recall has status `lexical`. Main-model usage remains separate. Selection is prepared once per turn; newly observed tool evidence keeps its normal priority, and superseded source windows cannot reappear as current evidence. Under the same budgets, the immediately preceding request/answer and up to four direct current-goal parents retain ordinary views ahead of recalled history: a weak shortlist must not suppress a fresh correction or excerpt it away. No graph watcher or world-truth validator is implied.
 
-### Legacy experimental Jev focus comparator
+The provider-agnostic `focusReranker` hook remains available for custom integrations. Historical `focus`/ranking diagnostics and separate usage accounting remain readable in stored traces and sessions; removing a bundled ranking provider does not erase previously recorded overhead.
 
-```ts
-import { Agent, createJevFocusReranker, createModelFromEnv } from "stateweave";
-const agent = new Agent({
-  model: createModelFromEnv(),
-  focusReranker: createJevFocusReranker({
-    apiKey: process.env.TYPESAFE_API_KEY!,
-    mode: "hierarchical", // omit for the simpler flat reranker
-  }),
-});
-```
+### Migration from Jev-backed recall
 
-This separate legacy focus hook is **off by default**, server-only, and experimental; native source recall above does not require it. Each opted-in turn sends its query (at most 4,000 characters) and bounded source excerpts (600 characters each) to TypeSafe. Use non-sensitive sample states. No credential belongs in browser settings or `AgentState`.
+Remove the `jev` option from `new Agent(...)` and remove imports of `JevConfiguration`, `JevSetupError`, and `createJevFocusReranker`; those options and exports are no longer available. The SDK no longer reads `TYPESAFE_API_KEY`, and the lab no longer accepts a `jevFocus` setting. Built-in deterministic lexical recall requires no replacement adapter or recall key. The generic `focusReranker` hook and its provider-agnostic types remain available for custom integrations.
 
-Flat mode judges up to 24 deterministic candidates once per turn. Hierarchical mode judges at most 16 source-backed topics → three nominated branches → 12 child subgraphs → four nominated leaves → 24 source atoms. Eight global candidates bypass branch selection so a bad region judgment is not an absolute gate. Region descriptions are partial source excerpts, not authoritative summaries. Independent Noul judgments permit multiple relevant branches; 0.5 is an experimental threshold, not a truth guarantee. Jev cannot recover evidence omitted from these bounded candidates.
+Previously stored Jev focus diagnostics and usage labels remain readable as historical accounting; they are not renamed or erased. This migration makes no answer-quality, latency, cost, or other performance claim for the new runtime.
 
-StateWeave selects up to six preferences, preserving latest system/goal and current-turn frontier before older preferences, excluding superseded projection versions and enforcing existing node/token limits. Scores never alter immutable source nodes or their causal parents. Browser expansion remains display-only. Preferences are fixed for one turn, not refreshed after each tool call; the compiler still admits fresh operational evidence ahead of them.
+### Historical evaluation evidence
 
-The entire ranking has one deadline (5s flat, 10s hierarchical; configurable 100–30,000ms). Caller abort propagates; other failures visibly fall back to the unchanged deterministic projection. `progress.focus` and result `metadata.focus` distinguish requested `preferredNodeIds` from actually compiled `selectedNodeIds`, and report each scoring stage, resolved model, provider usage and latency separately from the answering model. Fallback preserves completed-stage usage and marks unknown usage incomplete. The paired Dev session ledger persists a compact separate-overhead record across reloads. An opt-in lab Settings selector applies only to the StateWeave arm. Frozen evaluation surfaces and Traditional are unchanged.
-
-Software tests prove the contract, **not better answers**. The real Dev [twelve-case diagnostic](evaluations/jev-focus-v2/REPORT.md) found **no answer-quality gain**: deterministic, flat and hierarchical modes each completed 11/12 cases correctly and scored 10/12 on the strict evidence endpoint. Hierarchy added a median 0.798s of selection and 78,046 external input tokens across the twelve attempts. An earlier invalid calibration is preserved and excluded; this reused-corpus diagnostic is not independent confirmation. That result does not establish any benefit for native source recall. Native recall has its own separately frozen study above; its positive quality result does not revise this earlier null finding or remove its failed acceptance gates.
+All files, reports, scores, and archives under `evaluations/` remain unchanged. The [native recall study](evaluations/native-recall-v1/CONFIRMATORY_RESULTS.md) and [focus diagnostic](evaluations/jev-focus-v2/REPORT.md) describe their frozen historical implementations, not the current deterministic lexical runtime. Their results must not be treated as measurements of, or superiority claims for, this runtime. Software tests verify the current contract, not better answers.
 
 ## Persistent state
 

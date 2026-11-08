@@ -20,6 +20,30 @@ describe("focused comparison lab", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it("removes external recall configuration while retaining historical focus diagnostics", async () => {
+    const [html, main, server, compose, cost] = await Promise.all([
+      readFile(new URL("web/index.html", root), "utf8"),
+      readFile(new URL("web/src/main.ts", root), "utf8"),
+      readFile(new URL("src/web/server.ts", root), "utf8"),
+      readFile(new URL("docker-compose.web.yml", root), "utf8"),
+      readFile(new URL("web/src/codexCost.ts", root), "utf8")
+    ]);
+    for (const source of [html, main, server, compose, cost]) {
+      expect(source).not.toMatch(/jev|typesafe/i);
+    }
+    expect(server).toContain('json(response, 200, { ok: true, provider: providerName()');
+    expect(server).toContain('nativeRecall: { required: true, configured: true, ranking: "lexical" }');
+    expect(main).toContain("summarizeFocus(progress.focus)");
+    expect(main).toContain("activeTokenUsage.focus");
+    expect(cost).toContain("Equivalent API list price computed from Codex-reported tokens; your subscription is not billed per token.");
+  });
+
+  it("keeps unmocked external network requests disabled without a fake recall key", async () => {
+    const setup = await readFile(new URL("tests/setup.ts", root), "utf8");
+    expect(setup).not.toContain("TYPESAFE_API_KEY");
+    await expect(fetch("https://network-denied.invalid/")).rejects.toThrow("Unit tests forbid unmocked external network requests.");
+  });
+
   it("binds sessions, arm context, mobile panes, and graph evidence without page overflow defaults", async () => {
     const [main, css] = await Promise.all([
       readFile(new URL("web/src/main.ts", root), "utf8"),
