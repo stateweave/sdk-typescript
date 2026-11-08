@@ -7,6 +7,7 @@ export type AnthropicModelConfig = ModelParameters & {
   beta?: string;
   system?: string;
   timeoutMs?: number;
+  redirect?: RequestRedirect;
   extra?: Record<string, unknown>;
 };
 
@@ -90,6 +91,7 @@ export class AnthropicModel implements Model {
     return fetch(`${this.config.baseUrl}/v1/messages`, {
       method: "POST",
       headers: this.headers(),
+      redirect: this.config.redirect,
       signal: this.signal(input),
       body: JSON.stringify(this.payload(input, stream))
     });
