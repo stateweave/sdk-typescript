@@ -160,7 +160,8 @@ function readSemanticNodeInputs(value: unknown): SemanticNodeInput[] {
   });
 }
 
-function toolResultSucceeded(result: unknown): boolean {
+/** A tool result counts as success unless it carries an error, ok=false, or a non-zero exitCode. */
+export function toolResultSucceeded(result: unknown): boolean {
   if (!result || typeof result !== "object") return true;
   const record = result as Record<string, unknown>;
   if (record.error !== undefined || record.ok === false) return false;

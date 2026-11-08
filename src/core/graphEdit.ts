@@ -49,6 +49,28 @@ export function turnTask(graph: StateGraph, inputId: string | undefined): GraphN
 }
 
 /** Active canonical file-state node for a path, written by successful read/write/edit evidence. */
+/**
+ * Workspace paths compare by normalized form, so ./a.txt, a.txt and a//a.txt name one file.
+ * Same result as posix.normalize (minus trailing slashes), without node:path so the browser demo can bundle it.
+ */
+export function workspacePathKey(path: string): string {
+  const absolute = path.startsWith("/");
+  const parts: string[] = [];
+  for (const segment of path.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment !== "..") parts.push(segment);
+    else if (parts.length && parts.at(-1) !== "..") parts.pop();
+    else if (!absolute) parts.push("..");
+  }
+  const body = parts.join("/");
+  return absolute ? `/${body}` : body || ".";
+}
+
+/** True for a file-state node whose path names the same workspace file as `path`. */
+export function isFileNodeFor(node: GraphNode, path: string): boolean {
+  return node.type === "file" && typeof node.data?.path === "string" && workspacePathKey(node.data.path) === workspacePathKey(path);
+}
+
 export function activeFileState(graph: StateGraph, path: string): GraphNode | undefined {
-  return graph.nodes.find((node) => node.type === "file" && node.status === "active" && node.data?.canonical === true && node.data?.path === path);
+  return graph.nodes.find((node) => isFileNodeFor(node, path) && node.status === "active" && node.data?.canonical === true);
 }

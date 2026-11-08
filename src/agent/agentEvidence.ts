@@ -1,5 +1,6 @@
 // What a tool result proves for the causal Agent: resource versions, verification, and meaningful mutations.
 import { isMeaningfulMutationPath } from "./runEvidence.js";
+import { toolResultSucceeded } from "./toolProtocol.js";
 
 type ResourceChange = { key: string; payload: Record<string, unknown> };
 
@@ -17,13 +18,13 @@ export function resourceChanges(toolName: string, args: unknown, result: unknown
       operation: toolName,
       ...(typeof record.content_hash === "string" ? { contentHash: record.content_hash } : {}),
       ...(typeof record.bytes === "number" ? { bytes: record.bytes } : {}),
-      succeeded: toolSucceeded(result)
+      succeeded: toolResultSucceeded(result)
     }
   }));
 }
 
 export function meaningfulMutationPaths(toolName: string, args: unknown, result: unknown): string[] {
-  if (!toolSucceeded(result)) return [];
+  if (!toolResultSucceeded(result)) return [];
   const record = asRecord(result);
   const toolArgs = asRecord(args);
   const values = toolName === "write_file" || toolName === "edit_file"
@@ -34,7 +35,7 @@ export function meaningfulMutationPaths(toolName: string, args: unknown, result:
 
 /** `mutatedBefore` is the set of paths this run had changed before the tool ran. */
 export function verificationRecord(toolName: string, args: unknown, result: unknown, mutatedBefore: Set<string>): Record<string, unknown> | undefined {
-  if (!toolSucceeded(result)) return undefined;
+  if (!toolResultSucceeded(result)) return undefined;
   const toolArgs = asRecord(args);
   const filePath = String(toolArgs.file_path ?? toolArgs.path ?? "");
   const action = String(toolArgs.action);
@@ -42,13 +43,6 @@ export function verificationRecord(toolName: string, args: unknown, result: unkn
   if (toolName === "bash_command" && /\bnode\s+--check\b/.test(String(toolArgs.command ?? ""))) return { method: "syntax_check", command: String(toolArgs.command) };
   if (toolName === "app_control" && ["check", "restart", "smoke"].includes(action)) return { method: action };
   return asRecord(result).verification === true ? { method: "tool_declared" } : undefined;
-}
-
-function toolSucceeded(result: unknown): boolean {
-  if (!result || typeof result !== "object") return true;
-  const record = result as Record<string, unknown>;
-  if (record.error !== undefined || record.ok === false) return false;
-  return typeof record.exitCode !== "number" || record.exitCode === 0;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

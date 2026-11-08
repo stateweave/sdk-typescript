@@ -219,6 +219,29 @@ it("SDKWS-02: accepts an edit in a later turn using file evidence already in the
   }
 });
 
+it("SDKWS-02: file evidence matches equivalent spellings of the same workspace path", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-sdkws-02-path-"));
+  try {
+    const tools = createFileSystemTools({ rootDir: root });
+    await tools.find((tool) => tool.name === "write_file")?.execute({ file_path: "config.txt", content: "retryLimit=3" });
+    const first = await runStateWeave(
+      { model: new SequenceModel(["SW2\nT read_file path=./config.txt", 'SW2\nF "retryLimit is 3."']), tools, maxIterations: 2 },
+      "What is retryLimit in config.txt?"
+    );
+    const second = await runStateWeave(
+      { model: new SequenceModel(["SW2\nT edit_file path=config.txt old_string=retryLimit=3 new_string=retryLimit=4", 'SW2\nF "Updated config.txt to retryLimit=4."']), tools, maxIterations: 2 },
+      "Update file config.txt so retryLimit is 4",
+      { frame: first.frame }
+    );
+    expect(second.metadata.retryCount).toBe(0);
+    expect(await readFile(path.join(root, "config.txt"), "utf8")).toBe("retryLimit=4");
+    const fileNodes = second.frame.graph.nodes.filter((node) => node.type === "file");
+    expect(fileNodes.filter((node) => node.status === "active").map((node) => node.data?.path)).toEqual(["config.txt"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it("SDKWS-02: accepts an edit carrying expected_hash and rejects one with no evidence", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-edit-evidence-"));
   try {
