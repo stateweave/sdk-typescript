@@ -55,6 +55,7 @@
     "test": "vitest run",
     "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run package:check",
     "package:check": "node scripts/verify-package.mjs",
+    "eval:workspace-live:build": "rm -rf .live-dist && tsc -p eval/workspace-editing-v1/tsconfig.live.json && node eval/workspace-editing-v1/package-live.mjs",
     "repo:protect": "node scripts/protect-main.mjs",
     "measure:tokens": "tsx eval/measure-prompt-tokens.ts",
     "eval:controls": "node eval/workspace-editing-v1/grade-controls.mjs"

@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "outDir": "../../.live-dist",
+    "noEmit": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": [
+    "./run-live.ts",
+    "./live-provider.ts",
+    "./runner.ts",
+    "../../src/agent/**/*.ts",
+    "../../src/core/**/*.ts",
+    "../../src/llm/**/*.ts",
+    "../../src/tools/**/*.ts"
+  ],
+  "exclude": ["../../dist", "../../node_modules", "../../tests"]
+}
