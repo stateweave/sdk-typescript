@@ -1,0 +1,154 @@
+{
+ "schemaVersion": 1,
+ "runId": "workspace-editing-v1-glm53-sw2-live-20261108-20261108T221306984Z",
+ "status": "completed",
+ "targetAlignment": "exact_model",
+ "startedAt": "2026-11-08T22:13:06.984Z",
+ "completedAt": "2026-11-08T22:23:27.729Z",
+ "sourceRevision": "e567d626b48a9a0a2559a1f311b906912a941f91",
+ "protocolId": "workspace-editing-v1-glm53-sw2-live-20261108",
+ "resultSha256": "7e7258bf61b517b00094c0ac694f59aa23a3d8756f23ec48f9907853881dea41",
+ "workspaceArchiveSha256": "63f14148ef66c356978494c2a901190fe29d765149b4c006032fc90a4a8abca3",
+ "packageReceiptSha256": "f6cb894b6a4215710936dcbeea2119303a0e3b542716810f40f8019e5b9dcec0",
+ "workspaceCount": 10,
+ "runtime": {
+  "provider": "zai",
+  "endpoint": "api.z.ai/api/anthropic",
+  "model": "glm-5.3",
+  "billingMode": "zai-coding-plan",
+  "incrementalDollarEstimate": null,
+  "retryCount": 0,
+  "exactIdentityCalls": 109
+ },
+ "budget": {
+  "providerCalls": 109,
+  "reservedTokens": 596116,
+  "knownInputTokens": 157023,
+  "knownOutputTokens": 40622,
+  "knownTotalTokens": 197645,
+  "maxProviderCalls": 240,
+  "maxReservedTokens": 5000000
+ },
+ "arms": {
+  "graph": {
+   "attempted": 5,
+   "completed": 2,
+   "taskPasses": 2,
+   "operationalFailures": 3,
+   "totalModelCalls": 24,
+   "totalDurationMs": 297149,
+   "providerCalls": 35,
+   "knownInputTokens": 52740,
+   "knownOutputTokens": 32997,
+   "knownTotalTokens": 85737,
+   "endTurnCalls": 34,
+   "maxTokenCalls": 1
+  },
+  "messages": {
+   "attempted": 5,
+   "completed": 4,
+   "taskPasses": 4,
+   "operationalFailures": 1,
+   "totalModelCalls": 62,
+   "totalDurationMs": 125943,
+   "providerCalls": 74,
+   "knownInputTokens": 104283,
+   "knownOutputTokens": 7625,
+   "knownTotalTokens": 111908,
+   "endTurnCalls": 74,
+   "maxTokenCalls": 0
+  }
+ },
+ "completePairs": 2,
+ "endpointMatchedPairs": 2,
+ "cases": [
+  {
+   "caseId": "SDKWS-01",
+   "task": "Refine an SVG panel",
+   "order": [
+    "graph",
+    "messages"
+   ],
+   "graph": {
+    "status": "task_pass",
+    "calls": 17
+   },
+   "messages": {
+    "status": "task_pass",
+    "calls": 13
+   }
+  },
+  {
+   "caseId": "SDKWS-02",
+   "task": "Update nested fixture options",
+   "order": [
+    "messages",
+    "graph"
+   ],
+   "graph": {
+    "status": "protocol_failure",
+    "turn": 3,
+    "calls": 8,
+    "reason": "Graph output must begin with an exact SW2 (or legacy SWX/1) header; fenced, prefixed, and legacy-JSON outputs are rejected without repair."
+   },
+   "messages": {
+    "status": "task_pass",
+    "calls": 20
+   }
+  },
+  {
+   "caseId": "SDKWS-03",
+   "task": "Verify an already-correct manual setup",
+   "order": [
+    "graph",
+    "messages"
+   ],
+   "graph": {
+    "status": "task_pass",
+    "calls": 7
+   },
+   "messages": {
+    "status": "task_pass",
+    "calls": 10
+   }
+  },
+  {
+   "caseId": "SDKWS-04",
+   "task": "Edit repeated labels without conflating cards",
+   "order": [
+    "messages",
+    "graph"
+   ],
+   "graph": {
+    "status": "protocol_failure",
+    "turn": 1,
+    "calls": 2,
+    "reason": "Graph output must begin with an exact SW2 (or legacy SWX/1) header; fenced, prefixed, and legacy-JSON outputs are rejected without repair."
+   },
+   "messages": {
+    "status": "protocol_failure",
+    "turn": 1,
+    "calls": 12,
+    "reason": "Messages arm exhausted 12 iterations on turn 1."
+   }
+  },
+  {
+   "caseId": "SDKWS-05",
+   "task": "Keep catalog and preview consistent",
+   "order": [
+    "graph",
+    "messages"
+   ],
+   "graph": {
+    "status": "protocol_failure",
+    "turn": 1,
+    "calls": 1,
+    "reason": "Graph output must begin with an exact SW2 (or legacy SWX/1) header; fenced, prefixed, and legacy-JSON outputs are rejected without repair."
+   },
+   "messages": {
+    "status": "task_pass",
+    "calls": 19
+   }
+  }
+ ]
+}
