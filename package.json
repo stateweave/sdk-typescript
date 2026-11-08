@@ -55,7 +55,8 @@
     "test": "vitest run",
     "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run package:check",
     "package:check": "node scripts/verify-package.mjs",
-    "repo:protect": "node scripts/protect-main.mjs"
+    "repo:protect": "node scripts/protect-main.mjs",
+    "measure:tokens": "tsx eval/measure-prompt-tokens.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
