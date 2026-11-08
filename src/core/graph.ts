@@ -1,4 +1,5 @@
 import type { GraphFrame, GraphNode, StateGraph } from "./types.js";
+import { nextSequenceId, unique } from "./graphEdit.js";
 
 export function nowIso(): string {
   return new Date().toISOString();
@@ -163,27 +164,6 @@ export function assertValidGraphFrame(frame: GraphFrame): void {
   if (errors.length) throw new Error(`Invalid GraphFrame: ${errors.join("; ")}`);
 }
 
-function nextSequenceId(nodes: GraphNode[], prefix: string): string {
-  let next = nodes.reduce((max, node) => {
-    const match = node.id.match(new RegExp(`^${escapeRegExp(prefix)}(\\d+)$`));
-    return match ? Math.max(max, Number(match[1])) : max;
-  }, 0) + 1;
-  while (nodes.some((node) => node.id === `${prefix}${next}`)) next += 1;
-  return `${prefix}${next}`;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function normalizeNodeTypes(values: string[]): string[] {
   return unique(values.map((value) => value.trim()).filter((value) => /^[a-z][a-z0-9_-]{0,63}$/.test(value)));
-}
-
-function unique(values: string[]): string[] {
-  return [...new Set(values)];
-}
-
-function edgeId(from: string, type: string, to: string): string {
-  return `edge_${from}_${type}_${to}`.replace(/[^a-zA-Z0-9_]/g, "_");
 }

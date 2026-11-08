@@ -1,18 +1,21 @@
 export type StructuralNodeType = "system" | "user_input" | "assistant_output" | "tool_call" | "tool_result";
 export type NodeType = StructuralNodeType | (string & {});
 
-export type EdgeType =
-  | "follows"
-  | "creates"
-  | "supports"
-  | "contradicts"
-  | "explains"
-  | "depends_on"
-  | "addresses"
-  | "validates"
-  | "constrains"
-  | "causes"
-  | "relates_to";
+export const edgeTypes = [
+  "follows",
+  "creates",
+  "supports",
+  "contradicts",
+  "explains",
+  "depends_on",
+  "addresses",
+  "validates",
+  "constrains",
+  "causes",
+  "relates_to"
+] as const;
+
+export type EdgeType = (typeof edgeTypes)[number];
 
 export type GraphNode = {
   id: string;
