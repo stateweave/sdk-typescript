@@ -64,7 +64,7 @@
     "eval/workspace-editing-v1/runner.ts": "fbcb4401c4dc69357a2fb308b116d2a397019257f611eff528aa0e9c51b81bf8",
     "eval/workspace-editing-v1/live-provider.ts": "c125cbe9d83452e6f1576e6dc5a708339fa32c938ecf9d513139068abe72acf3",
     "eval/workspace-editing-v1/run-live.ts": "fabc12bb673245f38e8535c67671ef686e8da2cb26c589edd540d05c543e5299",
-    "eval/workspace-editing-v1/package-live.mjs": "3129c84cd62d5a7f6a8ab83508fd7d1f91cdaf3aebbd8636442ff59db5d620ba",
+    "eval/workspace-editing-v1/package-live.mjs": "6bb89b950c14da98f8cae5459abd9cc2dc31185dda3fe2d78438b3cac318a61c",
     "eval/workspace-editing-v1/tsconfig.live.json": "d5ac4108581b85b0e17df4e603514807ce3e18a21842ab75a3107ead4ba800ac"
   }
 }
