@@ -33,10 +33,11 @@ explicitly approved the five synthetic seeds in `workspace-editing-v1/cases.json
 after reviewing their complete initial files and twenty turns. That input sign-off
 does not approve an expanded cohort.
 
-The deterministic actual-output grader in `workspace-editing-v1/` is now under
-separate review. Demonstrate its grades on explicit reference and wrong outputs
-and obtain grading sign-off before building a model runner. Do not claim that the
-comparison is runnable or has a baseline.
+The deterministic actual-output grader in `workspace-editing-v1/` was approved
+for the five seeds on 2026-11-08. Its provider-neutral runner core now exercises
+the real primitive path and an eval-only persistent Messages control under
+offline scripted tests. No provider adapter or live execution is approved, so do
+not claim a baseline or capability result.
 
 ## Construction requirements
 

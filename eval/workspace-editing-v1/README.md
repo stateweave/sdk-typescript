@@ -1,8 +1,8 @@
-# Workspace editing v1 — grading draft
+# Workspace editing v1
 
-Status: the five inputs are approved. The deterministic grader is implemented for review, but its grading method is not yet approved. Review the actual offline control grades in [`GRADING-REVIEW.md`](./GRADING-REVIEW.md). There is no model runner, provider call, baseline, score, or hillclimb.
+Status: the five inputs and deterministic grading method are approved. The provider-neutral runner core is implemented and covered by offline scripted controls; review its contract in [`RUNNER-REVIEW.md`](./RUNNER-REVIEW.md). There is no provider adapter, provider call, baseline, score, or hillclimb.
 
-## Proposed primary grade
+## Primary grade
 
 `taskOutcome` is Boolean per episode. It passes only when all applicable checks pass:
 
@@ -24,7 +24,7 @@ The grader does not inspect private GraphFrame state or Messages history and doe
 - prose style when no structured final answer is requested;
 - latency, token usage, retries, and tool-call counts.
 
-A future runner must record those as separate operational/performance fields. It must never turn an infrastructure or grader failure into `taskOutcome: false`.
+The runner records those separately. `captureEpisode` returns `grade: null` for model, protocol, runtime, grader, and abort failures rather than manufacturing `taskOutcome: false`.
 
 ## Offline controls
 
@@ -36,4 +36,4 @@ node eval/workspace-editing-v1/grade-controls.mjs --output /tmp/workspace-editin
 
 The control pass uses no model or network. It requires all five reference workspaces to pass and explicit stale/type/no-answer/scope/read-only/unsafe/no-op/duplicate-key controls to fail for the intended reason.
 
-`cases.json` contains expected states for the grader. A future model runner must materialize only `initialFiles`, common instructions, and turns into an isolated workspace; expected files, expected answers, other cases, and graders must not be available to either arm.
+`cases.json` contains expected states for the grader. `runner.ts` materializes only `initialFiles`, supplies turns one at a time, scopes each arm to its own workspace, and invokes the grader only after execution. Expected files, expected answers, other cases, and the opposite arm are never included in model requests.

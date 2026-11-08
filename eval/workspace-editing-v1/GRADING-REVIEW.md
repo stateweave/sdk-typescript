@@ -1,10 +1,10 @@
-# Workspace editing v1 — grading review
+# Workspace editing v1 — approved grading method
 
-**Decision requested: approve or revise this deterministic grading method.**
+**Approved by the human on 2026-11-08 for SDKWS-01 through SDKWS-05.**
 
-This is an offline grader demonstration over explicit reference and deliberately wrong snapshots. It contains no model output, provider request, baseline, or capability result. The five inputs are approved; the grader is not yet approved.
+This is an offline grader demonstration over explicit reference and deliberately wrong snapshots. It contains no model output, provider request, baseline, or capability result. Approval permits building the audited runner; it does not approve any live execution.
 
-## Proposed rule
+## Approved rule
 
 - Primary `taskOutcome` passes only when the actual final workspace, requested structured answer, file scope, read-only preservation, and SVG safety all pass.
 - JSON is compared by typed value, ignoring key order/formatting and rejecting duplicate keys.
@@ -54,4 +54,4 @@ PASS: approved common instructions + 20 turns match cases.json
 0 provider calls
 ```
 
-Approval here covers this grading method for these five seeds and permits building the audited runner next. It does not approve a provider/model, paid pilot, baseline, expanded dataset, retries, or hillclimb.
+This approval covers only this grading method for these five seeds. It does not approve a provider/model, paid pilot, baseline, expanded dataset, retries, or hillclimb.
