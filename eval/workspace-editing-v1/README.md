@@ -1,6 +1,6 @@
 # Workspace editing v1 — grading draft
 
-Status: the five inputs are approved. The deterministic grader is implemented for review, but its grading method is not yet approved. There is no model runner, provider call, baseline, score, or hillclimb.
+Status: the five inputs are approved. The deterministic grader is implemented for review, but its grading method is not yet approved. Review the actual offline control grades in [`GRADING-REVIEW.md`](./GRADING-REVIEW.md). There is no model runner, provider call, baseline, score, or hillclimb.
 
 ## Proposed primary grade
 
