@@ -35,6 +35,21 @@ it("rejects stale hash-guarded edits and returns current evidence", async () => 
   }
 });
 
+it("accepts the 12-char hash prefix shown in <FILES> as expected_hash", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-tools-prefix-"));
+  try {
+    const tools = new Map(createFileSystemTools({ rootDir: root }).map((tool) => [tool.name, tool]));
+    await tools.get("write_file")?.execute({ file_path: "a.txt", content: "alpha" });
+    const read = await tools.get("read_file")?.execute({ file_path: "a.txt" }) as { content_hash: string };
+    await tools.get("edit_file")?.execute({ file_path: "a.txt", old_string: "alpha", new_string: "beta", expected_hash: read.content_hash.slice(0, 12).toUpperCase() });
+    expect(await tools.get("read_file")?.execute({ file_path: "a.txt" })).toMatchObject({ content: "beta" });
+    await expect(tools.get("edit_file")?.execute({ file_path: "a.txt", old_string: "beta", new_string: "gamma", expected_hash: "abc" })).rejects.toThrow();
+    await expect(tools.get("edit_file")?.execute({ file_path: "a.txt", old_string: "beta", new_string: "gamma", expected_hash: read.content_hash.slice(0, 12) })).rejects.toThrow(/File version mismatch/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it("rejects non-allowlisted and shell-escape bash commands", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-tools-"));
   try {

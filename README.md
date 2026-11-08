@@ -37,7 +37,7 @@ const before = createInitialGraphFrame({
 });
 
 const prompt = serializeGraphFrame(before);
-const ops = parseAndValidateOps('SWX/1\n@node release fact "Release window: Friday"\n@final "Recorded Friday."');
+const ops = parseAndValidateOps('SW2\nN release fact "Release window: Friday"\nF "Recorded Friday."');
 const after = applyOps(before, ops);
 
 console.log({ prompt, ops, before: before.graph, after: after.graph });

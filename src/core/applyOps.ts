@@ -72,7 +72,7 @@ const handlers: { [K in GraphOp["op"]]: OpHandler<K> } = {
     const assistant = addAssistantOutput(tx.next.graph, op.answer, task ?? tx.anchor, tx.preNodeIds, artifactIds);
     tx.next.frame.focusNodeId = assistant.id;
     tx.next.frame.activeUserInputNodeId = userInputIdForNode(tx.next.graph, assistant) ?? tx.next.frame.latestInputNodeId ?? tx.next.frame.activeUserInputNodeId;
-    tx.next.frame.currentFocus = `Focus is ${assistant.id}; continue from this answer unless the next input asks for another focus.`;
+    tx.next.frame.currentFocus = assistant.id;
   }
 };
 

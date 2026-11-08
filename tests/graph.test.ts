@@ -21,19 +21,22 @@ it("creates an initial GraphFrame with a system root and first user input", () =
 it("serializes a GraphFrame into the StateWeave prompt contract", () => {
   const frame = createInitialGraphFrame({ objective: "Fix login", input: "Login fails", availableActions: [] });
   const prompt = serializeGraphFrame(frame);
-  expect(prompt).toContain("You are operating inside StateWeave.");
-  expect(prompt).toContain("provider messages[]");
-  expect(prompt).toContain("Return StateWeave Exchange");
-  expect(prompt).toContain("SWX/1");
-  expect(prompt).toContain("node system_root [system]");
-  expect(prompt).toContain("node user_input_1 [user_input]");
+  expect(prompt).toContain("StateWeave: the graph is the runtime state, ¬messages[]");
+  expect(prompt).toContain("first line exactly: SW2");
+  expect(prompt).toMatch(/^  T <tool> k=v/m);
+  expect(prompt).toContain("- system_root system:");
+  expect(prompt).toContain("- user_input_1 user_input: Login fails");
+  expect(prompt).toContain("objective: Fix login");
+  expect(prompt).not.toContain("SWX/1");
+  const same = serializeGraphFrame(createInitialGraphFrame({ objective: "Login fails", input: "Login fails", availableActions: [] }));
+  expect(same).not.toContain("objective:");
 });
 
 it("serializes configured semantic node type hints", () => {
   const frame = createInitialGraphFrame({ objective: "Plan", input: "Plan the work", availableActions: [], nodeTypes: ["intent", "constraint", "artifact"] });
   const prompt = serializeGraphFrame(frame);
   expect(frame.frame.nodeTypes).toEqual(["intent", "constraint", "artifact"]);
-  expect(prompt).toContain("semanticNodeTypes:\n- intent\n- constraint\n- artifact");
+  expect(prompt).toContain("types: intent, constraint, artifact");
 });
 
 it("appends new input as the active cortex node for deterministic attachment", () => {
@@ -44,7 +47,7 @@ it("appends new input as the active cortex node for deterministic attachment", (
   expect(next.graph.nodes.some((node) => node.text === "Hi my name is Radi.")).toBe(true);
   expect(next.graph.nodes.some((node) => node.text === "What is my name?")).toBe(true);
   expect(next.graph.edges.some((edge) => edge.from === "user_input_1" && edge.to === "user_input_2")).toBe(false);
-  expect(next.frame.currentFocus).toMatch(/attach this user_input structurally/i);
+  expect(next.frame.currentFocus).toBe("user_input_2");
 });
 
 it("allocates the next unused input suffix in an imported graph with gaps", () => {

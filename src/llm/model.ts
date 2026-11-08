@@ -78,32 +78,30 @@ export class MockModel implements Model {
     const task = inferTask(lower);
     if (input.prompt.startsWith("CAUSAL_WEAVE/1") || input.prompt.startsWith("MOLECULAR_WEAVE/1")) return `FINAL: ${identity?.answer ?? finalFor(task)}`;
     if (identity && input.mode === "text") return identity.answer;
-    if (identity && input.mode !== "text") return identity.swx;
+    if (identity && input.mode !== "text") return identity.ops;
 
     const hasToolResult = input.frame?.graph.nodes.some((node) => node.type === "tool_result") ?? input.prompt.toLowerCase().includes("tool_result");
     if (input.mode === "text") return finalFor(task);
 
     if (!hasToolResult && source.includes(`tool:${toolFor(task)}`)) {
       return [
-        "SWX/1",
-        `@edge system_root follows ${inputNodeId}`,
-        `@node hypothesis_${task} hypothesis "${hypothesisFor(task)}" confidence=0.72 status=active`,
-        `@edge ${inputNodeId} supports hypothesis_${task}`,
-        `@tool ${toolFor(task)} ${argsForSwx(task)}`
+        "SW2",
+        `N hypothesis_${task} hypothesis "${hypothesisFor(task)}"`,
+        `E ${inputNodeId} supports hypothesis_${task}`,
+        `T ${toolFor(task)} ${toolArgsText(task)}`
       ].join("\n");
     }
 
     return [
-      "SWX/1",
-      `@edge system_root follows ${inputNodeId}`,
-      `@node decision_${task} decision "${finalFor(task)}" confidence=0.86 status=resolved`,
-      `@edge ${inputNodeId} supports decision_${task}`,
-      `@final "${finalFor(task)}"`
+      "SW2",
+      `N decision_${task} decision "${finalFor(task)}" resolved`,
+      `E ${inputNodeId} supports decision_${task}`,
+      `F "${finalFor(task)}"`
     ].join("\n");
   }
 }
 
-function identityOutput(source: string, inputNodeId: string): { answer: string; swx: string } | undefined {
+function identityOutput(source: string, inputNodeId: string): { answer: string; ops: string } | undefined {
   const name = source.match(/my name is\s+([a-z][a-z0-9_-]*)/i)?.[1];
   const asksName = /what(?:'| i)?s my name|what is my name/i.test(source);
   if (!name) return undefined;
@@ -111,12 +109,11 @@ function identityOutput(source: string, inputNodeId: string): { answer: string; 
   const answer = asksName ? `Your name is ${name}.` : `Nice to meet you, ${name}.`;
   return {
     answer,
-    swx: [
-      "SWX/1",
-      `@edge system_root follows ${inputNodeId}`,
-      `@node fact_user_name fact "The user's name is ${name}." confidence=1 status=active`,
-      `@edge ${inputNodeId} supports fact_user_name`,
-      `@final "${answer}"`
+    ops: [
+      "SW2",
+      `N fact_user_name fact "The user's name is ${name}."`,
+      `E ${inputNodeId} supports fact_user_name`,
+      `F "${answer}"`
     ].join("\n")
   };
 }
@@ -143,7 +140,7 @@ function argsFor(task: "login" | "payment" | "api"): Record<string, unknown> {
   return { path: "auth.ts" };
 }
 
-function argsForSwx(task: "login" | "payment" | "api"): string {
+function toolArgsText(task: "login" | "payment" | "api"): string {
   return Object.entries(argsFor(task)).map(([key, value]) => `${key}="${String(value)}"`).join(" ");
 }
 

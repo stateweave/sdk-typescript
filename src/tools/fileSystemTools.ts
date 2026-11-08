@@ -21,6 +21,9 @@ const defaultMaxOutputBytes = 64_000;
 const defaultReadLimit = 500;
 const defaultAllowedBashCommands = ["pwd", "ls", "find", "rg", "grep", "head", "tail", "wc", "sort", "uniq", "diff", "cmp", "node"];
 
+// Full SHA-256 hex, or a prefix of at least 12 chars (as shown in the frame's FILES list).
+const hashSchema = z.string().regex(/^[0-9a-fA-F]{12,64}$/, "expected_hash must be 12-64 hex chars of content_hash");
+
 const readFileSchema = z.object({
   file_path: z.string().min(1).optional(),
   path: z.string().min(1).optional(),
@@ -34,8 +37,8 @@ const writeFileSchema = z.object({
   file_path: z.string().min(1).optional(),
   path: z.string().min(1).optional(),
   content: z.string(),
-  expected_hash: z.string().min(8).optional(),
-  expectedHash: z.string().min(8).optional()
+  expected_hash: hashSchema.optional(),
+  expectedHash: hashSchema.optional()
 }).superRefine(requireFilePath);
 
 const booleanArgSchema = z.preprocess((value) => {
@@ -53,8 +56,8 @@ const editFileSchema = z.object({
   newText: z.string().optional(),
   replace_all: booleanArgSchema,
   replaceAll: booleanArgSchema,
-  expected_hash: z.string().min(8).optional(),
-  expectedHash: z.string().min(8).optional()
+  expected_hash: hashSchema.optional(),
+  expectedHash: hashSchema.optional()
 }).superRefine((args, context) => {
   requireFilePath(args, context);
   if (args.old_string === undefined && args.oldText === undefined) context.addIssue({ code: z.ZodIssueCode.custom, message: "old_string is required" });
@@ -80,7 +83,7 @@ export function createFileSystemTools(options: FileSystemToolsOptions = {}): Too
   return [
     {
       name: "read_file",
-      description: `Read a UTF-8 text file from the agent workspace (${rootDir}). Returns content plus a SHA-256 content_hash for safe edits. Args: file_path, optional offset (0-indexed line), limit. Alias: path/startLine/maxLines.`,
+      description: "Read a UTF-8 workspace file. Args: path, [offset] (0-indexed line), [limit]. Returns content + content_hash.",
       schema: readFileSchema,
       async execute(args: unknown) {
         const parsed = normalizeReadFileArgs(args);
@@ -93,7 +96,7 @@ export function createFileSystemTools(options: FileSystemToolsOptions = {}): Too
     },
     {
       name: "write_file",
-      description: `Create or overwrite a UTF-8 text file inside the agent workspace (${rootDir}). Args: file_path, content, optional expected_hash from read_file. For multiline/SVG/HTML/code content in SWX, use content_ref=<block_id>. Alias: path.`,
+      description: "Create or overwrite a UTF-8 workspace file. Args: path, content (content_ref=<block> for multiline), [expected_hash].",
       schema: writeFileSchema,
       async execute(args: unknown) {
         const parsed = normalizeWriteFileArgs(args);
@@ -107,7 +110,7 @@ export function createFileSystemTools(options: FileSystemToolsOptions = {}): Too
     },
     {
       name: "edit_file",
-      description: `Edit one UTF-8 text file inside the agent workspace (${rootDir}) by exact replacement. Args: file_path, old_string, new_string, optional replace_all and expected_hash from read_file. old_string must match exactly and be unique unless replace_all=true. For multiline edits in SWX, use old_string_ref/new_string_ref blocks. Aliases: path/oldText/newText/replaceAll.`,
+      description: "Exact-replace text in a workspace file. Args: path, old_string, new_string (*_ref=<block> for multiline), [replace_all], [expected_hash]. old_string must match exactly and be unique unless replace_all=true.",
       schema: editFileSchema,
       async execute(args: unknown) {
         const parsed = normalizeEditFileArgs(args);
@@ -123,7 +126,7 @@ export function createFileSystemTools(options: FileSystemToolsOptions = {}): Too
     },
     {
       name: "bash_command",
-      description: `Run a read-only, allowlisted shell command in the agent workspace (${rootDir}). Allowed commands: ${[...allowedBashCommands].join(", ")}. Shell expansion, redirects, pipes, command substitution, absolute paths, and parent traversal are blocked. node is limited to --check. Args: command, optional timeout_ms. Alias: timeoutMs.`,
+      description: `Run a read-only workspace command: ${[...allowedBashCommands].join("|")}. ¬expansion ¬redirects ¬pipes ¬absolute paths ¬..; node only --check. Args: command, [timeout_ms].`,
       schema: bashCommandSchema,
       async execute(args: unknown) {
         const parsed = normalizeBashCommandArgs(args);
@@ -214,7 +217,7 @@ async function assertExpectedHash(filePath: string, expectedHash: string | undef
 function assertContentHash(content: string, expectedHash: string | undefined, filePath: string): void {
   if (!expectedHash) return;
   const currentHash = contentHash(content);
-  if (currentHash !== expectedHash) throw new Error(`File version mismatch for ${filePath}: expected ${expectedHash}, current ${currentHash}. Re-read the file before editing.\nCurrent file preview:\n${filePreview(content)}`);
+  if (!currentHash.startsWith(expectedHash.toLowerCase())) throw new Error(`File version mismatch for ${filePath}: expected ${expectedHash}, current ${currentHash}. Re-read the file before editing.\nCurrent file preview:\n${filePreview(content)}`);
 }
 
 function filePreview(content: string): string {

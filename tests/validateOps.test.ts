@@ -265,3 +265,55 @@ it("keeps legacy JSON parsing as a compatibility fallback", () => {
 it("explains invalid exchanges", () => {
   expect(() => parseAndValidateOps(`{"ops":[{"op":"final","answer":"unfinished`)).toThrow(/invalid StateWeave exchange/i);
 });
+
+it("parses the SW2 grammar: T F N E R and raw blocks", () => {
+  const ops = parseAndValidateOps([
+    "SW2",
+    "N fact_retry fact \"retry limit is 3\"",
+    "E user_input_1 supports fact_retry",
+    "R task_1",
+    "R old_fact stale",
+    "T write_file path=src/app.js content_ref=src",
+    "<<<src:text/javascript",
+    "export const a = \"x=1\";",
+    ">>>"
+  ].join("\n"));
+  expect(ops).toEqual([
+    { op: "add_node", node: { id: "fact_retry", type: "fact", text: "retry limit is 3", status: "active" } },
+    { op: "add_edge", from: "user_input_1", type: "supports", to: "fact_retry" },
+    { op: "update_node", id: "task_1", patch: { status: "resolved" } },
+    { op: "update_node", id: "old_fact", patch: { status: "stale" } },
+    { op: "call_tool", tool: "write_file", args: { path: "src/app.js", content: "export const a = \"x=1\";" } }
+  ]);
+});
+
+it("parses SW2 finals inline and by block ref", () => {
+  expect(parseAndValidateOps('SW2\nF "Done." artifacts=a,b outcome=already_satisfied\nN a artifact "A"\nN b artifact "B"')[0]).toEqual({ op: "final", answer: "Done.", artifactId: "a", artifactIds: ["a", "b"], outcome: "already_satisfied" });
+  expect(parseAndValidateOps("SW2\nF ref=ans\n<<<ans\nline one\nline two\n>>>")).toEqual([{ op: "final", answer: "line one\nline two" }]);
+});
+
+it("attaches an SW2 block to the N line with the same id", () => {
+  const [op] = parseAndValidateOps("SW2\nN plan artifact \"Plan\"\n<<<plan:text/markdown\n# Plan\n>>>");
+  expect(op).toMatchObject({ op: "add_node", node: { id: "plan", data: { mime: "text/markdown", content: "# Plan" } } });
+});
+
+it.each([
+  ["prose line", "SW2\nI will now read the file.", /SW2 line 2: expected one of T F N E R at line start; got: I will now read/],
+  ["unknown edge type", "SW2\nE a blames b", /expected E <from> <edge_type> <to> \(edge_type: [a-z_|]+\)/],
+  ["missing node label", "SW2\nN fact_a fact", /expected N <id> <type> "label"/],
+  ["non key=value tool arg", "SW2\nT read_file src/app.js", /expected T <tool> key=value .*"src\/app.js" is not key=value/],
+  ["unknown final key", 'SW2\nF "ok" because=x', /expected F "answer".*unknown keys: because/],
+  ["bad outcome", 'SW2\nF "ok" outcome=done', /outcome must be already_satisfied/],
+  ["open quote", 'SW2\nF "unterminated', /expected a closed quote/],
+  ["unused block", "SW2\nT read_file path=a\n<<<orphan\nx\n>>>", /expected block <<<orphan to be used by a \*_ref/],
+  ["missing block ref", "SW2\nT write_file path=a content_ref=nope", /expected a <<<nope … >>> block \(referenced block is missing\)/],
+  ["unclosed block", "SW2\nF ref=a\n<<<a\ntext", /expected ">>>" closing <<<a/],
+  ["two finals", 'SW2\nF "a"\nF "b"', /expected at most one F line/],
+  ["empty transaction", "SW2\n", /expected at least one T, F, N, E, or R line/]
+])("rejects SW2 %s with an error naming the expected form", (_name, raw, message) => {
+  expect(() => parseAndValidateOps(raw)).toThrow(message);
+});
+
+it("does not repair SW2 into legacy SWX semantics", () => {
+  expect(() => parseAndValidateOps("SW2\n@tool read_file path=a")).toThrow(/expected one of T F N E R/);
+});

@@ -32,7 +32,7 @@ it("runs approved multi-turn edits through isolated graph and persistent Message
       item,
       commonInstructions: approvedSpec().commonInstructions,
       workspaceDir: graphDir,
-      model: new SequenceGraphModel(states.flatMap((content) => [graphWrite("fixtures/cards.json", content), 'SWX/1\n@final "Turn complete."'])),
+      model: new SequenceGraphModel(states.flatMap((content) => [graphWrite("fixtures/cards.json", content), 'SW2\nF "Turn complete."'])),
       ...offlineLimits
     });
     const messagesModel = new SequenceMessagesModel(states.flatMap((content) => [messagesWrite("fixtures/cards.json", content), "FINAL_ANSWER: Turn complete."]));
@@ -69,10 +69,10 @@ it("keeps file-only no-op evidence hidden until each arm reads the workspace", a
     await materializeWorkspace(item, graphDir, root);
     await materializeWorkspace(item, messagesDir, root);
     const graphOutputs = item.turns.flatMap((_, index) => [
-      "SWX/1\n@tool read_file file_path=settings/manual.json",
+      "SW2\nT read_file file_path=settings/manual.json",
       index === item.turns.length - 1
         ? graphFinalRef(answer, true)
-        : `SWX/1\n@final "Checked turn ${index + 1}."${index === 0 ? " outcome=already_satisfied" : ""}`
+        : `SW2\nF "Checked turn ${index + 1}."${index === 0 ? " outcome=already_satisfied" : ""}`
     ]);
     const graphModel = new SequenceGraphModel(graphOutputs);
     const messagesModel = new SequenceMessagesModel(item.turns.flatMap((_, index) => [
@@ -130,7 +130,7 @@ it("records serving and protocol failures without manufacturing a task grade", a
       item,
       commonInstructions: approvedSpec().commonInstructions,
       workspaceDir: graphDir,
-      model: new SequenceGraphModel(["SWX/1\n@ndoe broken"]),
+      model: new SequenceGraphModel(["SW2\nN broken"]),
       ...offlineLimits,
       maxIterationsPerTurn: 1
     }));
@@ -148,7 +148,7 @@ it("records serving and protocol failures without manufacturing a task grade", a
       item,
       commonInstructions: approvedSpec().commonInstructions,
       workspaceDir: graphDir,
-      model: new SequenceGraphModel(['SWX/1\n@final "unreachable"']),
+      model: new SequenceGraphModel(['SW2\nF "unreachable"']),
       maxIterationsPerTurn: 1,
       maxPromptTokens: 1
     }));
@@ -164,8 +164,8 @@ it("records serving and protocol failures without manufacturing a task grade", a
 
     expect(graph).toMatchObject({ status: "operational_failure", grade: null, failure: { stage: "model", evidence: { graphCalls: [{ error: "mock provider unavailable" }] } } });
     expect(worker).toMatchObject({ status: "operational_failure", grade: null, failure: { stage: "protocol", evidence: { graphCalls: [{ error: expect.stringContaining("workers are disabled") }] } } });
-    expect(legacyGraph).toMatchObject({ status: "operational_failure", grade: null, failure: { stage: "protocol", evidence: { graphCalls: [{ error: expect.stringContaining("exact SWX/1 header") }] } } });
-    expect(malformedGraph).toMatchObject({ status: "operational_failure", grade: null, failure: { stage: "protocol", evidence: { failedGraphTrace: [{ error: expect.stringContaining("Unknown SWX command") }] } } });
+    expect(legacyGraph).toMatchObject({ status: "operational_failure", grade: null, failure: { stage: "protocol", evidence: { graphCalls: [{ error: expect.stringContaining("exact SW2 (or legacy SWX/1) header") }] } } });
+    expect(malformedGraph).toMatchObject({ status: "operational_failure", grade: null, failure: { stage: "protocol", evidence: { failedGraphTrace: [{ error: expect.stringContaining("SW2 line 2: expected N <id> <type> \"label\"") }] } } });
     expect(messages).toMatchObject({ status: "operational_failure", grade: null, failure: { stage: "protocol", evidence: { messageCalls: [{ action: "invalid" }] } } });
     expect(graphCeiling).toMatchObject({ status: "operational_failure", grade: null, failure: { stage: "runtime" } });
     expect(ceiling).toMatchObject({ status: "operational_failure", grade: null, failure: { stage: "runtime", evidence: { messageCalls: [{ action: "error" }] } } });
@@ -212,11 +212,11 @@ function cardStates(): string[] {
 }
 
 function graphWrite(filePath: string, content: string): string {
-  return ["SWX/1", `@tool write_file file_path=${filePath} content_ref=content`, "<<<content:application/json", content.trimEnd(), ">>>"].join("\n");
+  return ["SW2", `T write_file file_path=${filePath} content_ref=content`, "<<<content:application/json", content.trimEnd(), ">>>"].join("\n");
 }
 
 function graphFinalRef(answer: string, alreadySatisfied = false): string {
-  return ["SWX/1", `@final_ref answer${alreadySatisfied ? " outcome=already_satisfied" : ""}`, "<<<answer:application/json", answer, ">>>"].join("\n");
+  return ["SW2", `F ref=answer${alreadySatisfied ? " outcome=already_satisfied" : ""}`, "<<<answer:application/json", answer, ">>>"].join("\n");
 }
 
 function messagesWrite(filePath: string, content: string): string {

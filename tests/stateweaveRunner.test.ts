@@ -466,7 +466,7 @@ it("Agent streams final text by default and keeps one graph across user turns", 
   expect(firstChunks.join("")).toBe("Started todo app.");
   expect(second.graph.nodes).toContainEqual(expect.objectContaining({ id: "user_input_1", text: "Build a todo app" }));
   expect(second.graph.nodes).toContainEqual(expect.objectContaining({ id: "user_input_2", text: "Add keyboard shortcuts." }));
-  expect(second.trace[0].prompt).toContain("semanticNodeTypes:\n- intent\n- constraint\n- artifact");
+  expect(second.trace[0].prompt).toContain("types: intent, constraint, artifact");
   expect(agent.getFrame()?.graph.nodes).toHaveLength(second.graph.nodes.length);
 });
 

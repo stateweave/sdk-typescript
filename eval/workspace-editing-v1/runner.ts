@@ -161,7 +161,7 @@ export async function runGraphEpisode(args: {
   assertPositiveLimit("maxPromptTokens", args.maxPromptTokens);
   const startedAt = Date.now();
   const tools = workspaceTools(args.workspaceDir);
-  const providerSystem = `${args.commonInstructions}\nFollow the supplied GraphFrame and return exactly one valid SWX/1 transaction per response.`;
+  const providerSystem = `${args.commonInstructions}\nFollow the supplied GraphFrame and return exactly one valid SW2 transaction per response.`;
   const providerSystemTokens = estimateStateWeaveTokens(`SYSTEM:\n${providerSystem}\n\nUSER:\n`).estimatedTokens;
   const graphFramePromptTokens = args.maxPromptTokens - providerSystemTokens;
   if (graphFramePromptTokens < 1) {
@@ -403,8 +403,8 @@ class RecordingGraphModel implements Model {
       throw new EpisodeRunError(isAbortError(error) ? "aborted" : "model", errorMessage(error));
     }
     const text = tokens.join("");
-    if (!/^\s*SWX\/1[\t ]*(?:\r?\n|$)/.test(text)) {
-      const error = "Graph output must begin with an exact SWX/1 header; fenced, prefixed, and legacy-JSON outputs are rejected without repair.";
+    if (!/^\s*(?:SW2|SWX\/1)[\t ]*(?:\r?\n|$)/.test(text)) {
+      const error = "Graph output must begin with an exact SW2 (or legacy SWX/1) header; fenced, prefixed, and legacy-JSON outputs are rejected without repair.";
       this.calls.push({ input: structuredCloneModelInput(input), text, metadata, durationMs: Date.now() - startedAt, promptTokenEstimate, error });
       throw new EpisodeRunError("protocol", error);
     }

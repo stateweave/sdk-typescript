@@ -38,7 +38,7 @@ it("clusters keep unrelated turns separate without a shared entity", () => {
 });
 
 it("builds deterministic semantic cluster summaries and overview pages", () => {
-  const frame = buildConversation(Array.from({ length: 70 }, (_, index) => ({ input: `Topic ${index}`, answer: `Decision ${index}` })));
+  const frame = buildConversation(Array.from({ length: 200 }, (_, index) => ({ input: `Topic ${index}`, answer: `Decision ${index}` })));
   const clusters = clusterGraph(frame.graph);
   expect(clusters.some((cluster) => cluster.summary.includes("Decision"))).toBe(true);
   const first = serializeGraphFrame(frame, { maxTokens: 32_000 });
@@ -116,8 +116,9 @@ it("renders exact latest tool arguments and substantially more than the generic 
   frame.graph.edges.push({ id: "edge_latest_result", from: "tool_call_latest", to: "tool_result_latest", type: "explains", createdAt: "" });
 
   const prompt = serializeGraphFrame(frame, { maxTokens: 16_000 });
-  expect(prompt).toContain("<LATEST_TOOL_EVIDENCE>");
-  expect(prompt).toContain('"file_path": "src/app.js"');
+  expect(prompt).toContain("<EVIDENCE>");
+  expect(prompt).toContain("tool_result_latest ok: T read_file file_path=src/app.js offset=0 limit=500");
+  expect(prompt).toContain("<<<content\nEVIDENCE_START");
   expect(prompt).toContain("EVIDENCE_START");
   expect(prompt).toContain("EVIDENCE_END");
 });
@@ -188,22 +189,45 @@ it("peripheral clusters exist alongside focus clusters", () => {
   expect(projection.focusClusterIds.length).toBeLessThanOrEqual(projection.bigBrainClusters.length);
 });
 
-it("serialize renders big brain, periphery, focus, and timeline layers", () => {
-  const frame = buildConversation([{ input: "First ask", answer: "First answer" }, { input: "Second ask", answer: "Second answer" }]);
+it("serialize renders map and timeline only for nodes outside focus", () => {
+  const small = serializeGraphFrame(buildConversation([{ input: "First ask", answer: "First answer" }, { input: "Second ask", answer: "Second answer" }]));
+  expect(small).toContain("<FOCUS>");
+  expect(small).toContain("- system_root system:");
+  expect(small).toContain("- user_input_1 user_input: First ask");
+  expect(small).toContain("E user_input_1 addresses hypothesis_1");
+  expect(small).not.toContain("<MAP>");
+  expect(small).not.toContain("<TIMELINE>");
+
+  const large = serializeGraphFrame(buildConversation(Array.from({ length: 200 }, (_, index) => ({ input: `Ask ${index}`, answer: `Answer ${index}` }))));
+  expect(large).toContain("<MAP>");
+  expect(large).toMatch(/- cluster_\w+ \*/);
+  const focus = large.slice(large.indexOf("<FOCUS>"), large.indexOf("</FOCUS>"));
+  const timeline = large.slice(large.indexOf("<TIMELINE>"), large.indexOf("</TIMELINE>"));
+  const ids = (text: string) => [...text.matchAll(/^- (\S+) /gm)].map((match) => match[1]);
+  expect(ids(timeline).length).toBeGreaterThan(0);
+  expect(ids(timeline).filter((id) => ids(focus).includes(id))).toEqual([]);
+});
+
+it("lists current file versions in FILES and keeps stale or canonical file nodes out of FOCUS", () => {
+  const frame = createInitialGraphFrame({ objective: "Edit", input: "Edit config.txt", availableActions: ["tool:read_file - Read a file."] });
+  const hash = "a".repeat(64);
+  frame.graph.nodes.push({ id: "file_old", type: "file", text: "config.txt old", data: { path: "config.txt", contentHash: "b".repeat(64), canonical: true }, status: "stale", createdAt: new Date(1).toISOString() });
+  frame.graph.nodes.push({ id: "file_new", type: "file", text: "config.txt new", data: { path: "config.txt", contentHash: hash, canonical: true }, status: "active", createdAt: new Date(2).toISOString() });
+  frame.graph.edges.push({ id: "e_old", from: "user_input_1", to: "file_old", type: "relates_to", createdAt: "" });
+  frame.graph.edges.push({ id: "e_new", from: "user_input_1", to: "file_new", type: "relates_to", createdAt: "" });
   const prompt = serializeGraphFrame(frame);
-  expect(prompt).toContain("<BIG_BRAIN>");
-  expect(prompt).toContain("<FOCUS>");
-  expect(prompt).toContain("<TIMELINE>");
-  expect(prompt).toContain("cluster_");
-  expect(prompt).toContain("node system_root [system]");
-  expect(prompt).toContain("node user_input_1 [user_input]");
+  expect(prompt).toContain("<FILES>\nconfig.txt aaaaaaaaaaaa\n</FILES>");
+  expect(prompt).not.toContain("file_old");
+  expect(prompt).not.toContain("file_new");
+  expect(prompt).not.toContain("b".repeat(12));
+  expect(prompt).toContain("tools:\n- read_file: Read a file.");
 });
 
 it("small graph still renders all nodes in focus", () => {
   const frame = createInitialGraphFrame({ objective: "Tiny", input: "Hello", availableActions: [] });
   const prompt = serializeGraphFrame(frame);
-  expect(prompt).toContain("node system_root [system]");
-  expect(prompt).toContain("node user_input_1 [user_input]");
+  expect(prompt).toContain("- system_root system:");
+  expect(prompt).toContain("- user_input_1 user_input: Hello");
 });
 
 it("uses a larger but bounded focus window for modern long-context models", () => {
@@ -239,8 +263,8 @@ it("chronology probes preserve intra-turn emission order despite identical times
   // the model can compare ordering instead of treating tied timestamps as
   // simultaneous. The kiln fact must carry a strictly lower rank than clay.
   const focus = prompt.slice(prompt.indexOf("<FOCUS>"), prompt.indexOf("</FOCUS>"));
-  const kilnLine = focus.split("\n").find((line) => line.startsWith("node fact_kiln"));
-  const clayLine = focus.split("\n").find((line) => line.startsWith("node fact_clay"));
+  const kilnLine = focus.split("\n").find((line) => line.includes(" fact_kiln fact:"));
+  const clayLine = focus.split("\n").find((line) => line.includes(" fact_clay fact:"));
   expect(kilnLine).toMatch(/#\d+/);
   expect(clayLine).toMatch(/#\d+/);
   const kilnRank = Number(kilnLine!.match(/#(\d+)/)![1]);
