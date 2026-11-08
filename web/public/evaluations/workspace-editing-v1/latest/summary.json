@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "runId": "workspace-editing-v1-glm-live-20261108-20261108T180028656Z",
+  "status": "completed",
+  "interpretation": "No valid paired estimate: zero cases completed in both arms, so this run cannot support a GraphFrame-versus-Messages capability or superiority claim.",
+  "startedAt": "2026-11-08T18:00:28.656Z",
+  "completedAt": "2026-11-08T18:27:54.404Z",
+  "sourceRevision": "f560c2bb1ee8edcad7a946fa77c56e3b23ff8a0e",
+  "resultSha256": "d04c5168bc1fd2333e72bdf1fe52ea679e4a82da842995d42e21ebedae48fb30",
+  "runtime": {
+    "provider": "zai",
+    "endpoint": "api.z.ai/api/anthropic",
+    "model": "glm-5.3-flash",
+    "billingMode": "zai-coding-plan",
+    "retryCount": 0,
+    "exactIdentityCalls": 108
+  },
+  "budget": {
+    "providerCalls": 108,
+    "maxProviderCalls": 240,
+    "reservedTokens": 658477,
+    "maxReservedTokens": 5000000,
+    "knownInputTokens": 207947,
+    "knownOutputTokens": 98886,
+    "knownTotalTokens": 306833,
+    "incrementalDollarEstimate": null
+  },
+  "arms": {
+    "graph": {
+      "attempted": 5,
+      "completed": 0,
+      "taskPasses": 0,
+      "operationalFailures": 5,
+      "providerCalls": 33,
+      "knownInputTokens": 111130,
+      "knownOutputTokens": 81262,
+      "knownTotalTokens": 192392,
+      "endTurnCalls": 28,
+      "maxTokenCalls": 5,
+      "modelCallLatencyMs": 1277582
+    },
+    "messages": {
+      "attempted": 5,
+      "completed": 4,
+      "taskPasses": 4,
+      "operationalFailures": 1,
+      "providerCalls": 75,
+      "knownInputTokens": 96817,
+      "knownOutputTokens": 17624,
+      "knownTotalTokens": 114441,
+      "endTurnCalls": 75,
+      "maxTokenCalls": 0,
+      "modelCallLatencyMs": 367047
+    }
+  },
+  "completePairs": 0,
+  "endpointMatchedPairs": 0,
+  "cases": [
+    {
+      "caseId": "SDKWS-01",
+      "task": "SVG refinement and revisions",
+      "order": ["graph", "messages"],
+      "graph": {"status": "protocol_failure", "turn": 2, "calls": 13, "reason": "Final call reached max_tokens with no accepted SWX text."},
+      "messages": {"status": "task_pass", "calls": 15}
+    },
+    {
+      "caseId": "SDKWS-02",
+      "task": "Nested typed JSON preservation",
+      "order": ["messages", "graph"],
+      "graph": {"status": "protocol_failure", "turn": 2, "calls": 6, "reason": "Final call reached max_tokens with no accepted SWX text."},
+      "messages": {"status": "task_pass", "calls": 12}
+    },
+    {
+      "caseId": "SDKWS-03",
+      "task": "Legitimate no-op and exact structured answer",
+      "order": ["graph", "messages"],
+      "graph": {"status": "protocol_failure", "turn": 4, "calls": 6, "reason": "Final call reached max_tokens with no accepted SWX text."},
+      "messages": {"status": "task_pass", "calls": 12}
+    },
+    {
+      "caseId": "SDKWS-04",
+      "task": "Repeated labels with distinct identities",
+      "order": ["messages", "graph"],
+      "graph": {"status": "protocol_failure", "turn": 1, "calls": 4, "reason": "Final call reached max_tokens with no accepted SWX text."},
+      "messages": {"status": "protocol_failure", "calls": 12, "reason": "Exhausted the per-turn iteration ceiling after malformed and unsuccessful tool actions."}
+    },
+    {
+      "caseId": "SDKWS-05",
+      "task": "Cross-file consistency after selection reversal",
+      "order": ["graph", "messages"],
+      "graph": {"status": "protocol_failure", "turn": 1, "calls": 4, "reason": "Final call reached max_tokens with no accepted SWX text."},
+      "messages": {"status": "task_pass", "calls": 24}
+    }
+  ],
+  "preexecutionEvidence": {
+    "providerCalls": 0,
+    "status": "preserved_not_reused",
+    "reason": "The first packaged process could not resolve its bundled validation dependency before evaluator module load. A new frozen package bundled the dependency; the failed path was preserved and not reused."
+  }
+}

@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex,nofollow,noarchive" />
+  <title>Workspace editing v1 · StateWeave development</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #070a0f;
+      --panel: #0d121a;
+      --panel-2: #111823;
+      --line: #253044;
+      --muted: #91a0b7;
+      --text: #edf4ff;
+      --cyan: #69e1ff;
+      --cyan-2: #1689a8;
+      --green: #55e2a4;
+      --amber: #ffc86b;
+      --red: #ff8383;
+      --purple: #bd9cff;
+      --shadow: 0 18px 70px rgba(0, 0, 0, .34);
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--bg); scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 84% -8%, rgba(39, 143, 184, .22), transparent 31rem),
+        radial-gradient(circle at 8% 17%, rgba(112, 72, 194, .11), transparent 28rem),
+        var(--bg);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+    a { color: var(--cyan); text-underline-offset: 3px; }
+    a:hover { color: #b9f3ff; }
+    .shell { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 28px 0 64px; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 54px; }
+    .brand { display: inline-flex; align-items: center; gap: 11px; font-weight: 760; letter-spacing: -.02em; }
+    .mark { position: relative; width: 29px; height: 29px; border: 1px solid #3e526b; border-radius: 9px; background: #0d1722; }
+    .mark::before, .mark::after { content: ""; position: absolute; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 16px rgba(105, 225, 255, .5); }
+    .mark::before { width: 6px; height: 6px; left: 6px; top: 11px; }
+    .mark::after { width: 6px; height: 6px; right: 6px; top: 11px; }
+    .mark span { position: absolute; height: 1px; background: #67819e; left: 10px; right: 10px; top: 14px; }
+    .env { border: 1px solid #304159; border-radius: 999px; padding: 6px 10px; color: #b8c7dc; background: rgba(13, 18, 26, .72); font-size: 12px; font-weight: 720; letter-spacing: .06em; text-transform: uppercase; }
+    .hero { display: grid; grid-template-columns: minmax(0, 1.32fr) minmax(300px, .68fr); gap: 28px; align-items: end; margin-bottom: 30px; }
+    .eyebrow { color: var(--cyan); text-transform: uppercase; letter-spacing: .14em; font-size: 12px; font-weight: 800; margin-bottom: 13px; }
+    h1 { margin: 0; max-width: 850px; font-size: clamp(42px, 6.8vw, 82px); line-height: .98; letter-spacing: -.062em; }
+    .dek { max-width: 720px; margin: 22px 0 0; color: #aebbd0; font-size: clamp(16px, 2.1vw, 20px); }
+    .verdict { min-height: 205px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid #55452d; border-radius: 20px; padding: 22px; background: linear-gradient(150deg, rgba(255, 200, 107, .12), rgba(17, 24, 35, .88) 55%); box-shadow: var(--shadow); }
+    .verdict .label { color: var(--amber); font-size: 12px; text-transform: uppercase; letter-spacing: .12em; font-weight: 850; }
+    .verdict strong { display: block; margin: 15px 0 8px; font-size: 30px; line-height: 1.02; letter-spacing: -.04em; }
+    .verdict p { margin: 0; color: #c8b68f; font-size: 14px; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; margin: 28px 0 44px; }
+    .metric { min-height: 145px; border: 1px solid var(--line); border-radius: 16px; padding: 17px; background: rgba(13, 18, 26, .85); box-shadow: 0 10px 35px rgba(0,0,0,.18); }
+    .metric span { color: var(--muted); font-size: 12px; font-weight: 760; text-transform: uppercase; letter-spacing: .08em; }
+    .metric strong { display: block; margin: 13px 0 7px; font-size: 34px; line-height: 1; letter-spacing: -.045em; }
+    .metric small { color: #9daac0; }
+    .metric.good strong { color: var(--green); }
+    .metric.warn strong { color: var(--amber); }
+    section { margin-top: 52px; }
+    .section-head { display: flex; justify-content: space-between; gap: 16px; align-items: end; margin-bottom: 17px; }
+    h2 { margin: 0; font-size: clamp(25px, 3vw, 36px); letter-spacing: -.04em; }
+    .section-head p { margin: 0; color: var(--muted); font-size: 13px; text-align: right; }
+    .panel { border: 1px solid var(--line); border-radius: 20px; overflow: hidden; background: rgba(13, 18, 26, .88); box-shadow: var(--shadow); }
+    .arms { display: grid; grid-template-columns: 1fr 1fr; }
+    .arm { padding: 25px; }
+    .arm + .arm { border-left: 1px solid var(--line); }
+    .arm-top { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
+    .arm-name { display: flex; align-items: center; gap: 11px; font-size: 18px; font-weight: 800; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--purple); box-shadow: 0 0 14px currentColor; }
+    .messages .dot { background: var(--green); }
+    .pill { padding: 5px 9px; border-radius: 999px; font-size: 11px; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
+    .pill.fail { color: #ffb0b0; background: rgba(255, 100, 100, .12); border: 1px solid rgba(255, 131, 131, .28); }
+    .pill.pass { color: #8cf3bf; background: rgba(85, 226, 164, .11); border: 1px solid rgba(85, 226, 164, .26); }
+    .score { margin: 25px 0 19px; font-size: clamp(48px, 6vw, 70px); font-weight: 860; line-height: .9; letter-spacing: -.065em; }
+    .score span { color: var(--muted); font-size: 22px; letter-spacing: -.02em; }
+    .arm-copy { min-height: 48px; color: #aab8cd; font-size: 14px; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 23px; }
+    .stats div { padding-top: 12px; border-top: 1px solid var(--line); }
+    .stats strong { display: block; font-size: 17px; }
+    .stats span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+    .note { padding: 17px 22px; border-top: 1px solid var(--line); background: #0a0f16; color: #a6b4c8; font-size: 13px; }
+    .note strong { color: var(--text); }
+    .case-list { display: grid; gap: 11px; }
+    .case { display: grid; grid-template-columns: 105px minmax(190px, 1.25fr) minmax(210px, 1fr) minmax(210px, 1fr); gap: 14px; align-items: center; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; background: rgba(13, 18, 26, .78); }
+    .case-id { font-weight: 850; color: #c9d8eb; }
+    .case-task strong { display: block; margin-bottom: 2px; }
+    .case-task small, .case-result small { color: var(--muted); }
+    .case-result { min-width: 0; padding-left: 14px; border-left: 1px solid var(--line); }
+    .case-result b { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; }
+    .ok { color: var(--green); }
+    .bad { color: var(--red); }
+    .token { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: #cbd6e6; background: #090d13; border: 1px solid #26344a; border-radius: 6px; padding: 2px 6px; }
+    .budget { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding: 24px; }
+    .budget-row { display: grid; gap: 9px; }
+    .budget-label { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+    .budget-label span { color: var(--muted); }
+    .track { height: 8px; border-radius: 999px; background: #202a39; overflow: hidden; }
+    .track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--cyan-2), var(--cyan)); }
+    .evidence { display: grid; grid-template-columns: repeat(3, 1fr); }
+    .evidence div { padding: 22px; }
+    .evidence div + div { border-left: 1px solid var(--line); }
+    .evidence b { display: block; margin-bottom: 7px; font-size: 15px; }
+    .evidence p { margin: 0; color: var(--muted); font-size: 13px; }
+    details { border-top: 1px solid var(--line); }
+    summary { cursor: pointer; list-style: none; padding: 17px 22px; color: #c5d3e6; font-weight: 750; }
+    summary::-webkit-details-marker { display: none; }
+    summary::after { content: "+"; float: right; color: var(--cyan); }
+    details[open] summary::after { content: "−"; }
+    .detail-copy { padding: 0 22px 22px; color: var(--muted); font-size: 14px; }
+    .footer { margin-top: 58px; padding-top: 23px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: 25px; color: #75859c; font-size: 12px; }
+    .footer nav { display: flex; flex-wrap: wrap; gap: 15px; }
+    @media (max-width: 900px) {
+      .hero { grid-template-columns: 1fr; }
+      .verdict { min-height: 170px; }
+      .grid { grid-template-columns: 1fr 1fr; }
+      .case { grid-template-columns: 90px 1fr 1fr; }
+      .case-task { grid-column: 2 / -1; }
+      .case-result:first-of-type { grid-column: 2; }
+      .evidence { grid-template-columns: 1fr; }
+      .evidence div + div { border-left: 0; border-top: 1px solid var(--line); }
+    }
+    @media (max-width: 650px) {
+      .shell { width: min(100% - 24px, 1180px); padding-top: 18px; }
+      .topbar { margin-bottom: 40px; }
+      .hero { gap: 20px; }
+      h1 { font-size: 48px; }
+      .grid, .arms, .budget { grid-template-columns: 1fr; }
+      .arm + .arm { border-left: 0; border-top: 1px solid var(--line); }
+      .case { grid-template-columns: 1fr; gap: 10px; }
+      .case-task, .case-result:first-of-type { grid-column: auto; }
+      .case-result { border-left: 0; padding: 10px 0 0; border-top: 1px solid var(--line); }
+      .section-head { align-items: start; flex-direction: column; }
+      .section-head p { text-align: left; }
+      .footer { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><span class="mark"><span></span></span> StateWeave</div>
+      <span class="env">Development · frozen run</span>
+    </header>
+
+    <div class="hero">
+      <div>
+        <div class="eyebrow">Workspace editing v1 · GLM live evaluation</div>
+        <h1>Results without a winner.</h1>
+        <p class="dek">The persistent Messages arm completed four synthetic workspace tasks. The GraphFrame arm hit a strict protocol boundary in every case. Because no case completed in both arms, this run produces no valid paired estimate.</p>
+      </div>
+      <aside class="verdict" aria-label="Run interpretation">
+        <div>
+          <div class="label">Audited interpretation</div>
+          <strong>No paired estimate</strong>
+        </div>
+        <p>Zero of five cases completed in both arms. Do not infer comparative capability or superiority.</p>
+      </aside>
+    </div>
+
+    <div class="grid" aria-label="Run summary">
+      <div class="metric good"><span>Messages task passes</span><strong>4 / 5</strong><small>Four completed and graded true</small></div>
+      <div class="metric warn"><span>Graph completed</span><strong>0 / 5</strong><small>Five protocol failures, not task failures</small></div>
+      <div class="metric"><span>Provider calls</span><strong>108</strong><small>Zero retries · 45% of call ceiling</small></div>
+      <div class="metric"><span>Known tokens</span><strong>306.8k</strong><small>207.9k input · 98.9k output</small></div>
+    </div>
+
+    <section>
+      <div class="section-head">
+        <h2>Arm outcomes</h2>
+        <p>Same provider, model, tasks, tools and hard ceilings.<br />Native transport/state asymmetries remain disclosed.</p>
+      </div>
+      <div class="panel">
+        <div class="arms">
+          <article class="arm graph">
+            <div class="arm-top"><div class="arm-name"><span class="dot"></span>GraphFrame → GraphOps</div><span class="pill fail">Protocol blocked</span></div>
+            <div class="score">0 <span>/ 5 completed</span></div>
+            <div class="arm-copy">Each episode progressed through valid SWX actions, then one call consumed the 4,096-output-token ceiling without yielding accepted SWX text. The strict parser rejected the exchange without repair or mutation.</div>
+            <div class="stats"><div><strong>33</strong><span>calls</span></div><div><strong>192,392</strong><span>known tokens</span></div><div><strong>5</strong><span>max-token stops</span></div></div>
+          </article>
+          <article class="arm messages">
+            <div class="arm-top"><div class="arm-name"><span class="dot"></span>Persistent Messages</div><span class="pill pass">4 task passes</span></div>
+            <div class="score">4 <span>/ 5 passed</span></div>
+            <div class="arm-copy">Four episodes completed with deterministic file and answer checks passing. SDKWS-04 exhausted the 12-iteration turn ceiling after malformed and unsuccessful tool actions, so it remains an operational failure.</div>
+            <div class="stats"><div><strong>75</strong><span>calls</span></div><div><strong>114,441</strong><span>known tokens</span></div><div><strong>1</strong><span>protocol failure</span></div></div>
+          </article>
+        </div>
+        <div class="note"><strong>Important:</strong> task quality is only defined for completed episodes. Graph’s five failures and Messages’ SDKWS-04 failure have <span class="token">grade: null</span>; they are not scored as wrong task answers.</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Case ledger</h2>
+        <p>Alternating arm order · one pass · no episode retries</p>
+      </div>
+      <div class="case-list">
+        <article class="case"><div class="case-id">SDKWS-01</div><div class="case-task"><strong>SVG refinement</strong><small>Order: Graph → Messages</small></div><div class="case-result"><b class="bad">● Graph protocol failure</b><br /><small>Turn 2 · 13 calls · max_tokens</small></div><div class="case-result"><b class="ok">● Messages task pass</b><br /><small>15 calls · SVG/files verified</small></div></article>
+        <article class="case"><div class="case-id">SDKWS-02</div><div class="case-task"><strong>Nested typed JSON</strong><small>Order: Messages → Graph</small></div><div class="case-result"><b class="bad">● Graph protocol failure</b><br /><small>Turn 2 · 6 calls · max_tokens</small></div><div class="case-result"><b class="ok">● Messages task pass</b><br /><small>12 calls · typed state preserved</small></div></article>
+        <article class="case"><div class="case-id">SDKWS-03</div><div class="case-task"><strong>No-op + exact answer</strong><small>Order: Graph → Messages</small></div><div class="case-result"><b class="bad">● Graph protocol failure</b><br /><small>Turn 4 · 6 calls · max_tokens</small></div><div class="case-result"><b class="ok">● Messages task pass</b><br /><small>12 calls · false/null accepted</small></div></article>
+        <article class="case"><div class="case-id">SDKWS-04</div><div class="case-task"><strong>Repeated identities</strong><small>Order: Messages → Graph</small></div><div class="case-result"><b class="bad">● Graph protocol failure</b><br /><small>Turn 1 · 4 calls · max_tokens</small></div><div class="case-result"><b class="bad">● Messages protocol failure</b><br /><small>12 calls · iteration ceiling</small></div></article>
+        <article class="case"><div class="case-id">SDKWS-05</div><div class="case-task"><strong>Cross-file reversal</strong><small>Order: Graph → Messages</small></div><div class="case-result"><b class="bad">● Graph protocol failure</b><br /><small>Turn 1 · 4 calls · max_tokens</small></div><div class="case-result"><b class="ok">● Messages task pass</b><br /><small>24 calls · cross-file state verified</small></div></article>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head"><h2>Budget & endpoint evidence</h2><p>Hard ceilings were enforced before every dispatch.</p></div>
+      <div class="panel">
+        <div class="budget">
+          <div class="budget-row"><div class="budget-label"><strong>Provider calls</strong><span>108 / 240</span></div><div class="track"><i style="width:45%"></i></div></div>
+          <div class="budget-row"><div class="budget-label"><strong>Reserved tokens</strong><span>658,477 / 5,000,000</span></div><div class="track"><i style="width:13.17%"></i></div></div>
+        </div>
+        <div class="evidence">
+          <div><b>Exact endpoint identity</b><p>All 108 calls reported <span class="token">zai</span> and <span class="token">glm-5.3-flash</span>. Redirects were disabled and the HTTPS host was frozen.</p></div>
+          <div><b>No hidden repair</b><p>Malformed Graph exchanges and Messages actions were preserved as protocol evidence. No output rewriting, workspace correction or automatic retry occurred.</p></div>
+          <div><b>Coding-plan accounting</b><p>Usage is reported in provider calls and tokens. Incremental dollar cost is <span class="token">null</span> because this ran on the approved Z.ai coding plan.</p></div>
+        </div>
+        <details><summary>Pre-execution packaging evidence</summary><div class="detail-copy">A first packaged process stopped before evaluator module load because its validation dependency was not bundled. It made zero provider calls, created no evaluation workspace, and was preserved without reuse. The successful frozen package bundled the exact dependency and ran from a new path.</div></details>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head"><h2>Reproducibility receipt</h2><p>Sanitized development artifact · raw transcripts are not published here.</p></div>
+      <div class="panel evidence">
+        <div><b>Frozen source</b><p><span class="token">f560c2bb1ee8…3ff8a0e</span><br />Runner and package manifest verified before execution.</p></div>
+        <div><b>Result digest</b><p><span class="token">d04c5168bc1f…ae48fb30</span><br />SHA-256 of the preserved raw result.</p></div>
+        <div><b>Run window</b><p>2026-11-08 18:00:28–18:27:54 UTC<br />27 minutes 26 seconds wall time.</p></div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div>StateWeave development lab · synthetic regression-derived tasks · no production traffic</div>
+      <nav><a href="summary.json">Sanitized JSON</a><a href="https://github.com/stateweave/sdk-typescript/pull/101">Audited runner PR #101</a><a href="https://github.com/stateweave/sdk-typescript/pull/102">Live executor PR #102</a></nav>
+    </footer>
+  </main>
+</body>
+</html>
