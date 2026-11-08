@@ -4,7 +4,7 @@ import { LiveBudget, ZaiGraphModel, ZaiMessagesModel, zaiConfigFromEnv, type Zai
 const config: ZaiLiveConfig = {
   apiKey: "test-secret",
   baseUrl: "https://api.z.ai/api/anthropic",
-  model: "glm-5.3-flash",
+  model: "glm-5.3",
   maxOutputTokens: 4096,
   timeoutMs: 180_000,
   maxProviderCalls: 3,
@@ -18,7 +18,7 @@ describe("workspace-editing live provider", () => {
     const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
       expect(body).toMatchObject({
-        model: "glm-5.3-flash",
+        model: "glm-5.3",
         max_tokens: 4096,
         temperature: 0,
         stream: false,
@@ -35,7 +35,7 @@ describe("workspace-editing live provider", () => {
       expect(init?.redirect).toBe("error");
       return new Response(JSON.stringify({
         id: "msg_test",
-        model: "glm-5.3-flash",
+        model: "glm-5.3",
         stop_reason: "end_turn",
         content: [{ type: "text", text: "FINAL_ANSWER: done" }],
         usage: { input_tokens: 120, output_tokens: 8 }
@@ -58,7 +58,7 @@ describe("workspace-editing live provider", () => {
     expect(output).toMatchObject({
       text: "FINAL_ANSWER: done",
       provider: "zai",
-      model: "glm-5.3-flash",
+      model: "glm-5.3",
       stopReason: "end_turn",
       usage: { inputTokens: 120, outputTokens: 8, totalTokens: 128 }
     });
@@ -94,13 +94,13 @@ describe("workspace-editing live provider", () => {
     expect(zaiConfigFromEnv({
       ANTHROPIC_API_KEY: "present",
       ANTHROPIC_BASE_URL: "https://api.z.ai/api/anthropic",
-      ANTHROPIC_MODEL: "glm-5.3-flash"
-    })).toMatchObject({ model: "glm-5.3-flash", maxOutputTokens: 4096, maxProviderCalls: 240, maxReservedTokens: 5_000_000 });
+      ANTHROPIC_MODEL: "glm-5.3"
+    })).toMatchObject({ model: "glm-5.3", maxOutputTokens: 4096, maxProviderCalls: 240, maxReservedTokens: 5_000_000 });
 
     expect(() => zaiConfigFromEnv({
       ANTHROPIC_API_KEY: "present",
       ANTHROPIC_BASE_URL: "http://api.z.ai/api/anthropic",
-      ANTHROPIC_MODEL: "glm-5.3-flash"
+      ANTHROPIC_MODEL: "glm-5.3"
     })).toThrow(/exact HTTPS/);
     expect(() => zaiConfigFromEnv({
       ANTHROPIC_API_KEY: "present",
@@ -111,6 +111,6 @@ describe("workspace-editing live provider", () => {
       ANTHROPIC_API_KEY: "present",
       ANTHROPIC_BASE_URL: "https://api.z.ai/api/anthropic",
       ANTHROPIC_MODEL: "glm-other"
-    })).toThrow(/glm-5.3-flash/);
+    })).toThrow(/glm-5.3/);
   });
 });

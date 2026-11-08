@@ -23,7 +23,7 @@ type FrozenManifest = {
   implementationRevision: string;
   executionAck: string;
   approvedAt: string;
-  expectedEndpoint: { provider: "zai"; hostPath: string; model: "glm-5.3-flash" };
+  expectedEndpoint: { provider: "zai"; hostPath: string; model: "glm-5.3" };
   limits: {
     maxIterationsPerTurn: number;
     maxPromptTokens: number;

@@ -1,8 +1,12 @@
-# Workspace editing v1 — GLM live result
+# Workspace editing v1 — wrong-model Flash result
+
+## Target correction
+
+This preserved run used `glm-5.3-flash` by mistake. The intended target is non-Flash `glm-5.3`. It cannot answer the intended experiment and must not be described as the GLM-5.3 result.
 
 ## Verdict
 
-**No valid paired estimate.** Zero of five cases completed in both arms, so this run cannot support a GraphFrame-versus-Messages capability, quality, or superiority claim.
+**Wrong model and no valid paired estimate.** Zero of five cases completed in both arms, so this run cannot support a GraphFrame-versus-Messages capability, quality, or superiority claim.
 
 The persistent Messages arm completed and passed four cases. The GraphFrame arm had five protocol failures. Operational failures retain `grade: null`; they are not task failures.
 

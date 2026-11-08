@@ -1,26 +1,26 @@
 # Workspace editing v1 — authorized live run
 
-Status: execution implementation under review; no request has been dispatched from this branch yet.
+Status: corrected non-Flash execution authorized; no `glm-5.3` request has been dispatched yet.
 
 ## Human authorization
 
-On 2026-11-08 the user explicitly asked to run the new evaluator and publish a review portal. They corrected the provider choice to GLM on their Z.ai coding plan, stated that plan capacity was not a concern, and selected a development-only results portal.
+On 2026-11-08 the user explicitly asked to run the evaluator and publish a development-only review portal. The first pass mistakenly used `glm-5.3-flash`. The user then explicitly corrected the target to non-Flash `glm-5.3` and authorized one fresh pass with the same five cases, ceilings, arm order, and zero retries.
 
-The currently running development environment was checked without printing credentials and reported:
+The Flash result remains preserved as wrong-model evidence and cannot answer the intended question. The corrected runtime must report:
 
 - Anthropic-compatible HTTP adapter;
 - endpoint `api.z.ai/api/anthropic`;
-- configured model `glm-5.3-flash`;
-- credential present.
+- configured and served model `glm-5.3`;
+- credential present without ever printing or persisting it.
 
-The adapter label is not the model vendor. Live evidence and the report identify the provider as Z.ai and the model as GLM.
+The adapter label is not the model vendor. Live evidence and the report identify the provider as Z.ai and require the exact non-Flash model ID.
 
 ## Frozen execution profile
 
 - Cases: approved `SDKWS-01` through `SDKWS-05` only.
 - Repetitions: one paired pass.
 - Arm order: Graph first on odd-numbered cases, Messages first on even-numbered cases.
-- Model: exact configured and served `glm-5.3-flash` through `api.z.ai/api/anthropic`.
+- Model: exact configured and served non-Flash `glm-5.3` through `api.z.ai/api/anthropic`.
 - Temperature: `0` for both arms.
 - Output ceiling: `4,096` tokens per request for both arms.
 - Prompt ceiling: `64,000` estimated full-request tokens per request for both arms.

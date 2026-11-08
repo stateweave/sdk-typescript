@@ -1,12 +1,12 @@
 {
-  "protocolId": "workspace-editing-v1-glm-live-20261108",
+  "protocolId": "workspace-editing-v1-glm53-live-20261108",
   "implementationRevision": "2be6e6bb1e0498f5938194557e109d71299419a9",
-  "executionAck": "run-workspace-editing-v1-glm-20261108",
+  "executionAck": "run-workspace-editing-v1-glm53-20261108",
   "approvedAt": "2026-11-08",
   "expectedEndpoint": {
     "provider": "zai",
     "hostPath": "api.z.ai/api/anthropic",
-    "model": "glm-5.3-flash"
+    "model": "glm-5.3"
   },
   "limits": {
     "maxIterationsPerTurn": 12,
@@ -62,8 +62,8 @@
     "eval/workspace-editing-v1/cases.json": "c8ba596395cc393b9ba7ae57a7ee87c1ecc1c40cc27093b8345501ebfc9312b9",
     "eval/workspace-editing-v1/grader.mjs": "b435e08df1047b353720ade1f563355bdb303360509366c04a49280650173904",
     "eval/workspace-editing-v1/runner.ts": "fbcb4401c4dc69357a2fb308b116d2a397019257f611eff528aa0e9c51b81bf8",
-    "eval/workspace-editing-v1/live-provider.ts": "c125cbe9d83452e6f1576e6dc5a708339fa32c938ecf9d513139068abe72acf3",
-    "eval/workspace-editing-v1/run-live.ts": "fabc12bb673245f38e8535c67671ef686e8da2cb26c589edd540d05c543e5299",
+    "eval/workspace-editing-v1/live-provider.ts": "5fb9a34ac1073e54270a0e302cda4b96ef558ec4fe3db61d57f1be2c53ae97fb",
+    "eval/workspace-editing-v1/run-live.ts": "6473afeba4fb9c122513a43e98fa099dda9684e6ec0c70df002ef9763239a9fa",
     "eval/workspace-editing-v1/package-live.mjs": "6bb89b950c14da98f8cae5459abd9cc2dc31185dda3fe2d78438b3cac318a61c",
     "eval/workspace-editing-v1/tsconfig.live.json": "d5ac4108581b85b0e17df4e603514807ce3e18a21842ab75a3107ead4ba800ac"
   }

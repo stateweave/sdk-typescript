@@ -182,7 +182,7 @@ export function zaiConfigFromEnv(env: NodeJS.ProcessEnv = process.env): ZaiLiveC
   if (endpoint.protocol !== "https:" || endpoint.hostname !== "api.z.ai" || endpoint.pathname.replace(/\/$/, "") !== "/api/anthropic" || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
     throw new Error("Authorized live run requires the exact HTTPS api.z.ai/api/anthropic endpoint without credentials, query, or fragment.");
   }
-  if (model !== "glm-5.3-flash") throw new Error(`Authorized live run requires glm-5.3-flash, received ${model || "unset"}.`);
+  if (model !== "glm-5.3") throw new Error(`Authorized live run requires glm-5.3, received ${model || "unset"}.`);
   return {
     apiKey,
     baseUrl,
