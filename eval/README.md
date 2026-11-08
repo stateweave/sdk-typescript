@@ -23,9 +23,11 @@ ablation unless the eventual design actually establishes that.
 The user selected **the current StateWeave SDK code/docs** as the source for
 fresh product-derived task proposals, not Vero, X Console, or deleted evaluation
 cases. Use the SDK source reviewed on this cleanup branch; the canonical checkout
-still contains obsolete material until the cleanup is merged. Establish one
-representative SDK workflow before implementing cases. Record exact source paths
-and revision, permissions, retention constraints, and expected-output provenance.
+still contains obsolete material until the cleanup is merged. The selected flow
+is multi-turn JSON/SVG workspace editing grounded in retained SDK tool/runner
+regressions, graded on actual final workspace effects and any requested answers.
+Record exact source paths and revision, permissions, retention constraints, and
+expected-output provenance.
 Documentation/regression-derived proposals are not production traffic and still
 require input approval; selecting the product did not approve actual cases.
 
