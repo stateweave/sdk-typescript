@@ -95,47 +95,34 @@ it("keeps file-only no-op evidence hidden until each arm reads the workspace", a
   }
 });
 
-it("records serving and protocol failures without manufacturing a task grade", async () => {
+type GraphFailureCase = [label: string, model: () => Model, limits: { maxIterationsPerTurn?: number; maxPromptTokens?: number }, failure: Record<string, unknown>];
+
+const protocolError = (text: string) => ({ stage: "protocol", evidence: { graphCalls: [{ error: expect.stringContaining(text) }] } });
+
+it.each<GraphFailureCase>([
+  ["a provider outage", () => new ThrowingGraphModel(), {}, { stage: "model", evidence: { graphCalls: [{ error: "mock provider unavailable" }] } }],
+  ["a disabled worker", () => new SequenceGraphModel(['SWX/1\n@worker extra objective="Bypass the call ceiling" focus=user_input_1']), { maxIterationsPerTurn: 1 }, protocolError("workers are disabled")],
+  ["a legacy JSON envelope", () => new SequenceGraphModel(['{"ops":[{"op":"final","answer":"legacy"}]}']), { maxIterationsPerTurn: 1 }, protocolError("exact SW2 (or legacy SWX/1) header")],
+  ["a malformed SW2 line", () => new SequenceGraphModel(["SW2\nN broken"]), { maxIterationsPerTurn: 1 }, { stage: "protocol", evidence: { failedGraphTrace: [{ error: expect.stringContaining('SW2 line 2: expected N <id> <type> "label"') }] } }],
+  ["the prompt ceiling", () => new SequenceGraphModel(['SW2\nF "unreachable"']), { maxIterationsPerTurn: 1, maxPromptTokens: 1 }, { stage: "runtime" }]
+])("records %s in the graph arm without manufacturing a task grade", async (_label, model, limits, failure) => {
   const item = approvedCase("SDKWS-03");
-  const root = await createEvaluationRoot();
-  const graphDir = path.join(root, "graph");
-  const messagesDir = path.join(root, "messages");
-  try {
-    await materializeWorkspace(item, graphDir, root);
-    await materializeWorkspace(item, messagesDir, root);
-    const graph = await captureEpisode("graph", item.id, () => runGraphEpisode({
-      item,
-      commonInstructions: approvedSpec().commonInstructions,
-      workspaceDir: graphDir,
-      model: new ThrowingGraphModel(),
-      ...offlineLimits
-    }));
-    const worker = await captureEpisode("graph", item.id, () => runGraphEpisode({
-      item,
-      commonInstructions: approvedSpec().commonInstructions,
-      workspaceDir: graphDir,
-      model: new SequenceGraphModel(['SWX/1\n@worker extra objective="Bypass the call ceiling" focus=user_input_1']),
-      ...offlineLimits,
-      maxIterationsPerTurn: 1
-    }));
-    const legacyGraph = await captureEpisode("graph", item.id, () => runGraphEpisode({
-      item,
-      commonInstructions: approvedSpec().commonInstructions,
-      workspaceDir: graphDir,
-      model: new SequenceGraphModel(['{"ops":[{"op":"final","answer":"legacy"}]}']),
-      ...offlineLimits,
-      maxIterationsPerTurn: 1
-    }));
-    const malformedGraph = await captureEpisode("graph", item.id, () => runGraphEpisode({
-      item,
-      commonInstructions: approvedSpec().commonInstructions,
-      workspaceDir: graphDir,
-      model: new SequenceGraphModel(["SW2\nN broken"]),
-      ...offlineLimits,
-      maxIterationsPerTurn: 1
-    }));
-    const malformedWrite = 'TOOL_CALL {"name":"write_file","args":{"file_path":"settings/manual.json","content":"tampered}}';
-    expect(() => JSON.parse(malformedWrite.slice("TOOL_CALL ".length))).toThrow();
+  const graph = await withArms(item, ({ graphDir }) => captureEpisode("graph", item.id, () => runGraphEpisode({
+    item,
+    commonInstructions: approvedSpec().commonInstructions,
+    workspaceDir: graphDir,
+    model: model(),
+    ...offlineLimits,
+    ...limits
+  })));
+  expect(graph).toMatchObject({ status: "operational_failure", grade: null, failure });
+});
+
+it("records a malformed Messages action as a protocol failure and leaves the workspace untouched", async () => {
+  const item = approvedCase("SDKWS-03");
+  const malformedWrite = 'TOOL_CALL {"name":"write_file","args":{"file_path":"settings/manual.json","content":"tampered}}';
+  expect(() => JSON.parse(malformedWrite.slice("TOOL_CALL ".length))).toThrow();
+  await withArms(item, async ({ messagesDir }) => {
     const messages = await captureEpisode("messages", item.id, () => runMessagesEpisode({
       item,
       commonInstructions: approvedSpec().commonInstructions,
@@ -144,36 +131,24 @@ it("records serving and protocol failures without manufacturing a task grade", a
       ...offlineLimits,
       maxIterationsPerTurn: 1
     }));
-    const graphCeiling = await captureEpisode("graph", item.id, () => runGraphEpisode({
-      item,
-      commonInstructions: approvedSpec().commonInstructions,
-      workspaceDir: graphDir,
-      model: new SequenceGraphModel(['SW2\nF "unreachable"']),
-      maxIterationsPerTurn: 1,
-      maxPromptTokens: 1
-    }));
-    const ceilingModel = new SequenceMessagesModel(["FINAL_ANSWER: unreachable"]);
-    const ceiling = await captureEpisode("messages", item.id, () => runMessagesEpisode({
-      item,
-      commonInstructions: approvedSpec().commonInstructions,
-      workspaceDir: messagesDir,
-      model: ceilingModel,
-      maxIterationsPerTurn: 1,
-      maxPromptTokens: 1
-    }));
-
-    expect(graph).toMatchObject({ status: "operational_failure", grade: null, failure: { stage: "model", evidence: { graphCalls: [{ error: "mock provider unavailable" }] } } });
-    expect(worker).toMatchObject({ status: "operational_failure", grade: null, failure: { stage: "protocol", evidence: { graphCalls: [{ error: expect.stringContaining("workers are disabled") }] } } });
-    expect(legacyGraph).toMatchObject({ status: "operational_failure", grade: null, failure: { stage: "protocol", evidence: { graphCalls: [{ error: expect.stringContaining("exact SW2 (or legacy SWX/1) header") }] } } });
-    expect(malformedGraph).toMatchObject({ status: "operational_failure", grade: null, failure: { stage: "protocol", evidence: { failedGraphTrace: [{ error: expect.stringContaining("SW2 line 2: expected N <id> <type> \"label\"") }] } } });
     expect(messages).toMatchObject({ status: "operational_failure", grade: null, failure: { stage: "protocol", evidence: { messageCalls: [{ action: "invalid" }] } } });
-    expect(graphCeiling).toMatchObject({ status: "operational_failure", grade: null, failure: { stage: "runtime" } });
-    expect(ceiling).toMatchObject({ status: "operational_failure", grade: null, failure: { stage: "runtime", evidence: { messageCalls: [{ action: "error" }] } } });
-    expect(ceilingModel.inputs).toHaveLength(0);
     expect(await readFile(path.join(messagesDir, "settings/manual.json"), "utf8")).toBe(item.initialFiles["settings/manual.json"]);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  });
+});
+
+it("stops the Messages arm at the prompt ceiling before calling the model", async () => {
+  const item = approvedCase("SDKWS-03");
+  const ceilingModel = new SequenceMessagesModel(["FINAL_ANSWER: unreachable"]);
+  const ceiling = await withArms(item, ({ messagesDir }) => captureEpisode("messages", item.id, () => runMessagesEpisode({
+    item,
+    commonInstructions: approvedSpec().commonInstructions,
+    workspaceDir: messagesDir,
+    model: ceilingModel,
+    maxIterationsPerTurn: 1,
+    maxPromptTokens: 1
+  })));
+  expect(ceiling).toMatchObject({ status: "operational_failure", grade: null, failure: { stage: "runtime", evidence: { messageCalls: [{ action: "error" }] } } });
+  expect(ceilingModel.inputs).toHaveLength(0);
 });
 
 it("rejects identical or nested arm workspaces", async () => {
@@ -191,6 +166,20 @@ it("rejects identical or nested arm workspaces", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+/** Materializes both arm workspaces under a disposable root and removes it afterwards. */
+async function withArms<T>(item: WorkspaceEditingCase, run: (dirs: { graphDir: string; messagesDir: string }) => Promise<T>): Promise<T> {
+  const root = await createEvaluationRoot();
+  const graphDir = path.join(root, "graph");
+  const messagesDir = path.join(root, "messages");
+  try {
+    await materializeWorkspace(item, graphDir, root);
+    await materializeWorkspace(item, messagesDir, root);
+    return await run({ graphDir, messagesDir });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
 
 function approvedSpec() {
   return getWorkspaceEditingCases();
