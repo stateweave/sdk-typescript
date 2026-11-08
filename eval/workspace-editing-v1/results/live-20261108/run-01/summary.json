@@ -7,6 +7,8 @@
   "completedAt": "2026-11-08T18:27:54.404Z",
   "sourceRevision": "f560c2bb1ee8edcad7a946fa77c56e3b23ff8a0e",
   "resultSha256": "d04c5168bc1fd2333e72bdf1fe52ea679e4a82da842995d42e21ebedae48fb30",
+  "workspaceArchiveSha256": "5f096366d7e601a58ce8fc1609735cc6dea9272b93e3016d4aa37cb36e0a0a6f",
+  "workspaceCount": 10,
   "runtime": {
     "provider": "zai",
     "endpoint": "api.z.ai/api/anthropic",

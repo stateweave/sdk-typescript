@@ -14,6 +14,7 @@ The persistent Messages arm completed and passed four cases. The GraphFrame arm 
 - Billing: approved Z.ai coding plan; incremental dollar estimate is unavailable and recorded as `null`
 - Window: `2026-11-08T18:00:28.656Z`–`2026-11-08T18:27:54.404Z`
 - Raw result SHA-256: `d04c5168bc1fd2333e72bdf1fe52ea679e4a82da842995d42e21ebedae48fb30`
+- Preserved ten-workspace archive SHA-256: `5f096366d7e601a58ce8fc1609735cc6dea9272b93e3016d4aa37cb36e0a0a6f`
 - Retries: zero
 - Calls: 108 / 240
 - Reserved tokens: 658,477 / 5,000,000
