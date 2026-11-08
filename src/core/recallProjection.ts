@@ -7,7 +7,7 @@ export type * from './recallTypes.js';
 
 const stop = new Set('a an and are as at be been but by can could did do does for from had has have how i if in into is it its me my of on or our should that the their them then there these they this to was were what when where which who why will with would you your'.split(' '));
 const terms = (text: string) => (text.toLocaleLowerCase('en').match(/[\p{L}\p{N}]+/gu) ?? []).filter(word => word.length > 1 && !stop.has(word));
-export function recallSourceText(node: CausalWeaveNode): string {
+function recallSourceText(node: CausalWeaveNode): string {
   return typeof node.payload === 'string' ? node.payload : canonical(node.payload);
 }
 function canonical(value: unknown): string {

@@ -289,7 +289,7 @@ export async function runMessagesEpisode(args: {
   return { arm: "messages", caseId: args.item.id, durationMs: Date.now() - startedAt, finalAnswer, messages, calls, grade };
 }
 
-export function messagesSystemPrompt(commonInstructions: string, tools: Tool[]): string {
+function messagesSystemPrompt(commonInstructions: string, tools: Tool[]): string {
   return [
     commonInstructions,
     "You have an ordinary persistent Messages conversation. Every earlier user turn, assistant action, and TOOL_RESULT remains in the message history.",

@@ -1,7 +1,8 @@
 // SWX/1 compatibility parser. New prompts teach SW2; this keeps stored traces and older clients readable.
 
 import { edgeTypes, type EdgeType, type GraphOp, type NodeType } from "./types.js";
-import { duplicateValues, isAttrToken, parsePrimitive, splitAttr, splitBlocks, statusValue, tokenize, unique, unquote, withoutUndefined, type RawBlock } from "./opsText.js";
+import { unique } from "./graphEdit.js";
+import { duplicateValues, isAttrToken, parsePrimitive, splitAttr, splitBlocks, statusValue, tokenize, unquote, withoutUndefined, type RawBlock } from "./opsText.js";
 
 type NodeOp = Extract<GraphOp, { op: "add_node" }>;
 type FinalOp = Extract<GraphOp, { op: "final" }>;

@@ -56,10 +56,10 @@
     "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run package:check",
     "package:check": "node scripts/verify-package.mjs",
     "repo:protect": "node scripts/protect-main.mjs",
-    "measure:tokens": "tsx eval/measure-prompt-tokens.ts"
+    "measure:tokens": "tsx eval/measure-prompt-tokens.ts",
+    "eval:controls": "node eval/workspace-editing-v1/grade-controls.mjs"
   },
   "dependencies": {
-    "dotenv": "^16.4.7",
     "zod": "^3.24.1"
   },
   "devDependencies": {

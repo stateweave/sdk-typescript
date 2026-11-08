@@ -29,7 +29,7 @@ export type CausalAppend = {
   advance?: boolean;
 };
 
-export class CausalPromptBudgetExceededError extends Error {
+class CausalPromptBudgetExceededError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "CausalPromptBudgetExceededError";
@@ -261,7 +261,7 @@ export class CausalWeave {
   }
 }
 
-export function assertValidCausalWeaveSnapshot(snapshot: CausalWeaveSnapshot): void {
+function assertValidCausalWeaveSnapshot(snapshot: CausalWeaveSnapshot): void {
   if (snapshot.version !== 1) throw new Error(`Unsupported Causal Weave version: ${snapshot.version}`);
   if (!Array.isArray(snapshot.nodes) || !Array.isArray(snapshot.frontier)) throw new Error("Causal Weave state requires nodes and frontier arrays.");
   const ids = new Set<string>();

@@ -14,7 +14,7 @@
 import { edgeTypes, type EdgeType, type GraphOp } from "./types.js";
 import { duplicateValues, isAttrToken, lex, parsePrimitive, splitAttr, splitBlocks, statusValue, withoutUndefined, type RawBlock, type SourceLine, type Token } from "./opsText.js";
 
-export const SW2_HEADER = "SW2";
+const SW2_HEADER = "SW2";
 
 export const sw2Forms = {
   T: "T <tool> key=value … (key_ref=<block> for multiline values)",
@@ -32,7 +32,7 @@ const ID = /^[A-Za-z][A-Za-z0-9_-]*$/;
 const NODE_TYPE = /^[a-z][a-z0-9_-]{0,63}$/;
 const TOOL = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 
-export class Sw2SyntaxError extends Error {
+class Sw2SyntaxError extends Error {
   constructor(line: SourceLine | undefined, expected: string, detail?: string) {
     const where = line ? `SW2 line ${line.lineNo}` : "SW2";
     const got = line ? `; got: ${line.text.trim().slice(0, 160)}` : "";

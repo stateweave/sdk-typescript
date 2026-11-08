@@ -233,7 +233,7 @@ async function listWorkspaceFiles(root, failures) {
   return files.sort();
 }
 
-export function parseJsonNoDuplicateKeys(text) {
+function parseJsonNoDuplicateKeys(text) {
   let index = 0;
   const source = String(text);
   const whitespace = () => { while (/\s/.test(source[index] ?? "")) index += 1; };

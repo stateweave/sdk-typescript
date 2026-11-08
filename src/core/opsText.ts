@@ -102,10 +102,6 @@ export function withoutUndefined<T extends Record<string, unknown>>(value: T): T
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
 }
 
-export function unique(values: string[]): string[] {
-  return [...new Set(values)];
-}
-
 export function duplicateValues(values: string[]): string[] {
   const seen = new Set<string>();
   const duplicates = new Set<string>();

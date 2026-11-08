@@ -38,7 +38,7 @@ export function isReferenced(graph: StateGraph, nodeId: string): boolean {
   return graph.edges.some((edge) => edge.from === nodeId || edge.to === nodeId);
 }
 
-export function linked(graph: StateGraph, a: string, b: string): boolean {
+function linked(graph: StateGraph, a: string, b: string): boolean {
   return graph.edges.some((edge) => (edge.from === a && edge.to === b) || (edge.from === b && edge.to === a));
 }
 
