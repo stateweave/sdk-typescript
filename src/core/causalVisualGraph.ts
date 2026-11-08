@@ -133,127 +133,136 @@ export function projectCausalVisualGraphView(source: StateGraph, options: Causal
     };
   }
 
-  const topicStates = options.topicStates ?? new Map<string, CausalVisualTopicState>();
-  const leafStates = options.leafStates ?? new Map<string, CausalVisualLeafState>();
-  const focusTopics = hierarchy.topics.filter((topic) => topic.focusCount > 0);
-  const focusTopicIds = new Set(focusTopics.map((topic) => topic.id));
-  const orderedTopics = [...hierarchy.topics].sort((left, right) => right.sequence - left.sequence || left.id.localeCompare(right.id));
-  const retainedTopicIds = new Set<string>(focusTopicIds);
-  for (const topic of orderedTopics) {
-    if (retainedTopicIds.size >= topicLimit) break;
-    retainedTopicIds.add(topic.id);
-  }
-  const archiveCandidates = orderedTopics.filter((topic) => !retainedTopicIds.has(topic.id));
-  const archivedNodeIds = new Set(archiveCandidates.flatMap((topic) => topic.nodeIds));
-  const archiveExpanded = options.archiveExpanded === true || mode === "map";
-  if (archiveExpanded) for (const topic of archiveCandidates) retainedTopicIds.add(topic.id);
-  const archivedTopics = archiveExpanded ? [] : archiveCandidates;
-  const archivedTopicIds = new Set(archivedTopics.map((topic) => topic.id));
-  const archiveId = "visual_archive_topics";
-
-  const topicState = (topic: VisualTopic): "collapsed" | "focus" | "full" => topicStates.get(topic.id) ?? (topic.focusCount > 0 ? "focus" : "collapsed");
-  const leafState = (leaf: VisualLeaf): "collapsed" | "focus" | "full" => leafStates.get(leaf.id) ?? (leaf.focusCount > 0 ? "focus" : "collapsed");
-  const retainedLeafIds = new Set<string>();
-  const archivedLeafIds = new Set<string>();
-  for (const topic of hierarchy.topics) {
-    if (!retainedTopicIds.has(topic.id) || topicState(topic) === "collapsed") continue;
-    const leaves = hierarchy.leaves.filter((leaf) => leaf.topicId === topic.id).sort((left, right) => right.sequence - left.sequence || left.id.localeCompare(right.id));
-    if (topicState(topic) === "full") {
-      for (const leaf of leaves) retainedLeafIds.add(leaf.id);
-      continue;
-    }
-    const focused = leaves.filter((leaf) => leaf.focusCount > 0);
-    const retainedForTopic = new Set(focused.map((leaf) => leaf.id));
-    for (const leaf of leaves) {
-      if (retainedForTopic.size >= focused.length + leafLimit) break;
-      retainedForTopic.add(leaf.id);
-    }
-    for (const leaf of retainedForTopic) retainedLeafIds.add(leaf);
-    for (const leaf of leaves) if (!retainedForTopic.has(leaf.id)) archivedLeafIds.add(leaf.id);
-  }
-
-  const mapNodeId = (node: GraphNode): string => {
-    if (node.type === "system") return node.id;
-    const topicId = stringData(node, "hierarchyTopicId");
-    const leafId = stringData(node, "hierarchyLeafId");
-    if (!topicId || !leafId) return node.id;
-    if (archivedTopicIds.has(topicId)) return archiveId;
-    const topic = hierarchy.topicById.get(topicId);
-    if (!topic || topicState(topic) === "collapsed") return visualTopicId(topicId);
-    if (archivedLeafIds.has(leafId)) return visualTopicArchiveId(topicId);
-    const leaf = hierarchy.leafById.get(leafId);
-    if (!leaf) return node.id;
-    const state = leafState(leaf);
-    if (state === "full") return node.id;
-    if (state === "focus" && isVisualFocus(node)) return node.id;
-    return visualLeafId(leafId);
-  };
-
+  const fold = new VisualFold(hierarchy, options, topicLimit, leafLimit, options.archiveExpanded === true || mode === "map");
+  const mapNodeId = (node: GraphNode): string => fold.mapNodeId(node);
   const focusNodeIds = new Set(source.nodes.filter(isVisualFocus).map((node) => node.id));
-  const grouped = new Map<string, GraphNode[]>();
-  for (const node of source.nodes) {
-    const id = mapNodeId(node);
-    const members = grouped.get(id) ?? [];
-    members.push(node);
-    grouped.set(id, members);
-  }
-
-  const displayNodes: GraphNode[] = [];
-  for (const [id, members] of grouped) {
-    if (members.length === 1 && id === members[0]!.id) {
-      displayNodes.push(members[0]!);
-      continue;
-    }
-    if (id === archiveId) {
-      displayNodes.push(summaryNode(id, "archive", "Earlier topics", members, { visualTopicIds: [...archivedTopicIds] }));
-      continue;
-    }
-    if (id.startsWith("visual_topic_archive_")) {
-      const topicId = stringData(members[0]!, "hierarchyTopicId");
-      const topic = hierarchy.topicById.get(topicId);
-      displayNodes.push(summaryNode(id, "topic_archive", `${topic?.label ?? "Topic"} history`, members, { hierarchyTopicId: topicId }));
-      continue;
-    }
-    if (id.startsWith("visual_topic_")) {
-      const topicId = stringData(members[0]!, "hierarchyTopicId");
-      const topic = hierarchy.topicById.get(topicId);
-      displayNodes.push(summaryNode(id, "topic", topic?.label ?? "Topic", members, { hierarchyTopicId: topicId }));
-      continue;
-    }
-    const leafId = stringData(members[0]!, "hierarchyLeafId");
-    const topicId = stringData(members[0]!, "hierarchyTopicId");
-    const leaf = hierarchy.leafById.get(leafId);
-    const visibleMembers = leaf ? leaf.nodeIds.filter((nodeId) => focusNodeIds.has(nodeId)).length : 0;
-    const suffix = visibleMembers ? "more source atoms" : "source atoms";
-    displayNodes.push(summaryNode(id, "leaf", `${leaf?.label ?? "Subgraph"}: ${members.length} ${suffix}`, members, { hierarchyTopicId: topicId, hierarchyLeafId: leafId }));
-  }
-
+  const displayNodes = [...groupByMappedId(source.nodes, mapNodeId)].map(([id, members]) => fold.displayNode(id, members, focusNodeIds));
   const sourceById = new Map(source.nodes.map((node) => [node.id, node]));
   const graph = {
     nodes: displayNodes.sort(compareGraphNodes),
     edges: visualEdges(source.edges, sourceById, mapNodeId, displayNodes)
   };
   const renderedSourceNodeCount = graph.nodes.filter((node) => node.data?.visualSynthetic !== true).length;
-  const summaryNodeCount = graph.nodes.length - renderedSourceNodeCount;
-  const topics = hierarchy.topics
-    .map((topic) => topicControl(topic, topicState(topic), archivedTopicIds.has(topic.id)))
-    .sort((left, right) => Number(right.focusCount > 0) - Number(left.focusCount > 0) || right.sequence - left.sequence || left.id.localeCompare(right.id));
-  const leaves = hierarchy.leaves
-    .map((leaf) => leafControl(leaf, leafState(leaf), archivedLeafIds.has(leaf.id) || archivedTopicIds.has(leaf.topicId)))
-    .sort((left, right) => Number(right.focusCount > 0) - Number(left.focusCount > 0) || right.sequence - left.sequence || left.id.localeCompare(right.id));
-
   return {
     graph,
     hierarchical: true,
     sourceNodeCount: source.nodes.length,
     renderedSourceNodeCount,
-    summaryNodeCount,
+    summaryNodeCount: graph.nodes.length - renderedSourceNodeCount,
     focusNodeCount: source.nodes.filter(isVisualFocus).length,
-    topics,
-    leaves,
-    archivedTopicCount: archiveCandidates.length,
-    archivedNodeCount: archivedNodeIds.size
+    ...fold.controls(),
+    archivedTopicCount: fold.archiveCandidates.length,
+    archivedNodeCount: new Set(fold.archiveCandidates.flatMap((topic) => topic.nodeIds)).size
   };
+}
+
+type VisualState = "collapsed" | "focus" | "full";
+const ARCHIVE_ID = "visual_archive_topics";
+
+const newestFirst = (left: { sequence: number; id: string }, right: { sequence: number; id: string }): number =>
+  right.sequence - left.sequence || left.id.localeCompare(right.id);
+const focusedNewestFirst = (left: { focusCount: number; sequence: number; id: string }, right: { focusCount: number; sequence: number; id: string }): number =>
+  Number(right.focusCount > 0) - Number(left.focusCount > 0) || newestFirst(left, right);
+
+function groupByMappedId(nodes: GraphNode[], mapNodeId: (node: GraphNode) => string): Map<string, GraphNode[]> {
+  const grouped = new Map<string, GraphNode[]>();
+  for (const node of nodes) {
+    const id = mapNodeId(node);
+    const members = grouped.get(id) ?? [];
+    members.push(node);
+    grouped.set(id, members);
+  }
+  return grouped;
+}
+
+/** Which topics and leaves stay expanded, which fold into summaries, and how source nodes map onto display nodes. */
+class VisualFold {
+  readonly archiveCandidates: VisualTopic[];
+  private readonly retainedTopicIds: Set<string>;
+  private readonly archivedTopicIds: Set<string>;
+  private readonly archivedLeafIds = new Set<string>();
+
+  constructor(
+    private readonly hierarchy: VisualHierarchy,
+    private readonly options: CausalVisualGraphViewOptions,
+    topicLimit: number,
+    private readonly leafLimit: number,
+    archiveExpanded: boolean
+  ) {
+    const orderedTopics = [...hierarchy.topics].sort(newestFirst);
+    this.retainedTopicIds = new Set(hierarchy.topics.filter((topic) => topic.focusCount > 0).map((topic) => topic.id));
+    for (const topic of orderedTopics) {
+      if (this.retainedTopicIds.size >= topicLimit) break;
+      this.retainedTopicIds.add(topic.id);
+    }
+    this.archiveCandidates = orderedTopics.filter((topic) => !this.retainedTopicIds.has(topic.id));
+    if (archiveExpanded) for (const topic of this.archiveCandidates) this.retainedTopicIds.add(topic.id);
+    this.archivedTopicIds = new Set(archiveExpanded ? [] : this.archiveCandidates.map((topic) => topic.id));
+    for (const topic of hierarchy.topics) this.archiveLeaves(topic);
+  }
+
+  topicState(topic: VisualTopic): VisualState {
+    return this.options.topicStates?.get(topic.id) ?? (topic.focusCount > 0 ? "focus" : "collapsed");
+  }
+
+  leafState(leaf: VisualLeaf): VisualState {
+    return this.options.leafStates?.get(leaf.id) ?? (leaf.focusCount > 0 ? "focus" : "collapsed");
+  }
+
+  mapNodeId(node: GraphNode): string {
+    if (node.type === "system") return node.id;
+    const topicId = stringData(node, "hierarchyTopicId");
+    const leafId = stringData(node, "hierarchyLeafId");
+    if (!topicId || !leafId) return node.id;
+    if (this.archivedTopicIds.has(topicId)) return ARCHIVE_ID;
+    const topic = this.hierarchy.topicById.get(topicId);
+    if (!topic || this.topicState(topic) === "collapsed") return visualTopicId(topicId);
+    if (this.archivedLeafIds.has(leafId)) return visualTopicArchiveId(topicId);
+    const leaf = this.hierarchy.leafById.get(leafId);
+    if (!leaf) return node.id;
+    const state = this.leafState(leaf);
+    if (state === "full" || (state === "focus" && isVisualFocus(node))) return node.id;
+    return visualLeafId(leafId);
+  }
+
+  displayNode(id: string, members: GraphNode[], focusNodeIds: Set<string>): GraphNode {
+    const first = members[0]!;
+    if (members.length === 1 && id === first.id) return first;
+    if (id === ARCHIVE_ID) return summaryNode(id, "archive", "Earlier topics", members, { visualTopicIds: [...this.archivedTopicIds] });
+    const topicId = stringData(first, "hierarchyTopicId");
+    const topicLabel = this.hierarchy.topicById.get(topicId)?.label;
+    if (id.startsWith("visual_topic_archive_")) return summaryNode(id, "topic_archive", `${topicLabel ?? "Topic"} history`, members, { hierarchyTopicId: topicId });
+    if (id.startsWith("visual_topic_")) return summaryNode(id, "topic", topicLabel ?? "Topic", members, { hierarchyTopicId: topicId });
+    const leafId = stringData(first, "hierarchyLeafId");
+    const leaf = this.hierarchy.leafById.get(leafId);
+    const visibleMembers = leaf ? leaf.nodeIds.filter((nodeId) => focusNodeIds.has(nodeId)).length : 0;
+    const suffix = visibleMembers ? "more source atoms" : "source atoms";
+    return summaryNode(id, "leaf", `${leaf?.label ?? "Subgraph"}: ${members.length} ${suffix}`, members, { hierarchyTopicId: topicId, hierarchyLeafId: leafId });
+  }
+
+  controls(): { topics: CausalVisualTopicControl[]; leaves: CausalVisualLeafControl[] } {
+    return {
+      topics: this.hierarchy.topics
+        .map((topic) => topicControl(topic, this.topicState(topic), this.archivedTopicIds.has(topic.id)))
+        .sort(focusedNewestFirst),
+      leaves: this.hierarchy.leaves
+        .map((leaf) => leafControl(leaf, this.leafState(leaf), this.archivedLeafIds.has(leaf.id) || this.archivedTopicIds.has(leaf.topicId)))
+        .sort(focusedNewestFirst)
+    };
+  }
+
+  /** In a focus-state topic, keep focused leaves plus the newest `leafLimit`; fold the rest into topic history. */
+  private archiveLeaves(topic: VisualTopic): void {
+    if (!this.retainedTopicIds.has(topic.id) || this.topicState(topic) !== "focus") return;
+    const leaves = this.hierarchy.leaves.filter((leaf) => leaf.topicId === topic.id).sort(newestFirst);
+    const focused = leaves.filter((leaf) => leaf.focusCount > 0);
+    const retained = new Set(focused.map((leaf) => leaf.id));
+    for (const leaf of leaves) {
+      if (retained.size >= focused.length + this.leafLimit) break;
+      retained.add(leaf.id);
+    }
+    for (const leaf of leaves) if (!retained.has(leaf.id)) this.archivedLeafIds.add(leaf.id);
+  }
 }
 
 type VisualTopic = {

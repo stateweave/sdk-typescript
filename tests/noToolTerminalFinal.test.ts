@@ -1,7 +1,6 @@
 import { expect, it } from "vitest";
-import { Agent } from "../src/agent/agent.js";
+import { Agent, type Model } from "../src/index.js";
 import { z } from "zod";
-import type { Model } from "../src/llm/model.js";
 
 const respond = (text: string) => ({ complete: async () => ({ text }) }) as unknown as Model;
 it("accepts a single terminal final after a no-tool model's prose preamble", async () => {

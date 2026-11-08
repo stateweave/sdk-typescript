@@ -40,7 +40,7 @@ export async function inspectPrimitiveTask(input: string, model: Model = new Moc
   const before = createInitialGraphFrame({
     objective: input,
     input,
-    systemPrompt: "Inspect one graph transaction. No tools or workers are available. Return valid SWX/1 graph operations; do not claim tool execution.",
+    systemPrompt: "Inspect one graph transaction. No tools or workers are available. Return valid SW2 graph operations; do not claim tool execution.",
     availableActions: []
   });
   const prompt = serializeGraphFrame(before);

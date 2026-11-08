@@ -37,3 +37,6 @@ yarn-error.log*
 .mintlify/
 .next/
 docs/export.zip
+
+# analysis caches
+.fallow/

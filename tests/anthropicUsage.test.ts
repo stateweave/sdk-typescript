@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { AnthropicModel, anthropicConfigFromEnv, normalizeAnthropicUsage } from "../src/llm/anthropicModel.js";
+import { AnthropicModel, anthropicConfigFromEnv, normalizeAnthropicUsage } from "../src/index.js";
 
 it("normalizes provider input, output, and cache token evidence", () => {
   expect(normalizeAnthropicUsage({

@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
-import { applyOps, addToolResult, GraphOpsValidationError } from "../src/core/applyOps.js";
-import { appendInputToGraphFrame, createInitialGraphFrame } from "../src/core/graph.js";
+import { applyOps, addToolResult, GraphOpsValidationError, appendInputToGraphFrame, createInitialGraphFrame } from "../src/index.js";
 
 it("applies add_node, add_edge, update_node, and focus ops", () => {
   const frame = createInitialGraphFrame({ objective: "Fix login", input: "Login fails", availableActions: [] });

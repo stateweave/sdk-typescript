@@ -1,9 +1,6 @@
 import { expect, it } from "vitest";
-import { Agent } from "../src/agent/agent.js";
-import type { Model, ModelInput, ModelOutput, ModelToken } from "../src/llm/model.js";
+import { Agent, type Model, type ModelInput, type ModelOutput, type ModelToken, estimateStateWeaveTokens, type Tool } from "../src/index.js";
 import { CausalWeave } from "../src/core/causalWeave.js";
-import { estimateStateWeaveTokens } from "../src/llm/tokenizer.js";
-import type { Tool } from "../src/tools/types.js";
 import { z } from "zod";
 
 class StreamOnlyModel implements Model {

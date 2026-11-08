@@ -148,148 +148,174 @@ export async function assertIsolatedWorkspaces(first: string, second: string): P
   }
 }
 
-export async function runGraphEpisode(args: {
+type EpisodeArgs<M> = {
   item: WorkspaceEditingCase;
   commonInstructions: string;
   workspaceDir: string;
-  model: Model;
+  model: M;
   maxIterationsPerTurn: number;
   maxPromptTokens: number;
   signal?: AbortSignal;
-}): Promise<GraphEpisodeResult> {
+};
+
+type GraphTurnContext = { args: EpisodeArgs<Model>; model: RecordingGraphModel; tools: Tool[]; providerSystem: string; promptTokens: number };
+
+export async function runGraphEpisode(args: EpisodeArgs<Model>): Promise<GraphEpisodeResult> {
   assertPositiveLimit("maxIterationsPerTurn", args.maxIterationsPerTurn);
   assertPositiveLimit("maxPromptTokens", args.maxPromptTokens);
   const startedAt = Date.now();
-  const tools = workspaceTools(args.workspaceDir);
-  const providerSystem = `${args.commonInstructions}\nFollow the supplied GraphFrame and return exactly one valid SWX/1 transaction per response.`;
+  const providerSystem = `${args.commonInstructions}\nFollow the supplied GraphFrame and return exactly one valid SW2 transaction per response.`;
   const providerSystemTokens = estimateStateWeaveTokens(`SYSTEM:\n${providerSystem}\n\nUSER:\n`).estimatedTokens;
-  const graphFramePromptTokens = args.maxPromptTokens - providerSystemTokens;
-  if (graphFramePromptTokens < 1) {
+  const promptTokens = args.maxPromptTokens - providerSystemTokens;
+  if (promptTokens < 1) {
     throw new EpisodeRunError("runtime", `The matched prompt ceiling ${args.maxPromptTokens} is too small for the Graph provider system (${providerSystemTokens} estimated tokens).`);
   }
-  const recordingModel = new RecordingGraphModel(args.model, args.maxPromptTokens);
+  const context: GraphTurnContext = { args, model: new RecordingGraphModel(args.model, args.maxPromptTokens), tools: workspaceTools(args.workspaceDir), providerSystem, promptTokens };
   const turns: GraphFrameRunResult[] = [];
-  let frame: GraphFrame | undefined;
-  let finalAnswer = "";
-
   for (const [turnIndex, input] of args.item.turns.entries()) {
-    assertNotAborted(args.signal, graphFailureEvidence(turns, recordingModel.calls, frame));
-    let result: GraphFrameRunResult;
-    try {
-      result = await runStateWeave(
-        {
-          model: recordingModel,
-          tools,
-          maxIterations: args.maxIterationsPerTurn,
-          maxPromptTokens: graphFramePromptTokens,
-          systemPrompt: args.commonInstructions,
-          providerSystem,
-          traceMode: "full"
-        },
-        { objective: args.item.title, input },
-        { ...(frame ? { frame } : {}), signal: args.signal }
-      );
-    } catch (error) {
-      const evidence = graphFailureEvidence(turns, recordingModel.calls, frame, error);
-      if (error instanceof EpisodeRunError) throw new EpisodeRunError(error.stage, `Graph turn ${turnIndex + 1}: ${error.message}`, evidence);
-      const stage = isAbortError(error) ? "aborted" : error instanceof StateWeaveRunError ? "protocol" : "runtime";
-      throw new EpisodeRunError(stage, `Graph turn ${turnIndex + 1}: ${errorMessage(error)}`, evidence);
-    }
-    frame = result.frame;
-    finalAnswer = result.finalAnswer;
+    const result = await runGraphTurn(context, turns, turnIndex, input);
+    if (!result.frame.frame.latestInputNodeId) throw new Error(`Graph turn ${turnIndex + 1} did not retain its user input.`);
     turns.push(result);
-    if (!frame.frame.latestInputNodeId) throw new Error(`Graph turn ${turnIndex + 1} did not retain its user input.`);
   }
-
-  if (!frame) throw new Error(`Graph episode ${args.item.id} produced no frame.`);
-  let grade: WorkspaceGrade;
-  try {
-    grade = await gradeWorkspaceEditingCase({ caseId: args.item.id, workspaceDir: args.workspaceDir, finalAnswer });
-  } catch (error) {
-    throw new EpisodeRunError("grader", errorMessage(error), graphFailureEvidence(turns, recordingModel.calls, frame));
-  }
-  return { arm: "graph", caseId: args.item.id, durationMs: Date.now() - startedAt, finalAnswer, frame, turns, modelCalls: recordingModel.calls, grade };
+  const last = turns.at(-1);
+  if (!last) throw new Error(`Graph episode ${args.item.id} produced no frame.`);
+  const { frame, finalAnswer } = last;
+  const grade = await gradeEpisode(args, finalAnswer, () => graphFailureEvidence(turns, context.model.calls, frame));
+  return { arm: "graph", caseId: args.item.id, durationMs: Date.now() - startedAt, finalAnswer, frame, turns, modelCalls: context.model.calls, grade };
 }
 
-export async function runMessagesEpisode(args: {
-  item: WorkspaceEditingCase;
-  commonInstructions: string;
-  workspaceDir: string;
-  model: MessagesModel;
-  maxIterationsPerTurn: number;
-  maxPromptTokens: number;
-  signal?: AbortSignal;
-}): Promise<MessagesEpisodeResult> {
+async function runGraphTurn(context: GraphTurnContext, turns: GraphFrameRunResult[], turnIndex: number, input: string): Promise<GraphFrameRunResult> {
+  const { args, model } = context;
+  const frame = turns.at(-1)?.frame;
+  assertNotAborted(args.signal, graphFailureEvidence(turns, model.calls, frame));
+  try {
+    return await runStateWeave(
+      {
+        model,
+        tools: context.tools,
+        maxIterations: args.maxIterationsPerTurn,
+        maxPromptTokens: context.promptTokens,
+        systemPrompt: args.commonInstructions,
+        providerSystem: context.providerSystem,
+        traceMode: "full"
+      },
+      { objective: args.item.title, input },
+      { ...(frame ? { frame } : {}), signal: args.signal }
+    );
+  } catch (error) {
+    const evidence = graphFailureEvidence(turns, model.calls, frame, error);
+    if (error instanceof EpisodeRunError) throw new EpisodeRunError(error.stage, `Graph turn ${turnIndex + 1}: ${error.message}`, evidence);
+    const stage = isAbortError(error) ? "aborted" : error instanceof StateWeaveRunError ? "protocol" : "runtime";
+    throw new EpisodeRunError(stage, `Graph turn ${turnIndex + 1}: ${errorMessage(error)}`, evidence);
+  }
+}
+
+async function gradeEpisode(args: EpisodeArgs<unknown>, finalAnswer: string, evidence: () => EpisodeFailureEvidence): Promise<WorkspaceGrade> {
+  try {
+    return await gradeWorkspaceEditingCase({ caseId: args.item.id, workspaceDir: args.workspaceDir, finalAnswer });
+  } catch (error) {
+    throw new EpisodeRunError("grader", errorMessage(error), evidence());
+  }
+}
+
+export async function runMessagesEpisode(args: EpisodeArgs<MessagesModel>): Promise<MessagesEpisodeResult> {
   assertPositiveLimit("maxIterationsPerTurn", args.maxIterationsPerTurn);
   assertPositiveLimit("maxPromptTokens", args.maxPromptTokens);
   const startedAt = Date.now();
-  const tools = workspaceTools(args.workspaceDir);
-  const toolMap = new Map(tools.map((tool) => [tool.name, tool]));
-  const system = messagesSystemPrompt(args.commonInstructions, tools);
-  const messages: MessagesEntry[] = [];
-  const calls: MessagesCall[] = [];
+  const episode = new MessagesEpisode(args);
   let finalAnswer = "";
-
-  for (const [turnIndex, input] of args.item.turns.entries()) {
-    assertNotAborted(args.signal, messagesFailureEvidence(messages, calls));
-    messages.push({ role: "user", content: input });
-    let turnComplete = false;
-    for (let iteration = 1; iteration <= args.maxIterationsPerTurn; iteration++) {
-      assertNotAborted(args.signal, messagesFailureEvidence(messages, calls));
-      const modelInput = { system, messages: structuredClone(messages) };
-      const promptTokenEstimate = estimateMessagesTokens(modelInput);
-      if (promptTokenEstimate > args.maxPromptTokens) {
-        const error = `Messages turn ${turnIndex + 1}, call ${iteration} exceeds the matched prompt ceiling: ${promptTokenEstimate} > ${args.maxPromptTokens}.`;
-        calls.push({ turn: turnIndex + 1, iteration, input: modelInput, durationMs: 0, promptTokenEstimate, action: "error", error });
-        throw new EpisodeRunError("runtime", error, messagesFailureEvidence(messages, calls));
-      }
-      const startedAt = Date.now();
-      let output: MessagesModelOutput;
-      try {
-        output = await args.model.complete({ ...modelInput, signal: args.signal });
-      } catch (error) {
-        calls.push({ turn: turnIndex + 1, iteration, input: modelInput, durationMs: Date.now() - startedAt, promptTokenEstimate, action: "error", error: errorMessage(error) });
-        throw new EpisodeRunError(isAbortError(error) ? "aborted" : "model", `Messages turn ${turnIndex + 1}, call ${iteration}: ${errorMessage(error)}`, messagesFailureEvidence(messages, calls));
-      }
-      const durationMs = Date.now() - startedAt;
-      try {
-        validateMessagesOutput(output, turnIndex + 1, iteration);
-      } catch (error) {
-        calls.push({ turn: turnIndex + 1, iteration, input: modelInput, output, durationMs, promptTokenEstimate, action: "error", error: errorMessage(error) });
-        throw new EpisodeRunError("model", errorMessage(error), messagesFailureEvidence(messages, calls));
-      }
-      messages.push({ role: "assistant", content: output.text });
-      const call = parseStrictToolCall(output.text);
-      if (call) {
-        const result = await executeAgentTool(toolMap, call);
-        calls.push({ turn: turnIndex + 1, iteration, input: modelInput, output, durationMs, promptTokenEstimate, action: "tool", tool: call.name, toolResult: result });
-        messages.push({ role: "user", content: `TOOL_RESULT ${call.name}\n${JSON.stringify(result)}` });
-        continue;
-      }
-      const final = parseLiteralFinal(output.text);
-      if (final !== undefined) {
-        finalAnswer = final;
-        calls.push({ turn: turnIndex + 1, iteration, input: modelInput, output, durationMs, promptTokenEstimate, action: "final" });
-        turnComplete = true;
-        break;
-      }
-      const error = "Invalid action. Return exactly one TOOL_CALL JSON object or FINAL_ANSWER: followed by the literal answer.";
-      calls.push({ turn: turnIndex + 1, iteration, input: modelInput, output, durationMs, promptTokenEstimate, action: "invalid", error });
-      messages.push({ role: "user", content: `PROTOCOL_ERROR\n${error}` });
-    }
-    if (!turnComplete) throw new EpisodeRunError("protocol", `Messages arm exhausted ${args.maxIterationsPerTurn} iterations on turn ${turnIndex + 1}.`, messagesFailureEvidence(messages, calls));
-  }
-
-  let grade: WorkspaceGrade;
-  try {
-    grade = await gradeWorkspaceEditingCase({ caseId: args.item.id, workspaceDir: args.workspaceDir, finalAnswer });
-  } catch (error) {
-    throw new EpisodeRunError("grader", errorMessage(error), messagesFailureEvidence(messages, calls));
-  }
+  for (const [turnIndex, input] of args.item.turns.entries()) finalAnswer = await episode.runTurn(turnIndex + 1, input);
+  const { messages, calls } = episode;
+  const grade = await gradeEpisode(args, finalAnswer, () => messagesFailureEvidence(messages, calls));
   return { arm: "messages", caseId: args.item.id, durationMs: Date.now() - startedAt, finalAnswer, messages, calls, grade };
 }
 
-export function messagesSystemPrompt(commonInstructions: string, tools: Tool[]): string {
+type MessagesStep = { input: MessagesCall["input"]; promptTokenEstimate: number; output: MessagesModelOutput; durationMs: number };
+
+/** One persistent Messages conversation: the control arm keeps every turn, action, and TOOL_RESULT in history. */
+class MessagesEpisode {
+  readonly messages: MessagesEntry[] = [];
+  readonly calls: MessagesCall[] = [];
+  private readonly toolMap: Map<string, Tool>;
+  private readonly system: string;
+
+  constructor(private readonly args: EpisodeArgs<MessagesModel>) {
+    const tools = workspaceTools(args.workspaceDir);
+    this.toolMap = new Map(tools.map((tool) => [tool.name, tool]));
+    this.system = messagesSystemPrompt(args.commonInstructions, tools);
+  }
+
+  /** Runs one user turn to its FINAL_ANSWER and returns that answer. */
+  async runTurn(turn: number, input: string): Promise<string> {
+    this.assertNotAborted();
+    this.messages.push({ role: "user", content: input });
+    for (let iteration = 1; iteration <= this.args.maxIterationsPerTurn; iteration++) {
+      this.assertNotAborted();
+      const step = await this.callModel(turn, iteration);
+      this.messages.push({ role: "assistant", content: step.output.text });
+      const final = await this.applyAction(turn, iteration, step);
+      if (final !== undefined) return final;
+    }
+    throw new EpisodeRunError("protocol", `Messages arm exhausted ${this.args.maxIterationsPerTurn} iterations on turn ${turn}.`, this.evidence());
+  }
+
+  private async callModel(turn: number, iteration: number): Promise<MessagesStep> {
+    const input = { system: this.system, messages: structuredClone(this.messages) };
+    const promptTokenEstimate = estimateMessagesTokens(input);
+    const record = (call: Omit<MessagesCall, "turn" | "iteration" | "input" | "promptTokenEstimate">) => this.calls.push({ turn, iteration, input, promptTokenEstimate, ...call });
+    if (promptTokenEstimate > this.args.maxPromptTokens) {
+      const error = `Messages turn ${turn}, call ${iteration} exceeds the matched prompt ceiling: ${promptTokenEstimate} > ${this.args.maxPromptTokens}.`;
+      record({ durationMs: 0, action: "error", error });
+      throw new EpisodeRunError("runtime", error, this.evidence());
+    }
+    const startedAt = Date.now();
+    let output: MessagesModelOutput;
+    try {
+      output = await this.args.model.complete({ ...input, signal: this.args.signal });
+    } catch (error) {
+      record({ durationMs: Date.now() - startedAt, action: "error", error: errorMessage(error) });
+      throw new EpisodeRunError(isAbortError(error) ? "aborted" : "model", `Messages turn ${turn}, call ${iteration}: ${errorMessage(error)}`, this.evidence());
+    }
+    const durationMs = Date.now() - startedAt;
+    try {
+      validateMessagesOutput(output, turn, iteration);
+    } catch (error) {
+      record({ output, durationMs, action: "error", error: errorMessage(error) });
+      throw new EpisodeRunError("model", errorMessage(error), this.evidence());
+    }
+    return { input, promptTokenEstimate, output, durationMs };
+  }
+
+  /** Executes a TOOL_CALL or accepts a FINAL_ANSWER; returns the final answer when the turn is complete. */
+  private async applyAction(turn: number, iteration: number, step: MessagesStep): Promise<string | undefined> {
+    const call = parseStrictToolCall(step.output.text);
+    if (call) {
+      const result = await executeAgentTool(this.toolMap, call);
+      this.calls.push({ turn, iteration, ...step, action: "tool", tool: call.name, toolResult: result });
+      this.messages.push({ role: "user", content: `TOOL_RESULT ${call.name}\n${JSON.stringify(result)}` });
+      return undefined;
+    }
+    const final = parseLiteralFinal(step.output.text);
+    if (final !== undefined) {
+      this.calls.push({ turn, iteration, ...step, action: "final" });
+      return final;
+    }
+    const error = "Invalid action. Return exactly one TOOL_CALL JSON object or FINAL_ANSWER: followed by the literal answer.";
+    this.calls.push({ turn, iteration, ...step, action: "invalid", error });
+    this.messages.push({ role: "user", content: `PROTOCOL_ERROR\n${error}` });
+    return undefined;
+  }
+
+  private assertNotAborted(): void {
+    assertNotAborted(this.args.signal, this.evidence());
+  }
+
+  private evidence(): EpisodeFailureEvidence {
+    return messagesFailureEvidence(this.messages, this.calls);
+  }
+}
+
+function messagesSystemPrompt(commonInstructions: string, tools: Tool[]): string {
   return [
     commonInstructions,
     "You have an ordinary persistent Messages conversation. Every earlier user turn, assistant action, and TOOL_RESULT remains in the message history.",
@@ -403,8 +429,8 @@ class RecordingGraphModel implements Model {
       throw new EpisodeRunError(isAbortError(error) ? "aborted" : "model", errorMessage(error));
     }
     const text = tokens.join("");
-    if (!/^\s*SWX\/1[\t ]*(?:\r?\n|$)/.test(text)) {
-      const error = "Graph output must begin with an exact SWX/1 header; fenced, prefixed, and legacy-JSON outputs are rejected without repair.";
+    if (!/^\s*(?:SW2|SWX\/1)[\t ]*(?:\r?\n|$)/.test(text)) {
+      const error = "Graph output must begin with an exact SW2 (or legacy SWX/1) header; fenced, prefixed, and legacy-JSON outputs are rejected without repair.";
       this.calls.push({ input: structuredCloneModelInput(input), text, metadata, durationMs: Date.now() - startedAt, promptTokenEstimate, error });
       throw new EpisodeRunError("protocol", error);
     }
