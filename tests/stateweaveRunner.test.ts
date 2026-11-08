@@ -176,25 +176,71 @@ it("accepts a successful post-mutation read as verification evidence", async () 
   }
 });
 
-it("requires configured semantic task and evidence nodes for tool-using work", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-semantic-work-"));
+it("derives task structure at runtime: semantic nodes are optional, tasks are linked and resolved", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-runtime-structure-"));
   try {
     const tools = createFileSystemTools({ rootDir: root });
     await tools.find((tool) => tool.name === "write_file")?.execute({ file_path: "config.txt", content: "ready" });
-    const model = new SequenceModel([
-      "SWX/1\n@tool read_file file_path=config.txt",
-      "SWX/1\n@node task_config task \"Verify config\" status=active\n@edge user_input_1 addresses task_config\n@tool read_file file_path=config.txt",
-      "SWX/1\n@node check_config test_result \"config read verified\" status=resolved\n@edge tool_result_2 validates check_config\n@edge check_config validates task_config\n@update task_config status=resolved\n@final \"Config is ready and verified.\""
-    ]);
+    const bare = await runStateWeave(
+      { model: new SequenceModel(["SW2\nT read_file path=config.txt", 'SW2\nF "Config is ready."']), tools, nodeTypes: ["task", "test_result"], maxIterations: 2 },
+      "Read config.txt and verify it"
+    );
+    expect(bare.metadata.retryCount).toBe(0);
+    expect(bare.graph.edges).toContainEqual(expect.objectContaining({ from: "tool_call_1", to: "tool_result_1", type: "explains" }));
+    expect(bare.graph.edges).toContainEqual(expect.objectContaining({ from: "tool_result_1", type: "validates" }));
 
-    const result = await runStateWeave({ model, tools, nodeTypes: ["task", "file", "symbol", "decision", "constraint", "test_result"], maxIterations: 3 }, "Read config.txt and verify it");
+    const withTask = await runStateWeave(
+      { model: new SequenceModel(['SW2\nN task_config task "Verify config"\nT read_file path=config.txt', 'SW2\nF "Config is ready."']), tools, maxIterations: 2 },
+      "Read config.txt and verify it"
+    );
+    expect(withTask.metadata.retryCount).toBe(0);
+    expect(withTask.graph.nodes).toContainEqual(expect.objectContaining({ id: "task_config", status: "resolved" }));
+    expect(withTask.graph.edges).toContainEqual(expect.objectContaining({ from: "user_input_1", to: "task_config", type: "addresses" }));
+    expect(withTask.graph.edges).toContainEqual(expect.objectContaining({ from: "task_config", to: "tool_call_1" }));
+    expect(withTask.graph.edges).toContainEqual(expect.objectContaining({ from: "task_config", to: "assistant_output_1", type: "follows" }));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
-    expect(result.metadata.retryCount).toBe(1);
-    expect(result.graph.nodes).toContainEqual(expect.objectContaining({ id: "task_config", type: "task", status: "resolved" }));
-    expect(result.graph.nodes).toContainEqual(expect.objectContaining({ id: "check_config", type: "test_result", status: "resolved" }));
-    expect(result.graph.edges).toContainEqual(expect.objectContaining({ from: "task_config", to: "tool_call_2" }));
-    expect(result.trace[0]?.error).toMatch(/first tool transaction must create/);
-    expect(result.trace[0]?.prompt).toContain("preferred suggestions, not a whitelist");
+it("SDKWS-02: accepts an edit in a later turn using file evidence already in the graph", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-sdkws-02-"));
+  try {
+    const tools = createFileSystemTools({ rootDir: root });
+    await tools.find((tool) => tool.name === "write_file")?.execute({ file_path: "config.txt", content: "retryLimit=3" });
+    const first = await runStateWeave(
+      { model: new SequenceModel(["SW2\nT read_file path=config.txt", 'SW2\nF "retryLimit is 3."']), tools, maxIterations: 2 },
+      "What is retryLimit in config.txt?"
+    );
+    const second = await runStateWeave(
+      { model: new SequenceModel(["SW2\nT edit_file path=config.txt old_string=retryLimit=3 new_string=retryLimit=4", 'SW2\nF "Updated config.txt to retryLimit=4."']), tools, maxIterations: 2 },
+      "Update file config.txt so retryLimit is 4",
+      { frame: first.frame }
+    );
+    expect(second.metadata.retryCount).toBe(0);
+    expect(await readFile(path.join(root, "config.txt"), "utf8")).toBe("retryLimit=4");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("SDKWS-02: accepts an edit carrying expected_hash and rejects one with no evidence", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "stateweave-edit-evidence-"));
+  try {
+    const tools = createFileSystemTools({ rootDir: root });
+    const written = await tools.find((tool) => tool.name === "write_file")?.execute({ file_path: "config.txt", content: "retryLimit=3" }) as { content_hash: string };
+    const hashed = await runStateWeave(
+      { model: new SequenceModel([`SW2\nT edit_file path=config.txt old_string=retryLimit=3 new_string=retryLimit=4 expected_hash=${written.content_hash}`, 'SW2\nF "Updated config.txt."']), tools, maxIterations: 2 },
+      "Update file config.txt so retryLimit is 4"
+    );
+    expect(hashed.metadata.retryCount).toBe(0);
+
+    const blind = runStateWeave(
+      { model: new SequenceModel(["SW2\nT edit_file path=config.txt old_string=retryLimit=4 new_string=retryLimit=5"]), tools, maxIterations: 1 },
+      "Update file config.txt so retryLimit is 5"
+    );
+    await expect(blind).rejects.toThrow(/edit_file config.txt needs current evidence: T read_file path=config.txt first, or pass expected_hash=/);
+    expect(await readFile(path.join(root, "config.txt"), "utf8")).toBe("retryLimit=4");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -277,7 +323,7 @@ it("forces read and bash observations into a separate model iteration", async ()
     const result = await runStateWeave({ model, tools, maxIterations: 4 }, "Read source and make a copy");
 
     expect(result.metadata.retryCount).toBe(1);
-    expect(result.trace[0].error).toMatch(/evidence-producing and isolated/);
+    expect(result.trace[0].error).toMatch(/One T per transaction, without F/);
     expect(result.trace[1].parsedOps).toContainEqual(expect.objectContaining({ op: "call_tool", tool: "read_file" }));
     expect(result.finalAnswer).toBe("Copied the observed value.");
     expect(await readFile(path.join(root, "copy.txt"), "utf8")).toBe("observed_value");
