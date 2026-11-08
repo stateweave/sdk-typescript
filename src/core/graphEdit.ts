@@ -1,5 +1,4 @@
 // Internal graph-editing helpers shared by the transaction, evidence, and worker layers.
-import { posix } from "node:path";
 import type { EdgeType, GraphNode, StateGraph } from "./types.js";
 
 export function nextSequenceId(nodes: GraphNode[], prefix: string): string {
@@ -50,9 +49,21 @@ export function turnTask(graph: StateGraph, inputId: string | undefined): GraphN
 }
 
 /** Active canonical file-state node for a path, written by successful read/write/edit evidence. */
-/** Workspace paths compare by normalized form, so ./a.txt, a.txt and a//a.txt name one file. */
+/**
+ * Workspace paths compare by normalized form, so ./a.txt, a.txt and a//a.txt name one file.
+ * Same result as posix.normalize (minus trailing slashes), without node:path so the browser demo can bundle it.
+ */
 export function workspacePathKey(path: string): string {
-  return posix.normalize(path);
+  const absolute = path.startsWith("/");
+  const parts: string[] = [];
+  for (const segment of path.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment !== "..") parts.push(segment);
+    else if (parts.length && parts.at(-1) !== "..") parts.pop();
+    else if (!absolute) parts.push("..");
+  }
+  const body = parts.join("/");
+  return absolute ? `/${body}` : body || ".";
 }
 
 /** True for a file-state node whose path names the same workspace file as `path`. */

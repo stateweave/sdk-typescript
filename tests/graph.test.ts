@@ -1,5 +1,7 @@
+import { posix } from "node:path";
 import { expect, it } from "vitest";
 import { appendInputToGraphFrame, assertValidGraphFrame, createInitialGraphFrame, serializeGraphFrame } from "../src/index.js";
+import { workspacePathKey } from "../src/core/graphEdit.js";
 
 it("creates a system-only initial GraphFrame when no user input is provided", () => {
   const frame = createInitialGraphFrame({ objective: "Bootstrap", systemPrompt: "Be careful.", availableActions: [] });
@@ -74,4 +76,9 @@ it("does not hard-code fresh branch attachment before the model weaves the input
   expect(next.frame.activeUserInputNodeId).toBe("user_input_2");
   expect(next.frame.focusNodeId).toBe("user_input_2");
   expect(next.frame.candidateFocusNodeIds).toEqual(["system_root", "user_input_2", "user_input_1"]);
+});
+
+it("workspacePathKey matches posix.normalize for workspace paths without importing node:path", () => {
+  const samples = ["a.txt", "./a.txt", "a//b.txt", "src/./x/../y.ts", "../up.txt", "a/../../b", "/abs/./p", "/../root", ".", "./", "..", "x/.."];
+  for (const sample of samples) expect(workspacePathKey(sample), sample).toBe(posix.normalize(sample).replace(/(.)\/$/, "$1"));
 });
