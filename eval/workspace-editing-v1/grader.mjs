@@ -19,80 +19,89 @@ export async function gradeWorkspaceEditingCase({ caseId, workspaceDir, finalAns
   const fileScope = isDeepStrictEqual(actualFiles, expectedPaths);
   if (!fileScope) failures.push(`file scope mismatch: expected ${expectedPaths.join(", ")}; found ${actualFiles.join(", ")}`);
 
+  const contents = await readWorkspaceFiles(workspaceDir, actualFiles);
+  const readOnlyUnchanged = checkReadOnlyFiles(item, contents, failures);
+  const artifactSafety = checkArtifactSafety(contents, failures);
+  const workspaceFailures = gradeWorkspace(caseId, item, contents);
+  failures.push(...workspaceFailures);
+  const workspaceCorrect = workspaceFailures.length === 0;
+  const answerCorrect = gradeFinalAnswer(item, finalAnswer, failures);
+
+  const taskOutcome = fileScope && readOnlyUnchanged && artifactSafety && workspaceCorrect && answerCorrect !== false;
+  return {
+    caseId,
+    grade: { taskOutcome, workspaceCorrect, answerCorrect, fileScope, readOnlyUnchanged, artifactSafety },
+    failures
+  };
+}
+
+async function readWorkspaceFiles(workspaceDir, relativePaths) {
   const contents = {};
-  for (const relativePath of actualFiles) {
+  for (const relativePath of relativePaths) {
     try {
       contents[relativePath] = await readFile(path.join(workspaceDir, relativePath), "utf8");
     } catch (error) {
       throw new Error(`grader cannot read ${relativePath}: ${errorMessage(error)}`);
     }
   }
+  return contents;
+}
 
-  let readOnlyUnchanged = true;
+function checkReadOnlyFiles(item, contents, failures) {
+  let unchanged = true;
   for (const [relativePath, initial] of Object.entries(item.initialFiles)) {
-    if (item.editable.includes(relativePath)) continue;
-    if (contents[relativePath] !== initial) {
-      readOnlyUnchanged = false;
-      failures.push(`read-only file changed: ${relativePath}`);
-    }
+    if (item.editable.includes(relativePath) || contents[relativePath] === initial) continue;
+    unchanged = false;
+    failures.push(`read-only file changed: ${relativePath}`);
   }
+  return unchanged;
+}
 
-  let artifactSafety = true;
+function checkArtifactSafety(contents, failures) {
+  let safe = true;
   for (const [relativePath, content] of Object.entries(contents)) {
-    if (!relativePath.endsWith(".svg")) continue;
-    const safetyFailure = unsafeSvgReason(content);
-    if (safetyFailure) {
-      artifactSafety = false;
-      failures.push(`${relativePath} is unsafe: ${safetyFailure}`);
-    }
+    const safetyFailure = relativePath.endsWith(".svg") ? unsafeSvgReason(content) : undefined;
+    if (!safetyFailure) continue;
+    safe = false;
+    failures.push(`${relativePath} is unsafe: ${safetyFailure}`);
   }
+  return safe;
+}
 
-  const workspaceFailures = [];
+function gradeWorkspace(caseId, item, contents) {
+  const failures = [];
   switch (caseId) {
     case "SDKWS-01":
-      gradePanelSvg(contents["assets/panel.svg"], workspaceFailures);
+      gradePanelSvg(contents["assets/panel.svg"], failures);
       break;
     case "SDKWS-02":
     case "SDKWS-04":
-      gradeJsonFile(item, contents, Object.keys(item.expectedFiles).find((name) => item.editable.includes(name)), workspaceFailures);
+      gradeJsonFile(item, contents, Object.keys(item.expectedFiles).find((name) => item.editable.includes(name)), failures);
       break;
     case "SDKWS-03":
-      if (contents["settings/manual.json"] !== item.expectedFiles["settings/manual.json"]) workspaceFailures.push("settings/manual.json must remain byte-for-byte unchanged");
+      if (contents["settings/manual.json"] !== item.expectedFiles["settings/manual.json"]) failures.push("settings/manual.json must remain byte-for-byte unchanged");
       break;
     case "SDKWS-05":
-      gradeJsonFile(item, contents, "assets/catalog.json", workspaceFailures);
-      gradeJsonFile(item, contents, "docs/preview.json", workspaceFailures);
+      gradeJsonFile(item, contents, "assets/catalog.json", failures);
+      gradeJsonFile(item, contents, "docs/preview.json", failures);
       break;
     default:
       throw new Error(`No grader for ${caseId}`);
   }
-  failures.push(...workspaceFailures);
-  const workspaceCorrect = workspaceFailures.length === 0;
+  return failures;
+}
 
-  let answerCorrect = null;
-  if (item.expectedFinalAnswer !== undefined) {
-    try {
-      answerCorrect = isDeepStrictEqual(parseJsonNoDuplicateKeys(finalAnswer), item.expectedFinalAnswer);
-      if (!answerCorrect) failures.push("final answer JSON does not equal the required object");
-    } catch (error) {
-      answerCorrect = false;
-      failures.push(`final answer is not one strict JSON object: ${errorMessage(error)}`);
-    }
+/** null when the case has no required answer; otherwise whether the answer is the exact required JSON object. */
+function gradeFinalAnswer(item, finalAnswer, failures) {
+  if (item.expectedFinalAnswer === undefined) return null;
+  try {
+    const correct = isDeepStrictEqual(parseJsonNoDuplicateKeys(finalAnswer), item.expectedFinalAnswer);
+    if (!correct) failures.push("final answer JSON does not equal the required object");
+    return correct;
+  } catch (error) {
+    failures.push(`final answer is not one strict JSON object: ${errorMessage(error)}`);
+    return false;
   }
-
-  const taskOutcome = fileScope && readOnlyUnchanged && artifactSafety && workspaceCorrect && answerCorrect !== false;
-  return {
-    caseId,
-    grade: {
-      taskOutcome,
-      workspaceCorrect,
-      answerCorrect,
-      fileScope,
-      readOnlyUnchanged,
-      artifactSafety
-    },
-    failures
-  };
 }
 
 function gradeJsonFile(item, contents, relativePath, failures) {
@@ -234,69 +243,96 @@ async function listWorkspaceFiles(root, failures) {
 }
 
 function parseJsonNoDuplicateKeys(text) {
-  let index = 0;
-  const source = String(text);
-  const whitespace = () => { while (/\s/.test(source[index] ?? "")) index += 1; };
-  const fail = (message) => { throw new Error(`${message} at character ${index}`); };
-  const parseString = () => {
-    if (source[index] !== '"') fail("expected JSON string");
-    const start = index++;
-    while (index < source.length) {
-      const char = source[index++];
-      if (char === '"') return JSON.parse(source.slice(start, index));
-      if (char === "\\") index += 1;
-      else if (char.charCodeAt(0) < 0x20) fail("unescaped control character");
+  return new StrictJsonParser(String(text)).parseDocument();
+}
+
+/** A JSON parser that rejects duplicate object keys, which JSON.parse silently collapses. */
+class StrictJsonParser {
+  constructor(source) {
+    this.source = source;
+    this.index = 0;
+  }
+
+  parseDocument() {
+    const value = this.parseValue();
+    this.whitespace();
+    if (this.index !== this.source.length) this.fail("trailing content");
+    return value;
+  }
+
+  whitespace() {
+    while (/\s/.test(this.source[this.index] ?? "")) this.index += 1;
+  }
+
+  fail(message) {
+    throw new Error(`${message} at character ${this.index}`);
+  }
+
+  parseValue() {
+    this.whitespace();
+    const char = this.source[this.index];
+    if (char === '"') return this.parseString();
+    if (char === "{") return this.parseObject();
+    if (char === "[") return this.parseArray();
+    return this.parseLiteral();
+  }
+
+  parseString() {
+    const { source } = this;
+    if (source[this.index] !== '"') this.fail("expected JSON string");
+    const start = this.index++;
+    while (this.index < source.length) {
+      const char = source[this.index++];
+      if (char === '"') return JSON.parse(source.slice(start, this.index));
+      if (char === "\\") this.index += 1;
+      else if (char.charCodeAt(0) < 0x20) this.fail("unescaped control character");
     }
-    fail("unterminated JSON string");
-  };
-  const parseValue = () => {
-    whitespace();
-    const char = source[index];
-    if (char === '"') return parseString();
-    if (char === "{") {
-      index += 1;
-      whitespace();
-      const value = {};
-      const keys = new Set();
-      if (source[index] === "}") { index += 1; return value; }
-      while (true) {
-        whitespace();
-        const key = parseString();
-        if (keys.has(key)) fail(`duplicate object key ${JSON.stringify(key)}`);
-        keys.add(key);
-        whitespace();
-        if (source[index++] !== ":") fail("expected colon");
-        Object.defineProperty(value, key, { value: parseValue(), enumerable: true, configurable: true, writable: true });
-        whitespace();
-        const separator = source[index++];
-        if (separator === "}") return value;
-        if (separator !== ",") fail("expected comma or closing brace");
-      }
+    this.fail("unterminated JSON string");
+  }
+
+  parseObject() {
+    this.index += 1;
+    this.whitespace();
+    const value = {};
+    const keys = new Set();
+    if (this.source[this.index] === "}") { this.index += 1; return value; }
+    while (true) {
+      this.whitespace();
+      const key = this.parseString();
+      if (keys.has(key)) this.fail(`duplicate object key ${JSON.stringify(key)}`);
+      keys.add(key);
+      this.whitespace();
+      if (this.source[this.index++] !== ":") this.fail("expected colon");
+      Object.defineProperty(value, key, { value: this.parseValue(), enumerable: true, configurable: true, writable: true });
+      this.whitespace();
+      const separator = this.source[this.index++];
+      if (separator === "}") return value;
+      if (separator !== ",") this.fail("expected comma or closing brace");
     }
-    if (char === "[") {
-      index += 1;
-      whitespace();
-      const value = [];
-      if (source[index] === "]") { index += 1; return value; }
-      while (true) {
-        value.push(parseValue());
-        whitespace();
-        const separator = source[index++];
-        if (separator === "]") return value;
-        if (separator !== ",") fail("expected comma or closing bracket");
-      }
+  }
+
+  parseArray() {
+    this.index += 1;
+    this.whitespace();
+    const value = [];
+    if (this.source[this.index] === "]") { this.index += 1; return value; }
+    while (true) {
+      value.push(this.parseValue());
+      this.whitespace();
+      const separator = this.source[this.index++];
+      if (separator === "]") return value;
+      if (separator !== ",") this.fail("expected comma or closing bracket");
     }
+  }
+
+  parseLiteral() {
     for (const [token, value] of [["true", true], ["false", false], ["null", null]]) {
-      if (source.startsWith(token, index)) { index += token.length; return value; }
+      if (this.source.startsWith(token, this.index)) { this.index += token.length; return value; }
     }
-    const number = source.slice(index).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/);
-    if (number) { index += number[0].length; return Number(number[0]); }
-    fail("unexpected JSON token");
-  };
-  const value = parseValue();
-  whitespace();
-  if (index !== source.length) fail("trailing content");
-  return value;
+    const number = this.source.slice(this.index).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/);
+    if (number) { this.index += number[0].length; return Number(number[0]); }
+    this.fail("unexpected JSON token");
+  }
 }
 
 function errorMessage(error) {
