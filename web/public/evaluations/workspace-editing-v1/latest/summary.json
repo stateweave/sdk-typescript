@@ -1,104 +1,162 @@
 {
   "schemaVersion": 1,
-  "runId": "workspace-editing-v1-glm-live-20261108-20261108T180028656Z",
+  "runId": "workspace-editing-v1-glm53-live-20261108-20261108T193143207Z",
   "status": "completed",
-  "targetAlignment": "wrong_model",
-  "intendedModel": "glm-5.3",
-  "interpretation": "Wrong model and no valid paired estimate: this preserved run used glm-5.3-flash instead of the intended non-Flash glm-5.3, and zero cases completed in both arms.",
-  "startedAt": "2026-11-08T18:00:28.656Z",
-  "completedAt": "2026-11-08T18:27:54.404Z",
-  "sourceRevision": "f560c2bb1ee8edcad7a946fa77c56e3b23ff8a0e",
-  "resultSha256": "d04c5168bc1fd2333e72bdf1fe52ea679e4a82da842995d42e21ebedae48fb30",
-  "workspaceArchiveSha256": "5f096366d7e601a58ce8fc1609735cc6dea9272b93e3016d4aa37cb36e0a0a6f",
+  "targetAlignment": "exact_model",
+  "interpretation": "One exact-model descriptive pair completed and both arms passed that case. The other four Graph episodes ended in protocol failures; Messages passed four of five tasks. One complete pair is insufficient for a comparative capability or superiority claim.",
+  "startedAt": "2026-11-08T19:31:43.207Z",
+  "completedAt": "2026-11-08T19:52:28.359Z",
+  "sourceRevision": "40a69c0a698442265c19399e7ef18c531f5aaec8",
+  "resultSha256": "3663e740fbe3b7e0dee3ea88b48a2f8ade32a733f15b5cf28dc933d550898d72",
+  "workspaceArchiveSha256": "40347c2127639db51da1247974d4584d1d1c67c64ea31c9501811cbf4270fccc",
+  "packageSha256": "1fa420a323e3d9c789a8a7e98f3286994f98ad4d011bb9247438e0d275f83dc2",
   "workspaceCount": 10,
   "runtime": {
     "provider": "zai",
     "endpoint": "api.z.ai/api/anthropic",
-    "model": "glm-5.3-flash",
+    "model": "glm-5.3",
     "billingMode": "zai-coding-plan",
+    "incrementalDollarEstimate": null,
     "retryCount": 0,
-    "exactIdentityCalls": 108
+    "exactIdentityCalls": 114
   },
   "budget": {
-    "providerCalls": 108,
+    "providerCalls": 114,
+    "reservedTokens": 731783,
+    "knownInputTokens": 263876,
+    "knownOutputTokens": 90301,
+    "knownTotalTokens": 354177,
     "maxProviderCalls": 240,
-    "reservedTokens": 658477,
-    "maxReservedTokens": 5000000,
-    "knownInputTokens": 207947,
-    "knownOutputTokens": 98886,
-    "knownTotalTokens": 306833,
-    "incrementalDollarEstimate": null
+    "maxReservedTokens": 5000000
   },
   "arms": {
     "graph": {
       "attempted": 5,
-      "completed": 0,
-      "taskPasses": 0,
-      "operationalFailures": 5,
-      "providerCalls": 33,
-      "knownInputTokens": 111130,
-      "knownOutputTokens": 81262,
-      "knownTotalTokens": 192392,
-      "endTurnCalls": 28,
-      "maxTokenCalls": 5,
-      "modelCallLatencyMs": 1277582
+      "completed": 1,
+      "taskPasses": 1,
+      "operationalFailures": 4,
+      "totalModelCalls": 8,
+      "totalDurationMs": 169090,
+      "providerCalls": 42,
+      "knownInputTokens": 149759,
+      "knownOutputTokens": 82004,
+      "knownTotalTokens": 231763,
+      "endTurnCalls": 40,
+      "maxTokenCalls": 2,
+      "modelCallLatencyMs": 1073248
     },
     "messages": {
       "attempted": 5,
-      "completed": 4,
+      "completed": 5,
       "taskPasses": 4,
-      "operationalFailures": 1,
-      "providerCalls": 75,
-      "knownInputTokens": 96817,
-      "knownOutputTokens": 17624,
-      "knownTotalTokens": 114441,
-      "endTurnCalls": 75,
+      "operationalFailures": 0,
+      "totalModelCalls": 72,
+      "totalDurationMs": 170765,
+      "providerCalls": 72,
+      "knownInputTokens": 114117,
+      "knownOutputTokens": 8297,
+      "knownTotalTokens": 122414,
+      "endTurnCalls": 72,
       "maxTokenCalls": 0,
-      "modelCallLatencyMs": 367047
+      "modelCallLatencyMs": 170638
     }
   },
-  "completePairs": 0,
-  "endpointMatchedPairs": 0,
+  "completePairs": 1,
+  "endpointMatchedPairs": 1,
   "cases": [
     {
       "caseId": "SDKWS-01",
-      "task": "SVG refinement and revisions",
-      "order": ["graph", "messages"],
-      "graph": {"status": "protocol_failure", "turn": 2, "calls": 13, "reason": "Final call reached max_tokens with no accepted SWX text."},
-      "messages": {"status": "task_pass", "calls": 15}
+      "task": "Refine an SVG panel",
+      "order": [
+        "graph",
+        "messages"
+      ],
+      "graph": {
+        "status": "protocol_failure",
+        "turn": 2,
+        "calls": 12,
+        "reason": "Graph output must begin with an exact SWX/1 header; fenced, prefixed, and legacy-JSON outputs are rejected without repair."
+      },
+      "messages": {
+        "status": "task_pass",
+        "calls": 13
+      }
     },
     {
       "caseId": "SDKWS-02",
-      "task": "Nested typed JSON preservation",
-      "order": ["messages", "graph"],
-      "graph": {"status": "protocol_failure", "turn": 2, "calls": 6, "reason": "Final call reached max_tokens with no accepted SWX text."},
-      "messages": {"status": "task_pass", "calls": 12}
+      "task": "Update nested fixture options",
+      "order": [
+        "messages",
+        "graph"
+      ],
+      "graph": {
+        "status": "protocol_failure",
+        "turn": 2,
+        "calls": 16,
+        "reason": "StateWeave GraphOps failed after 12 step(s): edit_file requires current evidence for fixtures/viewer.json. Read that file first, then retry the edit with the observed content/hash."
+      },
+      "messages": {
+        "status": "task_pass",
+        "calls": 17
+      }
     },
     {
       "caseId": "SDKWS-03",
-      "task": "Legitimate no-op and exact structured answer",
-      "order": ["graph", "messages"],
-      "graph": {"status": "protocol_failure", "turn": 4, "calls": 6, "reason": "Final call reached max_tokens with no accepted SWX text."},
-      "messages": {"status": "task_pass", "calls": 12}
+      "task": "Verify an already-correct manual setup",
+      "order": [
+        "graph",
+        "messages"
+      ],
+      "graph": {
+        "status": "task_pass",
+        "calls": 8
+      },
+      "messages": {
+        "status": "task_pass",
+        "calls": 7
+      }
     },
     {
       "caseId": "SDKWS-04",
-      "task": "Repeated labels with distinct identities",
-      "order": ["messages", "graph"],
-      "graph": {"status": "protocol_failure", "turn": 1, "calls": 4, "reason": "Final call reached max_tokens with no accepted SWX text."},
-      "messages": {"status": "protocol_failure", "calls": 12, "reason": "Exhausted the per-turn iteration ceiling after malformed and unsuccessful tool actions."}
+      "task": "Edit repeated labels without conflating cards",
+      "order": [
+        "messages",
+        "graph"
+      ],
+      "graph": {
+        "status": "protocol_failure",
+        "turn": 1,
+        "calls": 5,
+        "reason": "Graph output must begin with an exact SWX/1 header; fenced, prefixed, and legacy-JSON outputs are rejected without repair."
+      },
+      "messages": {
+        "status": "task_fail",
+        "calls": 16,
+        "reason": "fixtures/cards.json has the wrong JSON value"
+      }
     },
     {
       "caseId": "SDKWS-05",
-      "task": "Cross-file consistency after selection reversal",
-      "order": ["graph", "messages"],
-      "graph": {"status": "protocol_failure", "turn": 1, "calls": 4, "reason": "Final call reached max_tokens with no accepted SWX text."},
-      "messages": {"status": "task_pass", "calls": 24}
+      "task": "Keep catalog and preview consistent",
+      "order": [
+        "graph",
+        "messages"
+      ],
+      "graph": {
+        "status": "protocol_failure",
+        "turn": 1,
+        "calls": 1,
+        "reason": "Graph output must begin with an exact SWX/1 header; fenced, prefixed, and legacy-JSON outputs are rejected without repair."
+      },
+      "messages": {
+        "status": "task_pass",
+        "calls": 19
+      }
     }
   ],
-  "preexecutionEvidence": {
-    "providerCalls": 0,
-    "status": "preserved_not_reused",
-    "reason": "The first packaged process could not resolve its bundled validation dependency before evaluator module load. A new frozen package bundled the dependency; the failed path was preserved and not reused."
+  "priorWrongModelEvidence": {
+    "model": "glm-5.3-flash",
+    "status": "preserved_separately",
+    "path": "../live-20261108/run-01"
   }
 }

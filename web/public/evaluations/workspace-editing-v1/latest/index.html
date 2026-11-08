@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex,nofollow,noarchive" />
-  <title>Workspace editing v1 Flash evidence · StateWeave development</title>
+  <title>Workspace editing v1 GLM-5.3 result · StateWeave development</title>
   <style>
     :root {
       color-scheme: dark;
@@ -144,29 +144,29 @@
   <main class="shell">
     <header class="topbar">
       <div class="brand"><span class="mark"><span></span></span> StateWeave</div>
-      <span class="env">Development · wrong-model evidence</span>
+      <span class="env">Development · exact-model result</span>
     </header>
 
     <div class="hero">
       <div>
-        <div class="eyebrow">Workspace editing v1 · preserved Flash run</div>
-        <h1>Wrong target model.</h1>
-        <p class="dek">This run used <span class="token">glm-5.3-flash</span> by mistake. The intended model is non-Flash <span class="token">glm-5.3</span>. Its evidence remains preserved, but it cannot answer the intended experiment.</p>
+        <div class="eyebrow">Workspace editing v1 · non-Flash GLM-5.3</div>
+        <h1>One pair completed.</h1>
+        <p class="dek">The corrected run used the intended non-Flash <span class="token">glm-5.3</span> on every call. Both arms passed the sole complete pair. Four other Graph episodes ended at strict protocol boundaries, so there is still no comparative winner.</p>
       </div>
       <aside class="verdict" aria-label="Run interpretation">
         <div>
-          <div class="label">Target correction</div>
-          <strong>Flash, not GLM-5.3</strong>
+          <div class="label">Audited interpretation</div>
+          <strong>No comparative winner</strong>
         </div>
-        <p>Wrong target model, plus zero complete pairs. Do not infer comparative capability or superiority.</p>
+        <p>One matched pair is descriptive evidence, not a capability or superiority estimate.</p>
       </aside>
     </div>
 
     <div class="grid" aria-label="Run summary">
-      <div class="metric good"><span>Messages task passes</span><strong>4 / 5</strong><small>Four completed and graded true</small></div>
-      <div class="metric warn"><span>Graph completed</span><strong>0 / 5</strong><small>Five protocol failures, not task failures</small></div>
-      <div class="metric"><span>Provider calls</span><strong>108</strong><small>Zero retries · 45% of call ceiling</small></div>
-      <div class="metric"><span>Known tokens</span><strong>306.8k</strong><small>207.9k input · 98.9k output</small></div>
+      <div class="metric good"><span>Messages task passes</span><strong>4 / 5</strong><small>Five completed · one graded false</small></div>
+      <div class="metric warn"><span>Graph completed</span><strong>1 / 5</strong><small>One pass · four protocol failures</small></div>
+      <div class="metric"><span>Provider calls</span><strong>114</strong><small>Zero retries · 47.5% of call ceiling</small></div>
+      <div class="metric"><span>Known tokens</span><strong>354.2k</strong><small>263.9k input · 90.3k output</small></div>
     </div>
 
     <section>
@@ -177,19 +177,19 @@
       <div class="panel">
         <div class="arms">
           <article class="arm graph">
-            <div class="arm-top"><div class="arm-name"><span class="dot"></span>GraphFrame → GraphOps</div><span class="pill fail">Protocol blocked</span></div>
-            <div class="score">0 <span>/ 5 completed</span></div>
-            <div class="arm-copy">Each episode progressed through valid SWX actions, then one call consumed the 4,096-output-token ceiling without yielding accepted SWX text. The strict parser rejected the exchange without repair or mutation.</div>
-            <div class="stats"><div><strong>33</strong><span>calls</span></div><div><strong>192,392</strong><span>known tokens</span></div><div><strong>5</strong><span>max-token stops</span></div></div>
+            <div class="arm-top"><div class="arm-name"><span class="dot"></span>GraphFrame → GraphOps</div><span class="pill pass">1 task pass</span></div>
+            <div class="score">1 <span>/ 5 completed</span></div>
+            <div class="arm-copy">SDKWS-03 completed and passed. Three other episodes returned exchanges without the exact leading SWX header; one exhausted its GraphOps loop after attempting an edit without current file evidence.</div>
+            <div class="stats"><div><strong>42</strong><span>calls</span></div><div><strong>231,763</strong><span>known tokens</span></div><div><strong>4</strong><span>protocol failures</span></div></div>
           </article>
           <article class="arm messages">
             <div class="arm-top"><div class="arm-name"><span class="dot"></span>Persistent Messages</div><span class="pill pass">4 task passes</span></div>
             <div class="score">4 <span>/ 5 passed</span></div>
-            <div class="arm-copy">Four episodes completed with deterministic file and answer checks passing. SDKWS-04 exhausted the 12-iteration turn ceiling after malformed and unsuccessful tool actions, so it remains an operational failure.</div>
-            <div class="stats"><div><strong>75</strong><span>calls</span></div><div><strong>114,441</strong><span>known tokens</span></div><div><strong>1</strong><span>protocol failure</span></div></div>
+            <div class="arm-copy">All five episodes completed. Four passed deterministic file and answer checks; SDKWS-04 completed but left <span class="token">fixtures/cards.json</span> with the wrong graded value.</div>
+            <div class="stats"><div><strong>72</strong><span>calls</span></div><div><strong>122,414</strong><span>known tokens</span></div><div><strong>1</strong><span>task failure</span></div></div>
           </article>
         </div>
-        <div class="note"><strong>Important:</strong> task quality is only defined for completed episodes. Graph’s five failures and Messages’ SDKWS-04 failure have <span class="token">grade: null</span>; they are not scored as wrong task answers.</div>
+        <div class="note"><strong>Important:</strong> the sole complete pair passed in both arms. Graph’s four protocol failures retain <span class="token">grade: null</span>. Messages’ SDKWS-04 is different: it completed and received <span class="token">taskOutcome: false</span> from the deterministic grader.</div>
       </div>
     </section>
 
@@ -199,11 +199,11 @@
         <p>Alternating arm order · one pass · no episode retries</p>
       </div>
       <div class="case-list">
-        <article class="case"><div class="case-id">SDKWS-01</div><div class="case-task"><strong>SVG refinement</strong><small>Order: Graph → Messages</small></div><div class="case-result"><b class="bad">● Graph protocol failure</b><br /><small>Turn 2 · 13 calls · max_tokens</small></div><div class="case-result"><b class="ok">● Messages task pass</b><br /><small>15 calls · SVG/files verified</small></div></article>
-        <article class="case"><div class="case-id">SDKWS-02</div><div class="case-task"><strong>Nested typed JSON</strong><small>Order: Messages → Graph</small></div><div class="case-result"><b class="bad">● Graph protocol failure</b><br /><small>Turn 2 · 6 calls · max_tokens</small></div><div class="case-result"><b class="ok">● Messages task pass</b><br /><small>12 calls · typed state preserved</small></div></article>
-        <article class="case"><div class="case-id">SDKWS-03</div><div class="case-task"><strong>No-op + exact answer</strong><small>Order: Graph → Messages</small></div><div class="case-result"><b class="bad">● Graph protocol failure</b><br /><small>Turn 4 · 6 calls · max_tokens</small></div><div class="case-result"><b class="ok">● Messages task pass</b><br /><small>12 calls · false/null accepted</small></div></article>
-        <article class="case"><div class="case-id">SDKWS-04</div><div class="case-task"><strong>Repeated identities</strong><small>Order: Messages → Graph</small></div><div class="case-result"><b class="bad">● Graph protocol failure</b><br /><small>Turn 1 · 4 calls · max_tokens</small></div><div class="case-result"><b class="bad">● Messages protocol failure</b><br /><small>12 calls · iteration ceiling</small></div></article>
-        <article class="case"><div class="case-id">SDKWS-05</div><div class="case-task"><strong>Cross-file reversal</strong><small>Order: Graph → Messages</small></div><div class="case-result"><b class="bad">● Graph protocol failure</b><br /><small>Turn 1 · 4 calls · max_tokens</small></div><div class="case-result"><b class="ok">● Messages task pass</b><br /><small>24 calls · cross-file state verified</small></div></article>
+        <article class="case"><div class="case-id">SDKWS-01</div><div class="case-task"><strong>SVG refinement</strong><small>Order: Graph → Messages</small></div><div class="case-result"><b class="bad">● Graph protocol failure</b><br /><small>Turn 2 · 12 calls · SWX header rejected</small></div><div class="case-result"><b class="ok">● Messages task pass</b><br /><small>13 calls · SVG/files verified</small></div></article>
+        <article class="case"><div class="case-id">SDKWS-02</div><div class="case-task"><strong>Nested typed JSON</strong><small>Order: Messages → Graph</small></div><div class="case-result"><b class="bad">● Graph protocol failure</b><br /><small>Turn 2 · 16 calls · evidence loop exhausted</small></div><div class="case-result"><b class="ok">● Messages task pass</b><br /><small>17 calls · typed state preserved</small></div></article>
+        <article class="case"><div class="case-id">SDKWS-03</div><div class="case-task"><strong>No-op + exact answer</strong><small>Order: Graph → Messages</small></div><div class="case-result"><b class="ok">● Graph task pass</b><br /><small>8 calls · already-correct state verified</small></div><div class="case-result"><b class="ok">● Messages task pass</b><br /><small>7 calls · false/null accepted</small></div></article>
+        <article class="case"><div class="case-id">SDKWS-04</div><div class="case-task"><strong>Repeated identities</strong><small>Order: Messages → Graph</small></div><div class="case-result"><b class="bad">● Graph protocol failure</b><br /><small>Turn 1 · 5 calls · SWX header rejected</small></div><div class="case-result"><b class="bad">● Messages task failure</b><br /><small>16 calls · wrong cards JSON value</small></div></article>
+        <article class="case"><div class="case-id">SDKWS-05</div><div class="case-task"><strong>Cross-file reversal</strong><small>Order: Graph → Messages</small></div><div class="case-result"><b class="bad">● Graph protocol failure</b><br /><small>Turn 1 · 1 call · SWX header rejected</small></div><div class="case-result"><b class="ok">● Messages task pass</b><br /><small>19 calls · cross-file state verified</small></div></article>
       </div>
     </section>
 
@@ -211,24 +211,24 @@
       <div class="section-head"><h2>Budget & endpoint evidence</h2><p>Hard ceilings were enforced before every dispatch.</p></div>
       <div class="panel">
         <div class="budget">
-          <div class="budget-row"><div class="budget-label"><strong>Provider calls</strong><span>108 / 240</span></div><div class="track"><i style="width:45%"></i></div></div>
-          <div class="budget-row"><div class="budget-label"><strong>Reserved tokens</strong><span>658,477 / 5,000,000</span></div><div class="track"><i style="width:13.17%"></i></div></div>
+          <div class="budget-row"><div class="budget-label"><strong>Provider calls</strong><span>114 / 240</span></div><div class="track"><i style="width:47.5%"></i></div></div>
+          <div class="budget-row"><div class="budget-label"><strong>Reserved tokens</strong><span>731,783 / 5,000,000</span></div><div class="track"><i style="width:14.64%"></i></div></div>
         </div>
         <div class="evidence">
-          <div><b>Exact endpoint identity</b><p>All 108 calls reported <span class="token">zai</span> and <span class="token">glm-5.3-flash</span>. Redirects were disabled and the HTTPS host was frozen.</p></div>
+          <div><b>Exact endpoint identity</b><p>All 114 calls reported <span class="token">zai</span> and the intended non-Flash <span class="token">glm-5.3</span>. Redirects were disabled and the HTTPS host was frozen.</p></div>
           <div><b>No hidden repair</b><p>Malformed Graph exchanges and Messages actions were preserved as protocol evidence. No output rewriting, workspace correction or automatic retry occurred.</p></div>
           <div><b>Coding-plan accounting</b><p>Usage is reported in provider calls and tokens. Incremental dollar cost is <span class="token">null</span> because this ran on the approved Z.ai coding plan.</p></div>
         </div>
-        <details><summary>Pre-execution packaging evidence</summary><div class="detail-copy">A first packaged process stopped before evaluator module load because its validation dependency was not bundled. It made zero provider calls, created no evaluation workspace, and was preserved without reuse. The successful frozen package bundled the exact dependency and ran from a new path.</div></details>
+        <details><summary>Prior wrong-model evidence</summary><div class="detail-copy">The earlier pass used <span class="token">glm-5.3-flash</span> by mistake. Its raw result, workspace archive and receipts remain preserved separately. No Flash output is included in this exact-model summary.</div></details>
       </div>
     </section>
 
     <section>
       <div class="section-head"><h2>Reproducibility receipt</h2><p>Sanitized development artifact · raw transcripts are not published here.</p></div>
       <div class="panel evidence">
-        <div><b>Frozen source</b><p><span class="token">f560c2bb1ee8…3ff8a0e</span><br />Runner and package manifest verified before execution.</p></div>
-        <div><b>Result digest</b><p><span class="token">d04c5168bc1f…ae48fb30</span><br />SHA-256 of the preserved raw result.</p></div>
-        <div><b>Run window</b><p>2026-11-08 18:00:28–18:27:54 UTC<br />27 minutes 26 seconds wall time.</p></div>
+        <div><b>Frozen source</b><p><span class="token">40a69c0a6984…f5aaec8</span><br />Runner and package manifest verified before execution.</p></div>
+        <div><b>Result digest</b><p><span class="token">3663e740fbe3…550898d72</span><br />SHA-256 of the preserved raw result.</p></div>
+        <div><b>Run window</b><p>2026-11-08 19:31:43–19:52:28 UTC<br />20 minutes 45 seconds wall time.</p></div>
       </div>
     </section>
 

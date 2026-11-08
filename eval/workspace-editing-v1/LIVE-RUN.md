@@ -1,6 +1,6 @@
 # Workspace editing v1 — authorized live run
 
-Status: corrected non-Flash execution authorized; no `glm-5.3` request has been dispatched yet.
+Status: corrected non-Flash `glm-5.3` execution completed; the one-pass authority is consumed.
 
 ## Human authorization
 
