@@ -94,7 +94,7 @@ Agent state imports are validated. Calls serialize in invocation order and commi
 
 The previous evaluation systems, datasets, and reports have been removed from the active tree; Git history retains them. There is no current baseline, live comparison runner, or result.
 
-A fresh comparison must use `GraphFrame -> GraphOps -> StateGraph` directly, not `Agent`. New inputs will come from existing product material chosen by the user, but its source path or example has not yet been provided. Await that source plus signoff on the inputs, grader, and execution/token budgets; do not invent cases or a baseline. No model/provider change is approved by this cleanup. No corpus, benchmark result, performance claim, or automatic experiment is implied by this clean start.
+A fresh comparison must use `GraphFrame -> GraphOps -> StateGraph` directly, not `Agent`. The user selected the current StateWeave SDK code/docs as the source for fresh product-derived task proposals. The specific workflow, complete inputs, actual-output grading, provider/model, and execution/token budgets still need approval. Documentation/regression-derived tasks are not production traffic; do not recycle deleted cases or harnesses, invent a baseline, or automatically run experiments. No model/provider change, corpus, benchmark result, or performance claim is implied by this clean start.
 
 ## Release safety
 

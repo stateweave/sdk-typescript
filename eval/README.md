@@ -20,11 +20,14 @@ ablation unless the eventual design actually establishes that.
 
 ## Input source
 
-The user selected **existing product material**, not obsolete evaluation cases
-or a cold synthetic benchmark. Identify its concrete paths or URLs and establish
-one representative product flow before implementing cases. Record source,
-permissions, retention constraints, and expected-output provenance. Documentation
-examples and regression fixtures must be labeled as such, not production traffic.
+The user selected **the current StateWeave SDK code/docs** as the source for
+fresh product-derived task proposals, not Vero, X Console, or deleted evaluation
+cases. Use the SDK source reviewed on this cleanup branch; the canonical checkout
+still contains obsolete material until the cleanup is merged. Establish one
+representative SDK workflow before implementing cases. Record exact source paths
+and revision, permissions, retention constraints, and expected-output provenance.
+Documentation/regression-derived proposals are not production traffic and still
+require input approval; selecting the product did not approve actual cases.
 
 Show the complete proposed inputs to the user and obtain explicit approval.
 Then demonstrate actual graded outputs and obtain a separate grading sign-off.
